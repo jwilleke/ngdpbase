@@ -32,7 +32,6 @@ This document outlines the design for Issue #19: Policy-Based Access Control (JS
       "id": "admin-full-access",
       "name": "Administrator Full Access",
       "description": "Full access for system administrators",
-      "priority": 100,
       "effect": "allow",
       "subjects": [
         {
@@ -69,7 +68,7 @@ This document outlines the design for Issue #19: Policy-Based Access Control (JS
 - __id__: Unique identifier (string)
 - __name__: Human-readable name
 - __description__: Policy purpose and scope
-- __priority__: Evaluation order (higher = evaluated first)
+- There is no priority: policies are combined by `deny-overrides`, so order does not matter
 
 #### 2. Policy Effect
 
@@ -186,7 +185,7 @@ This document outlines the design for Issue #19: Policy-Based Access Control (JS
 #### 2. PolicyEvaluator
 
 - __Evaluate policies__ against access requests
-- __Handle policy priority__ and conflict resolution
+- __Combine matching policies__ with `deny-overrides` (any matching deny wins)
 - __Support condition evaluation__
 - __Generate audit logs__ for policy decisions
 
@@ -203,7 +202,7 @@ This document outlines the design for Issue #19: Policy-Based Access Control (JS
 graph TD
     A[Access Request] --> B[Extract Context]
     B --> C[Find Applicable Policies]
-    C --> D[Sort by Priority]
+    C --> D[Combine Matches: Any Deny Wins]
     D --> E[Evaluate Conditions]
     E --> F[Check Subject Match]
     F --> G[Check Resource Match]
@@ -251,7 +250,7 @@ const pagePolicies = await policyManager.getPoliciesForResource('page', pageName
       "enabled": true,
       "configFile": "./config/policies.json",
       "defaultEffect": "deny",
-      "evaluationMode": "first-applicable",
+      "evaluationMode": "deny-overrides",
       "cache": {
         "enabled": true,
         "ttl": 300
@@ -277,7 +276,7 @@ config/
 
 ### Policy Management Dashboard
 
-- __Policy List__: View all policies with status and priority
+- __Policy List__: View all policies (in configuration order) with status
 - __Policy Editor__: Create/edit policies with form validation
 - __Policy Tester__: Test policies against sample requests
 - __Conflict Detector__: Identify policy conflicts and overlaps
@@ -326,7 +325,7 @@ config/
 
 - __Policy Evaluation__: Test individual policy rules
 - __Condition Evaluation__: Test complex conditions
-- __Conflict Resolution__: Test policy priority handling
+- __Conflict Resolution__: Test deny-overrides handling
 - __Performance__: Test evaluation speed and memory usage
 
 ### Integration Tests

@@ -179,6 +179,14 @@
                             <small class="text-muted">Shows merged configuration (defaults + custom overrides)</small>
                         </div>
                         <div class="card-body">
+                            <% if (typeof ruleCombiningAlgorithm !== 'undefined' && ruleCombiningAlgorithm) { %>
+                                <%# #2330: the rule the access policies are read under, stated above them. %>
+                                <div class="alert alert-info py-2 rule-combining-algorithm">
+                                    <i class="fas fa-shield-alt"></i>
+                                    <code>ngdpbase.access.rule-combining-algorithm</code>: <strong><%= ruleCombiningAlgorithm.value %></strong>.
+                                    <%= ruleCombiningAlgorithm.explanation %>
+                                </div>
+                            <% } %>
                             <div class="table-responsive">
                                 <table class="table table-sm">
                                     <thead>

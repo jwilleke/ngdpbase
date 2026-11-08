@@ -11,8 +11,9 @@ const KEY = 'ngdpbase.access.policies';
 const adminUser = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
 const PAGE_ATTRIBUTES = { owner: { type: 'identity' }, 'system-category': { type: 'string' } };
 
+const OWNER = { 'string-equal': [{ attributeid: 'resource:owner', datatype: 'string' }, { attributeid: 'subject:id', datatype: 'string' }] };
 const policy = (id: string, condition?: unknown) => ({
-  id, name: id, effect: 'allow', priority: 50,
+  id, name: id, effect: 'allow',
   subjects: [{ type: 'role', value: 'editor' }],
   resources: [{ type: 'page', pattern: '*' }],
   actions: ['page-read'],
@@ -54,10 +55,10 @@ const save = (policies: unknown[]) => req({ property: KEY, value: JSON.stringify
 
 describe('saving ngdpbase.access.policies (#2278)', () => {
   it.each([
-    ['an empty any-of', { 'any-of': [] }, "'any-of' is empty; list at least one condition, or remove the condition"],
-    ['an unknown operator', { attribute: 'resource:owner', sounds: 'like' }, "condition uses 'sounds'; use one of equals"],
-    ['an undeclared attribute', { attribute: 'resource:department', equals: 'x' }, "condition reads 'resource:department', which is not declared"],
-    ['a depth over 4', { not: { not: { not: { not: { attribute: 'resource:owner', equals: 'subject:id' } } } } }, 'conditions are nested 5 deep; the limit is 4']
+    ['an empty or', { or: [] }, "'or' is empty; list at least one condition, or remove the condition"],
+    ['an unknown function', { sounds: [{ attributeid: 'resource:owner', datatype: 'string' }, { value: 'x', datatype: 'string' }] }, "condition uses 'sounds'; use one of string-equal"],
+    ['an undeclared attribute', { 'string-equal': [{ attributeid: 'resource:department', datatype: 'string' }, { value: 'x', datatype: 'string' }] }, "condition reads 'resource:department', which is not declared"],
+    ['a depth over 4', { not: [{ not: [{ not: [{ not: [OWNER] }] }] }] }, 'conditions are nested 5 deep; the limit is 4']
   ])('refuses %s, shows the validator message with the id, and writes nothing', async (_name, condition, message) => {
     const { routes, configManager } = await makeRoutes();
     const r = res();
@@ -120,7 +121,7 @@ describe('saving ngdpbase.access.policies (#2278)', () => {
   it('redirects a form post with the problem in the error', async () => {
     const { routes, configManager } = await makeRoutes();
     const r = res();
-    const form = { ...save([policy('p1', { 'any-of': [] })]), xhr: false, headers: {} };
+    const form = { ...save([policy('p1', { or: [] })]), xhr: false, headers: {} };
     await routes.adminUpdateConfiguration(form, r);
     expect(configManager.setProperty).not.toHaveBeenCalled();
     expect(decodeURIComponent(String(r.redirect.mock.calls[0][0]))).toContain('list at least one condition');
@@ -129,7 +130,7 @@ describe('saving ngdpbase.access.policies (#2278)', () => {
   it('saves a valid policy, with and without a condition', async () => {
     const { routes, configManager } = await makeRoutes();
     const r = res();
-    const policies = [policy('p1'), policy('p3', { attribute: 'resource:owner', equals: 'subject:id' })];
+    const policies = [policy('p1'), policy('p3', OWNER)];
     await routes.adminUpdateConfiguration(save(policies), r);
     expect(configManager.setProperty).toHaveBeenCalledWith(KEY, policies, adminUser);
     expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
@@ -138,11 +139,11 @@ describe('saving ngdpbase.access.policies (#2278)', () => {
 
 describe('loading Admin → Configuration with policies in force that have problems (#2278)', () => {
   it('hands the policy id and the validator message to the page for the policies row', async () => {
-    const { routes } = await makeRoutes([policy('from-custom-config', { 'any-of': [] })]);
+    const { routes } = await makeRoutes([policy('from-custom-config', { or: [] })]);
     const r = res();
     await routes.adminConfiguration(req(), r);
     const data = r.render.mock.calls[0][1];
-    expect(data.configProblems[KEY]).toEqual(["'from-custom-config': 'any-of' is empty; list at least one condition, or remove the condition"]);
+    expect(data.configProblems[KEY]).toEqual(["'from-custom-config': 'or' is empty; list at least one condition, or remove the condition"]);
   });
 
   it('shows nothing when the policies are fine', async () => {
@@ -173,5 +174,51 @@ describe('the shipped policies', () => {
     const r = res();
     await routes.adminUpdateConfiguration(save(shipped[KEY] as unknown[]), r);
     expect(r.json.mock.calls[0][0]).toEqual(expect.objectContaining({ success: true }));
+  });
+});
+
+describe('ngdpbase.access.rule-combining-algorithm (#2330)', () => {
+  const ALGORITHM = 'ngdpbase.access.rule-combining-algorithm';
+  const saveAlgorithm = (value: unknown) => req({ property: ALGORITHM, value: JSON.stringify(value) });
+
+  it.each(['permit-overrides', 'first-applicable', '', 7, null])('refuses %j on save and writes nothing', async (value) => {
+    const { routes, configManager } = await makeRoutes();
+    const r = res();
+    await routes.adminUpdateConfiguration(saveAlgorithm(value), r);
+    expect(configManager.setProperty).not.toHaveBeenCalled();
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(String(r.json.mock.calls[0][0].error)).toContain('the only value accepted is "deny-overrides"');
+  });
+
+  it('saves deny-overrides', async () => {
+    const { routes, configManager } = await makeRoutes();
+    const r = res();
+    await routes.adminUpdateConfiguration(saveAlgorithm('deny-overrides'), r);
+    expect(configManager.setProperty).toHaveBeenCalledWith(ALGORITHM, 'deny-overrides', adminUser);
+  });
+
+  it('is shown above the policies with the plain sentence', async () => {
+    const { routes } = await makeRoutes([policy('p1')]);
+    const r = res();
+    await routes.adminConfiguration(req(), r);
+    expect(r.render.mock.calls[0][1].ruleCombiningAlgorithm).toEqual({ value: 'deny-overrides', explanation: "Any matching deny wins. Order and priority don't matter." });
+  });
+
+  it('is reported on the key\'s row when the stored value is not deny-overrides', async () => {
+    const { routes, configManager } = await makeRoutes([policy('p1')]);
+    const getProperty = configManager.getProperty.getMockImplementation();
+    configManager.getProperty.mockImplementation((k: string, d: unknown) => (k === ALGORITHM ? 'permit-overrides' : getProperty(k, d)));
+    const r = res();
+    await routes.adminConfiguration(req(), r);
+    expect(r.render.mock.calls[0][1].configProblems[ALGORITHM][0]).toContain('the only value accepted is "deny-overrides"');
+  });
+
+  it('ships as deny-overrides, and no shipped policy has a priority or an old-shape condition', () => {
+    const read = (f: string) => JSON.parse(readFileSync(f, 'utf8')) as Record<string, unknown>;
+    const files = ['config/app-default-config.json', ...readdirSync('addons').map((a) => `addons/${a}/config/default-config.json`).filter((f) => existsSync(f))];
+    expect(read('config/app-default-config.json')[ALGORITHM]).toBe('deny-overrides');
+    const shipped = files.flatMap((f) => ((read(f)[KEY] ?? []) as Array<Record<string, unknown>>).map((p) => ({ f, p })));
+    expect(shipped.filter(({ p }) => 'priority' in p).map(({ f, p }) => `${f} '${String(p.id)}'`)).toEqual([]);
+    expect(shipped.filter(({ p }) => 'condition' in p && JSON.stringify(p.condition).includes('"attribute"')).map(({ p }) => String(p.id))).toEqual([]);
   });
 });

@@ -306,7 +306,6 @@ Declare the permission and grant it in the addon's own `config/default-config.js
     {
       "id": "my-addon-manage-access",
       "name": "My addon management",
-      "priority": 90,
       "effect": "allow",
       "subjects": [{ "type": "role", "value": "admin" }],
       "resources": [{ "type": "page", "pattern": "*" }],
@@ -338,7 +337,6 @@ __A permission over a user's own records__ ("your receipts", "your health record
 {
   "id": "my-addon-self-service",
   "name": "My addon: every user's own records",
-  "priority": 90,
   "effect": "allow",
   "subjects": [{ "type": "role", "value": "vault-owner" }],
   "resources": [{ "type": "page", "pattern": "*" }],
@@ -356,7 +354,6 @@ __A permission your scheduled job needs__ goes to the job itself, not to a role 
 {
   "id": "my-addon-month-close-job",
   "name": "My addon: the month-close job",
-  "priority": 90,
   "effect": "allow",
   "subjects": [{ "type": "job", "value": "my-addon.month-close" }],
   "resources": [{ "type": "page", "pattern": "*" }],

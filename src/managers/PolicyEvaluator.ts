@@ -3,7 +3,7 @@ import BaseManager from './BaseManager.js';
 // sat here and drifted from it.
 import type { Policy, PolicySubject, PolicyResource, PolicyCondition } from '../types/Policy.js';
 import { isAttributeName } from '../types/Policy.js';
-import { readDeclaredAsWritten, CONDITION_OPERATORS, GROUP_OPERATORS, LEAF_OPERATORS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_OPERATOR, compareLeaf, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, environmentDeclarationProblem, literalFits, literalType, subjectAttributesProblems, subjectDeclarationProblem, type DeclaredEnvironmentAttribute, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
+import { readDeclaredAsWritten, COMPARISON_FUNCTIONS, CONDITION_EXAMPLE, CONDITION_FUNCTIONS, DATATYPES, GROUP_FUNCTIONS, LEGACY_CONDITION_KEYS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_FUNCTION, OPERAND_KEYS, RULE_COMBINING_ALGORITHM_KEY, combiningAlgorithmProblem, compareLeaf, datatypeOf, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, environmentDeclarationProblem, literalFits, literalType, subjectAttributesProblems, subjectDeclarationProblem, type DeclaredEnvironmentAttribute, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
 import { SCHEDULES_KEY, TIME_ZONE_KEY, scheduleIsEnabled, scheduleProblem, type Schedule } from '../utils/availability.js';
 import { normalizeUsername } from '../utils/username.js';
 import logger from '../utils/logger.js';
@@ -63,11 +63,6 @@ interface AccessContext {
 const SUBJECT_ATTRIBUTES_KEY = 'ngdpbase.access.subject-attributes';
 const ENVIRONMENT_ATTRIBUTES_KEY = 'ngdpbase.access.environment-attributes';
 
-/** The key that holds the operator of a node, or the keys when there is more than one. */
-function operatorKeys(node: object): string[] {
-  return Object.keys(node).filter((k) => k !== 'attribute');
-}
-
 /** The declared type of an attribute a condition names, or `null` when it is not declared. */
 function attributeTypeOf(name: string, pageAttributes: Record<string, { type?: string }>, subjectAttributes: Record<string, DeclaredSubjectAttribute>, environmentAttributes: Record<string, DeclaredEnvironmentAttribute> = {}): string | null {
   const [category, ...rest] = name.split(':');
@@ -79,19 +74,22 @@ function attributeTypeOf(name: string, pageAttributes: Record<string, { type?: s
 }
 
 /**
- * What is wrong with a policy's condition, one sentence each (#2255, #2261);
- * empty when it is fine. Each sentence says what is wrong, then what to
- * change. A node is a comparison (`attribute` and one operator) or `any-of`,
- * `all-of` or `not` over other conditions, nested at most
- * {@link MAX_CONDITION_DEPTH} deep, at most {@link MAX_CONDITION_NODES} nodes
- * in all, an `in` list of at most {@link MAX_IN_ITEMS} and an `any-of` or
- * `all-of` of at most {@link MAX_GROUP_CHILDREN}. Each attribute a comparison names must be
- * declared: a `subject:<name>` in `ngdpbase.access.subject-attributes`
- * (`id` always, `aal` as shipped), or a `resource:<name>` declared on the `page`
- * resource type, or an `environment:<name>` in
- * `ngdpbase.access.environment-attributes`. The types of the two sides must agree. A condition with a
- * problem never holds: an allow with it does not apply and a deny with it
- * does, as for a missing attribute.
+ * What is wrong with a policy's condition, one sentence each (#2255, #2261,
+ * #2330); empty when it is fine. Each sentence says what is wrong, then what to
+ * change. A node is one XACML function in lowercase: a comparison such as
+ * `string-equal` over two arguments, or `and`, `or` or `not` over other
+ * conditions, nested at most {@link MAX_CONDITION_DEPTH} deep, at most
+ * {@link MAX_CONDITION_NODES} function nodes in all, an `is-in` list of at most
+ * {@link MAX_IN_ITEMS} and an `and` or `or` of at most {@link MAX_GROUP_CHILDREN}.
+ * An argument is an attribute (`attributeid`, `datatype`) or a literal (`value`,
+ * `datatype`); `datatype` is required, must be the type the attribute is declared with
+ * and the type the function takes. Each attribute must be declared: a
+ * `subject:<name>` in `ngdpbase.access.subject-attributes` (`id` always, `aal`
+ * as shipped), or a `resource:<name>` declared on the `page` resource type, or
+ * an `environment:<name>` in `ngdpbase.access.environment-attributes`. The old
+ * shape (`attribute` with `equals` and the like) is a problem that shows the
+ * new one. A condition with a problem never holds: an allow with it does not
+ * apply and a deny with it does, as for a missing attribute.
  */
 export function conditionProblems(condition: unknown, pageAttributes: Record<string, { type?: string }>, subjectAttributes: Record<string, DeclaredSubjectAttribute> = declaredSubjectAttributes(null), environmentAttributes: Record<string, DeclaredEnvironmentAttribute> = {}): string[] {
   if (condition === undefined) return [];
@@ -113,75 +111,88 @@ export function conditionProblems(condition: unknown, pageAttributes: Record<str
   };
   const list = (values: readonly string[]): string => values.join(', ');
 
+  /** The problems in one argument of the comparison `fn`; `position` 0 is the first, and the bag of an `is-in` is the second. */
+  const operandProblems = (fn: string, position: number, arg: unknown): string[] => {
+    const spec = COMPARISON_FUNCTIONS[fn];
+    const bag = spec.kind === 'is-in' && position === 1;
+    if (!arg || typeof arg !== 'object' || Array.isArray(arg)) return [`'${fn}' argument ${position + 1} must be { "attributeid": …, "datatype": … } or { "value": …, "datatype": … }`];
+    const a = arg as Record<string, unknown>;
+    const stray = Object.keys(a).filter((k) => !(OPERAND_KEYS as readonly string[]).includes(k));
+    if (stray.length > 0) return [`'${fn}' argument ${position + 1} has ${stray.map((k) => `'${k}'`).join(', ')}; an argument has only ${list(OPERAND_KEYS)}`];
+    const isAttribute = 'attributeid' in a;
+    if (isAttribute && 'value' in a) return [`'${fn}' argument ${position + 1} has both 'attributeid' and 'value'; use one`];
+    if (!isAttribute && !('value' in a)) return [`'${fn}' argument ${position + 1} has neither 'attributeid' nor 'value'; write { "attributeid": …, "datatype": … } or { "value": …, "datatype": … }`];
+    const what = isAttribute ? `'${String(a.attributeid)}'` : `value ${JSON.stringify(a.value) ?? 'undefined'}`;
+    if (a.datatype === undefined) return [`${what} has no datatype; add "datatype": "${spec.type}"`];
+    if (typeof a.datatype !== 'string' || !(DATATYPES as readonly string[]).includes(a.datatype)) return [`${what} has datatype ${JSON.stringify(a.datatype)}; use one of ${list(DATATYPES)}`];
+    const datatype = a.datatype;
+
+    if (isAttribute) {
+      const id = a.attributeid;
+      if (!isAttributeName(id)) return [`condition "attributeid" must name an attribute (subject:, resource: or environment:), not ${JSON.stringify(id)}`];
+      const declared = typeOf(id);
+      if (declared === null) return [undeclared(id)];
+      const bad = declaration(id);
+      if (bad) return [bad];
+      const mine = datatypeOf(declared);
+      if (declared === 'list' && !bag) return [`'${id}' is a list; '${fn}' needs a single value there; use ${spec.type}-is-in to look for a value in it`];
+      if (declared !== 'list' && bag) return [`'${fn}' needs a list; '${id}' is ${declared}; use a list attribute or write the values as an array in a value`];
+      if (mine !== null && datatype !== mine) return [`'${id}' is declared ${declared}; its datatype must be "${mine}", not "${datatype}"`];
+      if (datatype !== spec.type) return [`'${fn}' takes ${spec.type}; '${id}' has datatype "${datatype}"`];
+      return [];
+    }
+
+    if (datatype !== spec.type) return [`'${fn}' takes ${spec.type}; ${what} has datatype "${datatype}"`];
+    if (bag) {
+      if (!Array.isArray(a.value)) return [`'${fn}' needs a list; write { "value": [ … ], "datatype": "${spec.type}" } or use a list attribute`];
+      if (a.value.length === 0) return [`'${fn}' is empty; list at least one value, or remove the condition`];
+      if (a.value.length > MAX_IN_ITEMS) return [`'${fn}' lists ${a.value.length} values; the limit is ${MAX_IN_ITEMS}; use a list attribute or split it into several policies`];
+      const wrong = (a.value as unknown[]).find((v) => !literalFits(datatype, v));
+      return wrong === undefined ? [] : [`${JSON.stringify(wrong) ?? 'undefined'} is a ${literalType(wrong) ?? typeof wrong}, not the datatype "${datatype}" it is declared with`];
+    }
+    return literalFits(datatype, a.value) ? [] : [`value ${JSON.stringify(a.value) ?? String(a.value)} is a ${literalType(a.value) ?? typeof a.value}, not the datatype "${datatype}" it is declared with`];
+  };
+
   let nodes = 0;
   const walk = (node: unknown, depth: number): string[] => {
     // Past the cap every node answers at once, so a huge tree is not walked.
     if (++nodes > MAX_CONDITION_NODES) return nodes === MAX_CONDITION_NODES + 1 ? [`condition has more than ${MAX_CONDITION_NODES} nodes; split it into several policies`] : [];
-    if (!node || typeof node !== 'object' || Array.isArray(node)) return ['condition must be an object; write { "attribute": …, "equals": … } or { "any-of": […] }'];
-    if (depth > MAX_CONDITION_DEPTH) return [`conditions are nested ${depth} deep; the limit is ${MAX_CONDITION_DEPTH}; flatten with all-of or any-of`];
-    const c = node as Record<string, unknown>;
-    const ops = operatorKeys(node);
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return [`condition must be an object; write ${CONDITION_EXAMPLE}`];
+    if (depth > MAX_CONDITION_DEPTH) return [`conditions are nested ${depth} deep; the limit is ${MAX_CONDITION_DEPTH}; flatten with and or or`];
+    const keys = Object.keys(node);
 
-    if (!('attribute' in c)) {
-      const known = ops.filter((k) => (GROUP_OPERATORS as readonly string[]).includes(k) || k === NOT_OPERATOR);
-      const stray = ops.filter((k) => !known.includes(k));
-      if (stray.length > 0 || known.length === 0) {
-        const used = stray.length > 0 ? stray : ops;
-        return [`condition uses ${used.length > 0 ? used.map((k) => `'${k}'`).join(', ') : 'no operator'}; use one of ${list(CONDITION_OPERATORS)}`];
-      }
-      if (known.length > 1) return [`condition has both '${known[0]}' and '${known[1]}'; use one operator per condition, combine with all-of`];
-      const op = known[0];
-      if (op === NOT_OPERATOR) return walk(c.not, depth + 1);
-      const children = c[op];
-      if (!Array.isArray(children)) return [`'${op}' must be a list of conditions; write { "${op}": [ … ] }`];
-      if (children.length === 0) return [`'${op}' is empty; list at least one condition, or remove the condition`];
-      if (children.length > MAX_GROUP_CHILDREN) return [`'${op}' lists ${children.length} conditions; the limit is ${MAX_GROUP_CHILDREN}; split it into several policies`];
-      return children.flatMap((child) => walk(child, depth + 1));
+    const legacy = keys.filter((k) => Object.hasOwn(LEGACY_CONDITION_KEYS, k));
+    const notLegacy = keys.length === 1 && keys[0] === NOT_FUNCTION && !Array.isArray((node as Record<string, unknown>).not);
+    if (legacy.length > 0 || notLegacy) {
+      const used = notLegacy ? [NOT_FUNCTION] : legacy;
+      const instead = used.filter((k) => k !== 'attribute').map((k) => (k === NOT_FUNCTION ? 'not takes a list of one condition: { "not": [ … ] }' : `${k} is ${LEGACY_CONDITION_KEYS[k]}`));
+      return [`condition is in the old form (it uses ${used.map((k) => `'${k}'`).join(', ')}); write it as ${CONDITION_EXAMPLE}${instead.length > 0 ? `; ${instead.join('; ')}` : ''}. See docs/access-policies.md`];
     }
 
-    if (!isAttributeName(c.attribute)) return [`condition "attribute" must name an attribute (subject:, resource: or environment:), not ${JSON.stringify(c.attribute)}`];
-    const leafOps = ops.filter((k) => Object.hasOwn(LEAF_OPERATORS, k));
-    const stray = ops.filter((k) => !leafOps.includes(k));
-    if (stray.length > 0) return [`condition uses ${stray.map((k) => `'${k}'`).join(', ')}; use one of ${list(CONDITION_OPERATORS)}`];
-    if (leafOps.length === 0) return [`condition on '${c.attribute}' has no operator; use one of ${list(Object.keys(LEAF_OPERATORS))}`];
-    if (leafOps.length > 1) return [`condition has both '${leafOps[0]}' and '${leafOps[1]}'; use one operator per condition, combine with all-of`];
+    if (keys.length === 0) return [`condition uses no function; use one of ${list(CONDITION_FUNCTIONS)}`];
+    if (keys.length > 1) return [`condition has both '${keys[0]}' and '${keys[1]}'; use one function per condition, combine with and`];
+    const fn = keys[0];
+    const args = (node as Record<string, unknown>)[fn];
 
-    const op = leafOps[0];
-    const operand = c[op];
-    const leftType = typeOf(c.attribute);
-    const problems: string[] = [];
-    if (leftType === null) problems.push(undeclared(c.attribute));
-    const rightIsAttribute = isAttributeName(operand);
-    const rightType = rightIsAttribute ? typeOf(operand) : null;
-    if (rightIsAttribute && rightType === null) problems.push(undeclared(operand));
-    for (const name of [c.attribute, ...(rightIsAttribute ? [operand] : [])]) {
-      const bad = declaration(String(name));
-      if (bad && !problems.includes(bad)) problems.push(bad);
+    if ((GROUP_FUNCTIONS as readonly string[]).includes(fn)) {
+      if (!Array.isArray(args)) return [`'${fn}' must be a list of conditions; write { "${fn}": [ … ] }`];
+      if (args.length === 0) return [`'${fn}' is empty; list at least one condition, or remove the condition`];
+      if (args.length > MAX_GROUP_CHILDREN) return [`'${fn}' lists ${args.length} conditions; the limit is ${MAX_GROUP_CHILDREN}; split it into several policies`];
+      return args.flatMap((child) => walk(child, depth + 1));
     }
-    if (problems.length > 0) return problems;
-    const left = leftType as string;
-
-    if (!LEAF_OPERATORS[op].left.includes(left as never)) {
-      return [`condition applies '${op}' to '${c.attribute}' (${left}); '${op}' works on ${list(LEAF_OPERATORS[op].left)} attributes`];
+    if (fn === NOT_FUNCTION) {
+      if (!Array.isArray(args) || args.length !== 1) return ['\'not\' takes a list of exactly one condition; write { "not": [ … ] }'];
+      return walk(args[0], depth + 1);
     }
-    const mismatch = (rightLabel: string, rightKind: string): string =>
-      `condition compares '${String(c.attribute)}' (${left}) with ${rightLabel} (${rightKind}); both sides must have the same type`;
-
-    if (op === 'in') {
-      if (rightIsAttribute) {
-        return rightType === 'list' ? [] : [`'in' needs a list; '${String(operand)}' is ${String(rightType)}; use a list attribute or write the values as an array`];
-      }
-      if (!Array.isArray(operand)) return ['\'in\' must be a list of values or a list attribute; write { "in": [ … ] }'];
-      if (operand.length === 0) return ['\'in\' is empty; list at least one value, or remove the condition'];
-      if (operand.length > MAX_IN_ITEMS) return [`'in' lists ${operand.length} values; the limit is ${MAX_IN_ITEMS}; use a list attribute or split it into several policies`];
-      const items = operand as unknown[];
-      const attributeLike = items.find((v) => isAttributeName(v));
-      if (attributeLike !== undefined) return [`'in' lists '${String(attributeLike)}', which names an attribute; list literal values only, or use an attribute that is a list`];
-      const wrong = items.find((v) => !literalFits(left, v));
-      return wrong === undefined ? [] : [mismatch(JSON.stringify(wrong), literalType(wrong) ?? typeof wrong)];
+    if (!Object.hasOwn(COMPARISON_FUNCTIONS, fn)) return [`condition uses '${fn}'; use one of ${list(CONDITION_FUNCTIONS)}`];
+    if (!Array.isArray(args) || args.length !== 2) return [`'${fn}' takes two arguments; write { "${fn}": [ a, b ] }`];
+    const problems = [...operandProblems(fn, 0, args[0]), ...operandProblems(fn, 1, args[1])];
+    // Two attributes are compared only when declared the same: an identity is normalised, a string is not.
+    const ids = args.map((x) => (x && typeof x === 'object' && isAttributeName((x as { attributeid?: unknown }).attributeid) ? String((x as { attributeid: string }).attributeid) : null));
+    if (problems.length === 0 && ids[0] && ids[1] && typeOf(ids[0]) !== typeOf(ids[1])) {
+      return [`condition compares '${ids[0]}' (${String(typeOf(ids[0]))}) with '${ids[1]}' (${String(typeOf(ids[1]))}); both sides must have the same type`];
     }
-    if (rightIsAttribute) return rightType === left ? [] : [mismatch(`'${String(operand)}'`, String(rightType))];
-    return literalFits(left, operand) ? [] : [mismatch(JSON.stringify(operand) ?? String(operand), literalType(operand) ?? typeof operand)];
+    return problems.filter((p, i) => problems.indexOf(p) === i);
   };
 
   return walk(condition, 1);
@@ -191,24 +202,26 @@ export function conditionProblems(condition: unknown, pageAttributes: Record<str
 const warnedReads = new Set<string>();
 
 /**
- * The condition as the evaluator runs it, built once per policy (#2261): an
- * `in` list becomes a Set, and a literal compared with an `identity`
- * attribute is normalised as `subject:id` is (trimmed, lower-cased), so
- * "Alice" meets alice. Only for a condition `conditionProblems` passed.
+ * The condition as the evaluator runs it, built once per policy (#2261): a
+ * literal list in an `is-in` becomes a Set, and a literal compared with an
+ * `identity` attribute is normalised as `subject:id` is (trimmed, lower-cased),
+ * so "Alice" meets alice. Only for a condition `conditionProblems` passed.
  */
 function compileCondition(node: PolicyCondition, typeOf: (name: string) => string | null): PolicyCondition {
-  const c = node as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(c)) {
-    const v = c[key];
-    if (key === 'attribute') out[key] = v;
-    else if (key === 'any-of' || key === 'all-of') out[key] = (v as PolicyCondition[]).map((child) => compileCondition(child, typeOf));
-    else if (key === NOT_OPERATOR) out[key] = compileCondition(v as PolicyCondition, typeOf);
-    else {
-      const identity = typeOf(String(c.attribute)) === 'identity';
-      const literal = (x: unknown): unknown => (identity && typeof x === 'string' && !isAttributeName(x) ? normalizeUsername(x) : x);
-      out[key] = key === 'in' && Array.isArray(v) ? new Set(v.map(literal)) : literal(v);
+  const out: Record<string, unknown[]> = {};
+  for (const key of Object.keys(node)) {
+    const args = node[key];
+    if ((GROUP_FUNCTIONS as readonly string[]).includes(key) || key === NOT_FUNCTION) {
+      out[key] = (args as PolicyCondition[]).map((child) => compileCondition(child, typeOf));
+      continue;
     }
+    const operands = args as Array<Record<string, unknown>>;
+    const identity = operands.some((a) => typeof a.attributeid === 'string' && typeOf(a.attributeid) === 'identity');
+    const literal = (x: unknown): unknown => (identity && typeof x === 'string' ? normalizeUsername(x) : x);
+    out[key] = operands.map((a) => {
+      if (!('value' in a)) return a;
+      return { ...a, value: Array.isArray(a.value) ? new Set(a.value.map(literal)) : literal(a.value) };
+    });
   }
   return out as PolicyCondition;
 }
@@ -224,51 +237,59 @@ interface PreparedPolicy {
 /**
  * Is the condition true, false or unknown (#2255, #2261)? `true` or `false`,
  * or `undefined` when it cannot be told because an attribute it reads is
- * missing; the caller fails closed on that. Each node is judged on its own:
- * a missing attribute makes its leaf unknown, a true branch decides `any-of`,
- * a false branch decides `all-of`, and `not` of unknown is unknown.
+ * missing, or an argument lacks the datatype its function takes; the caller
+ * fails closed on that. Each node is judged on its own: a missing attribute
+ * makes its comparison unknown, a true branch decides `or`, a false branch
+ * decides `and`, and `not` of unknown is unknown.
  */
 export async function conditionHolds(condition: PolicyCondition | undefined, read: AttributeReader | undefined, depth = 1): Promise<boolean | undefined> {
   if (!condition) return true;
   if (depth > MAX_CONDITION_DEPTH) return undefined;
-  const node = condition as Record<string, unknown>;
+  const keys = Object.keys(condition);
+  if (keys.length !== 1) return undefined;
+  const fn = keys[0];
+  const args: unknown = condition[fn];
 
-  if ('any-of' in node || 'all-of' in node) {
-    const anyOf = 'any-of' in node;
-    const children = node[anyOf ? 'any-of' : 'all-of'];
-    if (!Array.isArray(children) || children.length === 0) return undefined;
-    const decisive = anyOf; // the value that settles the node: true for any-of, false for all-of
+  if ((GROUP_FUNCTIONS as readonly string[]).includes(fn)) {
+    const isOr = fn === 'or';
+    if (!Array.isArray(args) || args.length === 0) return undefined;
+    const decisive = isOr; // the value that settles the node: true for or, false for and
     let sawUnknown = false;
-    for (const child of children as PolicyCondition[]) {
+    for (const child of args as PolicyCondition[]) {
       const result = await conditionHolds(child, read, depth + 1);
       if (result === decisive) return decisive;
       if (result === undefined) sawUnknown = true;
     }
     return sawUnknown ? undefined : !decisive;
   }
-  if ('not' in node) {
-    if (!node.not) return undefined;
-    const inner = await conditionHolds(node.not as PolicyCondition, read, depth + 1);
+  if (fn === NOT_FUNCTION) {
+    if (!Array.isArray(args) || args.length !== 1 || !args[0]) return undefined;
+    const inner = await conditionHolds(args[0] as PolicyCondition, read, depth + 1);
     return inner === undefined ? undefined : !inner;
   }
 
-  const operator = Object.keys(node).find((k) => Object.hasOwn(LEAF_OPERATORS, k));
-  if (!operator) return undefined;
-  const value = async (side: unknown): Promise<unknown> => {
-    if (!isAttributeName(side)) return side;
-    if (!read) return undefined;
+  if (!Object.hasOwn(COMPARISON_FUNCTIONS, fn) || !Array.isArray(args) || args.length !== 2) return undefined;
+  const spec = COMPARISON_FUNCTIONS[fn];
+  const value = async (arg: unknown): Promise<unknown> => {
+    if (!arg || typeof arg !== 'object' || Array.isArray(arg)) return undefined;
+    const a = arg as Record<string, unknown>;
+    // The datatype is required and must be the one the function takes: anything else is unknown.
+    if (a.datatype !== spec.type) return undefined;
+    if (!('attributeid' in a)) return a.value;
+    const name = a.attributeid;
+    if (!isAttributeName(name) || !read) return undefined;
     try {
-      return await read(side);
+      return await read(name);
     } catch (err) {
       // A read that throws leaves this comparison unknown, not the decision aborted.
-      if (!warnedReads.has(side)) {
-        warnedReads.add(side);
-        logger.warn(`[POLICY] reading '${side}' for a condition failed, so the comparison is unknown: ${err instanceof Error ? err.message : String(err)}`);
+      if (!warnedReads.has(name)) {
+        warnedReads.add(name);
+        logger.warn(`[POLICY] reading '${name}' for a condition failed, so the comparison is unknown: ${err instanceof Error ? err.message : String(err)}`);
       }
       return undefined;
     }
   };
-  return compareLeaf(operator, await value(node.attribute), await value(node[operator]));
+  return compareLeaf(spec.kind, await value(args[0]), await value(args[1]));
 }
 
 /**
@@ -374,8 +395,8 @@ const NO_POLICY: EvaluationResult = { hasDecision: false, allowed: false, reason
  *
  * PolicyEvaluator mimics how JSPWiki uses Java's built-in security framework
  * (java.security) to load and evaluate security policies from a policy file.
- * Among the policies that match, a deny overrides any allow whatever its
- * priority, and no match is a deny (#2255). Each decision names the policies
+ * Among the policies that match, a deny overrides any allow, the
+ * rule-combining algorithm `deny-overrides` (#2330), and no match is a deny (#2255). Each decision names the policies
  * that decided it.
  *
  * @class PolicyEvaluator
@@ -435,6 +456,16 @@ class PolicyEvaluator extends BaseManager {
     if (!this.configManager) {
       throw new Error('PolicyEvaluator requires ConfigurationManager to be initialized.');
     }
+    // #2330: the one algorithm the evaluator implements. Any other value would be
+    // read as deny-overrides anyway, so the site says so and does not start rather than
+    // run under a rule its configuration does not state.
+    const algorithm = this.configManager.getProperty(RULE_COMBINING_ALGORITHM_KEY, 'deny-overrides');
+    const algorithmProblem = combiningAlgorithmProblem(algorithm);
+    if (algorithmProblem) {
+      logger.error(`[POLICY] ${algorithmProblem}; the site does not start`);
+      throw new Error(algorithmProblem);
+    }
+    logger.info(`Access policies: ${this.policies().length} loaded, rule-combining-algorithm ${String(algorithm)}`);
     // #1504: say when the declared resource types and the matchers disagree.
     const declared = this.configManager.getProperty(RESOURCE_TYPES_KEY, null) as Record<string, unknown> | null;
     if (!declared || typeof declared !== 'object') {
@@ -465,6 +496,11 @@ class PolicyEvaluator extends BaseManager {
     if (!config || !pdp) return;
     const lines: string[] = [...((config as { pageWritePolicyMigration?: string[] }).pageWritePolicyMigration ?? [])];
     lines.push(...pageWritePoliciesToReview(this.policies()));
+    // #2330: `priority` is gone; a leftover one changes nothing.
+    const withPriority = this.policies().filter((p) => p.priority !== undefined).map((p) => `'${p.id}'`);
+    if (withPriority.length > 0) {
+      lines.push(`${withPriority.join(', ')} ${withPriority.length === 1 ? 'has' : 'have'} a priority, which is ignored: under deny-overrides any matching deny wins and order and priority don't matter; remove it (#2330)`);
+    }
     for (const { id, effect, problems } of this.conditionProblemsInForce()) {
       lines.push(...problems.map((p) => `'${id}': ${p}; ${effect === 'deny' ? 'the deny always applies' : 'the policy never applies as an allow'}`));
     }
@@ -495,7 +531,7 @@ class PolicyEvaluator extends BaseManager {
    * Evaluates all relevant policies to make an access decision (#2255).
    *
    * Deny overrides allow: if any matching deny applies, the answer is deny,
-   * whatever the priorities; otherwise any matching allow permits; otherwise
+   * (the rule-combining algorithm, #2330); otherwise any matching allow permits; otherwise
    * no policy decided. A policy with a `condition` applies only when it holds;
    * an unknown condition (a missing attribute) keeps an allow from applying
    * and lets a deny apply, so a missing attribute fails closed.

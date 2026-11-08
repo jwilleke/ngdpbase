@@ -44,7 +44,7 @@ import {
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
-import { readDeclaredAsWritten } from '../utils/policyAttributes.js';
+import { DENY_OVERRIDES_EXPLANATION, RULE_COMBINING_ALGORITHM_KEY, readDeclaredAsWritten } from '../utils/policyAttributes.js';
 import { sessionCookieWithheld, SESSION_COOKIE_WITHHELD_MESSAGE } from '../utils/sessionSecurity.js';
 import { formatLeftMenuContent } from '../utils/leftMenuNav.js';
 import { reportMissingPageMetadata } from '../utils/pageMetadataMissing.js';
@@ -14381,10 +14381,13 @@ ${panes}
         ?.subjectAttributeProblems(readDeclaredAsWritten(configManager, 'ngdpbase.access.subject-attributes')) ?? [];
       const environmentProblems = this.engine.getManager('PolicyValidator')
         ?.environmentAttributeProblems(readDeclaredAsWritten(configManager, 'ngdpbase.access.environment-attributes')) ?? [];
+      const algorithmProblems = this.engine.getManager('PolicyValidator')
+        ?.combiningAlgorithmProblems(configManager.getProperty(RULE_COMBINING_ALGORITHM_KEY, 'deny-overrides')) ?? [];
       const configProblems: Record<string, string[]> = {
         ...(policyProblems.length > 0 ? { 'ngdpbase.access.policies': policyProblems } : {}),
         ...(subjectProblems.length > 0 ? { 'ngdpbase.access.subject-attributes': subjectProblems } : {}),
-        ...(environmentProblems.length > 0 ? { 'ngdpbase.access.environment-attributes': environmentProblems } : {})
+        ...(environmentProblems.length > 0 ? { 'ngdpbase.access.environment-attributes': environmentProblems } : {}),
+        ...(algorithmProblems.length > 0 ? { [RULE_COMBINING_ALGORITHM_KEY]: algorithmProblems } : {})
       };
 
       const commonData = await this.getCommonTemplateData(req);
@@ -14393,6 +14396,8 @@ ${panes}
         ...commonData,
         title: 'Configuration Management',
         configProblems,
+        // #2330: stated above the table, so the rule the policies are read under is visible.
+        ruleCombiningAlgorithm: { value: configManager.getProperty(RULE_COMBINING_ALGORITHM_KEY, 'deny-overrides'), explanation: DENY_OVERRIDES_EXPLANATION },
         message: req.query.success,
         error: req.query.error,
         defaultProperties,
@@ -14668,6 +14673,16 @@ ${panes}
         const refused = this.engine.getManager('PolicyValidator')?.subjectAttributeProblems(parsedValue) ?? [];
         if (refused.length > 0) {
           const error = `Subject attributes not saved: ${refused.join('; ')}`;
+          const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
+          if (wantsJson) return res.status(400).json({ error });
+          return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);
+        }
+      }
+      // #2330: only deny-overrides is implemented; any other value is refused here, and stops the site at start-up.
+      if (property === RULE_COMBINING_ALGORITHM_KEY) {
+        const refused = this.engine.getManager('PolicyValidator')?.combiningAlgorithmProblems(parsedValue) ?? [];
+        if (refused.length > 0) {
+          const error = `Rule-combining algorithm not saved: ${refused.join('; ')}`;
           const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
           if (wantsJson) return res.status(400).json({ error });
           return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);

@@ -139,30 +139,36 @@ In policies a resource has an `owner` attribute. For a page, `owner` is its `aut
 
 ### Naming
 
-All keys are lowercase and hyphenated, like the rest of the config. An attribute is named `<category>:<name>`, where the category is `subject`, `resource` or `environment`:
+Decided by the operator on 2026-11-08 ([#2330](https://github.com/jwilleke/ngdpbase/issues/2330)): follow XACML 3.0 in lowercase, or have a good excuse not to. The keys are `attributeid`, `datatype` and `value`, with no hyphens, and every operator is its XACML function name in lowercase. An attribute is named `<category>:<name>`, where the category is `subject`, `resource` or `environment`, and is referenced with its datatype:
 
 ```json
-{ "attribute": "subject:department-id", "equals": "resource:owning-department" }
+{
+  "string-equal": [
+    { "attributeid": "subject:department-id", "datatype": "string" },
+    { "attributeid": "resource:owning-department", "datatype": "string" }
+  ]
+}
 ```
 
-No XACML-style keys (`AttributeId`, `DataType`, `Value`).
+A literal is `{ "value": "sales", "datatype": "string" }`. `datatype` is required on every attribute and every value, as XACML requires it on `AttributeDesignator` and `AttributeValue`, and takes the XACML JSON profile's short names (`string`, `integer`, `boolean`, `double`, `date`, `time`, `dateTime`, `anyURI`). The earlier draft of this page ruled XACML keys out; that is withdrawn. The one place the model departs from XACML is the identity: an `identity` attribute (a normalised username) is referenced with datatype `string`, because XACML has no type for it. The reference is [access-policies.md](../access-policies.md#conditions).
 
 ### Conditions
 
-A policy may carry one `condition`. The validator enforces a fixed set of operators:
+A policy may carry one `condition`. The validator enforces a fixed set of XACML 3.0 functions (core specification, appendix A.3), in lowercase, each taking an array of arguments:
 
-| Operator | Shape | True when |
+| Function | Shape | True when |
 | --- | --- | --- |
-| `equals` | `{ "attribute": a, "equals": b }` | a equals b |
-| `not-equals` | `{ "attribute": a, "not-equals": b }` | a differs from b |
-| `in` | `{ "attribute": a, "in": [ … ] }` | a is one of the list |
-| `greater-or-equal` | `{ "attribute": a, "greater-or-equal": n }` | a ≥ n (integers) |
-| `less-or-equal` | `{ "attribute": a, "less-or-equal": n }` | a ≤ n (integers) |
-| `any-of` | `{ "any-of": [ condition, … ] }` | at least one is true |
-| `all-of` | `{ "all-of": [ condition, … ] }` | every one is true |
-| `not` | `{ "not": condition }` | the condition is false |
+| `string-equal`, `integer-equal`, `boolean-equal` | `{ "string-equal": [ a, b ] }` | a equals b |
+| `not` around an equal | `{ "not": [ { "string-equal": [ a, b ] } ] }` | a differs from b (XACML has no not-equal) |
+| `string-is-in`, `integer-is-in` | `{ "string-is-in": [ a, bag ] }` | a is one of the bag: a literal array in a `value`, or a list attribute |
+| `integer-greater-than-or-equal` | `{ "integer-greater-than-or-equal": [ a, n ] }` | a ≥ n (integers) |
+| `integer-less-than-or-equal` | `{ "integer-less-than-or-equal": [ a, n ] }` | a ≤ n (integers) |
+| `integer-greater-than`, `integer-less-than` | `{ "integer-less-than": [ a, n ] }` | a > n, a < n (integers) |
+| `or` | `{ "or": [ condition, … ] }` | at least one is true |
+| `and` | `{ "and": [ condition, … ] }` | every one is true |
+| `not` | `{ "not": [ condition ] }` | the condition is false |
 
-The right-hand side is an attribute when it is a string starting with `subject:`, `resource:` or `environment:`, and a literal otherwise. Both sides must have the same declared type; the validator refuses a mismatch. No free-form expressions, no functions, no regular expressions.
+An argument is an attribute reference or a literal; its `datatype` must match the attribute's declared type and the type the function takes, and the validator refuses a mismatch. A string is never read as an attribute by its prefix any more: only `attributeid` names one. No free-form expressions, no regular expressions.
 
 ### A missing attribute fails closed
 
@@ -175,7 +181,7 @@ So a page with no `department` can't slip past a deny that checks the department
 
 ### A deny overrides an allow
 
-Among the policies that match, one deny decides, whatever its priority. With no matching allow, the answer is deny, as today.
+Among the policies that match, one deny decides. With no matching allow, the answer is deny, as today. This is XACML's `deny-overrides` rule-combining algorithm, written in `ngdpbase.access.rule-combining-algorithm` (decided 2026-11-08; the only value accepted), and `priority` is removed from policies: a leftover one is ignored and reported once at start-up.
 
 This replaces first-match by priority ([PolicyEvaluator.ts:221-230](https://github.com/jwilleke/ngdpbase/blob/f15ae27e385f117ba92ba54c91a01f852514b204/src/managers/PolicyEvaluator.ts#L221-L230), [access-policies.md:66](https://github.com/jwilleke/ngdpbase/blob/f15ae27e385f117ba92ba54c91a01f852514b204/docs/access-policies.md#L66)). Today a higher-priority allow beats a lower deny; after this change it doesn't. Every shipped and add-on policy must be re-checked. At f15ae27e none of the 17 shipped policies or the 5 add-on policies (calendar 2, journal 2, forms 1) is a deny, so their outcome does not change. A site's own policies in `app-custom-config.json` may change, and the upgrade must say so (see Open questions).
 
@@ -194,7 +200,7 @@ Two new subject types beside `role` and `job`:
 
 ### MFA is the sign-in's AAL
 
-Strength of sign-in is `subject:aal`, the assurance level the session's sign-in reached (1 to 3). A policy that needs a second factor says `{ "attribute": "subject:aal", "greater-or-equal": 2 }`. There is no separate MFA flag. `"step-up": true` on a permission in `ngdpbase.permissions.definitions` still asks for a fresh factor at the moment of the action, as today.
+Strength of sign-in is `subject:aal`, the assurance level the session's sign-in reached (1 to 3). A policy that needs a second factor says `{ "integer-greater-than-or-equal": [ { "attributeid": "subject:aal", "datatype": "integer" }, { "value": 2, "datatype": "integer" } ] }`. There is no separate MFA flag. `"step-up": true` on a permission in `ngdpbase.permissions.definitions` still asks for a fresh factor at the moment of the action, as today.
 
 ### Every decision names its policies
 
@@ -207,8 +213,8 @@ The [#2255 groups](https://github.com/jwilleke/ngdpbase/issues/2255#issuecomment
 | Group | Categories | As policies |
 | --- | --- | --- |
 | `pushed-pages` | `system`, `documentation`, `addon` | Allow `pushed-pages-edit` / `-delete` / `-rename` to `admin` on `system-category` in those categories |
-| `self-managed` | `capture`, `journal`, `user-profile` | Allow `page-edit` / `page-delete` / `page-rename` to `authenticated`, condition `resource:owner equals subject:id`; a second allow to `admin` with no condition |
-| `general` | `general` | Allow `page-edit` / `page-delete` / `page-rename` to the roles that hold them today; `author-lock` becomes a deny with `resource:owner not-equals subject:id`, unless the subject is admin |
+| `self-managed` | `capture`, `journal`, `user-profile` | Allow `page-edit` / `page-delete` / `page-rename` to `authenticated`, condition `string-equal` of `resource:owner` and `subject:id`; a second allow to `admin` with no condition |
+| `general` | `general` | Allow `page-edit` / `page-delete` / `page-rename` to the roles that hold them today; `author-lock` becomes a deny with `not` around `string-equal` of `resource:owner` and `subject:id`, unless the subject is admin |
 | shared | `shared` | Allow `shared-folder-file` on `shared/<name>`, as today; author-lock as for `general` |
 
 Self-managed, as one policy:
@@ -220,7 +226,12 @@ Self-managed, as one policy:
   "subjects": [{ "type": "authenticated" }],
   "resources": [{ "type": "system-category", "pattern": "{capture,journal,user-profile}" }],
   "actions": ["page-edit", "page-delete", "page-rename"],
-  "condition": { "attribute": "resource:owner", "equals": "subject:id" }
+  "condition": {
+    "string-equal": [
+      { "attributeid": "resource:owner", "datatype": "string" },
+      { "attributeid": "subject:id", "datatype": "string" }
+    ]
+  }
 }
 ```
 
@@ -236,9 +247,9 @@ Self-managed, as one policy:
   "resources": [{ "type": "vault", "pattern": "*" }],
   "actions": ["page-read", "page-edit", "page-delete", "page-rename"],
   "condition": {
-    "all-of": [
-      { "attribute": "environment:vaults-admin-access", "equals": true },
-      { "attribute": "resource:encrypted", "equals": false }
+    "and": [
+      { "boolean-equal": [ { "attributeid": "environment:vaults-admin-access", "datatype": "boolean" }, { "value": true, "datatype": "boolean" } ] },
+      { "boolean-equal": [ { "attributeid": "resource:encrypted", "datatype": "boolean" }, { "value": false, "datatype": "boolean" } ] }
     ]
   }
 }
@@ -275,7 +286,12 @@ Jim's example. A `project-document` resource type. Members of the owning departm
     "subjects": [{ "type": "authenticated" }],
     "resources": [{ "type": "project-document", "pattern": "*" }],
     "actions": ["page-read"],
-    "condition": { "attribute": "subject:department-id", "equals": "resource:owning-department" }
+    "condition": {
+      "string-equal": [
+        { "attributeid": "subject:department-id", "datatype": "string" },
+        { "attributeid": "resource:owning-department", "datatype": "string" }
+      ]
+    }
   },
   {
     "id": "project-document-approve",
@@ -283,7 +299,12 @@ Jim's example. A `project-document` resource type. Members of the owning departm
     "subjects": [{ "type": "role", "value": "project-lead" }],
     "resources": [{ "type": "project-document", "pattern": "*" }],
     "actions": ["document-approve"],
-    "condition": { "attribute": "subject:department-id", "equals": "resource:owning-department" }
+    "condition": {
+      "string-equal": [
+        { "attributeid": "subject:department-id", "datatype": "string" },
+        { "attributeid": "resource:owning-department", "datatype": "string" }
+      ]
+    }
   },
   {
     "id": "project-document-approve-guard",
@@ -292,9 +313,9 @@ Jim's example. A `project-document` resource type. Members of the owning departm
     "resources": [{ "type": "project-document", "pattern": "*" }],
     "actions": ["document-approve"],
     "condition": {
-      "any-of": [
-        { "attribute": "environment:is-business-hours", "equals": false },
-        { "attribute": "subject:aal", "less-or-equal": 1 }
+      "or": [
+        { "boolean-equal": [ { "attributeid": "environment:is-business-hours", "datatype": "boolean" }, { "value": false, "datatype": "boolean" } ] },
+        { "integer-less-than-or-equal": [ { "attributeid": "subject:aal", "datatype": "integer" }, { "value": 1, "datatype": "integer" } ] }
       ]
     }
   }
@@ -313,11 +334,11 @@ How it decides:
 | Anyone, document with no `department` | deny (allow can't apply) | deny | none |
 | Lead whose profile has no department | deny | deny | none |
 
-The deny needs no priority. Under today's rule it would have needed a priority above the allow (Jim's sketch used 200).
+The deny has no priority, and needs none: under `deny-overrides` it wins whatever the order. Under the rule before #2255 it would have needed a priority above the allow (Jim's sketch used 200).
 
 ## Open questions
 
 - __Category groups: shorthand or plain policies.__ Does `ngdpbase.system-category-groups` stay as config that expands into policies at load, or do the groups become plain policies an admin edits directly? Shorthand keeps one short table for the common case; plain policies keep one place to read. `user-profile` needing both the author and `profile-manage` does not fit one policy either way.
 - __Conditions on lists and search.__ A search filters up to 5,000 candidates ([SearchManager.ts:480](https://github.com/jwilleke/ngdpbase/blob/f15ae27e385f117ba92ba54c91a01f852514b204/src/managers/SearchManager.ts#L480)), one decision each. Subject and environment attributes can be read once per search; resource attributes come from each page's frontmatter. Which sources are allowed in a condition that runs on a list, and whether some (a profile lookup per page, a vault lookup) are refused there.
-- __Migration of stored policies.__ Sites with their own deny policies, or allows that relied on outranking a deny, decide differently after deny-overrides. How the upgrade finds and reports them (a startup warning naming each policy, a one-time check, or a refusal to boot), and what `priority` means afterwards.
-- __Validator error messages.__ The exact wording for an undeclared attribute, an unknown source, a type mismatch, an unknown operator and an empty `any-of`. Each must say what to change.
+- __Migration of stored policies.__ Sites with their own deny policies, or allows that relied on outranking a deny, decide differently after deny-overrides. How the upgrade finds and reports them (a startup warning naming each policy, a one-time check, or a refusal to boot), and what `priority` means afterwards. Decided on 2026-11-08 ([#2330](https://github.com/jwilleke/ngdpbase/issues/2330)): `priority` is removed, and a leftover one is ignored and reported once at start-up; a condition in the old shape is a validator problem, refused on save and logged by policy id at start-up, with an upgrade note in the changelog.
+- __Validator error messages.__ The exact wording for an undeclared attribute, an unknown source, a type mismatch, an unknown function name and an empty `or`. Each must say what to change.
