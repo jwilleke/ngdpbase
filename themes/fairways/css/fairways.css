@@ -379,11 +379,15 @@ button:focus-visible {
 }
 
 /* A wordmark repeated in page content stays a plate, at most 18rem wide.
-   Recognised by its file name or a "logo" class, as the docs suggest. */
+   Recognised by its file name or a "logo" class, as the docs suggest.
+   In dark mode it gets the header's light panel, so its lettering reads. */
 .markdown-body img[src*="logo" i],
 .markdown-body img[src*="wordmark" i],
 .markdown-body img.logo {
   max-width: min(100%, 18rem);
+  padding: var(--logo-panel-padding, 0);
+  background-color: var(--logo-panel-bg, transparent);
+  border-radius: 8px;
 }
 
 /* Bootstrap paints these on hover, focus and press. Without them a focused

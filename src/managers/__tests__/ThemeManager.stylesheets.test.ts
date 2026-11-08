@@ -73,6 +73,11 @@ describe('ThemeManager theme stylesheets', () => {
     expect(css).toMatch(/\.markdown-body p,\s*\n\.markdown-body li,[^{]*\{\s*\n\s*max-width:\s*32em;/);
     expect(css).toMatch(/\.markdown-body img,\s*\n\.wiki-image \{[^}]*max-width:\s*min\(100%,\s*32em\);/);
     expect(css).toMatch(/img\[src\*="logo" i\][^{]*\{\s*\n\s*max-width:\s*min\(100%,\s*18rem\)/);
+    // A logo inside a page sits on the same light panel as the header logo in dark mode.
+    const pageLogo = css.match(/img\[src\*="logo" i\][^{]*\{([^}]*)\}/);
+    expect(pageLogo?.[1]).toMatch(/background-color:\s*var\(--logo-panel-bg,\s*transparent\)/);
+    expect(pageLogo?.[1]).toMatch(/padding:\s*var\(--logo-panel-padding,\s*0\)/);
+    expect(pageLogo?.[1]).toMatch(/border-radius:\s*8px/);
     // Login only: the sign-up button also links to /login and keeps the base look.
     expect(css).toMatch(/a\.btn-outline-primary\[href\^="\/login"\] \{[^}]*gap:\s*0\.5rem;/);
     expect(css).not.toMatch(/[\s,]a\[href\^="\/login"\]/);
