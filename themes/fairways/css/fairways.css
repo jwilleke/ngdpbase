@@ -1,7 +1,7 @@
 /* =============================================================
    Fairways layout. Loads after themes/core.css.
    core.css restates shared tokens on :root, so the values that
-   must differ (white cards, white bar, resident cue) are set
+   must differ (white cards, white bar, occupant cue) are set
    again here. Other sites do not load this file.
    ============================================================= */
 
@@ -14,10 +14,10 @@
   --button-primary-bg: #146844;
   --button-primary-hover: #0c5a3a;
   --focus-ring: #083d27;
-  --resident-bg: #f7f1ea;
-  --resident-border: #7a3828;
-  --resident-label: #7a3828;
-  --resident-text: #1a2822;
+  --occupant-bg: #f7f1ea;
+  --occupant-border: #7a3828;
+  --occupant-label: #7a3828;
+  --occupant-text: #1a2822;
 }
 
 [data-bs-theme="dark"] {
@@ -29,10 +29,10 @@
   --button-primary-bg: #146844;
   --button-primary-hover: #0c5a3a;
   --focus-ring: #8ee0c2;
-  --resident-bg: #2c221c;
-  --resident-border: #e7b2a4;
-  --resident-label: #f0c7ba;
-  --resident-text: #f6efe9;
+  --occupant-bg: #2c221c;
+  --occupant-border: #e7b2a4;
+  --occupant-label: #f0c7ba;
+  --occupant-text: #f6efe9;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -45,10 +45,10 @@
     --button-primary-bg: #146844;
     --button-primary-hover: #0c5a3a;
     --focus-ring: #8ee0c2;
-    --resident-bg: #2c221c;
-    --resident-border: #e7b2a4;
-    --resident-label: #f0c7ba;
-    --resident-text: #f6efe9;
+    --occupant-bg: #2c221c;
+    --occupant-border: #e7b2a4;
+    --occupant-label: #f0c7ba;
+    --occupant-text: #f6efe9;
   }
 }
 
@@ -174,27 +174,27 @@ button:focus-visible {
 }
 
 .jspwiki-header .input-group .btn,
-.jspwiki-header a[href^="/login"] {
+.jspwiki-header a.btn-outline-primary[href^="/login"] {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
   font-size: 1rem;
 }
 
-.jspwiki-header a[href^="/login"] {
+.jspwiki-header a.btn-outline-primary[href^="/login"] {
   gap: 0.5rem;
   padding: 0.4rem 0.95rem;
   font-weight: 700;
-  color: var(--resident-label);
-  background: var(--resident-bg);
-  border: 2px solid var(--resident-border);
+  color: var(--occupant-label);
+  background: var(--occupant-bg);
+  border: 2px solid var(--occupant-border);
   border-radius: 8px;
 }
 
-.jspwiki-header a[href^="/login"]:hover {
-  color: var(--resident-text);
+.jspwiki-header a.btn-outline-primary[href^="/login"]:hover {
+  color: var(--occupant-text);
   background: var(--card-bg);
-  border-color: var(--resident-border);
+  border-color: var(--occupant-border);
 }
 
 .navigation {
@@ -209,7 +209,7 @@ button:focus-visible {
   color: var(--text-muted);
 }
 
-/* Sidebar: public links, then the existing Members Only page as the resident door. */
+/* Sidebar: public links, then the existing Members Only page as the occupant door. */
 @media (min-width: 768px) {
   .row > .jspwiki-sidebar {
     flex: 0 0 clamp(14.5rem, 18vw, 18.5rem);
@@ -232,12 +232,14 @@ button:focus-visible {
   border-right: 1px solid var(--border-color);
 }
 
-.leftmenu-content > ul {
+/* "Our Community" labels the first list only: the public community links.
+   Later lists (occupant tools, System Info) keep their own headings. */
+.leftmenu-content > ul:first-of-type {
   position: relative;
 }
 
-.leftmenu-content > ul::before {
-  content: "Explore";
+.leftmenu-content > ul:first-of-type::before {
+  content: "Our Community";
   display: block;
   margin: 0 0.35rem 0.4rem;
   font-size: 0.75rem;
@@ -282,25 +284,25 @@ button:focus-visible {
   gap: 0.1rem;
   margin-top: 0.9rem;
   font-weight: 700;
-  color: var(--resident-text);
-  background: var(--resident-bg);
-  border: 2px solid var(--resident-border);
+  color: var(--occupant-text);
+  background: var(--occupant-bg);
+  border: 2px solid var(--occupant-border);
 }
 
 .leftmenu-content a[href="/view/Members%20Only"]::before,
 .leftmenu-content a[href="/view/Members Only"]::before {
-  content: "Residents";
+  content: "Occupants";
   display: block;
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--resident-label);
+  color: var(--occupant-label);
 }
 
 .leftmenu-content a[href="/view/Members%20Only"]:hover,
 .leftmenu-content a[href="/view/Members Only"]:hover {
-  color: var(--resident-text);
+  color: var(--occupant-text);
   background: var(--card-bg);
 }
 
@@ -335,9 +337,16 @@ button:focus-visible {
 .markdown-body h2 { font-size: 1.55rem; }
 .markdown-body h3 { font-size: 1.3rem; }
 
+/* About 68 characters a line. Tables and images still use the full column. */
+.markdown-body p,
+.markdown-body li,
+.markdown-body blockquote,
+.markdown-body dl {
+  max-width: 34em;
+}
+
 .markdown-body p,
 .markdown-body li {
-  max-width: none;
   font-size: 1.125rem;
   line-height: 1.7;
 }
@@ -376,7 +385,15 @@ button:focus-visible {
   object-position: left center;
 }
 
+/* Bootstrap paints these on hover, focus and press. Without them a focused
+   primary button turns Bootstrap blue. */
 .btn-primary {
+  --bs-btn-bg: var(--button-primary-bg);
+  --bs-btn-border-color: var(--button-primary-bg);
+  --bs-btn-hover-bg: var(--button-primary-hover);
+  --bs-btn-hover-border-color: var(--button-primary-hover);
+  --bs-btn-active-bg: var(--button-primary-hover);
+  --bs-btn-active-border-color: var(--button-primary-hover);
   font-size: 1rem;
   min-height: 44px;
   font-weight: 700;
@@ -415,6 +432,18 @@ button:focus-visible {
 @media (max-width: 767.98px) {
   .jspwiki-header .navbar-brand img {
     height: 34px !important;
+    max-width: 52vw;
+    margin-right: 0 !important;
+  }
+
+  /* The wordmark already names the site; the text name would push the
+     theme toggle and Login onto a second row. */
+  .jspwiki-header .navbar-brand strong {
+    display: none;
+  }
+
+  .jspwiki-header .container-fluid {
+    flex-wrap: nowrap;
   }
 
   .markdown-body h1,
@@ -439,7 +468,7 @@ button:focus-visible {
 /* Last, so it wins over Bootstrap's outline:0 on .btn:focus-visible.
    Literal colors: a variable in this shorthand was not painting on these controls. */
 .jspwiki-header button.btn-primary:focus-visible,
-.jspwiki-header a[href^="/login"]:focus-visible,
+.jspwiki-header a.btn-outline-primary[href^="/login"]:focus-visible,
 .jspwiki-header input.form-control:focus-visible {
   outline: 3px solid #083d27 !important;
   outline-offset: 3px !important;
@@ -450,13 +479,13 @@ button:focus-visible {
   box-shadow: inset 0 0 0 3px #f4f7f4 !important;
 }
 
-.jspwiki-header a[href^="/login"]:focus-visible {
+.jspwiki-header a.btn-outline-primary[href^="/login"]:focus-visible {
   border-color: #083d27 !important;
   box-shadow: inset 0 0 0 3px #083d27 !important;
 }
 
 [data-bs-theme="dark"] .jspwiki-header button.btn-primary:focus-visible,
-[data-bs-theme="dark"] .jspwiki-header a[href^="/login"]:focus-visible,
+[data-bs-theme="dark"] .jspwiki-header a.btn-outline-primary[href^="/login"]:focus-visible,
 [data-bs-theme="dark"] .jspwiki-header input.form-control:focus-visible {
   outline-color: #8ee0c2 !important;
 }
@@ -465,7 +494,7 @@ button:focus-visible {
   box-shadow: inset 0 0 0 3px #8ee0c2 !important;
 }
 
-[data-bs-theme="dark"] .jspwiki-header a[href^="/login"]:focus-visible {
+[data-bs-theme="dark"] .jspwiki-header a.btn-outline-primary[href^="/login"]:focus-visible {
   border-color: #8ee0c2 !important;
   box-shadow: inset 0 0 0 3px #8ee0c2 !important;
 }

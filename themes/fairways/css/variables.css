@@ -1,7 +1,7 @@
 /* =============================================================
    Fairways theme — color tokens.
    Paper background, fairway green actions, brick only as the
-   resident cue (it matches the wordmark). Layout is fairways.css,
+   occupant cue (it matches the wordmark). Layout is fairways.css,
    which loads after themes/core.css.
    Atkinson Hyperlegible is loaded from theme.json.
    ============================================================= */
@@ -50,10 +50,10 @@
   --button-primary-hover: #0c5a3a;
   --code-border:         #c5d5cc;
   --focus-ring:          #083d27;
-  --resident-bg:         #f7f1ea;
-  --resident-border:     #7a3828;
-  --resident-label:      #7a3828;
-  --resident-text:       #1a2822;
+  --occupant-bg:         #f7f1ea;
+  --occupant-border:     #7a3828;
+  --occupant-label:      #7a3828;
+  --occupant-text:       #1a2822;
 
   --alert-success-bg:     #dceee4;
   --alert-success-border: #8fbfa4;
@@ -116,10 +116,10 @@
   --button-primary-hover: #0c5a3a;
   --code-border:         #31443c;
   --focus-ring:          #8ee0c2;
-  --resident-bg:         #2c221c;
-  --resident-border:     #e7b2a4;
-  --resident-label:      #f0c7ba;
-  --resident-text:       #f6efe9;
+  --occupant-bg:         #2c221c;
+  --occupant-border:     #e7b2a4;
+  --occupant-label:      #f0c7ba;
+  --occupant-text:       #f6efe9;
 
   --alert-success-bg:     #143226;
   --alert-success-border: #1f6b4a;
@@ -179,10 +179,10 @@
     --button-primary-bg:   #146844;
     --button-primary-hover: #0c5a3a;
     --focus-ring:          #8ee0c2;
-    --resident-bg:         #2c221c;
-    --resident-border:     #e7b2a4;
-    --resident-label:      #f0c7ba;
-    --resident-text:       #f6efe9;
+    --occupant-bg:         #2c221c;
+    --occupant-border:     #e7b2a4;
+    --occupant-label:      #f0c7ba;
+    --occupant-text:       #f6efe9;
     --table-stripe:    #1b2620;
     --table-hover:     #24312a;
     --zebra-row-even:  rgba(142, 224, 194, 0.08);
