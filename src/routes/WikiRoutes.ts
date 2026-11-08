@@ -1214,6 +1214,7 @@ class WikiRoutes {
       logoPath: string;
       locationCssPath: string;
       themeFontUrls: string[];
+      themeStylesheets: string[];
       addonStylesheets: string[];
       capabilities: Record<string, boolean>;
       allowRegistration: boolean;
@@ -1268,6 +1269,7 @@ class WikiRoutes {
       logoPath: (configManager?.getCustomProperty('ngdpbase.favicon-path') as string) || themePaths.logoPath,
       locationCssPath: themePaths.locationCssPath,
       themeFontUrls: themePaths.fontUrls,
+      themeStylesheets: themePaths.themeStylesheets,
       addonStylesheets,
       capabilities: this.engine.getCapabilities?.() ?? {},
       allowRegistration,
