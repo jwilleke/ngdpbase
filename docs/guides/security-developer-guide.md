@@ -252,6 +252,16 @@ A site adds both in its `app-custom-config.json` (on the instance's data volume,
 - On the site: Admin → Roles (`/admin/roles`) lists each role's permissions as the policies grant them, marking a grant that applies only somewhere (a vault, a folder); the policies themselves, with their resources, are `ngdpbase.access.policies` in Admin → Configuration. Admin → Shared folders (`/admin/shared-folders`) shows, per folder, the roles its own policies give and every other policy that reaches it ([#2126](https://github.com/jwilleke/ngdpbase/issues/2126)). Find the policies that name the permission, read their resource patterns, then their subjects; a matching deny wins over any allow ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)).
 - In code: `PolicyDecisionPoint.usersHolding(action)` lists the accounts holding a permission, and `SharedFolderManager.foldersReadableBy(ctx)` the folders one subject may open. Never compare role names.
 
+## A signed-out write is refused before any route runs
+
+Every request other than GET, HEAD and OPTIONS from a caller who is not signed in is refused by `signedOutWriteGate`, so a method nobody planned for (PROPFIND, SEARCH…) fails closed ([#2298](https://github.com/jwilleke/ngdpbase/issues/2298)), registered in `src/app.ts` after the session and Bearer middleware and before CSRF and every route. A form from a browser is sent to sign-in through `safeRedirect` (back to the page it was on, when the Referer is this site's); anything else gets the 401 JSON. The answer is the same whatever the route and whether its target exists, so it says nothing about the target. It is recorded as `authorization-deny` (`PolicyInformationPoint.recordRouteRefusal`) with `METHOD /path`, never the query or the body.
+
+- __Signed in__ is the request's own subject: a session that signed in, or a valid Bearer or agent token. The gate asks no role and decides no access; a route it lets through still asks its own permission.
+- __The list.__ Only the routes in `src/security/signedOutWrites.ts` are excepted, each with a reason: the steps of signing in (password, second factor, magic link, passkey, outside provider), sign-out, registration, password reset with recovery words, accepting an invitation, the emailed confirmations of a sign-in and of an email change, the contact form, and first-run install. A route a person reaches only once signed in (consent, the account-setup password, reauthentication) is not on it.
+- __A new write route__ is closed to signed-out callers until it is listed. Add it with a reason only if a person must reach it before they can sign in. An add-on declares its own in `register()` with `host.allowSignedOutWrite({ method, path, reason })`; the path must be under `/api/<slug>/` or `/addons/<slug>/`, and a slug that is one of core's own prefixes there (`admin`, `page`, `tokens`…, `RESERVED_ADDON_SLUGS` in `src/security/signedOutWrites.ts`) is refused. Core's list and `allowSignedOutWrite` are the only ways onto it; it is sealed once the add-ons have loaded, and `resetSignedOutWrites` throws outside tests (see the [add-ons guide](addons-developer-guide.md#let-a-signed-out-caller-reach-a-route)).
+- __Registered before the gate:__ only the OpenID Connect provider's protocol endpoints (`/oidc/*`, client authentication and PKCE) and the outside-provider `form_post` relay. `npm run lint:signed-out-writes` names any other route registered ahead of the gate, or in a file it does not cover. It reads the source line by line, so it sees `app.post(…)` (also `app?.`, a method on the next line, `app.route(…)`, `app.use('/path'…)`, `app.use(…Router)`) and `router.post(…)`/`apiRouter.post(…)`/`engine.app?.post(…)` in other files. It does not see a route hidden in inline middleware (`app.use((req, res, next) => …)`) or behind a helper such as `mountZz(app)`; anything registered after the gate is refused at run time whatever the lint sees. `npm run inventory:routes` has the same limits: it lists add-on routes mounted as `engine.app?.use('<prefix>', <routes>(…))` and add-on declarations written inline in that order, and not add-ons installed outside the repository.
+- `npm run inventory:routes` prints every registered route with its handler, and for write routes whether the gate refuses it or the list allows it.
+
 ## A closed account holds nothing
 
 An account deleted or turned off loses every way in at once, through `AuthManager.closeAccess` ([#1765](https://github.com/jwilleke/ngdpbase/issues/1765)): its sessions in the live session store, and, on delete, its tokens, app grants, shares, proxy grants, credentials and consent records ([#1603](https://github.com/jwilleke/ngdpbase/issues/1603)). A session is also held to its account on every request, so one the close missed, or one whose username a new account took, is refused ([#1937](https://github.com/jwilleke/ngdpbase/issues/1937)). The rules are in [authentication-developer-guide.md](authentication-developer-guide.md#standing-rules). A new kind of access an account can hold is closed there, and anything that names an account only by its username must not outlive it: a new account can take the name.
@@ -304,7 +314,7 @@ An add-on runs in the process and is handed the engine, so a name it gives a cor
 
 - 1 The handler asks `hasPermission` or `canAccess` for the permission the action *is*. If no permission means that, add one to the catalog; do not borrow a role name.
 - 2 The context is forwarded, not rebuilt. Addon API routes use `ApiContext.from(req, engine)`.
-- 3 The refusal answers 401 or 403 by `isAuthenticated`, after policy.
+- 3 The refusal answers 401 or 403 by `isAuthenticated`, after policy. A signed-out write never reaches the route unless the route is on the [signed-out write list](#a-signed-out-write-is-refused-before-any-route-runs); do not add to it for a route that asks a permission a signed-out caller never holds.
 - 4 The action's audit event exists, is declared on its permission entry's `audit` block in `ngdpbase.permissions.definitions` ([#1638](https://github.com/jwilleke/ngdpbase/issues/1638)), and is emitted at the manager door — see [audit-developer-guide.md](audit-developer-guide.md).
 - 5 Tests: refused by policy, allowed by policy with the subject's role name saying otherwise, and the audit record written. Sabotage each once.
 
@@ -312,6 +322,7 @@ An add-on runs in the process and is handed the engine, so a name it gives a cor
 
 - `npm run lint:permission-subject`
 - `npm run lint:page-door`
+- `npm run lint:signed-out-writes`
 - `npm run lint:http`
 - `npm run lint:csrf`
 - `npm run lint:addons`
