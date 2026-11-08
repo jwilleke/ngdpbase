@@ -365,12 +365,12 @@ button:focus-visible {
   color: var(--link-color);
 }
 
-/* Page pictures may be as wide as the text column. */
+/* Page pictures may be as wide as the text column (32em), never wider. */
 .markdown-body img,
 .wiki-image {
   display: block;
   width: auto;
-  max-width: 100%;
+  max-width: min(100%, 32em);
   height: auto;
   margin: 0 0 1.25rem !important;
   border-radius: 10px;
