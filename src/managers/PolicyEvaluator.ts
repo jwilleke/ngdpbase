@@ -73,6 +73,14 @@ function attributeTypeOf(name: string, pageAttributes: Record<string, { type?: s
   return null;
 }
 
+/** The attribute each argument names, or `null` for a literal or anything that is not an attribute. */
+function attributeIds(args: unknown[]): Array<string | null> {
+  return args.map((x) => {
+    const id = x && typeof x === 'object' ? (x as { attributeid?: unknown }).attributeid : undefined;
+    return isAttributeName(id) ? String(id) : null;
+  });
+}
+
 /**
  * What is wrong with a policy's condition, one sentence each (#2255, #2261,
  * #2330); empty when it is fine. Each sentence says what is wrong, then what to
@@ -188,8 +196,9 @@ export function conditionProblems(condition: unknown, pageAttributes: Record<str
     if (!Array.isArray(args) || args.length !== 2) return [`'${fn}' takes two arguments; write { "${fn}": [ a, b ] }`];
     const problems = [...operandProblems(fn, 0, args[0]), ...operandProblems(fn, 1, args[1])];
     // Two attributes are compared only when declared the same: an identity is normalised, a string is not.
-    const ids = args.map((x) => (x && typeof x === 'object' && isAttributeName((x as { attributeid?: unknown }).attributeid) ? String((x as { attributeid: string }).attributeid) : null));
-    if (problems.length === 0 && ids[0] && ids[1] && typeOf(ids[0]) !== typeOf(ids[1])) {
+    // An `is-in` bag is a list attribute, checked against the left side's datatype by operandProblems.
+    const ids = attributeIds(args);
+    if (problems.length === 0 && COMPARISON_FUNCTIONS[fn].kind !== 'is-in' && ids[0] && ids[1] && typeOf(ids[0]) !== typeOf(ids[1])) {
       return [`condition compares '${ids[0]}' (${String(typeOf(ids[0]))}) with '${ids[1]}' (${String(typeOf(ids[1]))}); both sides must have the same type`];
     }
     return problems.filter((p, i) => problems.indexOf(p) === i);
@@ -530,9 +539,9 @@ class PolicyEvaluator extends BaseManager {
   /**
    * Evaluates all relevant policies to make an access decision (#2255).
    *
-   * Deny overrides allow: if any matching deny applies, the answer is deny,
-   * (the rule-combining algorithm, #2330); otherwise any matching allow permits; otherwise
-   * no policy decided. A policy with a `condition` applies only when it holds;
+   * Deny overrides allow (the rule-combining algorithm, #2330): if any matching
+   * deny applies, the answer is deny; otherwise any matching allow permits;
+   * otherwise no policy decided. A policy with a `condition` applies only when it holds;
    * an unknown condition (a missing attribute) keeps an allow from applying
    * and lets a deny apply, so a missing attribute fails closed.
    */

@@ -89,6 +89,35 @@ describe('the condition format (#2330)', () => {
     });
   });
 
+  describe('an is-in over a list attribute (#2330)', () => {
+    const attr = (id: string, datatype: string) => ({ attributeid: id, datatype });
+    test.each([
+      ['a string', { 'string-is-in': [attr('subject:department-id', 'string'), attr('resource:tags', 'string')] }],
+      ['an identity', { 'string-is-in': [attr('subject:id', 'string'), attr('resource:tags', 'string')] }],
+      ['an integer', { 'integer-is-in': [attr('resource:level', 'integer'), attr('resource:tags', 'integer')] }]
+    ])('a list attribute bag with %s on the left is valid', (_name, condition) => {
+      expect(problems(condition)).toEqual([]);
+    });
+
+    test('an allow with a list attribute bag applies when the list holds the value', async () => {
+      const condition = { 'string-is-in': [attr('subject:department-id', 'string'), attr('resource:tags', 'string')] } as PolicyCondition;
+      const ev = evaluatorWith([policy('p', 'allow', condition)]);
+      await ev.initialize();
+      const read = (tags: string[]) => (name: string) => (name === 'resource:tags' ? tags : 'sales');
+      expect(await ev.evaluateAccess({ pageName: 'P', action: 'page-edit', userContext: editor, readAttribute: read(['a', 'sales']) })).toMatchObject({ allowed: true, hasDecision: true, policyIds: ['p'] });
+      expect(await ev.evaluateAccess({ pageName: 'P', action: 'page-edit', userContext: editor, readAttribute: read(['a']) })).toMatchObject({ allowed: false });
+    });
+  });
+
+  describe('a literal that looks like an attribute name is a literal (#2330)', () => {
+    test('"subject:id" as a string value is valid and compared as text', async () => {
+      const condition = { 'string-equal': [{ attributeid: 'resource:cat', datatype: 'string' }, { value: 'subject:id', datatype: 'string' }] };
+      expect(conditionProblems(condition, { cat: { type: 'string' } })).toEqual([]);
+      expect(await conditionHolds(condition as PolicyCondition, (n) => (n === 'resource:cat' ? 'subject:id' : 'erin'))).toBe(true);
+      expect(await conditionHolds(condition as PolicyCondition, (n) => (n === 'resource:cat' ? 'erin' : 'erin'))).toBe(false);
+    });
+  });
+
   describe('an unknown function name', () => {
     test.each(['string-equals', 'equals', 'string-contains', 'String-Equal', 'integer-greater-or-equal', 'any-of'])('%s', (name) => {
       const got = problems({ [name]: [{ attributeid: 'subject:department-id', datatype: 'string' }, { value: 'x', datatype: 'string' }] });
