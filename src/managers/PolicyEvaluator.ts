@@ -14,6 +14,7 @@ import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { pageWritePoliciesToReview } from '../utils/pageWritePolicies.js';
 import { categoryStored } from './ValidationManager.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
+import { ownerDeclarationProblem } from '../security/ownedRecords.js';
 
 /**
  * User context for policy evaluation
@@ -462,6 +463,10 @@ class PolicyEvaluator extends BaseManager {
     if (!declared || typeof declared !== 'object') {
       logger.warn(`[POLICY] ${RESOURCE_TYPES_KEY} is not set; policies use the evaluator's own resource types (${Object.keys(RESOURCE_MATCHERS).join(', ')})`);
     } else {
+      // #1823 (PR #2324 review, M3): the merged declaration, app-custom-config.json
+      // included. A malformed owner would make an owner type policy-alone, so the site does not start.
+      const ownerProblems = Object.entries(declared).map(([type, entry]) => ownerDeclarationProblem(type, entry)).filter((p): p is string => p !== null);
+      if (ownerProblems.length > 0) throw new Error(`${RESOURCE_TYPES_KEY}: ${ownerProblems.join('; ')}`);
       for (const type of Object.keys(declared)) {
         // #1823: an add-on's type has no page matcher. It matches by id only
         // when a record of that type is decided, so a page decision never sees it.
@@ -561,7 +566,7 @@ class PolicyEvaluator extends BaseManager {
    * Only policies that name this type are considered, and a policy with no
    * resources does not match: a page grant cannot cover the type, and a
    * blanket policy cannot either. The id is matched with the same globs as a
-   * page name. A core type (`page`, `system-category`, `vault`,
+   * page name, a leading dot included. A core type (`page`, `system-category`, `vault`,
    * `shared-folder`) is not decided here.
    */
   async evaluateDeclaredResource(context: {
@@ -588,7 +593,7 @@ class PolicyEvaluator extends BaseManager {
   /** True when a policy resource names this type and its pattern covers the id. No resources is not a match. */
   private namesDeclaredType(resources: PolicyResource[] | undefined, type: string, id: string): boolean {
     if (!resources || resources.length === 0) return false;
-    return resources.some((r) => r.type === type && typeof r.pattern === 'string' && micromatch.isMatch(id, r.pattern));
+    return resources.some((r) => r.type === type && typeof r.pattern === 'string' && micromatch.isMatch(id, r.pattern, { dot: true }));
   }
 
   private resourceTypeMap(): Record<string, { attributes?: Record<string, { type?: string }> }> | null {

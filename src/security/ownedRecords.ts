@@ -62,3 +62,18 @@ export interface OwnedAuditResource {
 export type OwnedListDecision =
   | { decision: 'allow'; filter: readonly OwnedRecordFilter[] }
   | { decision: 'deny'; reason: string; policyIds: readonly string[] };
+
+/**
+ * What is wrong with a resource type's `owner` declaration, or null (#1823).
+ * `owner`, when present at all, must be exactly `{ "type": "identity" }`.
+ * Anything else, `null` included, would quietly make an owner type
+ * policy-alone, so the decision throws and start-up refuses the config.
+ */
+export function ownerDeclarationProblem(type: string, entry: unknown): string | null {
+  if (typeof entry !== 'object' || entry === null) return null;
+  const attributes = (entry as { attributes?: unknown }).attributes;
+  if (typeof attributes !== 'object' || attributes === null || !Object.hasOwn(attributes, 'owner')) return null;
+  const owner = (attributes as Record<string, unknown>).owner;
+  if (typeof owner === 'object' && owner !== null && (owner as { type?: unknown }).type === 'identity') return null;
+  return `resource type '${type}' declares owner as ${JSON.stringify(owner)}; owner must be { "type": "identity" }, the owner's identity @id`;
+}
