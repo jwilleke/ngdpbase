@@ -34,6 +34,10 @@ import type { ShareGrant } from '../types/Share.js';
 import { answeredWithPage, type ReauthMode, type FreshSignInAnswer } from '../managers/AuthManager.js';
 import { STEP_UP_REASON, type Decision } from '../types/Policy.js';
 import { CONSENT_PATH } from '../types/Consent.js';
+import { actorOf } from './ActorContext.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
+import type { OwnedAuditResource } from '../security/ownedRecords.js';
 
 // ── ApiError ────────────────────────────────────────────────────────────────
 
@@ -338,13 +342,14 @@ export class ApiContext extends BaseContext {
    * - an allow: a programming error. A refusal never silently passes.
    *
    * @example
-   * const d = await pdp.decide(ctx.getActor(), { action: 'ledger-adjust', resource: { type: 'ledger-entry', id } });
-   * if (!d.permit) await ctx.enforceDeny('ledger-adjust', d);
+   * const d = await pdp.decideOwnedRecord(ctx.subject, { action: 'phr-read', resource: { type: 'phr-record', id, attributes: { owner } } });
+   * if (!d.permit) await ctx.enforceDeny('phr-read', d, { type: 'phr-record', id, owner, ownerUser });
    */
-  async enforceDeny(permission: string, decision: Decision): Promise<never> {
+  async enforceDeny(permission: string, decision: Decision, resource?: OwnedAuditResource): Promise<never> {
     if (decision.permit) {
       throw new Error(`ApiContext.enforceDeny('${permission}') was handed an allow decision: it enforces only a deny`);
     }
+    if (resource) await this.recordOwnedDenial(permission, decision, resource);
     if (decision.reason === STEP_UP_REASON && this.request) {
       // #1758: step-up is AuthManager's — the answer and its reauth-prompt record.
       const authManager = this.engine.getManager<{ askForFreshSignIn(req: Request, u: unknown, p: string, m: ReauthMode): Promise<FreshSignInAnswer> }>('AuthManager');
@@ -356,6 +361,35 @@ export class ApiContext extends BaseContext {
     throw this.isAuthenticated
       ? new ApiError(403, 'Forbidden')
       : new ApiError(401, 'Authentication required');
+  }
+
+  /**
+   * The refusal of one add-on record (#1823), recorded before the error is
+   * thrown. `authorization-deny` is continue-on-failure, so a lost record does
+   * not change the refusal. `owner` is the stored identity @id.
+   */
+  private async recordOwnedDenial(permission: string, decision: Decision, resource: OwnedAuditResource): Promise<void> {
+    const who = this.subject
+      ? actorOf(this.subject)
+      : { user: 'anonymous', ipAddress: this.ipAddress, metadata: { origin: 'request' } };
+    const sink = this.engine.getManager?.('AuditManager') as AuditEventSink | null;
+    await recordAuditEvent(sink, {
+      eventType: AUDIT_EVENT.AUTHORIZATION_DENY,
+      ...who,
+      action: permission,
+      resource: resource.id ?? '',
+      resourceType: resource.type,
+      result: 'deny',
+      reason: decision.reason || 'not permitted',
+      severity: 'medium',
+      metadata: {
+        ...who.metadata,
+        ...(resource.owner ? { owner: resource.owner } : {}),
+        ...(resource.ownerUser ? { ownerUser: resource.ownerUser } : {}),
+        ...(decision.policyIds?.length ? { policyIds: [...decision.policyIds] } : {}),
+        ...(decision.conditionNotMet?.length ? { conditionNotMet: [...decision.conditionNotMet] } : {})
+      }
+    });
   }
 }
 

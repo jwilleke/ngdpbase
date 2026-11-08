@@ -19,7 +19,7 @@ const HOST_KEYS = [
   'logger', 'guardedFetch', 'setEnabledForPerson',
   'registerShim', 'registerReceiver',
   'resolveEgressPolicy', 'validateUrl', 'createGuardedElasticsearchClient', 'refusedNodeMessage', 'isAtLeast',
-  'zonedParts', 'keyedSerial', 'reviews', 'registerReviewHandler', 'allowSignedOutWrite'
+  'zonedParts', 'keyedSerial', 'reviews', 'registerReviewHandler', 'allowSignedOutWrite', 'access'
 ].sort();
 
 describe('AddonsManager — host passed to register (#1813)', () => {
