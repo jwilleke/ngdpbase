@@ -232,23 +232,6 @@ button:focus-visible {
   border-right: 1px solid var(--border-color);
 }
 
-/* "Our Community" labels the first list only: the public community links.
-   Later lists (occupant tools, System Info) keep their own headings. */
-.leftmenu-content > ul:first-of-type {
-  position: relative;
-}
-
-.leftmenu-content > ul:first-of-type::before {
-  content: "Our Community";
-  display: block;
-  margin: 0 0.35rem 0.4rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
 .leftmenu-content ul li a {
   color: var(--text-primary);
   font-size: 1.0625rem;
@@ -337,12 +320,12 @@ button:focus-visible {
 .markdown-body h2 { font-size: 1.55rem; }
 .markdown-body h3 { font-size: 1.3rem; }
 
-/* About 68 characters a line. Tables and images still use the full column. */
+/* About 70 characters a line at 18px. Tables and images still use the full column. */
 .markdown-body p,
 .markdown-body li,
 .markdown-body blockquote,
 .markdown-body dl {
-  max-width: 34em;
+  max-width: 32em;
 }
 
 .markdown-body p,
@@ -398,6 +381,13 @@ button:focus-visible {
   min-height: 44px;
   font-weight: 700;
   border-radius: 8px;
+}
+
+/* Register and "Sign up with email": centre the icon and label, as Login is. */
+.jspwiki-header a.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .btn-primary:hover:not(:focus-visible) {
