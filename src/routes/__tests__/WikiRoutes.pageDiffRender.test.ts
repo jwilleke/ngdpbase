@@ -115,7 +115,7 @@ describe('GET /diff/:page renders Compare Versions (#2319)', () => {
   }
 
   test('two saved versions compare to a 200 page that names the page', async () => {
-    const fm = { title: PAGE, uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'system-category': 'general' };
+    const fm = { title: PAGE, uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'system-category': 'general', author: 'ada', editor: 'ada' };
     await provider.savePage(PAGE, 'first body', fm, ctx as never);
     await sleep(15);
     await provider.savePage(PAGE, 'second body with more words', fm, ctx as never);
@@ -126,5 +126,12 @@ describe('GET /diff/:page renders Compare Versions (#2319)', () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain(`Comparing Versions: ${PAGE}`);
     expect(res.text).not.toContain('pageName is not defined');
+    // The version boxes: both numbers, a real date, and the author.
+    expect(res.text).toContain('Version 1');
+    expect(res.text).toContain('Version 2');
+    expect(res.text).not.toContain('Invalid Date');
+    expect(res.text).not.toMatch(/Version\s*(<|undefined)/);
+    expect(res.text).toMatch(/<strong>Date:<\/strong>\s*\d/);
+    expect(res.text).toContain('<strong>Author:</strong> ada');
   });
 });

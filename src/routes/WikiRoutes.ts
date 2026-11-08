@@ -350,8 +350,8 @@ interface IVersionEntry {
 }
 
 interface IComparisonResult {
-  version1?: unknown;
-  version2?: unknown;
+  fromMetadata?: unknown;
+  toMetadata?: unknown;
   diff?: unknown;
   stats?: unknown;
   [key: string]: unknown;
@@ -2794,6 +2794,16 @@ class WikiRoutes {
       }
       return shown as T;
     }));
+  }
+
+  /**
+   * #2319: one side of a compare, as page-diff.ejs reads it. The provider
+   * returns VersionMetadata (`timestamp`, `message`); the view reads
+   * `dateCreated` and `comment`.
+   */
+  private diffSide(meta: unknown): Record<string, unknown> {
+    const m = (meta ?? {}) as Record<string, unknown>;
+    return { ...m, dateCreated: m.dateCreated ?? m.timestamp, comment: m.comment ?? m.message };
   }
 
   private _isPagePrivate(pageName: string): boolean {
@@ -20986,8 +20996,8 @@ ${panes}
         pageName,
         pageUuid: pageMetadata?.uuid,
         // #2097: each version's editor as people see it.
-        version1: (await this.describeUsersIn([comparison.version1 as object], ['author', 'editor']))[0],
-        version2: (await this.describeUsersIn([comparison.version2 as object], ['author', 'editor']))[0],
+        version1: (await this.describeUsersIn([this.diffSide(comparison.fromMetadata)], ['author', 'editor']))[0],
+        version2: (await this.describeUsersIn([this.diffSide(comparison.toMetadata)], ['author', 'editor']))[0],
         diff: comparison.diff,
         stats: comparison.stats
       });
