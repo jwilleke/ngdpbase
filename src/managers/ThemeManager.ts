@@ -159,9 +159,14 @@ export class ThemeManager {
     return '/favicon.svg';
   }
 
-  /** Resolve logo path: prefer logo.svg → logo.png → favicon.svg → favicon.png → public fallback */
+  /**
+   * Resolve the header logo path: prefer logo-header.svg → logo-header.png →
+   * logo.svg → logo.png → favicon.svg → favicon.png → public fallback.
+   * logo-header.* lets a theme show a different copy in the header than the
+   * logo.* file that pages may link to.
+   */
   private resolveLogoPath(assetsDir: string, t: string): string {
-    const candidates = ['logo.svg', 'logo.png', 'favicon.svg', 'favicon.png'];
+    const candidates = ['logo-header.svg', 'logo-header.png', 'logo.svg', 'logo.png', 'favicon.svg', 'favicon.png'];
     for (const file of candidates) {
       if (fs.existsSync(path.join(assetsDir, file))) {
         return `/themes/${t}/assets/${file}`;
