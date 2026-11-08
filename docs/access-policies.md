@@ -78,7 +78,7 @@ An argument is an __attribute__, `{ "attributeid": …, "datatype": … }`, or a
 | Function | Takes | Notes |
 | --- | --- | --- |
 | `string-equal`, `integer-equal`, `boolean-equal` | two arguments of that datatype | A literal, or an attribute declared the same: an identity is not compared with a string attribute |
-| `string-is-in`, `integer-is-in` | a value, then a bag | The bag is an attribute declared as a `list`, or a literal whose `value` is a non-empty array of that datatype: `{ "value": ["sales", "hr"], "datatype": "string" }` |
+| `string-is-in`, `integer-is-in` | a value, then a bag | The bag is an attribute declared as a `list`, or a literal whose `value` is a non-empty array of that datatype: `{ "value": ["sales", "hr"], "datatype": "string" }` When the value is an identity such as `subject:id`, the comparison ignores case, against a literal or a list attribute alike. |
 | `integer-greater-than`, `integer-greater-than-or-equal`, `integer-less-than`, `integer-less-than-or-equal` | two integers | An integer literal or an integer attribute |
 | `and`, `or` | a non-empty array of conditions | |
 | `not` | an array of exactly one condition | |

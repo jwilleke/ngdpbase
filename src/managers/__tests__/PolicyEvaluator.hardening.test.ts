@@ -127,6 +127,33 @@ describe('through the evaluator', () => {
     expect(await decide([d, policy('a', 'allow', { 'string-equal': [str('subject:id'), val('ERIN')] } as PolicyCondition)], () => 'erin')).toMatchObject({ allowed: true, policyIds: ['a'] });
   });
 
+  describe('an identity against a list (#2330)', () => {
+    const listBag = { 'string-is-in': [str('subject:id'), attr('resource:tags', 'string')] } as PolicyCondition;
+    const readWith = (tags: string[]) => (n: string) => (n === 'resource:tags' ? tags : 'alice');
+
+    test('an identity left meets a mixed-case list attribute', async () => {
+      const allow = policy('a', 'allow', listBag);
+      expect(await decide([allow], readWith(['Alice', 'bob']))).toMatchObject({ allowed: true, policyIds: ['a'] });
+      expect(await decide([allow], readWith(['carol', ' BOB ']))).toMatchObject({ hasDecision: false });
+    });
+
+    test('an identity left meets a literal bag', async () => {
+      const allow = policy('a', 'allow', { 'string-is-in': [str('subject:id'), val(['Alice'])] } as PolicyCondition);
+      expect(await decide([allow], () => 'alice')).toMatchObject({ allowed: true, policyIds: ['a'] });
+    });
+
+    test('a deny keyed on a list with mixed-case entries applies', async () => {
+      const d = policy('d', 'deny', listBag);
+      expect(await decide([d], readWith(['Alice', 'bob']))).toMatchObject({ allowed: false, policyIds: ['d'] });
+      expect(await decide([d], readWith(['bob']))).not.toMatchObject({ policyIds: ['d'] });
+    });
+
+    test('a string left is still compared exactly', async () => {
+      const exact = policy('a', 'allow', { 'string-is-in': [str('resource:status'), attr('resource:tags', 'string')] } as PolicyCondition);
+      expect(await decide([exact], (n) => (n === 'resource:tags' ? ['Open'] : 'open'))).toMatchObject({ hasDecision: false });
+    });
+  });
+
   test('a not-equals on "Alice" is false for alice', async () => {
     const a = policy('a', 'allow', notEqual(str('subject:id'), val('Alice')));
     expect(await decide([a], () => 'alice')).toMatchObject({ hasDecision: false });

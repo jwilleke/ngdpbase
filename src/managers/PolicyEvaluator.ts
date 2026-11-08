@@ -227,7 +227,9 @@ function compileCondition(node: PolicyCondition, typeOf: (name: string) => strin
     const operands = args as Array<Record<string, unknown>>;
     const identity = operands.some((a) => typeof a.attributeid === 'string' && typeOf(a.attributeid) === 'identity');
     const literal = (x: unknown): unknown => (identity && typeof x === 'string' ? normalizeUsername(x) : x);
-    out[key] = operands.map((a) => {
+    out[key] = operands.map((a, i) => {
+      // An `is-in` bag that is an attribute (a list) meets an identity on the left: its entries are normalised when read.
+      if (identity && i === 1 && COMPARISON_FUNCTIONS[key]?.kind === 'is-in' && 'attributeid' in a) return { ...a, normalizeEntries: true };
       if (!('value' in a)) return a;
       return { ...a, value: Array.isArray(a.value) ? new Set(a.value.map(literal)) : literal(a.value) };
     });
@@ -288,7 +290,9 @@ export async function conditionHolds(condition: PolicyCondition | undefined, rea
     const name = a.attributeid;
     if (!isAttributeName(name) || !read) return undefined;
     try {
-      return await read(name);
+      const got = await read(name);
+      // Entries of a list compared with an identity go through normalizeUsername, as the subject does (#2330).
+      return a.normalizeEntries === true && Array.isArray(got) ? (got as unknown[]).map((e) => (typeof e === 'string' ? normalizeUsername(e) : e)) : got;
     } catch (err) {
       // A read that throws leaves this comparison unknown, not the decision aborted.
       if (!warnedReads.has(name)) {
