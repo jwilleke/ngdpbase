@@ -7,6 +7,9 @@
 # script, which runs before any root postinstall, so patch-package cannot
 # reach it; a retry is what is left. Each attempt starts clean (npm ci
 # removes node_modules), and the downloader's HTTP cache keeps the binary.
+# A retry does not outlast an outage (#2318): the ci.yml jobs run this through
+# .github/actions/npm-ci-ffmpeg-cache, which keeps the binary in the Actions
+# cache and, on a hit, points FFMPEG_BINARIES_URL at a local copy.
 #
 # Usage: scripts/npm-ci-retry.sh [npm ci args...]
 set -u
