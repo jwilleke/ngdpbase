@@ -144,7 +144,7 @@ describe('shared folder access, as the Shared folders screen sets it (#2126)', (
     test('a change writes the site\'s policies on shared/<name> and records who, the folder, and the roles before and after', async () => {
       expect(await m.setFolderAccess(ann, 'finance', { read: ['reader', 'editor', 'editor'], file: ['editor'] })).toBe(true);
       expect(custom['ngdpbase.access.policies']).toEqual([
-        expect.objectContaining({ id: 'shared-folder-access-finance-read', effect: 'allow', priority: 60, subjects: [{ type: 'role', value: 'editor' }, { type: 'role', value: 'reader' }], resources: [{ type: 'shared-folder', pattern: 'shared/finance' }], actions: ['shared-folder-read'] }),
+        expect.objectContaining({ id: 'shared-folder-access-finance-read', effect: 'allow', subjects: [{ type: 'role', value: 'editor' }, { type: 'role', value: 'reader' }], resources: [{ type: 'shared-folder', pattern: 'shared/finance' }], actions: ['shared-folder-read'] }),
         expect.objectContaining({ id: 'shared-folder-access-finance-file', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'shared-folder', pattern: 'shared/finance' }], actions: ['shared-folder-file'] })
       ]);
       expect(setProperty).toHaveBeenCalledWith('ngdpbase.access.policies', expect.any(Array), ann);

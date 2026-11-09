@@ -13,8 +13,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
 - [ ] Policies are syntactically valid JSON
 - [ ] Required fields are present (`id`, `name`, `effect`, `subjects`, `resources`, `actions`)
 - [ ] Subject, resource, and action values are correct
-- [ ] Priority levels are appropriate
-- [ ] No conflicting policies with same priority
+- [ ] No matching deny policy is overriding an allow (a deny always wins)
 
 ### 2. System Integration
 
@@ -42,21 +41,16 @@ __Symptoms:__
 
 __Possible Causes:__
 
-1. Higher-priority deny policy is blocking access
+1. A matching deny policy is blocking access (a deny wins whatever the order)
 2. Subject matching is incorrect
 3. Resource patterns don't match
 4. Conditions are not met
 
 __Diagnostic Steps:__
 
-1. __Check Policy Priority__
-
-   ```bash
-   # List policies by priority
-   grep -r "priority" /path/to/policies/
-   ```
-
-   Look for policies with higher priority that might conflict.
+1. __Look for a Matching Deny Policy__
+   - Find any deny policy whose subjects, resources, actions and condition all match the request
+   - A matching deny wins over every allow, whatever the order
 
 2. __Verify Subject Matching__
    - Check user's roles and attributes
@@ -79,13 +73,12 @@ __Diagnostic Steps:__
 
 __Resolution Steps:__
 
-1. __Adjust Policy Priority__
+1. __Narrow the Blocking Deny or Add an Allow__
 
    ```json
    {
      "id": "fix-access-issue",
      "name": "Fix Access Issue",
-     "priority": 200,
      "effect": "allow",
      "subjects": [{"type": "role", "value": "user"}],
      "resources": [{"type": "page", "pattern": "*"}],
@@ -93,13 +86,12 @@ __Resolution Steps:__
    }
    ```
 
-2. __Create Override Policy__
+2. __Add an Allow for the Affected User__ (this only helps if no deny matches; an allow cannot override a deny)
 
    ```json
    {
      "id": "emergency-override",
      "name": "Emergency Access Override",
-     "priority": 1000,
      "effect": "allow",
      "subjects": [{"type": "user", "value": "affected-user"}],
      "resources": [{"type": "page", "pattern": "*"}],
@@ -380,7 +372,6 @@ __Resolution Steps:__
    {
      "id": "restrict-sensitive-content",
      "name": "Restrict Sensitive Content",
-     "priority": 300,
      "effect": "deny",
      "subjects": [
        {"type": "role", "value": "user"}
@@ -409,7 +400,6 @@ __Resolution Steps:__
    [
      {
        "id": "base-deny",
-       "priority": 50,
        "effect": "deny",
        "subjects": [{"type": "anonymous"}],
        "resources": [{"type": "page", "pattern": "*"}],
@@ -417,7 +407,6 @@ __Resolution Steps:__
      },
      {
        "id": "selective-allow",
-       "priority": 100,
        "effect": "allow",
        "subjects": [{"type": "role", "value": "trusted-user"}],
        "resources": [{"type": "page", "pattern": "public-*"}],
@@ -516,7 +505,6 @@ __Resolution Steps:__
      "id": "complete-policy",
      "name": "Complete Policy",
      "description": "A properly formed policy",
-     "priority": 100,
      "effect": "allow",
      "subjects": [{"type": "role", "value": "user"}],
      "resources": [{"type": "page", "pattern": "*"}],
@@ -565,10 +553,9 @@ function findConflicts(policies) {
 
 __Resolve Conflicts:__
 
-1. Adjust priority levels
+1. Look for a matching deny policy and narrow it
 2. Refine subject/resource scope
 3. Combine overlapping policies
-4. Create explicit override policies
 
 ### Performance Profiling
 
@@ -713,7 +700,6 @@ cat > /path/to/policies/active-policies.json << 'EOF'
     "id": "emergency-access",
     "name": "Emergency Access",
     "description": "Temporary access during emergency",
-    "priority": 1000,
     "effect": "allow",
     "subjects": [{"type": "authenticated"}],
     "resources": [{"type": "page", "pattern": "*"}],
@@ -738,14 +724,13 @@ curl -u admin:password http://localhost:3000/
 
 ### Emergency Access Override
 
-__For Immediate Access Issues:__
+__For Immediate Access Issues:__ this allow permits access only while no deny policy matches. It cannot override a deny.
 
 ```json
 {
   "id": "emergency-override",
   "name": "Emergency Access Override",
   "description": "Temporary override for critical access",
-  "priority": 10000,
   "effect": "allow",
   "subjects": [
     {"type": "user", "value": "emergency-user"},
@@ -785,13 +770,6 @@ fi
 # Check policy count
 policy_count=$(jq '. | length' /path/to/policies/active-policies.json)
 echo "Policy count: $policy_count"
-
-# Check for high-priority policies
-high_priority=$(jq '.[] | select(.priority > 500) | .id' /path/to/policies/active-policies.json)
-if [ -n "$high_priority" ]; then
-    echo "⚠ High-priority policies found:"
-    echo "$high_priority"
-fi
 
 # Check recent errors
 error_count=$(grep -c "ERROR.*policy" /var/log/ngdpbase/app.log)

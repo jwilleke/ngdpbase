@@ -24,7 +24,7 @@ The __PolicyValidator__ validates policy schemas, detects conflicts between poli
 - ✅ __Business Logic Validation:__ Checks for duplicates, invalid ranges
 - ✅ __Semantic Validation:__ Detects logical inconsistencies
 - ✅ __Conflict Detection:__ Identifies overlapping or conflicting policies
-- ✅ __Priority Analysis:__ Finds policies that override each other
+- ✅ __Deny-Overrides Analysis:__ Warns where an allow and a deny overlap, since any matching deny wins
 - ✅ __Warning Generation:__ Provides warnings for potential issues
 - ✅ __Validation Caching:__ Caches validation results for performance
 
@@ -70,7 +70,6 @@ PolicyValidator serves as the __quality assurance system__ for policies. It ensu
 ┌─────────────────────────────────────────────────────────┐
 │ 3. Business Logic Validation                            │
 │    - Check for duplicate subjects/resources/actions     │
-│    - Validate priority range (0-1000)                   │
 │    - Ensure no conflicting data                         │
 └────────────────────┬────────────────────────────────────┘
                      │
@@ -85,7 +84,6 @@ PolicyValidator serves as the __quality assurance system__ for policies. It ensu
                      ▼
 ┌─────────────────────────────────────────────────────────┐
 │ 5. Generate Warnings                                    │
-│    - Very high/low priority                             │
 │    - Overly broad patterns                              │
 │    - Missing conditions                                 │
 └────────────────────┬────────────────────────────────────┘
@@ -155,7 +153,6 @@ const policyValidator = engine.getManager('PolicyValidator');
 const policy = {
   id: 'editor-permissions',
   name: 'Editor Permissions',
-  priority: 80,
   effect: 'allow',
   subjects: [{ type: 'role', value: 'editor' }],
   resources: [{ type: 'page', pattern: '*' }],
@@ -227,7 +224,7 @@ __Checks:__
 1. Validates each policy individually
 2. Checks for duplicate policy IDs
 3. Detects conflicting policies (same subjects/resources but different effects)
-4. Identifies priority conflicts
+4. Warns where an allow and a deny overlap (the deny overrides)
 
 ---
 
@@ -243,43 +240,38 @@ __Returns:__ `object`
 
 ```javascript
 {
-  errors: Array<object>,   // Critical conflicts
-  warnings: Array<object>  // Potential override warnings
+  errors: Array<object>,   // Critical conflicts (none for allow/deny overlap)
+  warnings: Array<object>  // Deny-overrides-allow warnings
 }
 ```
 
 __Conflict Types:__
 
-1. __Same Priority Conflict__ (ERROR)
-   - Multiple policies with same highest priority
-   - Evaluation order becomes unpredictable
-
-2. __Override Warning__ (WARNING)
-   - Higher priority policy overrides lower priority
-   - Expected behavior but worth noting
+1. __Deny Override Warning__ (WARNING)
+   - An allow and a deny overlap, so the deny wins
+   - Message: "Deny X overrides allow Y: any matching deny wins"
+   - There is no error for equal priority: policies have no priority, and order does not matter
 
 __Example:__
 
 ```javascript
 const conflicts = policyValidator.detectPolicyConflicts(policies);
 
-// ERROR: Multiple policies with same priority
-if (conflicts.errors.length > 0) {
-  conflicts.errors.forEach(error => {
-    console.error(`Conflict: ${error.message}`);
-    console.error(`Policies: ${error.details.policies.join(', ')}`);
-  });
-}
-
-// WARNING: Policy override
+// WARNING: a deny overrides an allow
 if (conflicts.warnings.length > 0) {
   conflicts.warnings.forEach(warning => {
     console.warn(`Warning: ${warning.message}`);
-    console.warn(`Winner: ${warning.details.winner}`);
+    console.warn(`Winners: ${warning.details.winners.join(', ')}`);
     console.warn(`Losers: ${warning.details.losers.join(', ')}`);
   });
 }
 ```
+
+---
+
+### `combiningAlgorithmProblems(value)`
+
+Validates the value of `ngdpbase.access.rule-combining-algorithm`. The only accepted value is `deny-overrides`; anything else is reported as a problem.
 
 ---
 
@@ -343,8 +335,8 @@ __Example Errors:__
 ```javascript
 {
   type: 'schema',
-  field: '/priority',
-  message: 'must be number',
+  field: '/effect',
+  message: 'must be equal to one of the allowed values',
   details: { /* Ajv error details */ }
 }
 ```
@@ -361,11 +353,6 @@ __Policy Schema:__
       pattern: '^[a-zA-Z0-9_-]+$',
       minLength: 1,
       maxLength: 100
-    },
-    priority: {
-      type: 'number',
-      minimum: 0,
-      maximum: 1000
     },
     effect: {
       type: 'string',
@@ -387,7 +374,6 @@ __Checks:__
 - No duplicate subjects
 - No duplicate resources
 - No duplicate actions
-- Priority in valid range (0-1000)
 
 __Example Errors:__
 
@@ -398,11 +384,6 @@ __Example Errors:__
   message: 'Duplicate subject criteria found'
 }
 
-{
-  type: 'business',
-  field: 'priority',
-  message: 'Priority must be between 0 and 1000'
-}
 ```
 
 ---
@@ -442,16 +423,7 @@ Generates warnings for potential issues (non-critical).
 
 __Warning Types:__
 
-1. __Priority Warnings__
-
-   ```javascript
-   {
-     type: 'priority',
-     message: 'Very high priority may override important security policies'
-   }
-   ```
-
-2. __Scope Warnings__
+1. __Scope Warnings__
 
    ```javascript
    {
@@ -461,7 +433,7 @@ __Warning Types:__
    }
    ```
 
-3. __Condition Warnings__
+2. __Condition Warnings__
 
    ```javascript
    {
@@ -504,21 +476,13 @@ __Example Overlap:__
 
 When overlapping policies have different effects:
 
-1. __Higher Priority Wins__ (if priorities differ)
+Under `deny-overrides`, any matching deny wins and order does not matter:
 
-   ```
-   Policy A: priority 80, effect: allow
-   Policy B: priority 60, effect: deny
-   Result: WARNING (A overrides B)
-   ```
-
-2. __Unpredictable Order__ (if priorities are equal)
-
-   ```
-   Policy A: priority 50, effect: allow
-   Policy B: priority 50, effect: deny
-   Result: ERROR (conflict - cannot determine winner)
-   ```
+```
+Policy A: effect: allow
+Policy B: effect: deny
+Result: WARNING (Deny B overrides allow A: any matching deny wins)
+```
 
 ---
 
@@ -588,14 +552,6 @@ __When to Clear:__
     description: {
       type: 'string',
       maxLength: 1000
-    },
-
-    // Priority
-    priority: {
-      type: 'number',
-      minimum: 0,
-      maximum: 1000,
-      default: 50
     },
 
     // Effect
@@ -797,28 +753,7 @@ if (result.warnings.length > 0) {
 }
 ```
 
-### 3. Use Unique Priority Values
-
-✅ __Do:__
-
-```json
-[
-  { "id": "policy-a", "priority": 100 },
-  { "id": "policy-b", "priority": 80 },
-  { "id": "policy-c", "priority": 60 }
-]
-```
-
-❌ __Don't:__
-
-```json
-[
-  { "id": "policy-a", "priority": 50 },
-  { "id": "policy-b", "priority": 50 }
-]
-```
-
-### 4. Clear Cache After Updates
+### 3. Clear Cache After Updates
 
 ✅ __Do:__
 
@@ -836,7 +771,6 @@ policyValidator.clearCache(); // Clear validation cache
 | Field | Message | Cause |
 | ------- | --------- | ------- |
 | `/id` | must be string | ID is not a string |
-| `/priority` | must be number | Priority is not a number |
 | `/effect` | must be equal to one of the allowed values | Effect is not "allow" or "deny" |
 | `/subjects` | must be array | Subjects is not an array |
 
@@ -845,7 +779,6 @@ policyValidator.clearCache(); // Clear validation cache
 | Field | Message | Cause |
 | ------- | --------- | ------- |
 | `subjects[n]` | Duplicate subject criteria found | Same subject appears twice |
-| `priority` | Priority must be between 0 and 1000 | Priority out of range |
 | `actions` | Duplicate actions found | Same action appears twice |
 
 ### Semantic Errors

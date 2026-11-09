@@ -47,7 +47,7 @@ Management (create, edit, delete events; see private reservation details; cancel
 ```json
 {
   "ngdpbase.access.policies": [
-    { "id": "clubhouse-manager-calendar", "name": "Clubhouse manager runs the calendar", "priority": 90, "effect": "allow",
+    { "id": "clubhouse-manager-calendar", "name": "Clubhouse manager runs the calendar", "effect": "allow",
       "subjects": [{ "type": "role", "value": "clubhouse-manager" }], "resources": [{ "type": "page", "pattern": "*" }],
       "actions": ["calendar-manage"] }
   ]

@@ -1,8 +1,14 @@
 /**
- * The vocabulary of a policy `condition` (#2261): attribute types, the
- * operator table, the nesting limit, and how one comparison is decided.
+ * The vocabulary of a policy `condition` (#2261, #2330): attribute types, the
+ * function table, the nesting limit, and how one comparison is decided.
  * Pure: no I/O, no manager. The evaluator and the validator both import it,
- * so the set of operators lives here and nowhere else.
+ * so the set of functions lives here and nowhere else.
+ *
+ * A condition follows XACML 3.0 in lowercase (#2330). A function is a key
+ * named for its XACML function, `string-equal`, whose value is the array of its
+ * arguments. An argument is an attribute, `{ "attributeid": "subject:id",
+ * "datatype": "string" }`, or a literal, `{ "value": "sales", "datatype":
+ * "string" }`. `datatype` is required on both.
  */
 
 /** The types an attribute can be declared with. */
@@ -10,44 +16,93 @@ export const ATTRIBUTE_TYPES = ['string', 'integer', 'boolean', 'identity', 'lis
 export type AttributeType = (typeof ATTRIBUTE_TYPES)[number];
 
 /**
- * How deep a condition may nest. Every node counts, leaves included, so
- * `any-of` > `all-of` > `not` > leaf is 4 and one more level is refused.
+ * The datatypes a condition may name: the XACML 3.0 JSON profile's short
+ * names. Only `string`, `integer` and `boolean` have a function today, so a
+ * condition naming any other is refused as a datatype its function does not take.
+ */
+export const DATATYPES = ['string', 'integer', 'boolean', 'double', 'date', 'time', 'dateTime', 'anyURI'] as const;
+
+/** The datatypes some function takes. */
+export type FunctionType = 'string' | 'integer' | 'boolean';
+
+/**
+ * How deep a condition may nest. Every function node counts, arguments that
+ * are attributes or values do not, so `or` > `and` > `not` > `string-equal` is 4
+ * and one more level is refused.
  */
 export const MAX_CONDITION_DEPTH = 4;
 
 /**
  * How wide a condition may be (#2261). Depth alone leaves the tree as wide as
  * a config file can make it, and the evaluator walks it for every page a
- * listing or search asks about. A literal `in` list, the children of one
- * `any-of` or `all-of`, and the nodes of the whole condition are each capped.
+ * listing or search asks about. A literal `value` list in an `is-in`, the
+ * arguments of one `and` or `or`, and the function nodes of the whole condition
+ * are each capped.
  */
 export const MAX_IN_ITEMS = 256;
 export const MAX_GROUP_CHILDREN = 256;
 export const MAX_CONDITION_NODES = 512;
 
-/** What a comparison against an attribute accepts, by operator. */
-interface LeafOperator {
-  /** Types the attribute on the left may have. */
-  left: readonly AttributeType[];
+/** What a comparison does once both arguments are read. */
+export type ComparisonKind = 'equal' | 'is-in' | 'greater-than' | 'greater-than-or-equal' | 'less-than' | 'less-than-or-equal';
+
+/** One function that compares two arguments: the datatype it takes and what it does. */
+export interface ConditionFunction {
+  type: FunctionType;
+  kind: ComparisonKind;
 }
 
-const SCALARS: readonly AttributeType[] = ['string', 'integer', 'boolean', 'identity'];
-
-/** The operators that compare one attribute with a value. */
-export const LEAF_OPERATORS: Readonly<Record<string, LeafOperator>> = {
-  equals: { left: SCALARS },
-  'not-equals': { left: SCALARS },
-  in: { left: ['string', 'integer', 'identity'] },
-  'greater-or-equal': { left: ['integer'] },
-  'less-or-equal': { left: ['integer'] }
+/**
+ * The functions that compare two arguments, by XACML 3.0 name (core spec,
+ * appendix A.3), in lowercase. `X-is-in` takes a value, then a bag: an attribute
+ * that is a list, or a literal whose `value` is an array.
+ */
+export const COMPARISON_FUNCTIONS: Readonly<Record<string, ConditionFunction>> = {
+  'string-equal': { type: 'string', kind: 'equal' },
+  'integer-equal': { type: 'integer', kind: 'equal' },
+  'boolean-equal': { type: 'boolean', kind: 'equal' },
+  'string-is-in': { type: 'string', kind: 'is-in' },
+  'integer-is-in': { type: 'integer', kind: 'is-in' },
+  'integer-greater-than': { type: 'integer', kind: 'greater-than' },
+  'integer-greater-than-or-equal': { type: 'integer', kind: 'greater-than-or-equal' },
+  'integer-less-than': { type: 'integer', kind: 'less-than' },
+  'integer-less-than-or-equal': { type: 'integer', kind: 'less-than-or-equal' }
 };
 
-/** The operators that combine conditions. `not` takes one condition, these take a list. */
-export const GROUP_OPERATORS = ['any-of', 'all-of'] as const;
-export const NOT_OPERATOR = 'not';
+/** The functions that combine conditions: XACML's logical functions. `not` takes one condition, these take a list. */
+export const GROUP_FUNCTIONS = ['and', 'or'] as const;
+export const NOT_FUNCTION = 'not';
 
-/** Every operator, in the order the validator lists them. */
-export const CONDITION_OPERATORS: readonly string[] = [...Object.keys(LEAF_OPERATORS), ...GROUP_OPERATORS, NOT_OPERATOR];
+/** Every function, in the order the validator lists them. */
+export const CONDITION_FUNCTIONS: readonly string[] = [...Object.keys(COMPARISON_FUNCTIONS), ...GROUP_FUNCTIONS, NOT_FUNCTION];
+
+/** The keys of an argument: an attribute or a literal, and its datatype. */
+export const OPERAND_KEYS = ['attributeid', 'value', 'datatype'] as const;
+
+/**
+ * The shape before #2330, key by key, and what replaces it, so the validator
+ * can say what to write. Not read by the evaluator: an old condition never holds.
+ */
+export const LEGACY_CONDITION_KEYS: Readonly<Record<string, string>> = {
+  attribute: '{ "attributeid": …, "datatype": … } as an argument of a function',
+  equals: 'string-equal, integer-equal or boolean-equal',
+  'not-equals': 'not around string-equal, integer-equal or boolean-equal',
+  in: 'string-is-in or integer-is-in',
+  'greater-or-equal': 'integer-greater-than-or-equal',
+  'less-or-equal': 'integer-less-than-or-equal',
+  'any-of': 'or',
+  'all-of': 'and'
+};
+
+/** The one example the validator shows for the old shape. */
+export const CONDITION_EXAMPLE = '{ "string-equal": [ { "attributeid": "subject:department-id", "datatype": "string" }, { "value": "sales", "datatype": "string" } ] }';
+
+/** The datatype an attribute of a declared type is referenced with: an identity is a string. A list has the datatype of its entries. */
+export function datatypeOf(attributeType: string): string | null {
+  if (attributeType === 'identity') return 'string';
+  if (attributeType === 'list') return null;
+  return attributeType;
+}
 
 /** The type a literal value has, or `null` when it is not a usable literal. */
 export function literalType(value: unknown): 'string' | 'integer' | 'boolean' | null {
@@ -91,29 +146,46 @@ export function valueFits(attributeType: string, value: unknown): boolean {
 
 /**
  * Decides one comparison once both sides are read. `undefined` is unknown: a
- * side that is missing, or not of a type the operator can compare. Both sides
+ * side that is missing, or not of a type the function can compare. Both sides
  * must be the same kind of value (a string, a boolean or a whole number), so
- * "5" never equals 5 and NaN never compares. `in` takes an array, or a Set the
+ * "5" never equals 5 and NaN never compares. `is-in` takes an array, or a Set the
  * evaluator built from a literal list; every entry of an array must be the
  * kind of value on the left. An empty string is a value, not a missing one.
  */
-export function compareLeaf(operator: string, left: unknown, right: unknown): boolean | undefined {
+export function compareLeaf(kind: ComparisonKind, left: unknown, right: unknown): boolean | undefined {
   if (!isComparable(left)) return undefined;
-  switch (operator) {
-  case 'equals':
+  switch (kind) {
+  case 'equal':
     return isComparable(right) && typeof right === typeof left ? left === right : undefined;
-  case 'not-equals':
-    return isComparable(right) && typeof right === typeof left ? left !== right : undefined;
-  case 'in':
+  case 'is-in':
     if (right instanceof Set) return right.has(left);
     return Array.isArray(right) && right.every((v) => isComparable(v) && typeof v === typeof left) ? right.includes(left) : undefined;
-  case 'greater-or-equal':
+  case 'greater-than':
+    return typeof left === 'number' && typeof right === 'number' && Number.isInteger(right) ? left > right : undefined;
+  case 'greater-than-or-equal':
     return typeof left === 'number' && typeof right === 'number' && Number.isInteger(right) ? left >= right : undefined;
-  case 'less-or-equal':
+  case 'less-than':
+    return typeof left === 'number' && typeof right === 'number' && Number.isInteger(right) ? left < right : undefined;
+  case 'less-than-or-equal':
     return typeof left === 'number' && typeof right === 'number' && Number.isInteger(right) ? left <= right : undefined;
   default:
     return undefined;
   }
+}
+
+/** The key that names how rules are combined (#2330). */
+export const RULE_COMBINING_ALGORITHM_KEY = 'ngdpbase.access.rule-combining-algorithm';
+
+/** The only algorithm the evaluator implements; XACML's name for it. */
+export const SUPPORTED_COMBINING_ALGORITHMS: readonly string[] = ['deny-overrides'];
+
+/** What Admin → Configuration says about the algorithm. */
+export const DENY_OVERRIDES_EXPLANATION = 'Any matching deny wins. Order and priority don\'t matter.';
+
+/** What is wrong with the value of `ngdpbase.access.rule-combining-algorithm`, or `null`. Used on save, on load and at boot. */
+export function combiningAlgorithmProblem(value: unknown): string | null {
+  if (typeof value === 'string' && SUPPORTED_COMBINING_ALGORITHMS.includes(value)) return null;
+  return `${RULE_COMBINING_ALGORITHM_KEY} is ${JSON.stringify(value) ?? 'not set'}; the only value accepted is ${SUPPORTED_COMBINING_ALGORITHMS.map((a) => `"${a}"`).join(', ')}`;
 }
 
 /** The assurance level a sign-in reached: NIST SP 800-63B, 1 to 3. */
