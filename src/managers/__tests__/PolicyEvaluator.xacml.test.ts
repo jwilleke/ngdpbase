@@ -313,11 +313,12 @@ function policy(id: string, effect: string, condition?: unknown, extra: Record<s
   } as Policy;
 }
 
-function evaluatorWith(policies: Policy[], algorithm: unknown = 'deny-overrides'): PolicyEvaluator {
+function evaluatorWith(policies: Policy[], algorithm: unknown = 'deny-overrides', extra: Record<string, unknown> = {}): PolicyEvaluator {
   const config: Record<string, unknown> = {
     'ngdpbase.access.resource-types': { page: { attributes: PAGE_ATTRIBUTES }, 'system-category': {} },
     'ngdpbase.access.subject-attributes': SUBJECT_ATTRIBUTES,
-    [RULE_COMBINING_ALGORITHM_KEY]: algorithm
+    [RULE_COMBINING_ALGORITHM_KEY]: algorithm,
+    ...extra
   };
   const engine = {
     getManager: (name: string) => {
@@ -328,3 +329,94 @@ function evaluatorWith(policies: Policy[], algorithm: unknown = 'deny-overrides'
   } as never;
   return new PolicyEvaluator(engine);
 }
+
+describe('the needs-attention item for the access policies (#2343)', () => {
+  const withAll = () => {
+    const onCategory = { resources: [{ type: 'system-category', pattern: 'general' }] };
+    const ev = evaluatorWith(
+      [policy('old-priority', 'allow', undefined, { priority: 5, ...onCategory }), policy('old-list', 'allow', undefined, { conditions: [{ type: 'time-range' }], ...onCategory })],
+      'deny-overrides',
+      { 'ngdpbase.system-category': { locked: { label: 'Locked', storageLocation: { path: 'x' } } } }
+    );
+    const attention = vi.fn();
+    (ev as unknown as { markNeedsAttention: typeof attention }).markNeedsAttention = attention;
+    return { ev, attention };
+  };
+
+  test('says each thing in plain words: no issue number, doc path, or start-up log', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const { ev, attention } = withAll();
+    await ev.initialize();
+    warn.mockRestore();
+    const text = String(attention.mock.calls[0][0]);
+    expect(text).toContain('Access policies need review (3 problems): ');
+    expect(text).toContain("'old-priority'");
+    expect(text).toContain('locked');
+    expect(text).toContain("'old-list'");
+    expect(text).not.toMatch(/#\d/);
+    expect(text).not.toContain('docs/');
+    expect(text).not.toContain('start-up log');
+    expect(text).not.toMatch(/system-category|pushed-pages-edit|deny-overrides/);
+  });
+
+  test('the start-up log keeps the full detail of each line', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const { ev } = withAll();
+    await ev.initialize();
+    const all = warn.mock.calls.map((c) => String(c[0]));
+    warn.mockRestore();
+    expect(all.find((l) => l.includes('a priority'))).toContain('(#2330)');
+    expect(all.find((l) => l.includes('system-category locked'))).toContain('(#2255)');
+    expect(all.find((l) => l.includes('conditions array'))).toContain('docs/access-policies.md#subject-attributes');
+  });
+
+  const itemFor = async (policies: ReturnType<typeof policy>[], categories: Record<string, unknown> = {}) => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const ev = evaluatorWith(policies, 'deny-overrides', { 'ngdpbase.system-category': categories });
+    const attention = vi.fn();
+    (ev as unknown as { markNeedsAttention: typeof attention }).markNeedsAttention = attention;
+    await ev.initialize();
+    warn.mockRestore();
+    return attention.mock.calls.length ? String(attention.mock.calls[0][0]) : null;
+  };
+  const onCategory = { resources: [{ type: 'system-category', pattern: 'general' }] };
+  const stored = (label: string) => ({ label, storageLocation: { path: 'x' } });
+
+  test('a leftover priority alone: one problem, singular', async () => {
+    const text = await itemFor([policy('p1', 'allow', undefined, { priority: 5, ...onCategory })]);
+    expect(text).toBe("Access policies need review (1 problem): This rule has an old 'priority' that the site ignores, so it changes nothing: 'p1'. Remove it.");
+  });
+
+  test('leftover priorities on two rules: plural, remove it from each one', async () => {
+    const text = await itemFor([policy('p1', 'allow', undefined, { priority: 5, ...onCategory }), policy('p2', 'allow', undefined, { priority: 6, ...onCategory })]);
+    expect(text).toBe("Access policies need review (1 problem): These rules have an old 'priority' that the site ignores, so it changes nothing: 'p1', 'p2'. Remove it from each one.");
+  });
+
+  test('an old conditions list alone', async () => {
+    const text = await itemFor([policy('old-list', 'allow', undefined, { conditions: [{ type: 'time-range' }], ...onCategory })]);
+    expect(text).toMatch(/^Access policies need review \(1 problem\): .*'old-list'.*\.$/);
+    expect(text).not.toContain('; ');
+  });
+
+  test('an uneditable category alone: singular', async () => {
+    const text = await itemFor([], { locked: stored('Locked') });
+    expect(text).toBe('Access policies need review (1 problem): Nobody can edit the pages in this category, not even an admin: locked. Add a rule that lets a role edit it.');
+  });
+
+  test('two uneditable categories: plural', async () => {
+    const text = await itemFor([], { locked: stored('Locked'), shut: stored('Shut') });
+    expect(text).toBe('Access policies need review (1 problem): Nobody can edit the pages in these categories, not even an admin: locked, shut. Add a rule that lets a role edit them.');
+  });
+
+  test('the parts are joined as separate sentences, not with a semicolon', async () => {
+    const { ev, attention } = withAll();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    await ev.initialize();
+    warn.mockRestore();
+    expect(String(attention.mock.calls[0][0])).toContain("Remove it. This rule has an old 'conditions' list");
+  });
+
+  test('no problems: no item', async () => {
+    expect(await itemFor([])).toBeNull();
+  });
+});
