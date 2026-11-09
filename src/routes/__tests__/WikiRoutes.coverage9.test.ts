@@ -266,7 +266,7 @@ function resetMocks() {
   });
   mockVersionProvider.compareVersions.mockResolvedValue({
     version1: 1, version2: 2,
-    diff: [{ type: 'add', value: 'new line' }],
+    diff: [[1, 'new line']],
     stats: { additions: 1, deletions: 0 }
   });
   mockPageManager.restoreVersion.mockResolvedValue({ name: 'TestPage', uuid: 'u1', version: 3 });

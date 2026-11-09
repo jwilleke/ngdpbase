@@ -15,6 +15,8 @@ import express from 'express';
 import request from 'supertest';
 import fs from 'fs-extra';
 import path from 'path';
+import { createRequire } from 'module';
+import { JSDOM } from 'jsdom';
 import os from 'os';
 import VersioningFileProvider from '../../providers/VersioningFileProvider';
 import ValidationManager from '../../managers/ValidationManager';
@@ -77,6 +79,10 @@ describe('GET /diff/:page renders Compare Versions (#2319)', () => {
 
     const pageManager = {
       provider,
+      readVersionHistory: vi.fn(async (name: string, c: unknown) => {
+        const value = await provider.getVersionHistory(name, c);
+        return { ok: true, value, metadata: { uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } };
+      }),
       readVersionDiff: vi.fn(async (name: string, v1: number, v2: number, c: unknown) => {
         const value = await provider.compareVersions(name, v1, v2, c);
         return { ok: true, value, metadata: { uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } };
@@ -86,12 +92,22 @@ describe('GET /diff/:page renders Compare Versions (#2319)', () => {
       getManager: vi.fn((name: string) => {
         if (name === 'PageManager') return pageManager;
         if (name === 'ConfigurationManager') return configManager;
+        // pageHistory pages its list through PluginManager's formatters.
+        if (name === 'PluginManager') {
+          return {
+            formatters: {
+              parsePageParam: () => 1,
+              applyPagination: (items: unknown[]) => ({ items, currentPage: 1, totalPages: 1 }),
+              formatPaginationNav: () => ''
+            }
+          };
+        }
         return null;
       })
     };
     routes = new WikiRoutes(engine);
     // The routes' own helpers need managers this test does not build.
-    vi.spyOn(routes as never, 'getCommonTemplateData').mockResolvedValue({ user: null, appName: 'ngdpbase' });
+    vi.spyOn(routes as never, 'getCommonTemplateData').mockResolvedValue({ user: null, appName: 'ngdpbase', userContext: { isAuthenticated: true } });
     vi.spyOn(routes as never, 'getLeftMenu').mockResolvedValue('');
   });
 
@@ -110,6 +126,7 @@ describe('GET /diff/:page renders Compare Versions (#2319)', () => {
       (req as unknown as { userContext: unknown }).userContext = ctx;
       next();
     });
+    app.get('/history/:page', (req, res) => routes.pageHistory(req, res));
     app.get('/diff/:page', (req, res) => routes.pageDiff(req, res));
     return app;
   }
@@ -133,5 +150,156 @@ describe('GET /diff/:page renders Compare Versions (#2319)', () => {
     expect(res.text).not.toMatch(/Version\s*(<|undefined)/);
     expect(res.text).toMatch(/<strong>Date:<\/strong>\s*\d/);
     expect(res.text).toContain('<strong>Author:</strong> ada');
+  });
+
+  // #2326: three more defects in the same flow.
+  const fm = { title: PAGE, uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'system-category': 'general', author: 'ada', editor: 'ada' };
+  async function saveThree(): Promise<void> {
+    await provider.savePage(PAGE, 'Line A\nLine B\nLine C', { ...fm, comment: 'first save' }, ctx as never);
+    await sleep(15);
+    await provider.savePage(PAGE, 'Line A\nLine B reworded\nLine C', { ...fm, comment: 'reword B' }, ctx as never);
+    await sleep(15);
+    await provider.savePage(PAGE, 'Line A\nLine B reworded\nLine C\nLine D', { ...fm, comment: 'add D' }, ctx as never);
+  }
+
+  test('bug 1: added and removed spans survive highlight.js on Compare Versions', async () => {
+    await saveThree();
+    const res = await request(appFor()).get(`/diff/${PAGE}?v1=1&v2=2`);
+    expect(res.status).toBe(200);
+
+    const dom = new JSDOM(res.text, { runScripts: 'dangerously' });
+    const { window } = dom;
+    window.document.dispatchEvent(new window.Event('DOMContentLoaded'));
+    const before = window.document.querySelectorAll('#unifiedDiff .diff-line-added, #unifiedDiff .diff-line-deleted');
+    expect(before.length).toBeGreaterThan(0);
+
+    // What views/footer.ejs does on every page: hljs.highlightAll(). Run the
+    // real highlight.js (a dependency of diff2html) against this document.
+    const g = globalThis as unknown as Record<string, unknown>;
+    const saved = { window: g.window, document: g.document };
+    g.window = window;
+    g.document = window.document;
+    try {
+      const hljs = createRequire(import.meta.url)('highlight.js');
+      hljs.highlightAll();
+    } finally {
+      g.window = saved.window;
+      g.document = saved.document;
+    }
+
+    expect(window.document.querySelectorAll('#unifiedDiff .diff-line-added').length).toBeGreaterThan(0);
+    expect(window.document.querySelectorAll('#unifiedDiff .diff-line-deleted').length).toBeGreaterThan(0);
+    expect(window.document.querySelectorAll('#oldVersion .diff-line-deleted').length).toBeGreaterThan(0);
+    expect(window.document.querySelectorAll('#newVersion .diff-line-added').length).toBeGreaterThan(0);
+  });
+
+  test('bug 1: the diff is by line, not by character', async () => {
+    await saveThree();
+    const res = await request(appFor()).get(`/diff/${PAGE}?v1=1&v2=2`);
+    const dom = new JSDOM(res.text, { runScripts: 'dangerously' });
+    dom.window.document.dispatchEvent(new dom.window.Event('DOMContentLoaded'));
+    const text = (sel: string) => Array.from(dom.window.document.querySelectorAll(sel)).map(e => e.textContent ?? '');
+    expect(text('#unifiedDiff .diff-line-deleted').join('|')).toContain('Line B');
+    expect(text('#unifiedDiff .diff-line-added').join('|')).toContain('Line B reworded');
+  });
+
+  test('bug 2: the From/To form opens v1=From and v2=To', async () => {
+    await saveThree();
+    const res = await request(appFor()).get(`/history/${PAGE}`);
+    expect(res.status).toBe(200);
+    // Run just the page's own inline script so the
+    // form handler is the one under test; jsdom cannot navigate, so capture the href.
+    const dom = new JSDOM(res.text, { runScripts: 'outside-only', url: 'https://wiki.example.org/history/PCSK9' });
+    const { document } = dom.window;
+    (document.getElementById('version1') as HTMLSelectElement).value = '2';
+    (document.getElementById('version2') as HTMLSelectElement).value = '3';
+    const script = Array.from(document.querySelectorAll('script')).map(e => e.textContent ?? '').find(t => t.includes('function compareVersions')) ?? '';
+    dom.window.eval(script.replace('window.location.href =', 'window.__nav ='));
+    document.getElementById('compareForm')?.dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+    const hrefs = [(dom.window as unknown as { __nav?: string }).__nav ?? ''];
+    expect(hrefs[0]).toBe(`/diff/${PAGE}?v1=2&v2=3`);
+  });
+
+  test('bug 3: Page History shows each version comment', async () => {
+    await saveThree();
+    const res = await request(appFor()).get(`/history/${PAGE}`);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('<td>first save</td>');
+    expect(res.text).toContain('<td>reword B</td>');
+    expect(res.text).toContain('<td>add D</td>');
+  });
+  // Review fixes on #2327.
+  async function diffDom(v1: number, v2: number): Promise<JSDOM> {
+    const res = await request(appFor()).get(`/diff/${PAGE}?v1=${v1}&v2=${v2}`);
+    expect(res.status).toBe(200);
+    const dom = new JSDOM(res.text, { runScripts: 'dangerously' });
+    dom.window.document.dispatchEvent(new dom.window.Event('DOMContentLoaded'));
+    return dom;
+  }
+  const lines = (dom: JSDOM, cls: string) =>
+    Array.from(dom.window.document.querySelectorAll(`#unifiedDiff .diff-line-${cls}`)).map(e => (e.textContent ?? '').slice(1));
+
+  test('M1: appending to a page with no trailing newline leaves the old last line unchanged', async () => {
+    await provider.savePage(PAGE, 'Line A\nLine B', fm, ctx as never);
+    await sleep(15);
+    await provider.savePage(PAGE, 'Line A\nLine B\nLine C', fm, ctx as never);
+    const dom = await diffDom(1, 2);
+    expect(lines(dom, 'deleted')).toEqual([]);
+    expect(lines(dom, 'added')).toEqual(['Line C']);
+    expect(lines(dom, 'unchanged')).toEqual(['Line A', 'Line B']);
+  });
+
+  test('M1: CRLF against LF is no change and leaves no carriage return', async () => {
+    await provider.savePage(PAGE, 'Line A\r\nLine B', fm, ctx as never);
+    await sleep(15);
+    await provider.savePage(PAGE, 'Line A\nLine B\nLine C', fm, ctx as never);
+    const dom = await diffDom(1, 2);
+    expect(lines(dom, 'deleted')).toEqual([]);
+    expect(lines(dom, 'added')).toEqual(['Line C']);
+    expect(dom.window.document.getElementById('unifiedDiff')?.textContent).not.toContain('\r');
+  });
+
+  test('M2: Change Summary counts the lines the diff shows', async () => {
+    await saveThree();
+    const dom = await diffDom(2, 3);
+    const summary = dom.window.document.querySelector('.alert-info')?.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(lines(dom, 'added').length).toBe(1);
+    expect(summary).toMatch(/Additions:\s*1\b/);
+    expect(summary).toMatch(/Deletions:\s*0\b/);
+    expect(summary).toMatch(/Unchanged:\s*3\b/);
+  });
+
+  test('M2: summary matches the lines when lines were both added and removed', async () => {
+    await saveThree();
+    const dom = await diffDom(1, 2);
+    const summary = dom.window.document.querySelector('.alert-info')?.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(summary).toMatch(new RegExp(`Additions:\\s*${lines(dom, 'added').length}\\b`));
+    expect(summary).toMatch(new RegExp(`Deletions:\\s*${lines(dom, 'deleted').length}\\b`));
+    expect(summary).toMatch(new RegExp(`Unchanged:\\s*${lines(dom, 'unchanged').length}\\b`));
+  });
+
+  test('L1/L2: diff lines keep a minimum height and dark mode has its own colours', async () => {
+    await saveThree();
+    const res = await request(appFor()).get(`/diff/${PAGE}?v1=1&v2=2`);
+    expect(res.text).toMatch(/\.diff-line-added[^{]*\{[^}]*min-height:\s*1\.5em/);
+    expect(res.text).toMatch(/\.diff-line-unchanged[^{]*\{[^}]*min-height:\s*1\.5em/);
+    expect(res.text).toMatch(/\[data-bs-theme="dark"\][^{]*\.diff-line-deleted/);
+  });
+
+  test('L3: a rewrite too large to diff by line shows a note with both sizes', async () => {
+    const mk = (tag: string) => Array.from({ length: 6000 }, (_, i) => `${tag}${i * 7919 % 6007}`).join('\n');
+    const oldText = mk('a');
+    const newText = mk('b');
+    const out = (routes as unknown as { lineDiffForDisplay(d: Array<[number, string]>): { tooLarge?: { oldBytes: number; newBytes: number } } })
+      .lineDiffForDisplay([[-1, oldText], [1, newText]]);
+    expect(out.tooLarge).toEqual({ oldBytes: oldText.length, newBytes: newText.length });
+  }, 20000);
+
+  test('L4: Page History defaults From to the second-newest version', async () => {
+    await saveThree();
+    const res = await request(appFor()).get(`/history/${PAGE}`);
+    const doc = new JSDOM(res.text).window.document;
+    expect((doc.getElementById('version1') as HTMLSelectElement).value).toBe('2');
+    expect((doc.getElementById('version2') as HTMLSelectElement).value).toBe('3');
   });
 });

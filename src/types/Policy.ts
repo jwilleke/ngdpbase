@@ -35,33 +35,35 @@ export interface PolicyResource {
 }
 
 /**
- * A comparison of one attribute with a value (#2255, #2261). A string starting
- * `subject:`, `resource:` or `environment:` names an attribute; anything else
- * is a literal. Exactly one operator key beside `attribute`:
- * `equals`, `not-equals`, `in`, `greater-or-equal`, `less-or-equal`.
+ * An argument of a comparison (#2255, #2261, #2330), as XACML 3.0 writes one in
+ * lowercase. An attribute is `{ "attributeid": "subject:department-id",
+ * "datatype": "string" }`: `attributeid` starts `subject:`, `resource:` or
+ * `environment:`. A literal is `{ "value": "sales", "datatype": "string" }`,
+ * and for `X-is-in` its `value` may be an array. `datatype` is required and is
+ * one of the XACML JSON profile's short names.
  */
-export type LeafCondition = { attribute: string } & (
-  | { equals: unknown }
-  | { 'not-equals': unknown }
-  | { in: unknown[] | string }
-  | { 'greater-or-equal': number | string }
-  | { 'less-or-equal': number | string }
-);
+export type ConditionOperand =
+  | { attributeid: string; datatype: string }
+  | { value: unknown; datatype: string };
 
 /**
- * A policy's condition: a {@link LeafCondition}, or `any-of` / `all-of` /
- * `not` over other conditions, nested at most 4 deep.
+ * A policy's condition (#2330): one function, named for its XACML 3.0 function
+ * in lowercase, whose value is the array of its arguments.
  *
- * Each node is true, false or unknown. A leaf reading an attribute that is
- * missing is unknown; in `any-of` a true branch decides, in `all-of` a false
- * one does, and `not` of unknown is unknown. An allow applies only when the
+ * - `string-equal`, `integer-equal`, `boolean-equal`, `string-is-in`,
+ *   `integer-is-in`, `integer-greater-than`, `integer-greater-than-or-equal`,
+ *   `integer-less-than`, `integer-less-than-or-equal` take two
+ *   {@link ConditionOperand}s;
+ * - `and` and `or` take a list of conditions, `not` takes one;
+ *
+ * nested at most 4 deep.
+ *
+ * Each node is true, false or unknown. A comparison reading an attribute that
+ * is missing is unknown; in `or` a true branch decides, in `and` a false one
+ * does, and `not` of unknown is unknown. An allow applies only when the
  * condition is true; a deny applies when it is true or unknown.
  */
-export type PolicyCondition =
-  | LeafCondition
-  | { 'any-of': PolicyCondition[] }
-  | { 'all-of': PolicyCondition[] }
-  | { not: PolicyCondition };
+export type PolicyCondition = Record<string, Array<ConditionOperand | PolicyCondition>>;
 
 /** The prefixes that mark a condition value as an attribute rather than a literal (#2255). */
 export const ATTRIBUTE_CATEGORIES = ['subject', 'resource', 'environment'] as const;
@@ -76,8 +78,6 @@ export interface Policy {
   id: string;
   name?: string;
   description?: string;
-  /** Lower runs first, so a higher-priority deny lands last and wins. */
-  priority?: number;
   /**
    * `allow` or `deny`. Typed as a string because the value comes from
    * configuration, where an operator can write anything; the evaluator treats

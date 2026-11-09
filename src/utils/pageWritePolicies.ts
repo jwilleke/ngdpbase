@@ -20,8 +20,7 @@
  *   role is kept, on the general category only, as a new policy
  *   `<id>-page-write`;
  * - every other policy that grants a page write on a `page` resource to a role
- *   other than admin, and every deny policy (a deny now overrides an allow
- *   whatever its priority), is reported and left as it is: it is the site's
+ *   other than admin, and every deny policy (a deny now overrides an allow), is reported and left as it is: it is the site's
  *   own choice.
  *
  * Pure: the caller logs and reports. The site's file is not rewritten; saving
@@ -83,7 +82,6 @@ export function migrateStoredPageWritePolicies(policies: unknown): { policies: u
         id: `${policy.id}-page-write`,
         name: `${policy.name ?? policy.id}: page writes kept from the site's copy`,
         description: `Carried over from the site's stored '${policy.id}' by the #2255 upgrade, on general pages only`,
-        priority: policy.priority,
         effect: 'allow',
         subjects: policy.subjects,
         resources: [{ type: 'system-category', pattern: 'general' }],
@@ -100,13 +98,13 @@ export function migrateStoredPageWritePolicies(policies: unknown): { policies: u
  * allow that grants a page write on a `page` resource to a role other than
  * admin (it reaches pushed pages), an allow that grants anything but
  * page-read to `anyone` or `authenticated` (#2261, #2283), and every deny (a deny now overrides any
- * allow, whatever the priorities).
+ * allow).
  */
 export function pageWritePoliciesToReview(policies: readonly Policy[]): string[] {
   const out: string[] = [];
   for (const policy of policies) {
     if (policy.effect === 'deny') {
-      out.push(`'${policy.id}' is a deny: since #2255 a deny overrides any allow, whatever its priority`);
+      out.push(`'${policy.id}' is a deny: since #2255 a deny overrides any allow`);
       continue;
     }
     const everyone = (policy.subjects ?? []).some((s) => s.type === 'anyone') ? 'anyone, including signed-out visitors'

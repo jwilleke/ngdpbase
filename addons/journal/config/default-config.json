@@ -66,7 +66,6 @@
       "id": "journal-access",
       "name": "Journal",
       "description": "Keep and export one's own journal",
-      "priority": 90,
       "effect": "allow",
       "subjects": [
         {
@@ -110,7 +109,6 @@
       "id": "journal-page-public",
       "name": "Make journal entries public",
       "description": "Move one's own journal entries out of the journal vault (#1504, #1507): the roles that can have private pages. Was part of core's page-public-access; the journal declares it now, so it applies only while the add-on is enabled",
-      "priority": 60,
       "effect": "allow",
       "subjects": [
         {
@@ -152,7 +150,6 @@
       "id": "journal-self-managed-author-write",
       "name": "Authors change their own journal pages",
       "description": "Edit, delete and rename a journal page you are the author of (#2255)",
-      "priority": 80,
       "effect": "allow",
       "subjects": [
         {
@@ -172,15 +169,22 @@
         "page-rename"
       ],
       "condition": {
-        "attribute": "resource:owner",
-        "equals": "subject:id"
+        "string-equal": [
+          {
+            "attributeid": "resource:owner",
+            "datatype": "string"
+          },
+          {
+            "attributeid": "subject:id",
+            "datatype": "string"
+          }
+        ]
       }
     },
     {
       "id": "journal-self-managed-author-edit",
       "name": "Authors edit their own journal pages",
       "description": "Edit a journal page you are the author of (#2255)",
-      "priority": 70,
       "effect": "allow",
       "subjects": [
         {
@@ -202,15 +206,22 @@
         "page-edit"
       ],
       "condition": {
-        "attribute": "resource:owner",
-        "equals": "subject:id"
+        "string-equal": [
+          {
+            "attributeid": "resource:owner",
+            "datatype": "string"
+          },
+          {
+            "attributeid": "subject:id",
+            "datatype": "string"
+          }
+        ]
       }
     },
     {
       "id": "journal-self-managed-admin",
       "name": "Administrators change journal pages",
       "description": "The administrator exception for journal pages: edit, delete and rename whoever the author is (#2255)",
-      "priority": 100,
       "effect": "allow",
       "subjects": [
         {

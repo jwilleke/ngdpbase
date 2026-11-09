@@ -8,10 +8,11 @@
  */
 import PolicyEvaluator from '../PolicyEvaluator';
 import type { Policy } from '../../types/Policy';
+import { attr, val } from './__fixtures__/conditions';
 
-const AAL2 = { attribute: 'subject:aal', 'greater-or-equal': 2 };
+const AAL2 = { 'integer-greater-than-or-equal': [attr('subject:aal', 'integer'), val(2)] };
 const allow = (id: string, condition?: unknown): Policy => ({
-  id, effect: 'allow', priority: 50,
+  id, effect: 'allow',
   subjects: [{ type: 'role', value: 'editor' }],
   resources: [{ type: 'page', pattern: '*' }],
   actions: ['page-edit'],

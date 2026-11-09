@@ -30,7 +30,7 @@ export interface RoleGrants {
 
 /** A grant to one subject, with the policies that give it (#2067). */
 export interface SubjectGrant extends RoleGrant {
-  /** The ids of the allow policies that give it, lowest priority first. */
+  /** The ids of the allow policies that give it, in id order. */
   by: string[];
 }
 
@@ -51,15 +51,13 @@ type Accrued = Map<string, Accruing>;
 /**
  * Every subject of one type a policy names (`role`, or `job` since #1999),
  * with what its policies allow and deny and which policies give each allow.
- * Policies are applied lowest priority first, so a deny takes away what a
- * lower-priority allow gave and an allow above it gives it back — the order
- * the evaluator's first-match-by-priority decides in.
+ * A deny takes away what any allow gave, whatever the order of the policies:
+ * the evaluator's rule-combining algorithm, `deny-overrides` (#2330).
  */
 function subjectGrants(policies: readonly Policy[], type: string): Record<string, SubjectGrants> {
   const allow = new Map<string, Accrued>();
   const deny = new Map<string, Set<string>>();
-  const ordered = [...policies].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
-  for (const policy of ordered) {
+  for (const policy of policies) {
     const subjects = (policy.subjects ?? []).filter((s) => s.type === type).map((s) => String(s.value));
     const actions = policy.actions ?? [];
     for (const subject of subjects) {
@@ -67,7 +65,7 @@ function subjectGrants(policies: readonly Policy[], type: string): Record<string
       allow.set(subject, map);
       if (policy.effect === 'deny') {
         const set = deny.get(subject) ?? new Set<string>();
-        actions.forEach((a) => { set.add(a); map.delete(a); });
+        actions.forEach((a) => set.add(a));
         deny.set(subject, set);
         continue;
       }
@@ -83,10 +81,12 @@ function subjectGrants(policies: readonly Policy[], type: string): Record<string
     }
   }
   const out: Record<string, SubjectGrants> = {};
-  for (const subject of new Set([...allow.keys(), ...deny.keys()])) {
+  // In name order: with no priority to order the policies by, the table must not depend on how the configuration layers merged.
+  for (const subject of [...new Set([...allow.keys(), ...deny.keys()])].sort()) {
     out[subject] = {
       allows: [...(allow.get(subject) ?? new Map<string, Accruing>()).entries()]
-        .map(([action, g]) => ({ action, limited: !g.unlimited, where: g.unlimited ? [] : [...g.where].sort(), by: g.by }))
+        .filter(([action]) => !deny.get(subject)?.has(action))
+        .map(([action, g]) => ({ action, limited: !g.unlimited, where: g.unlimited ? [] : [...g.where].sort(), by: [...g.by].sort() }))
         .sort((a, b) => a.action.localeCompare(b.action)),
       denies: [...(deny.get(subject) ?? new Set())].sort()
     };

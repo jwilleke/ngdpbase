@@ -21,11 +21,11 @@ The __PolicyEvaluator__ evaluates access control policies against a given contex
 ### Key Features
 
 - ✅ __Context-Based Evaluation:__ Makes decisions based on user, resource, and action
-- ✅ __Priority-Ordered:__ Evaluates policies in priority order (first match wins)
+- ✅ __Deny-Overrides:__ Combines every matching policy: any matching deny wins, otherwise any matching allow permits
 - ✅ __Role Matching:__ Supports role-based access control with built-in roles
 - ✅ __Pattern Matching:__ Uses glob patterns for resource matching (micromatch)
 - ✅ __Detailed Logging:__ Logs every evaluation for debugging
-- ✅ __Fast Performance:__ Stops at first matching policy
+- ✅ __Order-Independent:__ The decision does not depend on the order of the policies
 
 ---
 
@@ -35,8 +35,8 @@ PolicyEvaluator is the __decision engine__ in ngdpbase's access control system. 
 
 1. __Receives__ access requests (who wants to do what to which resource)
 2. __Retrieves__ all policies from PolicyManager
-3. __Evaluates__ each policy in priority order
-4. __Returns__ the first matching policy's decision (allow/deny)
+3. __Evaluates__ every policy against the request
+4. __Returns__ the combined decision under `deny-overrides` (allow/deny)
 
 ---
 
@@ -61,24 +61,25 @@ PolicyEvaluator is the __decision engine__ in ngdpbase's access control system. 
                      ▼
 ┌─────────────────────────────────────────────────────────┐
 │ 3. Get Policies from PolicyManager                      │
-│    - Returns policies sorted by priority (descending)   │
+│    - Returns policies in configuration order            │
 └────────────────────┬────────────────────────────────────┘
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────┐
-│ 4. Evaluate Each Policy (in order)                      │
+│ 4. Evaluate Every Policy                                │
 │                                                          │
-│    Policy 1 (priority: 100):                            │
+│    Policy 1 (admin-full-access):                        │
 │    ├─ Subject Match? NO (requires "admin")              │
 │    └─ Skip                                              │
 │                                                          │
-│    Policy 2 (priority: 80):                             │
+│    Policy 2 (editor-permissions):                       │
 │    ├─ Subject Match? YES ("editor" in user roles)       │
 │    ├─ Resource Match? YES ("*" matches "ProjectDocs")   │
 │    ├─ Action Match? YES ("page:edit" in actions)        │
 │    └─ ✓ MATCH FOUND → Effect: "allow"                   │
 │                                                          │
-│    (Stop evaluation - first match wins)                 │
+│    (Keep checking: any matching deny would win)         │
+│    No matching deny → matching allow permits            │
 └────────────────────┬────────────────────────────────────┘
                      │
                      ▼
@@ -173,13 +174,15 @@ if (result.allowed) {
 
 __Evaluation Process:__
 
-1. Gets all policies from PolicyManager (sorted by priority)
-2. For each policy (in order):
+1. Gets all policies from PolicyManager (in configuration order)
+2. For each policy:
    - Check if policy matches context using `matches()`
-   - If match found:
-     - Return `{ hasDecision: true, allowed: policy.effect === 'allow' }`
-     - Stop evaluation (first match wins)
-3. If no match found:
+   - Note whether a matching policy is a deny or an allow
+3. If any matching policy is a deny:
+   - Return `{ hasDecision: true, allowed: false }`
+4. Otherwise, if any matching policy is an allow:
+   - Return `{ hasDecision: true, allowed: true }`
+5. If no match found:
    - Return `{ hasDecision: false, allowed: false }`
 
 __Logging:__
@@ -431,31 +434,30 @@ This policy allows __everyone__ (logged-in or not) to read all pages.
 
 ## Decision Logic
 
-### First Match Wins
+### Deny-Overrides
 
-PolicyEvaluator uses __first match wins__ logic:
+PolicyEvaluator uses the XACML rule-combining algorithm `deny-overrides` (config key `ngdpbase.access.rule-combining-algorithm`, the only accepted value):
 
-1. Policies are evaluated in __priority order__ (highest first)
-2. __First policy that matches__ determines the decision
-3. Remaining policies are __not evaluated__
+1. __Every policy__ is checked against the request
+2. __Any matching deny wins__, whatever the order of the policies
+3. With no matching deny, __any matching allow__ permits
+4. Order does not matter, and policies have no priority
 
 __Example:__
 
 ```javascript
-// Policy 1 (priority: 100)
+// Policy 1
 {
   "id": "admin-access",
-  "priority": 100,
   "effect": "allow",
   "subjects": [{ "type": "role", "value": "admin" }],
   "resources": [{ "type": "page", "pattern": "*" }],
   "actions": ["*"]
 }
 
-// Policy 2 (priority: 50)
+// Policy 2
 {
   "id": "deny-sensitive",
-  "priority": 50,
   "effect": "deny",
   "subjects": [{ "type": "role", "value": "All" }],
   "resources": [{ "type": "page", "pattern": "SensitiveDocs" }],
@@ -465,16 +467,19 @@ __Example:__
 
 __Scenario:__ Admin user tries to access "SensitiveDocs"
 
-1. Check Policy 1 (priority 100):
+1. Check Policy 1:
    - Subject: ✓ (user is admin)
    - Resource: ✓ (matches `*`)
    - Action: ✓ (matches `*`)
-   - __MATCH!__ → Effect: "allow"
-   - Stop evaluation
+   - __MATCH__ → Effect: "allow"
 
-2. Policy 2 is __never checked__ (admin already allowed by Policy 1)
+2. Check Policy 2:
+   - Subject: ✓ (`All` matches everyone)
+   - Resource: ✓ (matches `SensitiveDocs`)
+   - Action: ✓ (matches `*`)
+   - __MATCH__ → Effect: "deny"
 
-__Result:__ Admin can access "SensitiveDocs" (Policy 1 wins due to higher priority)
+__Result:__ Admin is __denied__ "SensitiveDocs" (the matching deny overrides the matching allow, in either order)
 
 ---
 
@@ -607,23 +612,19 @@ PolicyEvaluator provides detailed logging for debugging:
 
 ### Optimization Strategies
 
-1. __First Match Wins__ - Stops at first matching policy
-2. __Priority Sorting__ - Most specific policies evaluated first
-3. __Early Exit__ - Skips remaining policies after match
-4. __In-Memory Storage__ - Policies cached in PolicyManager
+1. __Single Pass__ - Each policy is checked once per request
+2. __Cheap Checks First__ - Subject, resource and action matching are plain comparisons and globs
+3. __In-Memory Storage__ - Policies cached in PolicyManager
 
 ### Time Complexity
 
-- __Best Case:__ O(1) - First policy matches
-- __Worst Case:__ O(n) - No policy matches, check all n policies
-- __Average Case:__ O(log n) - Match found in middle of list
+- __Every Case:__ O(n) - All n policies are checked, because a later deny can still override an earlier allow
 
 ### Recommendations
 
-1. __Put most common policies first__ (higher priority)
-2. __Use specific patterns__ to reduce false matches
-3. __Avoid wildcard-only policies__ unless intentional
-4. __Cache evaluation results__ if same check repeated
+1. __Use specific patterns__ to reduce false matches
+2. __Avoid wildcard-only policies__ unless intentional
+3. __Cache evaluation results__ if same check repeated
 
 ---
 
@@ -728,7 +729,7 @@ if (!result.hasDecision) {
 - ✅ Context-based policy evaluation
 - ✅ Role matching with built-in roles support
 - ✅ Pattern matching using micromatch
-- ✅ First-match-wins evaluation logic
+- ✅ Deny-overrides evaluation logic
 
 ---
 
