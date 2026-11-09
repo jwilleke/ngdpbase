@@ -31,7 +31,8 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
+        # #1450 retried; #2318 ffmpeg-static binary cached, so a warm cache never asks GitHub's release CDN
+        uses: ./.github/actions/npm-ci-ffmpeg-cache
 
       - name: Audit every lockfile (#1242)
         run: npm run lint:audit-deps
