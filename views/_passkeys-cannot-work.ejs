@@ -1,0 +1,20 @@
+<%# #2317: ngdpbase.auth.passkey.enabled is true, but the site's address cannot support passkeys.
+    The button saves false through the ordinary Admin → Configuration save (POST /admin/configuration),
+    with its permission check and fresh sign-in; nothing is rewritten quietly. %>
+<div class="alert alert-warning py-1 px-2 mb-0 mt-1 passkeys-cannot-work">
+    <i class="fas fa-exclamation-triangle"></i> Passkeys can't work on this site's address. They need an https address.
+    <% if (baseUrlWhere === 'env') { %>
+        The site address is set outside this page, in the server's settings. To use https, change it there and restart the server, or turn passkeys off.
+    <% } else if (baseUrlWhere === 'custom') { %>
+        <a href="#custom-row-base-url" class="alert-link" data-config-jump="nav-custom-tab" data-row="custom-row-base-url">Set the site address</a> to https, or turn passkeys off.
+    <% } else { %>
+        <a href="#nav-add" class="alert-link" data-config-jump="nav-add-tab" data-prefill="ngdpbase.application.base-url">Set the site address</a> to https, or turn passkeys off.
+    <% } %>
+    <form method="POST" action="/admin/configuration" class="mt-1"<%- lockedUnless('config-manage') ? ' title="Needs permission to change settings"' : '' %>>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="property" value="ngdpbase.auth.passkey.enabled">
+        <input type="hidden" name="value" value="false">
+        <button type="submit" class="btn btn-sm btn-warning"<%- lockedUnless('config-manage') %>>Turn passkeys off</button>
+        <div class="passkeys-cannot-work-hint">This saves right away. You can turn passkeys back on once the site uses https.</div>
+    </form>
+</div>

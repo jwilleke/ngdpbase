@@ -168,6 +168,15 @@ function isReservedProviderId(id: string): boolean {
   return CORE_PROVIDER_IDS.includes(id) || id.startsWith('oidc:');
 }
 
+/**
+ * The host passkeys are tied to, or null when the site's address cannot support
+ * them: base-url must be set explicitly, and be https (or localhost).
+ */
+function passkeyRelyingPartyOf(configManager: ConfigurationManager): PasskeyRelyingParty | null {
+  if (!configManager.isBaseUrlExplicit()) return null;
+  return relyingPartyFrom(configManager.getBaseURL(), String(configManager.getProperty('ngdpbase.application-name', 'ngdpbase')));
+}
+
 /** A factor as offered: its entry lowered to what the provider's code gives. */
 /**
  * Providers that count toward a sign-in level only once the account has
@@ -1834,13 +1843,13 @@ class AuthManager extends BaseManager {
       logger.warn('[AuthManager] Passkeys NOT registered: the credentials store is not available (#448)');
       return;
     }
-    if (!configManager.isBaseUrlExplicit()) {
-      logger.info('[AuthManager] Passkeys off: ngdpbase.application.base-url is not set explicitly, and a passkey is tied to that host (#448)');
-      return;
-    }
-    const rp = relyingPartyFrom(configManager.getBaseURL(), String(configManager.getProperty('ngdpbase.application-name', 'ngdpbase')));
+    const rp = passkeyRelyingPartyOf(configManager);
     if (!rp) {
-      logger.warn(`[AuthManager] Passkeys off: base-url ${configManager.getBaseURL()} is not https (or localhost), where browsers allow WebAuthn (#448)`);
+      if (!configManager.isBaseUrlExplicit()) {
+        logger.info('[AuthManager] Passkeys off: ngdpbase.application.base-url is not set explicitly, and a passkey is tied to that host (#448)');
+      } else {
+        logger.warn(`[AuthManager] Passkeys off: base-url ${configManager.getBaseURL()} is not https (or localhost), where browsers allow WebAuthn (#448)`);
+      }
       return;
     }
     const store = this.credentials;
@@ -1849,6 +1858,18 @@ class AuthManager extends BaseManager {
       used: (id, at, secret) => store.touch(id, at, secret)
     }));
     logger.info(`[AuthManager] passkeys tied to ${rp.rpID}`);
+  }
+
+  /**
+   * #2317: the setting says passkeys are on, but the site's address cannot
+   * support them (base-url not set explicitly, or neither https nor localhost),
+   * so none are offered. The same rule registerPasskeys applies. Admin →
+   * Configuration says so on that setting's row and offers to turn it off.
+   */
+  passkeysCannotWork(): boolean {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager || configManager.getProperty('ngdpbase.auth.passkey.enabled', true) === false) return false;
+    return passkeyRelyingPartyOf(configManager) === null;
   }
 
   /** TOTP enrolment (#421), available whenever the credentials store is open. */
