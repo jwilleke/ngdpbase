@@ -517,7 +517,7 @@ class PolicyEvaluator extends BaseManager {
     if (withPriority.length > 0) {
       const line = `${withPriority.join(', ')} ${withPriority.length === 1 ? 'has' : 'have'} a priority, which is ignored: under deny-overrides any matching deny wins and order and priority don't matter; remove it (#2330)`;
       lines.push(line);
-      shown.set(line, `${withPriority.length === 1 ? 'This rule has' : 'These rules have'} an old 'priority' that the site ignores, so it changes nothing: ${withPriority.join(', ')}. Remove it.`);
+      shown.set(line, `${withPriority.length === 1 ? 'This rule has' : 'These rules have'} an old 'priority' that the site ignores, so it changes nothing: ${withPriority.join(', ')}. Remove it${withPriority.length === 1 ? '' : ' from each one'}.`);
     }
     // #2334: the old plural `conditions` array is read by nothing.
     // The log keeps the long form; the needs-attention entry shows plain words (below).
@@ -552,8 +552,9 @@ class PolicyEvaluator extends BaseManager {
     }
     if (lines.length === 0) return;
     for (const line of lines) logger.warn(`[POLICY] ${line}`);
-    const plain = lines.map((l) => (shown.get(l) ?? l).replace(/\.$/, ''));
-    this.markNeedsAttention(`Access policies need review (${lines.length}): ${plain.join('; ')}.`, 'ngdpbase.access.policies');
+    // Each part is a full sentence, so they are joined with a space.
+    const plain = lines.map((l) => `${(shown.get(l) ?? l).replace(/\.$/, '')}.`);
+    this.markNeedsAttention(`Access policies need review (${lines.length} ${lines.length === 1 ? 'problem' : 'problems'}): ${plain.join(' ')}`, 'ngdpbase.access.policies');
   }
 
   /**
