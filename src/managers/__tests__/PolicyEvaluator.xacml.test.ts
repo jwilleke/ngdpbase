@@ -313,7 +313,7 @@ function policy(id: string, effect: string, condition?: unknown, extra: Record<s
   } as Policy;
 }
 
-function evaluatorWith(policies: Policy[], algorithm: unknown = 'deny-overrides', extra: Record<string, unknown> = {}): PolicyEvaluator {
+function evaluatorWith(policies: Policy[], algorithm: unknown = 'deny-overrides', extra: Record<string, unknown> = {}, managerProps: Record<string, unknown> = {}): PolicyEvaluator {
   const config: Record<string, unknown> = {
     'ngdpbase.access.resource-types': { page: { attributes: PAGE_ATTRIBUTES }, 'system-category': {} },
     'ngdpbase.access.subject-attributes': SUBJECT_ATTRIBUTES,
@@ -322,7 +322,7 @@ function evaluatorWith(policies: Policy[], algorithm: unknown = 'deny-overrides'
   };
   const engine = {
     getManager: (name: string) => {
-      if (name === 'ConfigurationManager') return { getProperty: (k: string, d: unknown) => (k in config ? config[k] : d), getUnresolvedProperty: (k: string, d: unknown) => (k in config ? config[k] : d) };
+      if (name === 'ConfigurationManager') return { getProperty: (k: string, d: unknown) => (k in config ? config[k] : d), getUnresolvedProperty: (k: string, d: unknown) => (k in config ? config[k] : d), ...managerProps };
       if (name === 'PolicyDecisionPoint') return { policies: () => policies, categoriesGranting: () => [] };
       return null;
     }
@@ -418,5 +418,142 @@ describe('the needs-attention item for the access policies (#2343)', () => {
 
   test('no problems: no item', async () => {
     expect(await itemFor([])).toBeNull();
+  });
+});
+
+describe('every line of the access-policies needs-attention item is plain (#2348)', () => {
+  const onGeneral = { resources: [{ type: 'system-category', pattern: 'general' }] };
+  const run = async (policies: Policy[], extra: Record<string, unknown> = {}, managerProps: Record<string, unknown> = {}) => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const ev = evaluatorWith(policies, 'deny-overrides', extra, managerProps);
+    const attention = vi.fn();
+    (ev as unknown as { markNeedsAttention: typeof attention }).markNeedsAttention = attention;
+    await ev.initialize();
+    const log = warn.mock.calls.map((c) => String(c[0])).join('\n');
+    warn.mockRestore();
+    return { item: attention.mock.calls.length ? String(attention.mock.calls[0][0]) : '', log };
+  };
+  /** What an administrator must never meet: ids, setting names, issue numbers, paths, "see the log", JSON. */
+  const expectPlain = (item: string): void => {
+    expect(item).not.toMatch(/#\d/);
+    expect(item).not.toContain('docs/');
+    expect(item).not.toContain('ngdpbase.');
+    expect(item).not.toContain('start-up log');
+    expect(item).not.toMatch(/page-(edit|delete|rename|create|categorize|raw-edit|public)|pushed-pages-edit|admin-config|system-category|resource type|\{|\}/);
+  };
+  const sample = (id: string, effect: string, extra: Record<string, unknown>) => policy(id, effect, undefined, { ...onGeneral, ...extra });
+
+  test('a deny: says what to check, names the rule', async () => {
+    const { item, log } = await run([sample('no-docs', 'deny', { actions: ['page-read'] })]);
+    expect(item).toBe("Access policies need review (1 problem): The rule 'no-docs' denies access, and a deny beats every rule that allows it. Check that it denies only what you mean it to; if not, change or remove it.");
+    expectPlain(item);
+    expect(log).toContain("'no-docs' is a deny: since #2255 a deny overrides any allow");
+  });
+
+  test('a grant to everyone: no permission ids', async () => {
+    const { item, log } = await run([sample('open-edit', 'allow', { subjects: [{ type: 'anyone' }], actions: ['page-read', 'page-edit'] })]);
+    expect(item).toBe("Access policies need review (1 problem): The rule 'open-edit' lets anyone, including signed-out visitors do more than read. Give those abilities to named roles instead.");
+    expectPlain(item);
+    expect(log).toContain("'open-edit' grants page-edit to anyone, including signed-out visitors, so");
+    expect(log).toContain('(#2261)');
+  });
+
+  test('a page write by name: names the roles, not the permission or the resource type', async () => {
+    const { item, log } = await run([policy('my-own', 'allow', undefined, { actions: ['page-edit', 'page-delete'] })]);
+    expect(item).toBe("Access policies need review (1 problem): The rule 'my-own' lets the role editor change pages by name, which reaches system, documentation and add-on pages. Change it to apply to page categories instead.");
+    expectPlain(item);
+    expect(log).toContain("'my-own' grants page-edit, page-delete on pages by name to editor");
+    expect(log).toContain('grant it on system categories instead (#2255)');
+  });
+
+  test('the upgrade of a stored policy: said without permission ids, saying to save', async () => {
+    const line = "'editor-permissions' in custom config granted page-edit, page-delete on every page; that now comes from the category policies (#2255)";
+    const { item, log } = await run([], {}, { pageWritePolicyMigration: [line], pageWritePolicyMigrationShown: { [line]: "The saved rule 'editor-permissions' let its roles change every page, which the site now handles with its page category rules, so it was changed for this run only. Save the policy list in Admin → Configuration to keep the change." } });
+    expect(item).toContain("The saved rule 'editor-permissions' let its roles change every page");
+    expect(item).toContain('Save the policy list in Admin → Configuration');
+    expectPlain(item);
+    expect(log).toContain(line);
+  });
+
+  test('a condition that cannot work: names the rule once, however many things are wrong', async () => {
+    const { item, log } = await run([policy('bad-cond', 'allow', { 'no-such-function': [1] }), policy('bad-deny', 'deny', { 'no-such-function': [1] })]);
+    expect(item).toContain("The rule 'bad-cond' has a condition that cannot work, so it never gives anyone access. Open the rule in Admin → Configuration and fix its condition, or remove it.");
+    expect(item).toContain("The rule 'bad-deny' has a condition that cannot work, so it always denies.");
+    expectPlain(item);
+    expect(log).toMatch(/'bad-cond': .*the policy never applies as an allow/);
+    expect(log).toMatch(/'bad-deny': .*the deny always applies/);
+  });
+
+  describe('the user-detail list', () => {
+    test('not an object', async () => {
+      const { item, log } = await run([], { 'ngdpbase.access.subject-attributes': ['x'] });
+      expect(item).toContain('The list of user details that rules can check is not in a form the site can read');
+      expectPlain(item);
+      expect(log).toContain('ngdpbase.access.subject-attributes must be an object');
+    });
+    test('a built-in one redefined', async () => {
+      const { item, log } = await run([], { 'ngdpbase.access.subject-attributes': { aal: { type: 'string', from: 'profile:x' } } });
+      expect(item).toContain("The user detail 'aal' is built into the site and cannot be redefined");
+      expectPlain(item);
+      expect(log).toContain("subject attribute 'aal' in ngdpbase.access.subject-attributes cannot be redefined");
+    });
+    test('a wrong declaration', async () => {
+      const { item, log } = await run([], { 'ngdpbase.access.subject-attributes': { dept: { type: 'nope', from: 'profile:department' } } });
+      expect(item).toContain("The user detail 'dept' is not set up correctly");
+      expectPlain(item);
+      expect(log).toContain("subject attribute 'dept' in ngdpbase.access.subject-attributes has type");
+    });
+    test('private account data', async () => {
+      const { item, log } = await run([], { 'ngdpbase.access.subject-attributes': { secret: { type: 'string', from: 'account:password' } } });
+      expect(item).toContain("The user detail 'secret' reads private account data");
+      expectPlain(item);
+      expect(log).toContain("'account:password' cannot be used in a condition");
+    });
+  });
+
+  describe('the check list and schedules', () => {
+    const declared = { 'ngdpbase.access.environment-attributes': { 'open-hours': { type: 'boolean', from: 'schedule:office' } } };
+    test('not an object', async () => {
+      const { item, log } = await run([], { 'ngdpbase.access.environment-attributes': 'x' });
+      expect(item).toContain('The list of checks that depend on a schedule or a setting is not in a form the site can read');
+      expectPlain(item);
+      expect(log).toContain('ngdpbase.access.environment-attributes must be an object');
+    });
+    test('a wrong declaration', async () => {
+      const { item, log } = await run([], { 'ngdpbase.access.environment-attributes': { 'open-hours': { type: 'string', from: 'schedule:office' } } });
+      expect(item).toContain("The check 'open-hours' (for rules that depend on a schedule or a setting) is not set up correctly");
+      expectPlain(item);
+      expect(log).toContain("environment attribute 'open-hours' in ngdpbase.access.environment-attributes has type");
+    });
+    test('a schedule that does not exist', async () => {
+      const { item, log } = await run([], { ...declared, 'ngdpbase.schedules': {} });
+      expect(item).toContain("The check 'open-hours' uses a schedule called 'office' that does not exist, so a rule that depends on it never holds: an allow rule stops applying and a deny rule keeps applying. Add that schedule in Admin → Configuration, or point the check at one that exists.");
+      expectPlain(item);
+      expect(log).toContain("reads schedule 'office', which is not in ngdpbase.schedules");
+    });
+    test('a schedule with a mistake', async () => {
+      const { item, log } = await run([], { ...declared, 'ngdpbase.schedules': { office: { bogus: 1 } } });
+      expect(item).toContain("The schedule 'office', used by the check 'open-hours', has a mistake the site cannot read");
+      expectPlain(item);
+      expect(log).toContain('bogus is not a schedule setting');
+    });
+    test('a schedule switched off', async () => {
+      const { item, log } = await run([], { ...declared, 'ngdpbase.schedules': { office: { enabled: false, rules: [] } } });
+      expect(item).toContain("The schedule 'office', used by the check 'open-hours', is switched off");
+      expectPlain(item);
+      expect(log).toContain('(enabled: false)');
+    });
+    test('a schedule with no rules', async () => {
+      const { item, log } = await run([], { ...declared, 'ngdpbase.schedules': { office: { rules: [] } } });
+      expect(item).toContain("The schedule 'office', used by the check 'open-hours', has no times in it, so it counts as always open.");
+      expectPlain(item);
+      expect(log).toContain("schedule 'office', which has no rules");
+    });
+    test('schedules that cannot be read', async () => {
+      const { item, log } = await run([], declared, { getProperty: (k: string, d: unknown) => { if (k === 'ngdpbase.schedules') throw new Error('boom'); return d; } });
+      expect(item).toContain('The schedules could not be read');
+      expectPlain(item);
+      expect(log).toContain('ngdpbase.schedules could not be read');
+    });
   });
 });

@@ -44,15 +44,35 @@ describe('#1946 the dashboard separates down from needs-attention', () => {
     const section = doc.querySelector('#subsystems-down');
     expect(section?.textContent).toMatch(/1 subsystem is not working/);
     expect(section?.textContent).toContain('silently doing nothing');
-    expect(section?.textContent).toContain('ngdpbase.metrics.enabled');
   });
 
   test('both at once: each entry in its own section', async () => {
     const doc = await render([down], [reminder]);
-    expect(doc.querySelector('#subsystems-down')?.textContent).toContain('MetricsManager');
-    expect(doc.querySelector('#subsystems-down')?.textContent).not.toContain('BackupManager');
-    expect(doc.querySelector('#subsystems-attention')?.textContent).toContain('BackupManager');
-    expect(doc.querySelector('#subsystems-attention')?.textContent).not.toContain('MetricsManager');
+    expect(doc.querySelector('#subsystems-down')?.textContent).toContain('Metrics were configured');
+    expect(doc.querySelector('#subsystems-down')?.textContent).not.toContain('Save the backup key');
+    expect(doc.querySelector('#subsystems-attention')?.textContent).toContain('Save the backup key');
+    expect(doc.querySelector('#subsystems-attention')?.textContent).not.toContain('Metrics were configured');
+  });
+
+  test('#2348 no item shows the manager name, the state word or the configuration key', async () => {
+    const doc = await render([down], [reminder, { manager: 'PolicyEvaluator', state: 'degraded', kind: 'attention', reason: 'Access policies need review (1 problem): x.', configKey: 'ngdpbase.access.policies' }]);
+    const text = doc.body.textContent ?? '';
+    expect(text).not.toMatch(/MetricsManager|BackupManager|PolicyEvaluator|\(degraded\)|Configuration key/);
+    expect(text).not.toContain('ngdpbase.');
+    expect(doc.querySelector('code')).toBeNull();
+  });
+
+  test('#2348 a setting changed in Admin → Configuration gets a plain link there; an environment variable gets none', async () => {
+    const doc = await render([], [reminder, { manager: 'BackupManager', state: 'degraded', kind: 'attention', reason: 'The backup key is not set', configKey: 'NGDPBASE_BACKUP_KEY' }]);
+    const links = [...doc.querySelectorAll('#subsystems-attention a')];
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')).toBe('/admin/configuration');
+    expect(links[0].textContent).toBe('Change this in Admin → Configuration');
+  });
+
+  test('#2348 an entry with no reason still draws a line', async () => {
+    const doc = await render([], [{ manager: 'X', state: 'degraded', kind: 'attention' }]);
+    expect(doc.querySelector('#subsystems-attention li')?.textContent).toContain('No details were recorded.');
   });
 
   test('nothing to report draws nothing', async () => {

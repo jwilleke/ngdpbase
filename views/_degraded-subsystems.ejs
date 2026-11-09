@@ -10,14 +10,17 @@
     down, `attention` works but has something for an admin to do (save the
     backup key, fix a value). Telling an operator backups are "silently doing
     nothing" while they run is a false alarm. Each shows only with entries. %>
-<%# The state word ("degraded") is shown only for outages: next to a reminder it reads as broken. %>
-<% function subsystemList(entries, showState) { %>
+<%# #2348: an item is its reason alone. The internal manager name ("PolicyEvaluator") and the
+    configuration key mean nothing to an administrator, so neither is shown. The state word
+    ("degraded") is not either: the section's headline already says down or needs attention.
+    Where the item came from a setting changed in Admin → Configuration, a plain link goes there. %>
+<% function subsystemList(entries) { %>
     <ul class="small text-muted mt-1 mb-0">
         <% entries.forEach(function (m) { %>
             <li>
-                <strong><%= m.manager %></strong><% if (showState) { %> (<%= m.state %>)<% } %><% if (m.reason) { %> &mdash; <%= m.reason %><% } %>
-                <% if (m.configKey) { %>
-                    <br><span>Configuration key: <code><%= m.configKey %></code></span>
+                <%= m.reason || 'No details were recorded.' %>
+                <% if (m.configKey && String(m.configKey).indexOf('ngdpbase.') === 0) { %>
+                    <br><a href="/admin/configuration">Change this in Admin &rarr; Configuration</a>
                 <% } %>
             </li>
         <% }); %>
@@ -29,7 +32,7 @@
         <div>
             <strong><%= degradedManagers.length %> subsystem<%= degradedManagers.length === 1 ? ' is' : 's are' %> not working.</strong>
             Configured and wanted, but unavailable &mdash; the features they provide are silently doing nothing.
-            <% subsystemList(degradedManagers, true); %>
+            <% subsystemList(degradedManagers); %>
         </div>
     </div>
 <% } %>
@@ -39,7 +42,7 @@
         <div>
             <strong>Working, but needs your attention.</strong>
             <%= attentionManagers.length === 1 ? 'This feature is running, but an administrator has something to do:' : 'These features are running, but each has something for an administrator to do:' %>
-            <% subsystemList(attentionManagers, false); %>
+            <% subsystemList(attentionManagers); %>
         </div>
     </div>
 <% } %>

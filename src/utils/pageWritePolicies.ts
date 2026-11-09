@@ -51,6 +51,14 @@ export interface PageWritePolicyReport {
   rewritten: string[];
   /** Policies left alone that now decide differently, or reopen pushed pages. */
   review: string[];
+  /** Each `rewritten` line, in plain words, for the needs-attention entry (no permission ids, issue numbers or setting names). */
+  shown: Record<string, string>;
+}
+
+/** One finding for the start-up log (`log`, in full) and for the needs-attention entry (`plain`, in plain words). */
+export interface PolicyFinding {
+  log: string;
+  plain: string;
 }
 
 function isPageStar(policy: Policy): boolean {
@@ -64,7 +72,7 @@ function isPageStar(policy: Policy): boolean {
  * the input; the input is not changed.
  */
 export function migrateStoredPageWritePolicies(policies: unknown): { policies: unknown; report: PageWritePolicyReport } {
-  const report: PageWritePolicyReport = { rewritten: [], review: [] };
+  const report: PageWritePolicyReport = { rewritten: [], review: [], shown: {} };
   if (!Array.isArray(policies)) return { policies, report };
   const out: unknown[] = [];
   for (const entry of policies as unknown[]) {
@@ -88,7 +96,9 @@ export function migrateStoredPageWritePolicies(policies: unknown): { policies: u
         actions: extra
       });
     }
-    report.rewritten.push(`'${policy.id}' in custom config granted ${held.join(', ')} on every page; that now comes from the category policies${extra.length > 0 ? `, and ${extra.join(', ')}, which they do not give, is kept on general pages as '${policy.id}-page-write'` : ''}`);
+    const line = `'${policy.id}' in custom config granted ${held.join(', ')} on every page; that now comes from the category policies (#2255)${extra.length > 0 ? `, and ${extra.join(', ')}, which they do not give, is kept on general pages as '${policy.id}-page-write'` : ''}`;
+    report.rewritten.push(line);
+    report.shown[line] = `The saved rule '${policy.id}' let its roles change every page, which the site now handles with its page category rules, so it was changed for this run only${extra.length > 0 ? `; what the category rules do not cover is kept for general pages in a new rule, '${policy.id}-page-write'` : ''}. Save the policy list in Admin → Configuration to keep the change.`;
   }
   return { policies: out, report };
 }
@@ -98,13 +108,16 @@ export function migrateStoredPageWritePolicies(policies: unknown): { policies: u
  * allow that grants a page write on a `page` resource to a role other than
  * admin (it reaches pushed pages), an allow that grants anything but
  * page-read to `anyone` or `authenticated` (#2261, #2283), and every deny (a deny now overrides any
- * allow).
+ * allow). Each is a log line in full and the same finding in plain words.
  */
-export function pageWritePoliciesToReview(policies: readonly Policy[]): string[] {
-  const out: string[] = [];
+export function pageWritePolicyFindings(policies: readonly Policy[]): PolicyFinding[] {
+  const out: PolicyFinding[] = [];
   for (const policy of policies) {
     if (policy.effect === 'deny') {
-      out.push(`'${policy.id}' is a deny, and a deny overrides any allow`);
+      out.push({
+        log: `'${policy.id}' is a deny: since #2255 a deny overrides any allow`,
+        plain: `The rule '${policy.id}' denies access, and a deny beats every rule that allows it. Check that it denies only what you mean it to; if not, change or remove it.`
+      });
       continue;
     }
     const everyone = (policy.subjects ?? []).some((s) => s.type === 'anyone') ? 'anyone, including signed-out visitors'
@@ -113,13 +126,24 @@ export function pageWritePoliciesToReview(policies: readonly Policy[]): string[]
     const held = (policy.actions ?? []).length > 0 ? (policy.actions ?? []) : ['*'];
     const granted = held.filter((a) => a !== READ_ONLY_ACTION);
     if (everyone && granted.length > 0) {
-      out.push(`'${policy.id}' grants ${granted.join(', ')} to ${everyone}, so ${everyone} can do that, beyond reading; grant it to named roles instead`);
+      out.push({
+        log: `'${policy.id}' grants ${granted.join(', ')} to ${everyone}, so ${everyone} can do that, beyond reading; grant it to named roles instead (#2261)`,
+        plain: `The rule '${policy.id}' lets ${everyone} do more than read. Give those abilities to named roles instead.`
+      });
     }
     const writes = (policy.actions ?? []).filter((a) => (PAGE_WRITES as readonly string[]).includes(a) || a === '*');
     const roles = (policy.subjects ?? []).filter((s) => s.type === 'role' && s.value !== 'admin').map((s) => s.value);
     if (writes.length > 0 && roles.length > 0 && (policy.resources ?? []).some((r) => r.type === 'page')) {
-      out.push(`'${policy.id}' grants ${writes.join(', ')} on pages by name to ${roles.join(', ')}, which reaches system, documentation and add-on pages; grant it on system categories instead`);
+      out.push({
+        log: `'${policy.id}' grants ${writes.join(', ')} on pages by name to ${roles.join(', ')}, which reaches system, documentation and add-on pages; grant it on system categories instead (#2255)`,
+        plain: `The rule '${policy.id}' lets ${roles.length === 1 ? 'the role' : 'the roles'} ${roles.join(', ')} change pages by name, which reaches system, documentation and add-on pages. Change it to apply to page categories instead.`
+      });
     }
   }
   return out;
+}
+
+/** The log lines of {@link pageWritePolicyFindings}. */
+export function pageWritePoliciesToReview(policies: readonly Policy[]): string[] {
+  return pageWritePolicyFindings(policies).map((f) => f.log);
 }

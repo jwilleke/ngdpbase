@@ -3,7 +3,7 @@ import BaseManager from './BaseManager.js';
 // sat here and drifted from it.
 import type { Policy, PolicySubject, PolicyResource, PolicyCondition } from '../types/Policy.js';
 import { isAttributeName } from '../types/Policy.js';
-import { readDeclaredAsWritten, COMPARISON_FUNCTIONS, CONDITION_EXAMPLE, CONDITION_FUNCTIONS, DATATYPES, GROUP_FUNCTIONS, LEGACY_CONDITION_KEYS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_FUNCTION, OPERAND_KEYS, RULE_COMBINING_ALGORITHM_KEY, combiningAlgorithmProblem, compareLeaf, datatypeOf, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, environmentDeclarationProblem, literalFits, literalType, subjectAttributesProblems, subjectDeclarationProblem, unenforcedConditionsLine, unenforcedConditionsNotice, type DeclaredEnvironmentAttribute, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
+import { readDeclaredAsWritten, COMPARISON_FUNCTIONS, CONDITION_EXAMPLE, CONDITION_FUNCTIONS, DATATYPES, GROUP_FUNCTIONS, LEGACY_CONDITION_KEYS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_FUNCTION, OPERAND_KEYS, RULE_COMBINING_ALGORITHM_KEY, combiningAlgorithmProblem, compareLeaf, datatypeOf, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesFindings, environmentDeclarationProblem, literalFits, literalType, subjectAttributesFindings, subjectDeclarationProblem, unenforcedConditionsLine, unenforcedConditionsNotice, type DeclaredEnvironmentAttribute, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
 import { SCHEDULES_KEY, TIME_ZONE_KEY, scheduleIsEnabled, scheduleProblem, type Schedule } from '../utils/availability.js';
 import { normalizeUsername } from '../utils/username.js';
 import logger from '../utils/logger.js';
@@ -11,7 +11,7 @@ import micromatch from 'micromatch';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
-import { pageWritePoliciesToReview } from '../utils/pageWritePolicies.js';
+import { pageWritePolicyFindings } from '../utils/pageWritePolicies.js';
 import { categoryStored } from './ValidationManager.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 
@@ -508,33 +508,37 @@ class PolicyEvaluator extends BaseManager {
     const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
     if (!config || !pdp) return;
     // The log keeps each line in full; `shown` is what the needs-attention item says, in plain words
-    // (no issue numbers, file paths or setting names). A line with no entry in `shown` is already plain.
-    const lines: string[] = [...((config as { pageWritePolicyMigration?: string[] }).pageWritePolicyMigration ?? [])];
-    const shown = new Map<string, string>();
-    lines.push(...pageWritePoliciesToReview(this.policies()));
+    // (no permission ids, issue numbers, setting names or file paths). A line with no entry in `shown` is already plain.
+    const migration = config as { pageWritePolicyMigration?: string[]; pageWritePolicyMigrationShown?: Record<string, string> };
+    const lines: string[] = [...(migration.pageWritePolicyMigration ?? [])];
+    const shown = new Map<string, string>(Object.entries(migration.pageWritePolicyMigrationShown ?? {}));
+    const add = (finding: { log: string; plain: string }): void => {
+      lines.push(finding.log);
+      shown.set(finding.log, finding.plain);
+    };
+    pageWritePolicyFindings(this.policies()).forEach(add);
     // #2330: `priority` is gone; a leftover one changes nothing.
     const withPriority = this.policies().filter((p) => p.priority !== undefined).map((p) => `'${p.id}'`);
     if (withPriority.length > 0) {
-      const line = `${withPriority.join(', ')} ${withPriority.length === 1 ? 'has' : 'have'} a priority, which is ignored: under deny-overrides any matching deny wins and order and priority don't matter; remove it (#2330)`;
-      lines.push(line);
-      shown.set(line, `${withPriority.length === 1 ? 'This rule has' : 'These rules have'} an old 'priority' that the site ignores, so it changes nothing: ${withPriority.join(', ')}. Remove it${withPriority.length === 1 ? '' : ' from each one'}.`);
+      add({
+        log: `${withPriority.join(', ')} ${withPriority.length === 1 ? 'has' : 'have'} a priority, which is ignored: under deny-overrides any matching deny wins and order and priority don't matter; remove it (#2330)`,
+        plain: `${withPriority.length === 1 ? 'This rule has' : 'These rules have'} an old 'priority' that the site ignores, so it changes nothing: ${withPriority.join(', ')}. Remove it${withPriority.length === 1 ? '' : ' from each one'}.`
+      });
     }
     // #2334: the old plural `conditions` array is read by nothing.
-    // The log keeps the long form; the needs-attention entry shows plain words (below).
+    // The log keeps the long form; the needs-attention entry shows plain words.
     const unenforced = unenforcedConditionsLine(this.policies());
-    if (unenforced) {
-      lines.push(unenforced);
-      const notice = unenforcedConditionsNotice(this.policies());
-      if (notice) shown.set(unenforced, notice);
-    }
+    const notice = unenforcedConditionsNotice(this.policies());
+    if (unenforced && notice) add({ log: unenforced, plain: notice });
     for (const { id, effect, problems } of this.conditionProblemsInForce()) {
-      lines.push(...problems.map((p) => `'${id}': ${p}; ${effect === 'deny' ? 'the deny always applies' : 'the policy never applies as an allow'}`));
+      const plain = `The rule '${id}' has a condition that cannot work, so ${effect === 'deny' ? 'it always denies' : 'it never gives anyone access'}. Open the rule in Admin → Configuration and fix its condition, or remove it.`;
+      problems.forEach((p) => add({ log: `'${id}': ${p}; ${effect === 'deny' ? 'the deny always applies' : 'the policy never applies as an allow'}`, plain }));
     }
     // #2287: the declaration itself, add-on defaults included (this reads the merged value). `id` and `aal` keep their built-in meaning either way.
-    lines.push(...subjectAttributesProblems(readDeclaredAsWritten(config, SUBJECT_ATTRIBUTES_KEY), SENSITIVE_USER_FIELDS));
+    subjectAttributesFindings(readDeclaredAsWritten(config, SUBJECT_ATTRIBUTES_KEY), SENSITIVE_USER_FIELDS).forEach(add);
     // #2261 slice 4: the environment declarations, and each schedule one names that is missing (the attribute is then missing and fails closed).
-    lines.push(...environmentAttributesProblems(readDeclaredAsWritten(config, ENVIRONMENT_ATTRIBUTES_KEY)));
-    lines.push(...this.scheduleProblems());
+    environmentAttributesFindings(readDeclaredAsWritten(config, ENVIRONMENT_ATTRIBUTES_KEY)).forEach(add);
+    this.scheduleProblems().forEach(add);
     const catalogue = config.getProperty('ngdpbase.system-category', {}) as Record<string, { label?: string; storageLocation?: unknown; owner?: unknown }> | null;
     const writable = new Set([...pdp.categoriesGranting('page-edit'), ...pdp.categoriesGranting('pushed-pages-edit')]);
     // An installed add-on's category is declared even while the add-on is off
@@ -546,15 +550,17 @@ class PolicyEvaluator extends BaseManager {
       .map(([key, entry]) => (typeof entry?.label === 'string' && entry.label ? entry.label : key).toLowerCase())
       .filter((category) => !writable.has(category));
     if (unwritable.length > 0) {
-      const line = `no policy grants page-edit or pushed-pages-edit on system-category ${unwritable.join(', ')}, so nobody can change those pages, admin included; add a policy on the system-category resource type (#2255)`;
-      lines.push(line);
-      shown.set(line, `Nobody can edit the pages in ${unwritable.length === 1 ? 'this category' : 'these categories'}, not even an admin: ${unwritable.join(', ')}. Add a rule that lets a role edit ${unwritable.length === 1 ? 'it' : 'them'}.`);
+      add({
+        log: `no policy grants page-edit or pushed-pages-edit on system-category ${unwritable.join(', ')}, so nobody can change those pages, admin included; add a policy on the system-category resource type (#2255)`,
+        plain: `Nobody can edit the pages in ${unwritable.length === 1 ? 'this category' : 'these categories'}, not even an admin: ${unwritable.join(', ')}. Add a rule that lets a role edit ${unwritable.length === 1 ? 'it' : 'them'}.`
+      });
     }
     if (lines.length === 0) return;
     for (const line of lines) logger.warn(`[POLICY] ${line}`);
     // Each part is a full sentence, so they are joined with a space.
-    const plain = lines.map((l) => `${(shown.get(l) ?? l).replace(/\.$/, '')}.`);
-    this.markNeedsAttention(`Access policies need review (${lines.length} ${lines.length === 1 ? 'problem' : 'problems'}): ${plain.join(' ')}`, 'ngdpbase.access.policies');
+    // Several log lines can say one plain thing (a rule with two bad conditions), so it is said, and counted, once.
+    const plain = [...new Set(lines.map((l) => `${(shown.get(l) ?? l).replace(/\.$/, '')}.`))];
+    this.markNeedsAttention(`Access policies need review (${plain.length} ${plain.length === 1 ? 'problem' : 'problems'}): ${plain.join(' ')}`, 'ngdpbase.access.policies');
   }
 
   /**
@@ -757,25 +763,50 @@ class PolicyEvaluator extends BaseManager {
    * `ngdpbase.schedules` (the attribute is missing and a condition on it fails
    * closed) or has no rules (it reads as always open), for the boot warning.
    */
-  private scheduleProblems(): string[] {
+  private scheduleProblems(): Array<{ log: string; plain: string }> {
     let schedules: Record<string, Schedule> | null = null;
     let zone: unknown = 'UTC';
     try {
       schedules = this.configManager?.getProperty(SCHEDULES_KEY, null) as Record<string, Schedule> | null;
       zone = this.configManager?.getProperty(TIME_ZONE_KEY, 'UTC');
     } catch {
-      return ['ngdpbase.schedules could not be read, so no attribute that reads a schedule can be used; a condition on one never holds (an allow does not apply, a deny does)'];
+      return [{
+        log: 'ngdpbase.schedules could not be read, so no attribute that reads a schedule can be used; a condition on one never holds (an allow does not apply, a deny does)',
+        plain: 'The schedules could not be read, so a rule that depends on a schedule never holds: an allow rule stops applying and a deny rule keeps applying. Fix the schedules in Admin → Configuration.'
+      }];
     }
     return Object.entries(this.declaredEnvironmentAttributes()).flatMap(([name, decl]) => {
       const from = typeof decl?.from === 'string' ? decl.from : '';
       if (!from.startsWith('schedule:') || environmentDeclarationProblem(name, decl) !== null) return [];
       const schedule = from.slice('schedule:'.length);
+      const never = 'a condition on it never holds (an allow does not apply, a deny does)';
+      const neverPlain = 'so a rule that depends on it never holds: an allow rule stops applying and a deny rule keeps applying';
       const found = schedules && typeof schedules === 'object' && Object.hasOwn(schedules, schedule) ? schedules[schedule] : undefined;
-      if (!found || typeof found !== 'object') return [`environment attribute '${name}' reads schedule '${schedule}', which is not in ngdpbase.schedules; a condition on it never holds (an allow does not apply, a deny does)`];
+      if (!found || typeof found !== 'object') {
+        return [{
+          log: `environment attribute '${name}' reads schedule '${schedule}', which is not in ngdpbase.schedules; ${never}`,
+          plain: `The check '${name}' uses a schedule called '${schedule}' that does not exist, ${neverPlain}. Add that schedule in Admin → Configuration, or point the check at one that exists.`
+        }];
+      }
       const bad = scheduleProblem(found, typeof zone === 'string' && zone ? zone : 'UTC');
-      if (bad) return [`environment attribute '${name}' reads schedule '${schedule}', which cannot be read (${bad}); a condition on it never holds (an allow does not apply, a deny does)`];
-      if (!scheduleIsEnabled(found)) return [`environment attribute '${name}' reads schedule '${schedule}', which is switched off (enabled: false); a condition on it never holds (an allow does not apply, a deny does)`];
-      if (!Array.isArray(found.rules) || found.rules.length === 0) return [`environment attribute '${name}' reads schedule '${schedule}', which has no rules; it reads as always open`];
+      if (bad) {
+        return [{
+          log: `environment attribute '${name}' reads schedule '${schedule}', which cannot be read (${bad}); ${never}`,
+          plain: `The schedule '${schedule}', used by the check '${name}', has a mistake the site cannot read, ${neverPlain}. Fix the schedule in Admin → Configuration.`
+        }];
+      }
+      if (!scheduleIsEnabled(found)) {
+        return [{
+          log: `environment attribute '${name}' reads schedule '${schedule}', which is switched off (enabled: false); ${never}`,
+          plain: `The schedule '${schedule}', used by the check '${name}', is switched off, ${neverPlain}. Switch it back on in Admin → Configuration, or stop using it.`
+        }];
+      }
+      if (!Array.isArray(found.rules) || found.rules.length === 0) {
+        return [{
+          log: `environment attribute '${name}' reads schedule '${schedule}', which has no rules; it reads as always open`,
+          plain: `The schedule '${schedule}', used by the check '${name}', has no times in it, so it counts as always open. Add the times it should be open in Admin → Configuration.`
+        }];
+      }
       return [];
     });
   }
