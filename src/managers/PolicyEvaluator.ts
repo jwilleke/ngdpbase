@@ -507,17 +507,26 @@ class PolicyEvaluator extends BaseManager {
     const config = this.configManager;
     const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
     if (!config || !pdp) return;
+    // The log keeps each line in full; `shown` is what the needs-attention item says, in plain words
+    // (no issue numbers, file paths or setting names). A line with no entry in `shown` is already plain.
     const lines: string[] = [...((config as { pageWritePolicyMigration?: string[] }).pageWritePolicyMigration ?? [])];
+    const shown = new Map<string, string>();
     lines.push(...pageWritePoliciesToReview(this.policies()));
     // #2330: `priority` is gone; a leftover one changes nothing.
     const withPriority = this.policies().filter((p) => p.priority !== undefined).map((p) => `'${p.id}'`);
     if (withPriority.length > 0) {
-      lines.push(`${withPriority.join(', ')} ${withPriority.length === 1 ? 'has' : 'have'} a priority, which is ignored: under deny-overrides any matching deny wins and order and priority don't matter; remove it (#2330)`);
+      const line = `${withPriority.join(', ')} ${withPriority.length === 1 ? 'has' : 'have'} a priority, which is ignored: under deny-overrides any matching deny wins and order and priority don't matter; remove it (#2330)`;
+      lines.push(line);
+      shown.set(line, `${withPriority.length === 1 ? 'This rule has' : 'These rules have'} an old 'priority' that the site ignores, so it changes nothing: ${withPriority.join(', ')}. Remove it.`);
     }
     // #2334: the old plural `conditions` array is read by nothing.
     // The log keeps the long form; the needs-attention entry shows plain words (below).
     const unenforced = unenforcedConditionsLine(this.policies());
-    if (unenforced) lines.push(unenforced);
+    if (unenforced) {
+      lines.push(unenforced);
+      const notice = unenforcedConditionsNotice(this.policies());
+      if (notice) shown.set(unenforced, notice);
+    }
     for (const { id, effect, problems } of this.conditionProblemsInForce()) {
       lines.push(...problems.map((p) => `'${id}': ${p}; ${effect === 'deny' ? 'the deny always applies' : 'the policy never applies as an allow'}`));
     }
@@ -537,13 +546,14 @@ class PolicyEvaluator extends BaseManager {
       .map(([key, entry]) => (typeof entry?.label === 'string' && entry.label ? entry.label : key).toLowerCase())
       .filter((category) => !writable.has(category));
     if (unwritable.length > 0) {
-      lines.push(`no policy grants page-edit or pushed-pages-edit on system-category ${unwritable.join(', ')}, so nobody can change those pages, admin included; add a policy on the system-category resource type (#2255)`);
+      const line = `no policy grants page-edit or pushed-pages-edit on system-category ${unwritable.join(', ')}, so nobody can change those pages, admin included; add a policy on the system-category resource type (#2255)`;
+      lines.push(line);
+      shown.set(line, `Nobody can edit the pages in ${unwritable.length === 1 ? 'this category' : 'these categories'}, not even an admin: ${unwritable.join(', ')}. Add a rule that lets a role edit ${unwritable.length === 1 ? 'it' : 'them'}.`);
     }
     if (lines.length === 0) return;
     for (const line of lines) logger.warn(`[POLICY] ${line}`);
-    const notice = unenforcedConditionsNotice(this.policies());
-    const shown = lines.map((l) => (l === unenforced && notice ? notice.replace(/\.$/, '') : l));
-    this.markNeedsAttention(`Access policies need review (${lines.length}): ${shown.join('; ')}. See the start-up log and docs/access-policies.md.`, 'ngdpbase.access.policies');
+    const plain = lines.map((l) => (shown.get(l) ?? l).replace(/\.$/, ''));
+    this.markNeedsAttention(`Access policies need review (${lines.length}): ${plain.join('; ')}.`, 'ngdpbase.access.policies');
   }
 
   /**

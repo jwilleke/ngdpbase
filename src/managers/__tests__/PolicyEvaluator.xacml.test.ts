@@ -313,11 +313,12 @@ function policy(id: string, effect: string, condition?: unknown, extra: Record<s
   } as Policy;
 }
 
-function evaluatorWith(policies: Policy[], algorithm: unknown = 'deny-overrides'): PolicyEvaluator {
+function evaluatorWith(policies: Policy[], algorithm: unknown = 'deny-overrides', extra: Record<string, unknown> = {}): PolicyEvaluator {
   const config: Record<string, unknown> = {
     'ngdpbase.access.resource-types': { page: { attributes: PAGE_ATTRIBUTES }, 'system-category': {} },
     'ngdpbase.access.subject-attributes': SUBJECT_ATTRIBUTES,
-    [RULE_COMBINING_ALGORITHM_KEY]: algorithm
+    [RULE_COMBINING_ALGORITHM_KEY]: algorithm,
+    ...extra
   };
   const engine = {
     getManager: (name: string) => {
@@ -328,3 +329,44 @@ function evaluatorWith(policies: Policy[], algorithm: unknown = 'deny-overrides'
   } as never;
   return new PolicyEvaluator(engine);
 }
+
+describe('the needs-attention item for the access policies (#2343)', () => {
+  const withAll = () => {
+    const onCategory = { resources: [{ type: 'system-category', pattern: 'general' }] };
+    const ev = evaluatorWith(
+      [policy('old-priority', 'allow', undefined, { priority: 5, ...onCategory }), policy('old-list', 'allow', undefined, { conditions: [{ type: 'time-range' }], ...onCategory })],
+      'deny-overrides',
+      { 'ngdpbase.system-category': { locked: { label: 'Locked', storageLocation: { path: 'x' } } } }
+    );
+    const attention = vi.fn();
+    (ev as unknown as { markNeedsAttention: typeof attention }).markNeedsAttention = attention;
+    return { ev, attention };
+  };
+
+  test('says each thing in plain words: no issue number, doc path, or start-up log', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const { ev, attention } = withAll();
+    await ev.initialize();
+    warn.mockRestore();
+    const text = String(attention.mock.calls[0][0]);
+    expect(text).toContain('Access policies need review (3)');
+    expect(text).toContain("'old-priority'");
+    expect(text).toContain('locked');
+    expect(text).toContain("'old-list'");
+    expect(text).not.toMatch(/#\d/);
+    expect(text).not.toContain('docs/');
+    expect(text).not.toContain('start-up log');
+    expect(text).not.toMatch(/system-category|pushed-pages-edit|deny-overrides/);
+  });
+
+  test('the start-up log keeps the full detail of each line', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const { ev } = withAll();
+    await ev.initialize();
+    const all = warn.mock.calls.map((c) => String(c[0]));
+    warn.mockRestore();
+    expect(all.find((l) => l.includes('a priority'))).toContain('(#2330)');
+    expect(all.find((l) => l.includes('system-category locked'))).toContain('(#2255)');
+    expect(all.find((l) => l.includes('conditions array'))).toContain('docs/access-policies.md#subject-attributes');
+  });
+});
