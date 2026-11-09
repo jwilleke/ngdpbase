@@ -492,7 +492,10 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(function(response) { return response.json(); })
             .then(function(data) {
                 if (window.followReauth(data)) return;
-                if (data.success) {
+                if (data.success && data.warning) {
+                    // Saved, with something the admin must read: stays until dismissed
+                    showConfigAlert('warning', data.message || data.warning);
+                } else if (data.success) {
                     showConfigAlert('success', data.message || 'Configuration updated successfully');
                     // #2317: saved, so the note no longer applies and the row shows the new value, without a reload
                     // Only when this very form turned passkeys off; any other save leaves the note and the value alone.

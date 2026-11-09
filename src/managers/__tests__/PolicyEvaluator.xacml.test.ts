@@ -8,7 +8,7 @@
 import PolicyEvaluator, { conditionHolds, conditionProblems } from '../PolicyEvaluator';
 import PolicyValidator from '../PolicyValidator';
 import type { Policy, PolicyCondition } from '../../types/Policy';
-import { CONDITION_FUNCTIONS, DENY_OVERRIDES_EXPLANATION, RULE_COMBINING_ALGORITHM_KEY } from '../../utils/policyAttributes';
+import { CONDITION_FUNCTIONS, DENY_OVERRIDES_EXPLANATION, RULE_COMBINING_ALGORITHM_KEY, unenforcedConditionsNotice } from '../../utils/policyAttributes';
 import logger from '../../utils/logger';
 
 const PAGE_ATTRIBUTES = { owner: { type: 'identity' }, level: { type: 'integer' }, draft: { type: 'boolean' }, tags: { type: 'list' } };
@@ -200,6 +200,72 @@ describe('rule-combining-algorithm (#2330)', () => {
 
   test('the sentence Admin → Configuration shows', () => {
     expect(DENY_OVERRIDES_EXPLANATION).toBe('Any matching deny wins. Order and priority don\'t matter.');
+  });
+});
+
+describe('a leftover conditions array (#2334)', () => {
+  const startupLines = async (policies: unknown[]) => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    await evaluatorWith(policies as ReturnType<typeof policy>[]).initialize();
+    const lines = warn.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('conditions array'));
+    warn.mockRestore();
+    return lines;
+  };
+
+  test('is reported once at start-up as not enforced, naming each policy and the condition to write', async () => {
+    const lines = await startupLines([
+      policy('old-one', 'allow', undefined, { conditions: [{ type: 'user-attribute', key: 'department', value: 'IT', operator: '==' }] }),
+      policy('old-two', 'deny', undefined, { conditions: [{ type: 'time-range', startTime: '09:00', endTime: '17:00' }] }),
+      policy('clean', 'allow')
+    ]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("'old-one', 'old-two' have a conditions array, which is not enforced");
+    expect(lines[0]).toContain('"string-equal"');
+    expect(lines[0]).toContain('time-range, ip-range');
+    expect(lines[0]).toContain('have no equivalent');
+    expect(lines[0]).toContain('"from": "profile:department"');
+    expect(lines[0]).not.toContain('clean');
+  });
+
+  test('a mix with a leftover priority and an old-shape condition: each line once, none garbled', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    await evaluatorWith([
+      policy('old-one', 'allow', undefined, { priority: 5, conditions: [{ type: 'time-range', startTime: '09:00', endTime: '17:00' }] }),
+      policy('old-two', 'deny', undefined, { condition: { operator: 'equals', key: 'x', value: 'y' } }),
+      policy('clean', 'allow')
+    ]).initialize();
+    const all = warn.mock.calls.map((c) => String(c[0]));
+    warn.mockRestore();
+    expect(all.filter((l) => l.includes('conditions array'))).toHaveLength(1);
+    expect(all.filter((l) => l.includes('a priority, which is ignored'))).toHaveLength(1);
+    expect(all.find((l) => l.includes('conditions array'))).toContain("'old-one' has a conditions array");
+    expect(all.find((l) => l.includes('a priority'))).toContain("'old-one' has a priority");
+  });
+
+  test('a policy with no id is named by its position in the list, not in the filtered list', async () => {
+    const lines = await startupLines([{ id: 'a' }, { id: 'b', conditions: [] }, { effect: 'allow', actions: [], subjects: [], resources: [] }, { effect: 'allow', actions: [], subjects: [], resources: [], conditions: [1] }, { id: 'c', conditions: [{ type: 'bogus' }] }]);
+    expect(lines[0]).toContain("'#4', 'c' have a conditions array");
+  });
+
+  test('an empty conditions array is not reported', async () => {
+    expect(await startupLines([policy('old-one', 'allow', undefined, { conditions: [] })])).toEqual([]);
+  });
+
+  test('the notice an admin sees has no issue number or JSON', () => {
+    const one = unenforcedConditionsNotice([policy('a', 'allow', undefined, { conditions: [{ type: 'x' }] })]);
+    expect(one).toBe("This rule has an old 'conditions' list that the site ignores, so it doesn't limit anyone: 'a'. Move it into the rule's condition, or remove it.");
+    const two = unenforcedConditionsNotice([{ id: 'a', conditions: [1] }, { id: 'b', conditions: [1] }]);
+    expect(two).toContain("These rules have an old 'conditions' list that the site ignores, so it doesn't limit anyone: 'a', 'b'. Move each one");
+    expect(two).not.toMatch(/#\d{4}|[{}]/);
+  });
+
+  test('is not reported when no policy has one', async () => {
+    expect(await startupLines([policy('clean', 'allow')])).toEqual([]);
+  });
+
+  test('changes nothing: the policy is still loaded and the site starts', async () => {
+    const ev = evaluatorWith([policy('old-one', 'allow', undefined, { conditions: [{ type: 'time-range' }] })]);
+    await expect(ev.initialize()).resolves.not.toThrow();
   });
 });
 

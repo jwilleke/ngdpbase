@@ -137,6 +137,66 @@ describe('saving ngdpbase.access.policies (#2278)', () => {
   });
 });
 
+describe('a policy with the old conditions array on save (#2334)', () => {
+  const old = { ...policy('old-one'), conditions: [{ type: 'user-attribute', key: 'department', value: 'IT', operator: '==' }] };
+
+  it('saves it and shows the not-enforced message, naming the policy', async () => {
+    const { routes, configManager } = await makeRoutes();
+    const r = res();
+    await routes.adminUpdateConfiguration(save([policy('p1'), old]), r);
+    expect(r.json.mock.calls[0][0]).not.toHaveProperty('error');
+    expect(configManager.setProperty).toHaveBeenCalledWith(KEY, [policy('p1'), old], adminUser);
+    const body = r.json.mock.calls[0][0];
+    expect(body.success).toBe(true);
+    expect(body.warning).toContain("This rule has an old 'conditions' list that the site ignores, so it doesn't limit anyone: 'old-one'");
+    expect(body.warning).not.toMatch(/#\d{4}|[{}]/);
+    expect(body.warning).not.toContain("'p1'");
+  });
+
+  it('says "these rules have" for several', async () => {
+    const { routes } = await makeRoutes();
+    const r = res();
+    await routes.adminUpdateConfiguration(save([old, { ...old, id: 'old-two' }]), r);
+    expect(r.json.mock.calls[0][0].warning).toContain("These rules have an old 'conditions' list");
+  });
+
+  it('does not warn about an empty conditions array', async () => {
+    const { routes } = await makeRoutes();
+    const r = res();
+    await routes.adminUpdateConfiguration(save([{ ...policy('p1'), conditions: [] }]), r);
+    expect(r.json.mock.calls[0][0].warning).toBeUndefined();
+  });
+
+  it('still refuses a conditions entry the schema rejects (an unknown type), with no warning', async () => {
+    const { routes, configManager } = await makeRoutes();
+    const r = res();
+    await routes.adminUpdateConfiguration(save([{ ...policy('p1'), conditions: [{ type: 'bogus' }] }]), r);
+    expect(configManager.setProperty).not.toHaveBeenCalled();
+    expect(r.json.mock.calls[0][0].warning).toBeUndefined();
+  });
+
+  it('the page shows data.warning as a warning alert that stays', () => {
+    const view = readFileSync(new URL('../../../views/admin-configuration.ejs', import.meta.url), 'utf8');
+    expect(view).toMatch(/data\.success && data\.warning\)[\s\S]{0,200}showConfigAlert\('warning'/);
+    expect(view).toMatch(/if \(type !== 'success'\) return;/);
+  });
+
+  it('shows no message when no policy has one', async () => {
+    const { routes } = await makeRoutes();
+    const r = res();
+    await routes.adminUpdateConfiguration(save([policy('p1')]), r);
+    expect(r.json.mock.calls[0][0].warning).toBeUndefined();
+  });
+
+  it('does not touch the save of another setting', async () => {
+    const { routes, configManager } = await makeRoutes();
+    const r = res();
+    await routes.adminUpdateConfiguration(req({ property: 'ngdpbase.applicationName', value: JSON.stringify('Wiki') }), r);
+    expect(configManager.setProperty).toHaveBeenCalled();
+    expect(r.json.mock.calls[0][0].warning).toBeUndefined();
+  });
+});
+
 describe('loading Admin → Configuration with policies in force that have problems (#2278)', () => {
   it('hands the policy id and the validator message to the page for the policies row', async () => {
     const { routes } = await makeRoutes([policy('from-custom-config', { or: [] })]);
