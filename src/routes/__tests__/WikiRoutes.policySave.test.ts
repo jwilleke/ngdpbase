@@ -137,6 +137,37 @@ describe('saving ngdpbase.access.policies (#2278)', () => {
   });
 });
 
+describe('a policy with the old conditions array on save (#2334)', () => {
+  const old = { ...policy('old-one'), conditions: [{ type: 'user-attribute', key: 'department', value: 'IT', operator: '==' }] };
+
+  it('saves it and shows the not-enforced message, naming the policy', async () => {
+    const { routes, configManager } = await makeRoutes();
+    const r = res();
+    await routes.adminUpdateConfiguration(save([policy('p1'), old]), r);
+    expect(r.json.mock.calls[0][0]).not.toHaveProperty('error');
+    expect(configManager.setProperty).toHaveBeenCalledWith(KEY, [policy('p1'), old], adminUser);
+    const body = r.json.mock.calls[0][0];
+    expect(body.success).toBe(true);
+    expect(body.warning).toContain("'old-one' has a conditions array, which is not enforced");
+    expect(body.warning).not.toContain("'p1'");
+  });
+
+  it('shows no message when no policy has one', async () => {
+    const { routes } = await makeRoutes();
+    const r = res();
+    await routes.adminUpdateConfiguration(save([policy('p1')]), r);
+    expect(r.json.mock.calls[0][0].warning).toBeUndefined();
+  });
+
+  it('does not touch the save of another setting', async () => {
+    const { routes, configManager } = await makeRoutes();
+    const r = res();
+    await routes.adminUpdateConfiguration(req({ property: 'ngdpbase.applicationName', value: JSON.stringify('Wiki') }), r);
+    expect(configManager.setProperty).toHaveBeenCalled();
+    expect(r.json.mock.calls[0][0].warning).toBeUndefined();
+  });
+});
+
 describe('loading Admin → Configuration with policies in force that have problems (#2278)', () => {
   it('hands the policy id and the validator message to the page for the policies row', async () => {
     const { routes } = await makeRoutes([policy('from-custom-config', { or: [] })]);

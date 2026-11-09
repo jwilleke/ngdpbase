@@ -56,7 +56,7 @@ Every policy must conform to the following JSON schema:
     },
     "conditions": {
       "type": "array",
-      "description": "Additional constraints on the policy",
+      "description": "NOT ENFORCED: nothing reads this array. Use the single condition below",
       "items": { "$ref": "#/definitions/condition" }
     },
     "condition": {
@@ -181,7 +181,7 @@ The singular `condition` is one XACML 3.0 function in lowercase, whose value is 
 }
 ```
 
-The functions are `string-equal`, `integer-equal`, `boolean-equal`, `string-is-in`, `integer-is-in`, `integer-greater-than`, `integer-greater-than-or-equal`, `integer-less-than`, `integer-less-than-or-equal`, `and`, `or` and `not` (`not` takes an array of exactly one condition). The older `{ "attribute": ..., "equals": ... }`, `any-of` and `all-of` shapes are refused. The `conditions` array described below is a separate, older feature. See [Access policies](../access-policies.md) for the full reference.
+The functions are `string-equal`, `integer-equal`, `boolean-equal`, `string-is-in`, `integer-is-in`, `integer-greater-than`, `integer-greater-than-or-equal`, `integer-less-than`, `integer-less-than-or-equal`, `and`, `or` and `not` (`not` takes an array of exactly one condition). The older `{ "attribute": ..., "equals": ... }`, `any-of` and `all-of` shapes are refused. The plural `conditions` array described below is __not enforced__: nothing in the access decision reads it, so a rule written there limits no access. The site still starts, the start-up log names each policy that has one, and saving such a policy in Admin → Configuration shows the same message; the save is not refused. Move the rule to `condition`. See [Access policies](../access-policies.md) for the full reference.
 
 ## Subject Types
 
@@ -415,6 +415,8 @@ __Pattern Examples:__
 
 ## Condition Types
 
+> __Not enforced ([#2334](https://github.com/jwilleke/ngdpbase/issues/2334)).__ Everything in this section, and every example below that has a `conditions` array, describes the older plural `conditions` array. Nothing reads it: a policy with one applies as if the array were empty, so an allow is not narrowed and a deny is not narrowed either. It is reported at start-up and on save, never refused. Use the single `condition` ([Core Policy Schema](#core-policy-schema)). Only a `user-attribute` entry with an equality operator (`==` or `===` in the validator; the examples below write `equals`) has an equivalent there (`string-equal` over a declared `subject:` attribute). The `time-range`, `ip-range`, `context-attribute`, `session-attribute` and `environment` types, and `user-attribute` with any other operator, have none: there is no way yet to write those rules.
+
 ### Time Range Condition
 
 Restricts access to specific time periods:
@@ -527,6 +529,8 @@ __Common Session Attributes:__
 - `geoLocation`: Geographic location
 
 ## Complete Policy Examples
+
+> Examples 2 to 5 use the `conditions` array, which is __not enforced__ (see [Condition Types](#condition-types)): as written, each applies without its condition. They show the old shape only.
 
 ### 1. Basic Role-Based Access
 

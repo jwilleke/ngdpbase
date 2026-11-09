@@ -203,6 +203,39 @@ describe('rule-combining-algorithm (#2330)', () => {
   });
 });
 
+describe('a leftover conditions array (#2334)', () => {
+  const startupLines = async (policies: unknown[]) => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    await evaluatorWith(policies as ReturnType<typeof policy>[]).initialize();
+    const lines = warn.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('conditions array'));
+    warn.mockRestore();
+    return lines;
+  };
+
+  test('is reported once at start-up as not enforced, naming each policy and the condition to write', async () => {
+    const lines = await startupLines([
+      policy('old-one', 'allow', undefined, { conditions: [{ type: 'user-attribute', key: 'department', value: 'IT', operator: '==' }] }),
+      policy('old-two', 'deny', undefined, { conditions: [{ type: 'time-range', startTime: '09:00', endTime: '17:00' }] }),
+      policy('clean', 'allow')
+    ]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("'old-one', 'old-two' have a conditions array, which is not enforced");
+    expect(lines[0]).toContain('"string-equal"');
+    expect(lines[0]).toContain('time-range, ip-range');
+    expect(lines[0]).toContain('have no equivalent');
+    expect(lines[0]).not.toContain('clean');
+  });
+
+  test('is not reported when no policy has one', async () => {
+    expect(await startupLines([policy('clean', 'allow')])).toEqual([]);
+  });
+
+  test('changes nothing: the policy is still loaded and the site starts', async () => {
+    const ev = evaluatorWith([policy('old-one', 'allow', undefined, { conditions: [] })]);
+    await expect(ev.initialize()).resolves.not.toThrow();
+  });
+});
+
 describe('a leftover priority (#2330)', () => {
   test('is reported once at start-up as ignored, naming each policy', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);

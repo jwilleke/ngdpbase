@@ -8,7 +8,7 @@ ngdpbase's Policy-Based Access Control (PBAC) system provides flexible, JSON-bas
 
 - __JSON Schema Validation__: Ensures policy integrity and prevents configuration errors
 - __Flexible Subject Matching__: Support for users, roles, groups, attributes, and authentication status
-- __Advanced Conditions__: Time ranges, IP restrictions, user attributes, and custom conditions
+- __Conditions__: one XACML `condition` per policy (the plural `conditions` array is not enforced; see below)
 - __Deny Overrides__: Any matching deny wins, whatever the order
 - __Performance Caching__: Optimized for repeated evaluations
 - __Audit Integration__: Full logging of policy decisions
@@ -93,7 +93,9 @@ Actions define what operations are allowed/denied:
 
 ### Conditions (When)
 
-Conditions add additional constraints. Supported types:
+> __The plural `conditions` array is not enforced__ ([#2334](https://github.com/jwilleke/ngdpbase/issues/2334)): nothing reads it, so a rule written there limits no access. It is reported at start-up and on save, not refused. Use the single `condition` ([Access policies](../access-policies.md#conditions)). The types listed here and the examples with a `conditions` array show that older shape only; `time-range`, `ip-range` and `session-attribute` have no equivalent yet.
+
+The older `conditions` entry types were:
 
 - __time-range__: Time-based restrictions
 - __ip-range__: IP address restrictions
