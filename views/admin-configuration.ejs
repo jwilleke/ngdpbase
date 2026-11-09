@@ -478,7 +478,10 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(function(response) { return response.json(); })
             .then(function(data) {
                 if (window.followReauth(data)) return;
-                if (data.success) {
+                if (data.success && data.warning) {
+                    // Saved, with something the admin must read: stays until dismissed
+                    showConfigAlert('warning', data.message || data.warning);
+                } else if (data.success) {
                     showConfigAlert('success', data.message || 'Configuration updated successfully');
                 } else {
                     showConfigAlert('danger', data.error || 'Failed to update configuration');

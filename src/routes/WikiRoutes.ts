@@ -44,7 +44,7 @@ import {
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
-import { DENY_OVERRIDES_EXPLANATION, RULE_COMBINING_ALGORITHM_KEY, readDeclaredAsWritten } from '../utils/policyAttributes.js';
+import { DENY_OVERRIDES_EXPLANATION, RULE_COMBINING_ALGORITHM_KEY, readDeclaredAsWritten, unenforcedConditionsNotice } from '../utils/policyAttributes.js';
 import { sessionCookieWithheld, SESSION_COOKIE_WITHHELD_MESSAGE } from '../utils/sessionSecurity.js';
 import { formatLeftMenuContent } from '../utils/leftMenuNav.js';
 import { reportMissingPageMetadata } from '../utils/pageMetadataMissing.js';
@@ -14753,6 +14753,12 @@ ${panes}
       // next start, with /admin down until the file is edited by hand, so it
       // is refused here. The rule is AuthManager's, the one start-up uses.
       let warning = '';
+      // #2334: like a leftover `priority`, a `conditions` array is reported, not refused: the
+      // policy is otherwise valid, and refusing would block saving the rest of the list.
+      if (property === 'ngdpbase.access.policies') {
+        const unenforced = unenforcedConditionsNotice(parsedValue);
+        if (unenforced) warning = ` ${unenforced}`;
+      }
       if (property === 'ngdpbase.auth.factors') {
         const check = (this.engine.getManager('AuthManager') as { checkFactorEntries?(v: unknown): { refused: string[]; ignored: string[] } } | null)
           ?.checkFactorEntries?.(parsedValue);

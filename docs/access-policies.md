@@ -116,7 +116,7 @@ Before [#2330](https://github.com/jwilleke/ngdpbase/issues/2330) a condition was
 
 Where `a` and `n` are written as arguments: an attribute as `{ "attributeid": "resource:owner", "datatype": "string" }` and a literal as `{ "value": 3, "datatype": "integer" }`. A string that named an attribute on the right, such as `"equals": "subject:id"`, is now an attribute argument.
 
-__Upgrading a site (#2330).__ A site's own policies in `app-custom-config.json` that use `priority` or the old condition need rewriting. At start-up each is logged by policy id: a leftover `priority` as one line saying it is ignored (it changes nothing, so removing it is optional), and an old condition as a problem that shows the new form. The upgrade note is in the [changelog](../CHANGELOG.md#unreleased). Shipped policies, add-on policies included, are already rewritten.
+__Upgrading a site (#2330).__ A site's own policies in `app-custom-config.json` that use `priority` or the old condition need rewriting. At start-up each is logged by policy id: a leftover `priority` as one line saying it is ignored (it changes nothing, so removing it is optional), and an old condition as a problem that shows the new form. The upgrade note is in the [changelog](../CHANGELOG.md#unreleased). Shipped policies, add-on policies included, are already rewritten. A policy with the older plural `conditions` array ([#2334](https://github.com/jwilleke/ngdpbase/issues/2334)) is also named at start-up, in one line, and when saved in Admin → Configuration: that array is not enforced (nothing reads it, so it limits no access) and is reported, not refused. Move the rule to `condition`; only a `user-attribute` entry with an equality operator has an equivalent (`string-equal`).
 
 ### Subject attributes
 
