@@ -1667,3 +1667,22 @@ summary {
   align-items: center;
   gap: 0.5rem;
 }
+
+
+/* #2317: passkeys can't work on this address. Bootstrap's warning button is
+   black on #ffc107 (13:1) in both themes; the alert tint follows the theme. */
+.alert.passkeys-cannot-work { font-size: 13px; max-width: min(28rem, calc(100vw - 7rem)); }
+.passkeys-cannot-work-hint { margin-top: .25rem; font-size: 12px; } /* muted by size; the colour stays the note's, which passes AA in both themes */
+.passkeys-cannot-work .btn:disabled {
+  background: transparent; border: 1px dashed var(--bs-secondary-color);
+  color: var(--bs-secondary-color); opacity: 1; cursor: not-allowed;
+}
+tr:target > td { background-color: var(--bs-warning-bg-subtle); }
+@media (max-width: 576px) {
+  .passkeys-cannot-work .btn { min-height: 44px; }
+}
+/* Saved from a row far down the page: show the answer where the admin is looking. */
+.config-alert {
+  position: fixed; top: .5rem; left: 50%; transform: translateX(-50%);
+  width: min(36rem, calc(100vw - 1rem)); z-index: 1080;
+}

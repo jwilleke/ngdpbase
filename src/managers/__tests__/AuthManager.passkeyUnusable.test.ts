@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import AuthManager from '../AuthManager';
+import logger from '../../utils/logger';
 import { CREDENTIALS_KEY_ENV } from '../../providers/BaseCredentialsProvider';
 
 describe('AuthManager.passkeysCannotWork (#2317)', () => {
@@ -55,5 +56,19 @@ describe('AuthManager.passkeysCannotWork (#2317)', () => {
     expect(am.passkeysCannotWork()).toBe(cannot);
     // Registration follows the same rule: when it cannot work, no passkey is offered.
     expect(am.isEnabled('passkey')).toBe(enabled === false ? false : !cannot);
+  });
+
+  test('log level: an unset base-url is info (a default install), a set but unusable one is warn', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation((() => logger) as never);
+    const info = vi.spyOn(logger, 'info').mockImplementation((() => logger) as never);
+    const said = (spy: typeof warn) => spy.mock.calls.some((c) => String(c[0]).includes('Passkeys off'));
+    await started('http://localhost:3000', true, false);
+    expect(said(info)).toBe(true);
+    expect(said(warn)).toBe(false);
+    warn.mockClear(); info.mockClear();
+    await started('http://wiki.home.lan', true, true);
+    expect(said(warn)).toBe(true);
+    expect(said(info)).toBe(false);
+    warn.mockRestore(); info.mockRestore();
   });
 });

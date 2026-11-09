@@ -88,12 +88,12 @@ const includer = (original: string): { template: string } | undefined =>
   original === 'header' || original === 'footer' ? { template: '<!-- stub -->' } : undefined;
 
 /** The real admin-configuration template, fed what the handler gave it. */
-async function configurationScreen(s: Awaited<ReturnType<typeof site>>, custom: Record<string, unknown> = {}): Promise<Document> {
+async function configurationScreen(s: Awaited<ReturnType<typeof site>>, custom: Record<string, unknown> = {}, locked = false): Promise<Document> {
   const r = res();
   await s.routes.adminConfiguration(req(), r);
   const data = r.render.mock.calls[0][1] as Record<string, unknown>;
   const html = await ejs.renderFile(path.join(VIEWS, 'admin-configuration.ejs'), {
-    ...data, customProperties: custom, csrfToken: 'tok', lockedUnless: () => '', locals: {}, cspNonce: 'n',
+    ...data, customProperties: custom, csrfToken: 'tok', lockedUnless: () => (locked ? ' disabled aria-disabled="true" title="Requires the permission"' : ''), locals: {}, cspNonce: 'n',
     securityPosture: null, secretKeys: [], secretIsSet: {}, canRevealSecrets: false, envControlled: {}
   }, { includer });
   return new JSDOM(html).window.document;
@@ -134,6 +134,23 @@ describe('Admin → Configuration, passkeys on but the address cannot support th
     const doc = await configurationScreen(await site(config));
     expect(doc.querySelector('.passkeys-cannot-work')).toBeNull();
     expect(doc.body.textContent).not.toContain(MESSAGE);
+  });
+
+  test('says what to do, links to the site-address row, and that the button saves at once (#2317 review)', async () => {
+    const doc = await configurationScreen(await site({ baseUrl: 'http://wiki.home.lan' }));
+    const note = doc.querySelector('#nav-current .passkeys-cannot-work')!;
+    expect(note.textContent!.replace(/\s+/g, ' ')).toContain(`${MESSAGE} Set the site address to https, or turn passkeys off.`);
+    expect(note.textContent).toContain('This saves right away. You can turn passkeys back on once the site uses https.');
+    expect(note.querySelector('a')!.getAttribute('href')).toBe('#config-row-base-url');
+    expect(doc.querySelector('#nav-current td:nth-child(2) .d-lg-block .passkeys-cannot-work')).not.toBeNull();
+    expect(note.querySelector('button')!.disabled).toBe(false);
+  });
+
+  test('without config-manage the button is disabled and says why', async () => {
+    const doc = await configurationScreen(await site({ baseUrl: 'http://wiki.home.lan' }, ['admin-read']), {}, true);
+    const note = doc.querySelector('.passkeys-cannot-work')!;
+    expect(note.querySelector('button')!.disabled).toBe(true);
+    expect(note.querySelector('form')!.getAttribute('title')).toBe('Needs permission to change settings');
   });
 
   test('a base-url that was never set: the message shows', async () => {

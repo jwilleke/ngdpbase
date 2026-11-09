@@ -1845,7 +1845,11 @@ class AuthManager extends BaseManager {
     }
     const rp = passkeyRelyingPartyOf(configManager);
     if (!rp) {
-      logger.warn(`[AuthManager] Passkeys off: base-url ${configManager.getBaseURL()} is not set explicitly, or is not https (or localhost), where browsers allow WebAuthn (#448)`);
+      if (!configManager.isBaseUrlExplicit()) {
+        logger.info('[AuthManager] Passkeys off: ngdpbase.application.base-url is not set explicitly, and a passkey is tied to that host (#448)');
+      } else {
+        logger.warn(`[AuthManager] Passkeys off: base-url ${configManager.getBaseURL()} is not https (or localhost), where browsers allow WebAuthn (#448)`);
+      }
       return;
     }
     const store = this.credentials;

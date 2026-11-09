@@ -198,15 +198,16 @@
                                     </thead>
                                     <tbody>
                                         <% Object.entries(mergedProperties).sort().forEach(([key, value]) => { %>
-                                            <tr>
+                                            <tr<% if (key === 'ngdpbase.application.base-url') { %> id="config-row-base-url"<% } %>>
                                                 <td>
                                                     <code><%= key %></code>
                                                     <% ((typeof configProblems !== 'undefined' && configProblems[key]) || []).forEach(function (problem) { %>
                                                         <div class="text-danger small config-problem"><i class="fas fa-exclamation-triangle"></i> <%= problem %></div>
                                                     <% }); %>
-                                                <% if (key === 'ngdpbase.auth.passkey.enabled' && typeof passkeysCannotWork !== 'undefined' && passkeysCannotWork) { %>
-                                                    <%- include('_passkeys-cannot-work', { csrfToken, lockedUnless }) %>
-                                                <% } %>
+                                                    <%# #2317: below lg the value column is off to the side of the scrolling table, so the note sits under the name there. %>
+                                                    <% if (key === 'ngdpbase.auth.passkey.enabled' && typeof passkeysCannotWork !== 'undefined' && passkeysCannotWork) { %>
+                                                        <div class="d-lg-none"><%- include('_passkeys-cannot-work', { csrfToken, lockedUnless }) %></div>
+                                                    <% } %>
                                                 </td>
                                                 <td>
                                                     <%# Secrets are stripped server-side, so there is no value here to hide —
@@ -243,6 +244,9 @@
                                                         <% } else { %>
                                                             <code><%= shown %></code>
                                                         <% } %>
+                                                    <% } %>
+                                                    <% if (key === 'ngdpbase.auth.passkey.enabled' && typeof passkeysCannotWork !== 'undefined' && passkeysCannotWork) { %>
+                                                        <div class="d-none d-lg-block"><%- include('_passkeys-cannot-work', { csrfToken, lockedUnless }) %></div>
                                                     <% } %>
                                                 </td>
                                                 <td>
@@ -486,8 +490,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (window.followReauth(data)) return;
                 if (data.success) {
                     showConfigAlert('success', data.message || 'Configuration updated successfully');
-                    var settled = form.closest('.passkeys-cannot-work'); // #2317: saved, so the note no longer applies
-                    if (settled) settled.remove();
+                    // #2317: saved, so the note no longer applies and the row shows the new value, without a reload
+                    document.querySelectorAll('.passkeys-cannot-work').forEach(function(note) {
+                        var tr = note.closest('tr');
+                        note.remove();
+                        if (!tr) return;
+                        var shown = tr.querySelector('td:nth-child(2) > code');
+                        if (shown) shown.textContent = 'false';
+                        var field = tr.querySelector('td:nth-child(2) input.form-control');
+                        if (field) field.value = 'false';
+                    });
                 } else {
                     showConfigAlert('danger', data.error || 'Failed to update configuration');
                 }
