@@ -721,7 +721,7 @@ __Common Session Attributes:__
 4. __Modular Policy Design__
    - Create focused, single-purpose policies
    - Avoid overly complex policies
-   - Use conditions for additional constraints
+   - Use the single `condition` for additional constraints (not the unenforced `conditions` array)
 
 ### Schema Compliance
 
@@ -744,7 +744,7 @@ __Common Session Attributes:__
 
 1. __Efficient Patterns__
    - Use specific patterns over wildcards when possible
-   - Minimize the number of conditions
+   - Keep the `condition` small: fewer nested functions
    - Cache frequently evaluated policies
 
 2. __Resource Optimization__
@@ -829,9 +829,9 @@ const policyTemplates = {
    - Check for special character escaping
 
 4. __Condition Validation__
-   - Time ranges must be in HH:MM format
-   - IP ranges must be valid CIDR notation
-   - Attribute conditions need proper operators
+   - Write one `condition` (see [Core Policy Schema](#core-policy-schema)); a `conditions` array is not enforced and limits no access
+   - Every attribute and value needs a `datatype`, and every attribute must be a declared one
+   - Nest functions at most 4 deep
 
 ### Validation Tools
 
