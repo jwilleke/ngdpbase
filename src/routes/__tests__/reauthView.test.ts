@@ -47,4 +47,12 @@ describe('reauth view (#2193)', () => {
     expect(aal1).not.toContain('id="reauthTotpPassword"');
     expect(render('')).not.toContain('/auth/reauth/totp');
   });
+
+  test('#2345: where passkeys cannot work, the note names the app and password, not a passkey', () => {
+    const at = (passkeysAvailable: boolean) => ejs.render(TEMPLATE, { next: '/profile', prompt: '', needsPasskey: true, passkeysAvailable, hasPasskey: false, hasPassword: true, hasTotp: true, csrfToken: 'tok' });
+    const off = at(false);
+    expect(off).toContain('Your role needs your password with your authenticator app');
+    expect(off).not.toMatch(/passkey/i);
+    expect(at(true)).toContain('Your role needs a passkey, or your password with your authenticator app');
+  });
 });

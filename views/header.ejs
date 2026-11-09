@@ -655,7 +655,7 @@
                 <div class="alert alert-danger d-flex flex-wrap align-items-center gap-2 mt-2" role="alert" data-aal-enrol-nag>
                     <i class="fas fa-key"></i>
                     <span>
-                        Your <strong><%= aalEnrolNag.roles.join(', ') %></strong> role<%= aalEnrolNag.roles.length === 1 ? ' needs' : 's need' %> a passkey or an authenticator app, and you have not added one. You are using <%= aalEnrolNag.roles.length === 1 ? 'it' : 'them' %> with a password alone until you do.
+                        Your <strong><%= aalEnrolNag.roles.join(', ') %></strong> role<%= aalEnrolNag.roles.length === 1 ? ' needs' : 's need' %> <%= aalEnrolNag.passkeysAvailable === false ? 'an authenticator app' : 'a passkey or an authenticator app' %>, and you have not added one. You are using <%= aalEnrolNag.roles.length === 1 ? 'it' : 'them' %> with a password alone until you do.
                     </span>
                     <a class="btn btn-sm btn-danger ms-auto" href="/profile#sign-in-methods">Add one now</a>
                 </div>

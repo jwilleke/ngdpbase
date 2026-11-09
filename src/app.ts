@@ -959,7 +959,11 @@ void (async (): Promise<void> => {
           // #1690: a role held below its level only because no factor is
           // enrolled — the person keeps it, and every page says to add one.
           const awaiting = reach ? authManagerForRoles?.rolesAwaitingEnrolment?.(sessionContext.roles ?? [], reach) ?? [] : [];
-          if (awaiting.length > 0) res.locals.aalEnrolNag = { roles: awaiting };
+          if (awaiting.length > 0) res.locals.aalEnrolNag = {
+            roles: awaiting,
+            // #2345: name a passkey only where one can be added (not off, not an address passkeys can't use).
+            passkeysAvailable: Boolean(authManagerForRoles?.passkeyRelyingParty?.())
+          };
           // #2145: back from a fresh sign-in that could not redo the action; say it can be done now.
           if (authManagerForRoles?.takeStepUpNotice?.(req)) res.locals.stepUpConfirmed = true;
           const stepDown = authManagerForRoles?.rolesAtSignIn?.(sessionContext.roles ?? [], req.session.signIn?.aal ?? 1, aalCap);

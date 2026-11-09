@@ -15,7 +15,11 @@
           <% } %>
           <p>This change protects your account, so it needs a fresh sign-in. You are then sent back to finish it.</p>
           <% if (needsPasskey) { %>
+            <% if (typeof passkeysAvailable !== 'undefined' && !passkeysAvailable) { %>
+            <p class="small text-muted">Your role needs your password with your authenticator app's code for this; a password alone is not enough.</p>
+            <% } else { %>
             <p class="small text-muted">Your role needs a passkey<%= (typeof hasTotp !== 'undefined' && hasTotp) ? ', or your password with your authenticator app\'s code,' : '' %> for this; a password alone is not enough.</p>
+            <% } %>
           <% } %>
 
           <% if (hasPasskey) { %>
