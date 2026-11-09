@@ -721,7 +721,7 @@ jobs:
         run: npm run smoke
 ```
 
-The real `ci.yml` installs dependencies through `.github/actions/npm-ci-ffmpeg-cache` (#2318). It keeps the ffmpeg-static binary in the Actions cache, keyed on the version in `package-lock.json` plus runner OS and arch. On a hit, `npm ci` fetches the binary from a server on the runner (`FFMPEG_BINARIES_URL`), so a GitHub release outage does not fail the run; on a miss it downloads as before, with the retry from #1450, and saves the cache.
+The real `ci.yml`, `deps-audit.yml` and `publish-types.yml` install dependencies through `.github/actions/npm-ci-ffmpeg-cache` (#2318). It keeps the ffmpeg-static binary in the Actions cache, keyed on the version in `package-lock.json` plus runner OS and arch. On a hit, `npm ci` fetches the binary from a server on the runner (`FFMPEG_BINARIES_URL`), so a GitHub release outage does not fail the run; on a miss it downloads as before, with the retry from #1450, and saves the cache.
 
 ### Git Hooks
 

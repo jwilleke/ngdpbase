@@ -36,6 +36,17 @@ runs:
           pid=$!
           trap "kill $pid" EXIT
           export FFMPEG_BINARIES_URL=http://127.0.0.1:18765
+          # The server is a background job: npm ci must not start before it
+          # listens, or the first download fails and the retry costs 20 s.
+          up=
+          for _ in $(seq 50); do
+            if curl -sf -o /dev/null "$FFMPEG_BINARIES_URL/"; then up=1; break; fi
+            sleep 0.2
+          done
+          if [ -z "$up" ]; then
+            echo "::error::ffmpeg-static: the local mirror at $FFMPEG_BINARIES_URL did not answer within 10 s"
+            exit 1
+          fi
           echo "ffmpeg-static: cache hit, downloading from $FFMPEG_BINARIES_URL"
           sh scripts/npm-ci-retry.sh
         else
