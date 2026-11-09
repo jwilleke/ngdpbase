@@ -4,7 +4,7 @@ import Ajv, { ValidateFunction, ErrorObject } from 'ajv';
 import addFormats from 'ajv-formats';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { readDeclaredAsWritten, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, subjectAttributesProblems } from '../utils/policyAttributes.js';
+import { combiningAlgorithmProblem, readDeclaredAsWritten, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, subjectAttributesProblems } from '../utils/policyAttributes.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 import { conditionProblems, declaredResourceTypes, SUBJECT_MATCHERS, VALUELESS_SUBJECT_TYPES } from './PolicyEvaluator.js';
 
@@ -102,7 +102,6 @@ interface Policy {
   id: string;
   name: string;
   description?: string;
-  priority: number;
   effect: PolicyEffect;
   subjects: PolicySubject[];
   resources: PolicyResource[];
@@ -125,7 +124,7 @@ interface ValidationError {
  * Validation warning structure
  */
 interface ValidationWarning {
-  type: 'priority' | 'scope' | 'conditions' | 'conflict';
+  type: 'scope' | 'conditions' | 'conflict';
   field?: string;
   message: string;
   details?: unknown;
@@ -257,12 +256,6 @@ class PolicyValidator extends BaseManager {
           description: {
             type: 'string',
             maxLength: 1000
-          },
-          priority: {
-            type: 'number',
-            minimum: 0,
-            maximum: 1000,
-            default: 50
           },
           effect: {
             type: 'string',
@@ -486,6 +479,19 @@ class PolicyValidator extends BaseManager {
   }
 
   /**
+   * The problems in the value of `ngdpbase.access.rule-combining-algorithm`
+   * (#2330): anything but `deny-overrides`. For save and load in Admin →
+   * Configuration; the boot check is the same sentence and stops the site.
+   *
+   * @param {unknown} value - The value of `ngdpbase.access.rule-combining-algorithm`
+   * @returns {string[]} One line per problem
+   */
+  combiningAlgorithmProblems(value: unknown): string[] {
+    const problem = combiningAlgorithmProblem(value);
+    return problem ? [problem] : [];
+  }
+
+  /**
    * Format JSON schema validation errors
    *
    * @param {ErrorObject[]} schemaErrors - Schema validation errors
@@ -551,15 +557,6 @@ class PolicyValidator extends BaseManager {
         type: 'business',
         field: 'actions',
         message: 'Duplicate actions found'
-      });
-    }
-
-    // Validate priority range
-    if (policy.priority < 0 || policy.priority > 1000) {
-      errors.push({
-        type: 'business',
-        field: 'priority',
-        message: 'Priority must be between 0 and 1000'
       });
     }
 
@@ -630,21 +627,6 @@ class PolicyValidator extends BaseManager {
    */
   generateWarnings(policy: Policy): ValidationWarning[] {
     const warnings: ValidationWarning[] = [];
-
-    // Warn about very high or low priorities
-    if (policy.priority > 900) {
-      warnings.push({
-        type: 'priority',
-        message: 'Very high priority may override important security policies'
-      });
-    }
-
-    if (policy.priority < 10) {
-      warnings.push({
-        type: 'priority',
-        message: 'Very low priority may be overridden by other policies'
-      });
-    }
 
     // Warn about overly broad patterns
     policy.resources.forEach((resource, index) => {
@@ -738,34 +720,15 @@ class PolicyValidator extends BaseManager {
       const denyPolicies = group.filter((p) => p.effect === 'deny');
 
       if (allowPolicies.length > 0 && denyPolicies.length > 0) {
-        // Find highest priority policy
-        const highestPriority = Math.max(...group.map((p) => p.priority));
-        const highestPolicies = group.filter((p) => p.priority === highestPriority);
-
-        if (highestPolicies.length === 1) {
-          const winner = highestPolicies[0];
-          const losers = group.filter((p) => p.id !== winner.id);
-
-          warnings.push({
-            type: 'conflict',
-            message: `Policy ${winner.id} (${winner.effect}) overrides ${losers.map((p) => p.id).join(', ')} due to higher priority`,
-            details: {
-              winner: winner.id,
-              losers: losers.map((p) => p.id),
-              priority: winner.priority
-            }
-          });
-        } else {
-          errors.push({
-            type: 'conflict',
-            field: 'priority',
-            message: `Multiple policies with same highest priority: ${highestPolicies.map((p) => p.id).join(', ')}`,
-            details: {
-              policies: highestPolicies.map((p) => p.id),
-              priority: highestPriority
-            }
-          });
-        }
+        // Deny overrides (#2330): a matching deny wins, whatever the order.
+        warnings.push({
+          type: 'conflict',
+          message: `Deny ${denyPolicies.map((p) => p.id).join(', ')} overrides allow ${allowPolicies.map((p) => p.id).join(', ')}: any matching deny wins`,
+          details: {
+            winners: denyPolicies.map((p) => p.id),
+            losers: allowPolicies.map((p) => p.id)
+          }
+        });
       }
     });
 

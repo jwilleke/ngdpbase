@@ -281,7 +281,7 @@ __Correct, and the shipped config already assumes exactly that model.__ Of the 9
 class distinction, and it does so by __category__:
 
 ```json
-{ "id": "deny-anonymous-system-pages", "priority": 90, "effect": "deny",
+{ "id": "deny-anonymous-system-pages", "effect": "deny",
   "subjects": [{ "type": "role", "value": "anonymous" }],
   "resources": [{ "type": "category", "value": "system" },
                 { "type": "category", "value": "admin" }] }

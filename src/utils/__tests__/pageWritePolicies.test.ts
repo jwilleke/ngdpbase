@@ -20,11 +20,11 @@ describe('migrateStoredPageWritePolicies (#2255)', () => {
   });
 
   test('a write the category policies do not give that role is kept, on general pages only', () => {
-    const stored = [{ id: 'contributor-permissions', name: 'Contributors', effect: 'allow', priority: 70, subjects: role('contributor'), resources: everyPage, actions: ['page-edit', 'page-delete'] }];
+    const stored = [{ id: 'contributor-permissions', name: 'Contributors', effect: 'allow', subjects: role('contributor'), resources: everyPage, actions: ['page-edit', 'page-delete'] }];
     const { policies } = migrateStoredPageWritePolicies(stored);
     expect(policies).toEqual([
       { ...stored[0], actions: [] },
-      expect.objectContaining({ id: 'contributor-permissions-page-write', effect: 'allow', priority: 70, subjects: role('contributor'), resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-delete'] })
+      expect.objectContaining({ id: 'contributor-permissions-page-write', effect: 'allow', subjects: role('contributor'), resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-delete'] })
     ]);
   });
 

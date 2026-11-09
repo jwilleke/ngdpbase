@@ -21,6 +21,7 @@ Whether a user may do something is decided by the policies alone. No other setti
 | `ngdpbase.permissions.definitions` | The catalogue of permissions: each name with its description, its `label` (the plain words a user reads, #1764), icon and colour, its `audit` block and `step-up` flag (#1638). An entry with `"grantable": false` is a recorded event, not a permission a policy grants. `src/security/permissions.generated.ts` is generated from the grantable entries (`npm run generate:permissions`) |
 | `ngdpbase.access.policies` | The list of policies |
 | `ngdpbase.access.policies.enabled` | Must be `true`. When it is not, no policy applies and every check is denied |
+| `ngdpbase.access.rule-combining-algorithm` | How the matching policies are combined: XACML's rule-combining algorithm ([#2330](https://github.com/jwilleke/ngdpbase/issues/2330)). Shipped `"deny-overrides"`, the only value accepted: any matching deny wins. Any other value is refused on save in Admin → Configuration, and at start-up it is reported and the site does not start. The start-up log states it in one line, `Access policies: 25 loaded, rule-combining-algorithm deny-overrides`, and Admin → Configuration shows it above the policies. See [How a decision is made](#how-a-decision-is-made) |
 | `ngdpbase.access.resource-types` | The kinds of thing a policy's `resources` may name, each with a description (#1504). Read through ConfigurationManager by the evaluator and the validator. The `page` type declares its `attributes`, what a `condition` may read as `resource:<name>`, each with a `type` and the PIP source it comes `from` ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)) |
 | `ngdpbase.access.subject-attributes` | The attributes of whoever asks that a `condition` may read as `subject:<name>`, each with a `type` and the `from` source the PIP reads it from ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)). Shipped: `id` and `aal`. See [Subject attributes](#subject-attributes) |
 | `ngdpbase.access.environment-attributes` | The attributes of the moment or the site that a `condition` may read as `environment:<name>`, each a boolean with a `from` of `schedule:<name>` or `config:<key>` ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)). Shipped: `is-business-hours` and `vaults-admin-access`. See [Environment attributes](#environment-attributes) |
@@ -37,7 +38,6 @@ __Add-ons__ declare their own permissions and policies in their own `config/defa
   "id": "admin-full-access",
   "name": "Administrator Full Access",
   "description": "Full system access for administrators - all page and admin permissions",
-  "priority": 100,
   "effect": "allow",
   "subjects": [{ "type": "role", "value": "admin" }],
   "resources": [{ "type": "page", "pattern": "*" }],
@@ -50,39 +50,73 @@ __Add-ons__ declare their own permissions and policies in their own `config/defa
 | `id` | The policy's identity. Add-on and custom policies merge with shipped ones by `id` | Unique string | Not a valid policy; ignored |
 | `name` | A human title | String | — |
 | `description` | A human explanation | String | — |
-| `priority` | Kept for ordering the list; it no longer decides between an allow and a deny ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)) | Number | `0` |
 | `effect` | What a match decides | `allow` / `deny` | Not a valid policy; ignored |
 | `subjects` | Who the policy is about | A list of `{ "type": "role", "value": "<role>" }`, `{ "type": "job", "value": "<job id>" }` for a scheduled job that holds its own permissions ([#1999](https://github.com/jwilleke/ngdpbase/issues/1999)), `{ "type": "authenticated" }` for any signed-in user, or `{ "type": "anyone" }` for every caller ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)). `authenticated` and `anyone` take no `value`; the validator refuses one ("takes no value"). Only these four types are matched; the validator refuses any other | The policy applies to everyone |
 | `resources` | What the policy is about | A list of `{ "type": "<resource type>", "pattern": "<glob>" }`. `page` matches the page name; `system-category` matches the page's `system-category` frontmatter; `vault` matches the id of the vault a page or file is in; `shared-folder` matches a shared folder as `shared/<name>` (micromatch). Only types declared in `ngdpbase.access.resource-types` that the evaluator has a matcher for ever match | The policy applies to every resource |
 | `actions` | Which permissions the policy decides | Permission names from the catalogue, or `*` for all | The policy applies to every action |
-| `condition` | When the policy applies ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255), [#2261](https://github.com/jwilleke/ngdpbase/issues/2261)) | A comparison `{ "attribute": a, "equals": b }`, or `any-of`, `all-of` or `not` over other conditions (see [Conditions](#conditions)). A string starting `subject:`, `resource:` or `environment:` names an attribute, anything else is a literal. The attributes are those declared in `ngdpbase.access.subject-attributes` (`subject:id`, the signed-in account; `subject:aal`, the sign-in level; see [Subject attributes](#subject-attributes)) and those declared on the `page` resource type (`resource:system-category`, `resource:owner`, the page's `author`). Environment attributes are those declared in `ngdpbase.access.environment-attributes` (`environment:is-business-hours`; see [Environment attributes](#environment-attributes)) | The policy applies whenever it matches |
+| `condition` | When the policy applies ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255), [#2261](https://github.com/jwilleke/ngdpbase/issues/2261)) | One XACML 3.0 function in lowercase over its arguments, such as `{ "string-equal": [ a, b ] }`, or `and`, `or` or `not` over other conditions (see [Conditions](#conditions)). An argument is an attribute, `{ "attributeid": "subject:id", "datatype": "string" }`, or a literal, `{ "value": "sales", "datatype": "string" }`. An `attributeid` starts `subject:`, `resource:` or `environment:`. The attributes are those declared in `ngdpbase.access.subject-attributes` (`subject:id`, the signed-in account; `subject:aal`, the sign-in level; see [Subject attributes](#subject-attributes)) and those declared on the `page` resource type (`resource:system-category`, `resource:owner`, the page's `author`). Environment attributes are those declared in `ngdpbase.access.environment-attributes` (`environment:is-business-hours`; see [Environment attributes](#environment-attributes)) | The policy applies whenever it matches |
 
 A permission that was renamed or split keeps working under its old name: a policy or an agent token naming it is read as what it now stands for, and a policy naming it is warned about once, at the first decision that reads it, naming the policy. The list is `RETIRED_PERMISSIONS` in `src/utils/permissionCatalog.ts`: `share-manage` is read as `share-create`, `share-extend` and `share-revoke` ([#1638](https://github.com/jwilleke/ngdpbase/issues/1638)); `contact-read` as `identity-read` and `contact-manage` as `identity-manage`, accepted for one release only ([#2038](https://github.com/jwilleke/ngdpbase/issues/2038)). Name the new permissions in anything you write.
 
 ### Conditions
 
-A condition is a comparison, or `any-of`, `all-of` or `not` over other conditions. A comparison has an `attribute` and exactly one operator:
+A condition follows XACML 3.0 in lowercase ([#2330](https://github.com/jwilleke/ngdpbase/issues/2330)). It is one function, named for its XACML function (core specification, appendix A.3), whose value is the array of its arguments:
 
-| Operator | Reads | Left attribute | Notes |
-| --- | --- | --- | --- |
-| `equals`, `not-equals` | `{ "attribute": a, "equals": b }` | string, integer, boolean, identity | `b` is a literal or an attribute of the same type |
-| `in` | `{ "attribute": a, "in": ["x", "y"] }` | string, integer, identity | A non-empty array of literals of the attribute's type, or an attribute declared as a `list` |
-| `greater-or-equal`, `less-or-equal` | `{ "attribute": a, "greater-or-equal": 2 }` | integer | An integer literal or an integer attribute |
-| `any-of`, `all-of` | `{ "any-of": [c1, c2] }` | | A non-empty array of conditions |
-| `not` | `{ "not": c }` | | One condition |
+```json
+{
+  "string-equal": [
+    { "attributeid": "subject:department-id", "datatype": "string" },
+    { "value": "sales", "datatype": "string" }
+  ]
+}
+```
 
-`{ "attribute": "resource:owner", "equals": "subject:id" }` is a comparison, and stays valid as it is. Conditions nest at most 4 deep, counting every node, so `any-of` > `all-of` > `not` > comparison is the limit; a fifth level is a problem. The validator also reports a comparison with two operators or none, an empty `in`, `any-of` or `all-of`, an attribute that is not declared, and two sides of different types. Width is bounded too: an `in` list holds at most 256 values, an `any-of` or `all-of` at most 256 conditions, and a whole condition at most 512 nodes (`MAX_IN_ITEMS`, `MAX_GROUP_CHILDREN` and `MAX_CONDITION_NODES` in `src/utils/policyAttributes.ts`); split a larger one into several policies. Each message says what is wrong and what to change. Policies are checked when `ngdpbase.access.policies` is saved in Admin → Configuration: if any policy has a problem (the schema's or a condition's), nothing is saved and the page lists each problem with the policy id, in the validator's own words. The same problems are shown on that key's row when the policies in force (for example from `app-custom-config.json`) already have them, and are logged at boot. A policy with one still fails closed at every evaluation, where it never applies as an allow and always applies as a deny.
+An argument is an __attribute__, `{ "attributeid": …, "datatype": … }`, or a __literal__, `{ "value": …, "datatype": … }`. There are no other keys. `attributeid` starts `subject:`, `resource:` or `environment:`; a literal is always a literal, even if its text starts `subject:`.
 
-A value read for an attribute must be of the type the attribute is declared with: an `integer` is a whole number (not `"5"`, `NaN`, `Infinity` or `2.5`), a `boolean` is `true` or `false`, a `list` is an array of strings, booleans or whole numbers. Nothing is coerced. A value of another type counts as missing, so the comparison is unknown, for `not-equals` and `not` as for the rest. An empty string is a value, not a missing one: `status: ""` equals `""` and is not equal to `"draft"` (leave the field out, or leave it empty without quotes, for missing). A literal compared with an `identity` attribute is trimmed and lower-cased, as `subject:id` is, so `"Alice"` meets `alice`; an owner that is a `urn:` id is resolved to its account, and without the identity manager it is missing. A read that fails leaves its comparison unknown and is logged once.
+`datatype` is required on every attribute and every value, as XACML requires it on an `AttributeDesignator` and an `AttributeValue`. It takes the XACML JSON profile's short names: `string`, `integer`, `boolean`, `double`, `date`, `time`, `dateTime`, `anyURI`. Only `string`, `integer` and `boolean` have functions today, so the others are refused as a type the function does not take. The datatype of an attribute is its declared type: `string` for a `string` and for an `identity` (an identity is a normalised username, so there is no XACML type for it, and `string` is the nearest), `integer` for an `integer`, `boolean` for a `boolean`. A `list` attribute is a bag: its datatype is that of its entries. A datatype that is missing, that does not match the attribute's declared type, or that is not the type the function takes is a problem, refused on save and reported at start-up. The evaluator still fails closed on it: the comparison is unknown.
+
+| Function | Takes | Notes |
+| --- | --- | --- |
+| `string-equal`, `integer-equal`, `boolean-equal` | two arguments of that datatype | A literal, or an attribute declared the same: an identity is not compared with a string attribute |
+| `string-is-in`, `integer-is-in` | a value, then a bag | The bag is an attribute declared as a `list`, or a literal whose `value` is a non-empty array of that datatype: `{ "value": ["sales", "hr"], "datatype": "string" }` When the value is an identity such as `subject:id`, the comparison ignores case, against a literal or a list attribute alike. |
+| `integer-greater-than`, `integer-greater-than-or-equal`, `integer-less-than`, `integer-less-than-or-equal` | two integers | An integer literal or an integer attribute |
+| `and`, `or` | a non-empty array of conditions | |
+| `not` | an array of exactly one condition | |
+
+There is no not-equal function in XACML. Write `{ "not": [ { "string-equal": [ a, b ] } ] }`.
+
+Conditions nest at most 4 deep, counting every function node (arguments are not nodes), so `or` > `and` > `not` > a comparison is the limit; a fifth level is a problem. The validator also reports a function with the wrong number of arguments, two functions in one node, an empty `is-in`, `and` or `or`, an attribute that is not declared, an unknown function name, and two attributes declared with different types. Width is bounded too: an `is-in` list holds at most 256 values, an `and` or `or` at most 256 conditions, and a whole condition at most 512 function nodes (`MAX_IN_ITEMS`, `MAX_GROUP_CHILDREN` and `MAX_CONDITION_NODES` in `src/utils/policyAttributes.ts`); split a larger one into several policies. Each message says what is wrong and what to change. Policies are checked when `ngdpbase.access.policies` is saved in Admin → Configuration: if any policy has a problem (the schema's or a condition's), nothing is saved and the page lists each problem with the policy id, in the validator's own words. The same problems are shown on that key's row when the policies in force (for example from `app-custom-config.json`) already have them, and are logged at boot. A policy with one still fails closed at every evaluation, where it never applies as an allow and always applies as a deny.
+
+A value read for an attribute must be of the type the attribute is declared with: an `integer` is a whole number (not `"5"`, `NaN`, `Infinity` or `2.5`), a `boolean` is `true` or `false`, a `list` is an array of strings, booleans or whole numbers. Nothing is coerced. A value of another type counts as missing, so the comparison is unknown, for `not` as for the rest. An empty string is a value, not a missing one: `status: ""` equals `""` and is not equal to `"draft"` (leave the field out, or leave it empty without quotes, for missing). A literal compared with an `identity` attribute is trimmed and lower-cased, as `subject:id` is, so `"Alice"` meets `alice`; an owner that is a `urn:` id is resolved to its account, and without the identity manager it is missing. A read that fails leaves its comparison unknown and is logged once.
 
 Every node is judged on its own as true, false or unknown:
 
 - A comparison reading an attribute that is missing (a page with no `author`, a caller not signed in) is unknown.
-- `any-of`: a true branch decides it, whatever the others. Otherwise it is unknown if any branch is, else false.
-- `all-of`: a false branch decides it, whatever the others. Otherwise it is unknown if any branch is, else true.
+- `or`: a true branch decides it, whatever the others. Otherwise it is unknown if any branch is, else false.
+- `and`: a false branch decides it, whatever the others. Otherwise it is unknown if any branch is, else true.
 - `not` of unknown is unknown.
 
-An __allow__ applies only when its condition is true. A __deny__ applies when its condition is true or unknown, so a missing attribute fails closed. A condition with one attribute behaves as before.
+An __allow__ applies only when its condition is true. A __deny__ applies when its condition is true or unknown, so a missing attribute fails closed.
+
+#### The old condition format
+
+Before [#2330](https://github.com/jwilleke/ngdpbase/issues/2330) a condition was `{ "attribute": "subject:department-id", "equals": "sales" }`, with the operators `equals`, `not-equals`, `in`, `greater-or-equal`, `less-or-equal`, `any-of`, `all-of` and `not`. That shape is refused, with no fallback: the validator reports it with a message that shows the new form, it is refused on save, and at start-up it is logged by policy id. An allow written that way never applies and a deny written that way always applies. The mapping:
+
+| Before | Now |
+| --- | --- |
+| `{ "attribute": a, "equals": b }` | `{ "string-equal": [ a, b ] }`, or `integer-equal`, `boolean-equal` by the attribute's type |
+| `{ "attribute": a, "not-equals": b }` | `{ "not": [ { "string-equal": [ a, b ] } ] }` |
+| `{ "attribute": a, "in": [ … ] }` | `{ "string-is-in": [ a, { "value": [ … ], "datatype": "string" } ] }`, or `integer-is-in` |
+| `{ "attribute": a, "in": "resource:tags" }` | `{ "string-is-in": [ a, { "attributeid": "resource:tags", "datatype": "string" } ] }` |
+| `{ "attribute": a, "greater-or-equal": n }` | `{ "integer-greater-than-or-equal": [ a, n ] }` |
+| `{ "attribute": a, "less-or-equal": n }` | `{ "integer-less-than-or-equal": [ a, n ] }` |
+| `{ "any-of": [ … ] }` | `{ "or": [ … ] }` |
+| `{ "all-of": [ … ] }` | `{ "and": [ … ] }` |
+| `{ "not": c }` | `{ "not": [ c ] }` |
+
+Where `a` and `n` are written as arguments: an attribute as `{ "attributeid": "resource:owner", "datatype": "string" }` and a literal as `{ "value": 3, "datatype": "integer" }`. A string that named an attribute on the right, such as `"equals": "subject:id"`, is now an attribute argument.
+
+__Upgrading a site (#2330).__ A site's own policies in `app-custom-config.json` that use `priority` or the old condition need rewriting. At start-up each is logged by policy id: a leftover `priority` as one line saying it is ignored (it changes nothing, so removing it is optional), and an old condition as a problem that shows the new form. The upgrade note is in the [changelog](../CHANGELOG.md#unreleased). Shipped policies, add-on policies included, are already rewritten.
 
 ### Subject attributes
 
@@ -111,7 +145,7 @@ __`subject:aal`__ is the NIST assurance level (1 to 3) of the sign-in, read from
 
 An access token from this site's own OpenID Connect server (`OidcBearerAuthProvider`) carries no stored level either: missing.
 
-`subject:aal` and `"step-up": true` on a permission are separate. Step-up asks for a fresh factor at the moment of the action; `subject:aal` asks what level the session reached. A policy such as an allow of `page-edit` on `general` for `editor` with `{ "attribute": "subject:aal", "greater-or-equal": 2 }` refuses an editor signed in with a password only, and records the refusal with that policy's id in `metadata.conditionNotMet` (it is not in `policyIds`, since it did not decide), and leaves reading alone. The page list and search apply the same condition, reading the subject's attributes once per listing. Because an allow needs a true condition and a deny applies when its condition is unknown, `less-or-equal 1` as a deny also refuses a token or job with no level.
+`subject:aal` and `"step-up": true` on a permission are separate. Step-up asks for a fresh factor at the moment of the action; `subject:aal` asks what level the session reached. A policy such as an allow of `page-edit` on `general` for `editor` with `{ "integer-greater-than-or-equal": [ { "attributeid": "subject:aal", "datatype": "integer" }, { "value": 2, "datatype": "integer" } ] }` refuses an editor signed in with a password only, and records the refusal with that policy's id in `metadata.conditionNotMet` (it is not in `policyIds`, since it did not decide), and leaves reading alone. The page list and search apply the same condition, reading the subject's attributes once per listing. Because an allow needs a true condition and a deny applies when its condition is unknown, `integer-less-than-or-equal` 1 as a deny also refuses a token or job with no level.
 
 ### Environment attributes
 
@@ -122,7 +156,7 @@ A condition reads something about the moment or the site as `environment:<name>`
 | `schedule:<name>` | Whether the schedule `<name>` in `ngdpbase.schedules` is open now, in the schedule's own time zone (`scheduleIsOpen`, `src/utils/availability.ts`) | The schedule is not in `ngdpbase.schedules` |
 | `config:<key>` | The value stored at the configuration key | There is no value, or it is not a boolean (`"true"` and `1` are not coerced) |
 
-Shipped: `is-business-hours` from `schedule:business-hours`, and `vaults-admin-access` from `config:ngdpbase.vaults.admin-access`. Both are read when the decision is made, so changing `ngdpbase.schedules.business-hours` in Admin → Configuration takes effect with no restart. A deny `page-edit` on `general` for `anyone` with `{ "attribute": "environment:is-business-hours", "equals": false }` refuses edits outside the schedule, and the refusal's audit record carries that policy's id. A schedule with no rules reads as always open, and the boot log says so.
+Shipped: `is-business-hours` from `schedule:business-hours`, and `vaults-admin-access` from `config:ngdpbase.vaults.admin-access`. Both are read when the decision is made, so changing `ngdpbase.schedules.business-hours` in Admin → Configuration takes effect with no restart. A deny `page-edit` on `general` for `anyone` with `{ "boolean-equal": [ { "attributeid": "environment:is-business-hours", "datatype": "boolean" }, { "value": false, "datatype": "boolean" } ] }` refuses edits outside the schedule, and the refusal's audit record carries that policy's id. A schedule with no rules reads as always open, and the boot log says so.
 
 The time is read once per decision, and once per page list or search, so every policy and every page sees one instant. A page write asked with no page (a token's scope, a proxy grant, an affordance) reads the same environment, so a deny on it holds there too.
 
@@ -139,8 +173,8 @@ In `PolicyEvaluator.evaluateAccess` (`src/managers/PolicyEvaluator.ts`), with th
 - An `authenticated` subject matches any signed-in user, whatever their roles, including a user with none. An agent token counts: it acts as its account, and its scope still bounds it first. A share-link visitor does not match it, and neither does a scheduled job's own subject (`job:<id>`); shares are covered only by their own resources. An anonymous caller does not match it. The system principal (`ngdpbase.system.roles`) is a signed-in account and matches `authenticated`.
 - An `anyone` subject matches every caller: anonymous, a share visitor, a job and an admin. In the policy tier, a deny for `anyone` therefore refuses admin too (a deny overrides any allow); a page's own frontmatter rules are a separate tier and are not affected. A policy with `subjects: []` still means everyone. At boot, an allow of anything but `page-read` to `anyone` or `authenticated` (a page write, `page-raw-edit`, `page-categorize`, `page-public`, any non-page action, or missing or empty `actions`, which means `*`) is listed for review, naming who it lets act. Grant `anyone` with care: `{ "type": "anyone" }` with `page-read` on a category makes it readable without signing in.
 - A `job` subject matches a scheduled run of that job. When any policy names a job, its scheduled runs act as `job:<id>` with no roles, holding only what such policies grant; a job no policy names runs with the system principal's roles (`ngdpbase.system.roles`). A run started by hand acts as the admin who started it.
-- __A deny overrides any allow__ ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)): if a matching deny applies, the answer is deny, whatever the priorities. Otherwise a matching allow permits. Until #2255 the first match by `priority` decided; a site's own deny policies, and allows that relied on outranking a deny, are named at boot.
-- __A condition__ makes a policy apply only when it is true. See [Conditions](#conditions) for the operators, how a missing attribute is judged, and what an allow and a deny do with an unknown answer. A condition naming an undeclared attribute or an unknown operator never applies as an allow, and is named at boot.
+- __A deny overrides any allow__ ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)): the rule-combining algorithm is `deny-overrides`, named in `ngdpbase.access.rule-combining-algorithm` ([#2330](https://github.com/jwilleke/ngdpbase/issues/2330)). If a matching deny applies, the answer is deny. Otherwise a matching allow permits. Order and priority don't matter, and a policy has no `priority`: a leftover one is ignored, and reported once at start-up. Until #2255 the first match by `priority` decided; a site's own deny policies, and allows that relied on outranking a deny, are named at boot.
+- __A condition__ makes a policy apply only when it is true. See [Conditions](#conditions) for the functions, how a missing attribute is judged, and what an allow and a deny do with an unknown answer. A condition naming an undeclared attribute or an unknown function, or written in the old format, never applies as an allow, and is named at boot.
 - __No matching policy means deny.__
 - __Every decision names its policies__: `Decision.policyIds` holds the denies that matched, or, when none did, the allows; empty when none matched. A recorded refusal carries them (`authorization-deny`, `metadata.policyIds`). `Decision.conditionNotMet` holds the ids of allows that matched subject, resource and action but whose condition was false or unknown, and the refusal records them as `metadata.conditionNotMet`; only ids, never the attribute values compared, and not which comparison failed.
 - __A subject's attributes come from the PIP__ ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)): the PDP gives it the subject's sign-in record, `aalCap` and the level stored with a token or job, and it reads each attribute once per decision.
@@ -151,7 +185,7 @@ __Page writes by system-category ([#2255](https://github.com/jwilleke/ngdpbase/i
 | Group | Categories | Policies | Who |
 |---|---|---|---|
 | pushed pages | `system`, `documentation`, `addon` | `pushed-pages-admin` | holders of `pushed-pages-edit` / `-delete` / `-rename`: admin |
-| self-managed | `capture`, `user-profile`; `journal` from the journal add-on | `self-managed-author-write`, `self-managed-author-edit` (condition `resource:owner equals subject:id`); `self-managed-admin`; the `journal-` copies | the page's author, with the actions their role holds; admin, whoever the author is |
+| self-managed | `capture`, `user-profile`; `journal` from the journal add-on | `self-managed-author-write`, `self-managed-author-edit` (condition `string-equal` of `resource:owner` and `subject:id`); `self-managed-admin`; the `journal-` copies | the page's author, with the actions their role holds; admin, whoever the author is |
 | general | `general` | `general-page-write`, `general-page-edit` | admin and editor all three; contributor and demo-admin edit, as on every page before |
 | shared | `shared` | `shared-page-write`, plus `shared-folder-file` on the folder | every account (`vault-owner`) and admin, in a folder they may file in; author-lock narrows it |
 

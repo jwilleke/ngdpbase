@@ -31,13 +31,6 @@ Every policy must conform to the following JSON schema:
       "description": "Detailed description of the policy",
       "maxLength": 500
     },
-    "priority": {
-      "type": "integer",
-      "description": "Policy priority (higher numbers override lower ones)",
-      "minimum": 0,
-      "maximum": 1000,
-      "default": 50
-    },
     "effect": {
       "type": "string",
       "enum": ["allow", "deny"],
@@ -65,6 +58,10 @@ Every policy must conform to the following JSON schema:
       "type": "array",
       "description": "Additional constraints on the policy",
       "items": { "$ref": "#/definitions/condition" }
+    },
+    "condition": {
+      "type": "object",
+      "description": "One XACML 3.0 condition, see the note below the schema"
     },
     "metadata": {
       "type": "object",
@@ -168,6 +165,23 @@ Every policy must conform to the following JSON schema:
   }
 }
 ```
+
+There is no `priority` property. Policies are combined with the XACML `deny-overrides` rule, so order does not matter, and a leftover `priority` in a site's configuration is ignored and reported once at start-up.
+
+The singular `condition` is one XACML 3.0 function in lowercase, whose value is an array of arguments. Every attribute and value carries a required `datatype`:
+
+```json
+{
+  "condition": {
+    "string-equal": [
+      { "attributeid": "subject:department-id", "datatype": "string" },
+      { "value": "sales", "datatype": "string" }
+    ]
+  }
+}
+```
+
+The functions are `string-equal`, `integer-equal`, `boolean-equal`, `string-is-in`, `integer-is-in`, `integer-greater-than`, `integer-greater-than-or-equal`, `integer-less-than`, `integer-less-than-or-equal`, `and`, `or` and `not` (`not` takes an array of exactly one condition). The older `{ "attribute": ..., "equals": ... }`, `any-of` and `all-of` shapes are refused. The `conditions` array described below is a separate, older feature. See [Access policies](../access-policies.md) for the full reference.
 
 ## Subject Types
 
@@ -521,7 +535,6 @@ __Common Session Attributes:__
   "id": "editor-basic-access",
   "name": "Editor Basic Access",
   "description": "Allows editors to view and edit all pages",
-  "priority": 100,
   "effect": "allow",
   "subjects": [
     {
@@ -551,7 +564,6 @@ __Common Session Attributes:__
   "id": "business-hours-edit",
   "name": "Business Hours Edit Access",
   "description": "Allows editing only during business hours",
-  "priority": 200,
   "effect": "allow",
   "subjects": [
     {
@@ -582,7 +594,6 @@ __Common Session Attributes:__
   "id": "office-network-only",
   "name": "Office Network Only",
   "description": "Restricts confidential content to office network",
-  "priority": 300,
   "effect": "deny",
   "subjects": [
     {
@@ -612,7 +623,6 @@ __Common Session Attributes:__
   "id": "senior-developer-full-access",
   "name": "Senior Developer Full Access",
   "description": "Full access for senior developers in IT department",
-  "priority": 250,
   "effect": "allow",
   "subjects": [
     {
@@ -655,7 +665,6 @@ __Common Session Attributes:__
   "id": "emergency-admin-override",
   "name": "Emergency Admin Override",
   "description": "Emergency access for administrators during critical situations",
-  "priority": 1000,
   "effect": "allow",
   "subjects": [
     {
@@ -700,10 +709,10 @@ __Common Session Attributes:__
    - Include context in policy names
    - Use consistent naming patterns
 
-3. __Priority Management__
-   - Reserve high priorities (900-1000) for emergencies
-   - Use ranges for different policy types
-   - Document priority schemes
+3. __Deny Overrides__
+   - Any matching deny wins, whatever the order
+   - To let someone through a deny, narrow the deny's subjects, resources, actions or condition
+   - Document why each deny exists
 
 4. __Modular Policy Design__
    - Create focused, single-purpose policies
@@ -736,7 +745,6 @@ __Common Session Attributes:__
 
 2. __Resource Optimization__
    - Group similar policies
-   - Use appropriate priority levels
    - Monitor policy evaluation performance
 
 ## Integration Examples
@@ -748,7 +756,6 @@ const newPolicy = {
   id: 'api-access-' + Date.now(),
   name: 'API Access Policy',
   description: 'Generated policy for API access',
-  priority: 150,
   effect: 'allow',
   subjects: [{
     type: 'role',
@@ -788,16 +795,13 @@ policies.forEach(policy => {
 ```javascript
 const policyTemplates = {
   'read-only': {
-    actions: ['view'],
-    priority: 50
+    actions: ['view']
   },
   'contributor': {
-    actions: ['view', 'edit', 'create'],
-    priority: 100
+    actions: ['view', 'edit', 'create']
   },
   'admin': {
-    actions: ['view', 'edit', 'delete', 'create', 'upload', 'download', 'admin'],
-    priority: 500
+    actions: ['view', 'edit', 'delete', 'create', 'upload', 'download', 'admin']
   }
 };
 ```

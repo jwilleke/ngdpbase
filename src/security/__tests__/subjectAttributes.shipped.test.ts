@@ -15,10 +15,11 @@ import PolicyEvaluator from '../../managers/PolicyEvaluator';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import { toPermissionSubject, type JobContext } from '../../context/JobContext';
 import { aalFactsOf } from '../../utils/policyAttributes';
+import { attr, val } from '../../managers/__tests__/__fixtures__/conditions';
 
 const core = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
 
-const AAL2 = { attribute: 'subject:aal', 'greater-or-equal': 2 };
+const AAL2 = { 'integer-greater-than-or-equal': [attr('subject:aal', 'integer'), val(2, 'integer')] };
 const policy = (id: string, effect: 'allow' | 'deny', actions: string[], condition?: unknown) =>
   ({ id, effect, subjects: [{ type: 'role', value: 'qa' }], resources: [{ type: 'system-category', pattern: 'general' }], actions, ...(condition ? { condition } : {}) });
 
@@ -97,7 +98,7 @@ describe('subject:aal (#2261 slice 3, shipped configuration)', () => {
     test('a bearer JWT with no recorded level has none: refused by an AAL1 rule too, unlike a pre-#1523 session (#2287)', async () => {
       const { signIn: _gone, ...bare } = signedIn(2);
       expect((await decide({ ...bare, bearerWithoutLevel: true })).permit).toBe(false);
-      await boot([policy('qa-edit-aal1', 'allow', ['page-edit'], { attribute: 'subject:aal', 'greater-or-equal': 1 })]);
+      await boot([policy('qa-edit-aal1', 'allow', ['page-edit'], { 'integer-greater-than-or-equal': [attr('subject:aal', 'integer'), val(1, 'integer')] })]);
       expect((await decide(bare)).permit).toBe(true);
       expect((await decide({ ...bare, bearerWithoutLevel: true })).permit).toBe(false);
     });
@@ -139,7 +140,7 @@ describe('subject:aal (#2261 slice 3, shipped configuration)', () => {
   });
 
   test('a deny on less-or-equal 1 applies to a token with no level (missing), not to an AAL2 session', async () => {
-    await boot([policy('qa-edit', 'allow', ['page-edit']), policy('qa-no-weak-edit', 'deny', ['page-edit'], { attribute: 'subject:aal', 'less-or-equal': 1 })]);
+    await boot([policy('qa-edit', 'allow', ['page-edit']), policy('qa-no-weak-edit', 'deny', ['page-edit'], { 'integer-less-than-or-equal': [attr('subject:aal', 'integer'), val(1, 'integer')] })]);
     expect(await decide(token(undefined))).toMatchObject({ permit: false, policyIds: ['qa-no-weak-edit'] });
     expect((await decide(token(1))).permit).toBe(false);
     expect((await decide(signedIn(1))).permit).toBe(false);
@@ -148,7 +149,7 @@ describe('subject:aal (#2261 slice 3, shipped configuration)', () => {
   });
 
   describe('a site-declared attribute', () => {
-    const DEPT = { attribute: 'subject:department-id', equals: 'x' };
+    const DEPT = { 'string-equal': [attr('subject:department-id', 'string'), val('x', 'string')] };
 
     test('undeclared: reported with where to add it, and it never holds', async () => {
       await boot([policy('qa-dept', 'allow', ['page-edit'], DEPT)]);
@@ -179,7 +180,7 @@ describe('subject:aal (#2261 slice 3, shipped configuration)', () => {
     });
 
     test('an attribute whose source is the password, the email or the roles cannot be used', async () => {
-      await boot([policy('qa-pw', 'allow', ['page-edit'], { attribute: 'subject:secret', equals: 'x' })]);
+      await boot([policy('qa-pw', 'allow', ['page-edit'], { 'string-equal': [attr('subject:secret', 'string'), val('x', 'string')] })]);
       for (const field of ['password', 'email', 'roles']) {
         config['ngdpbase.access.subject-attributes'] = { secret: { type: 'string', from: `account:${field}` } };
         expect(evaluator.conditionProblemsInForce()[0].problems).toEqual([`'account:${field}' cannot be used in a condition`]);
@@ -189,14 +190,14 @@ describe('subject:aal (#2261 slice 3, shipped configuration)', () => {
     });
 
     test('a source that is not a subject source is reported', async () => {
-      await boot([policy('qa-x', 'allow', ['page-edit'], { attribute: 'subject:x', equals: 'x' })]);
+      await boot([policy('qa-x', 'allow', ['page-edit'], { 'string-equal': [attr('subject:x', 'string'), val('x', 'string')] })]);
       config['ngdpbase.access.subject-attributes'] = { x: { type: 'string', from: 'frontmatter:author' } };
       expect(evaluator.conditionProblemsInForce()[0].problems[0]).toMatch(/reads from "frontmatter:author"; start it with account:, profile:, sign-in/);
     });
   });
 
   test('subject:id still works when a site\'s own subject-attributes does not declare it', async () => {
-    await boot([policy('qa-own', 'allow', ['page-edit'], { attribute: 'resource:owner', equals: 'subject:id' })]);
+    await boot([policy('qa-own', 'allow', ['page-edit'], { 'string-equal': [attr('resource:owner', 'string'), attr('subject:id')] })]);
     config['ngdpbase.access.subject-attributes'] = {};
     expect(evaluator.conditionProblemsInForce()).toEqual([]);
     expect((await decide({ ...signedIn(1), username: 'system' })).permit).toBe(true);

@@ -1,12 +1,13 @@
 /**
- * Condition operators and the condition tree (#2261 slice 1): each operator,
- * the true/false/unknown rules per node, the depth limit, and every
- * validator message.
+ * Condition functions and the condition tree (#2261 slice 1, XACML names in
+ * #2330): each function, the true/false/unknown rules per node, the depth
+ * limit, and every validator message.
  */
 
 import PolicyEvaluator, { conditionHolds, conditionProblems } from '../PolicyEvaluator';
 import PolicyValidator from '../PolicyValidator';
 import type { Policy, PolicyCondition } from '../../types/Policy';
+import { attr, val } from './__fixtures__/conditions';
 
 const PAGE_ATTRIBUTES = {
   'system-category': { type: 'string' },
@@ -27,76 +28,83 @@ const facts: Record<string, unknown> = {
 };
 const read = (name: string) => facts[name];
 
-const leaf = (attribute: string, operator: string, value: unknown) => ({ attribute, [operator]: value }) as PolicyCondition;
-const T = leaf('resource:system-category', 'equals', 'general');
-const F = leaf('resource:system-category', 'equals', 'system');
-const U = leaf('resource:missing', 'equals', 'x');
+const str = (id: string) => attr(id, 'string');
+const int = (id: string) => attr(id, 'integer');
+const bool = (id: string) => attr(id, 'boolean');
+const T = { 'string-equal': [str('resource:system-category'), val('general')] } as PolicyCondition;
+const F = { 'string-equal': [str('resource:system-category'), val('system')] } as PolicyCondition;
+const U = { 'string-equal': [str('resource:missing'), val('x')] } as PolicyCondition;
+const notEqual = (left: unknown, right: unknown) => ({ not: [{ 'string-equal': [left, right] }] }) as PolicyCondition;
 
-describe('each operator', () => {
+describe('each function', () => {
   test.each([
-    [leaf('resource:system-category', 'equals', 'general'), true],
-    [leaf('resource:system-category', 'equals', 'system'), false],
-    [leaf('resource:owner', 'equals', 'subject:id'), true],
-    [leaf('resource:system-category', 'not-equals', 'system'), true],
-    [leaf('resource:system-category', 'not-equals', 'general'), false],
-    [leaf('resource:owner', 'not-equals', 'subject:id'), false],
-    [leaf('resource:system-category', 'in', ['general', 'user']), true],
-    [leaf('resource:system-category', 'in', ['system', 'user']), false],
-    [leaf('resource:level', 'in', [1, 3]), true],
-    [leaf('resource:system-category', 'in', 'resource:tags'), false],
-    [leaf('resource:level', 'greater-or-equal', 3), true],
-    [leaf('resource:level', 'greater-or-equal', 4), false],
-    [leaf('resource:level', 'less-or-equal', 3), true],
-    [leaf('resource:level', 'less-or-equal', 2), false],
-    [leaf('resource:draft', 'equals', false), true]
-  ])('%j is %s', async (condition, expected) => {
+    [{ 'string-equal': [str('resource:system-category'), val('general')] }, true],
+    [{ 'string-equal': [str('resource:system-category'), val('system')] }, false],
+    [{ 'string-equal': [str('resource:owner'), str('subject:id')] }, true],
+    [notEqual(str('resource:system-category'), val('system')), true],
+    [notEqual(str('resource:system-category'), val('general')), false],
+    [notEqual(str('resource:owner'), str('subject:id')), false],
+    [{ 'string-is-in': [str('resource:system-category'), val(['general', 'user'])] }, true],
+    [{ 'string-is-in': [str('resource:system-category'), val(['system', 'user'])] }, false],
+    [{ 'integer-is-in': [int('resource:level'), val([1, 3])] }, true],
+    [{ 'string-is-in': [str('resource:system-category'), str('resource:tags')] }, false],
+    [{ 'integer-greater-than-or-equal': [int('resource:level'), val(3)] }, true],
+    [{ 'integer-greater-than-or-equal': [int('resource:level'), val(4)] }, false],
+    [{ 'integer-less-than-or-equal': [int('resource:level'), val(3)] }, true],
+    [{ 'integer-less-than-or-equal': [int('resource:level'), val(2)] }, false],
+    [{ 'integer-greater-than': [int('resource:level'), val(3)] }, false],
+    [{ 'integer-greater-than': [int('resource:level'), val(2)] }, true],
+    [{ 'integer-less-than': [int('resource:level'), val(3)] }, false],
+    [{ 'integer-less-than': [int('resource:level'), val(4)] }, true],
+    [{ 'integer-equal': [int('resource:level'), val(3)] }, true],
+    [{ 'boolean-equal': [bool('resource:draft'), val(false)] }, true]
+  ] as Array<[PolicyCondition, boolean]>)('%j is %s', async (condition, expected) => {
     expect(await conditionHolds(condition, read)).toBe(expected);
   });
 
-  test('in with a list attribute on the right', async () => {
+  test('is-in with a list attribute as the bag', async () => {
     const withTags = (name: string) => (name === 'resource:system-category' ? 'a' : facts[name]);
-    expect(await conditionHolds(leaf('resource:system-category', 'in', 'resource:tags'), withTags)).toBe(true);
+    expect(await conditionHolds({ 'string-is-in': [str('resource:system-category'), str('resource:tags')] }, withTags)).toBe(true);
   });
 
   test.each([
-    ['equals'],
-    ['not-equals'],
-    ['in'],
-    ['greater-or-equal'],
-    ['less-or-equal']
-  ])('%s is unknown when the attribute is missing', async (operator) => {
-    const value = operator === 'in' ? ['a'] : 1;
-    expect(await conditionHolds(leaf('resource:missing', operator, value), read)).toBeUndefined();
+    ['string-equal', { 'string-equal': [str('resource:missing'), val('a')] }],
+    ['not of string-equal (not-equals)', notEqual(str('resource:missing'), val('a'))],
+    ['string-is-in', { 'string-is-in': [str('resource:missing'), val(['a'])] }],
+    ['integer-greater-than-or-equal', { 'integer-greater-than-or-equal': [int('resource:missing'), val(1)] }],
+    ['integer-less-than-or-equal', { 'integer-less-than-or-equal': [int('resource:missing'), val(1)] }]
+  ] as Array<[string, PolicyCondition]>)('%s is unknown when the attribute is missing', async (_name, condition) => {
+    expect(await conditionHolds(condition, read)).toBeUndefined();
   });
 
   test('a missing attribute on the right is unknown too', async () => {
-    expect(await conditionHolds(leaf('resource:owner', 'not-equals', 'resource:missing'), read)).toBeUndefined();
+    expect(await conditionHolds(notEqual(str('resource:owner'), str('resource:missing')), read)).toBeUndefined();
   });
 
-  test('an ordering operator on a value that is not a number is unknown', async () => {
-    expect(await conditionHolds(leaf('resource:owner', 'greater-or-equal', 1), read)).toBeUndefined();
+  test('an ordering function on a value that is not a number is unknown', async () => {
+    expect(await conditionHolds({ 'integer-greater-than-or-equal': [int('resource:owner'), val(1)] }, read)).toBeUndefined();
   });
 });
 
 describe('the tree is judged per node (Jim, question 3)', () => {
-  const any = (...c: PolicyCondition[]) => ({ 'any-of': c }) as PolicyCondition;
-  const all = (...c: PolicyCondition[]) => ({ 'all-of': c }) as PolicyCondition;
-  const not = (c: PolicyCondition) => ({ not: c }) as PolicyCondition;
+  const any = (...c: PolicyCondition[]) => ({ or: c }) as PolicyCondition;
+  const all = (...c: PolicyCondition[]) => ({ and: c }) as PolicyCondition;
+  const not = (c: PolicyCondition) => ({ not: [c] }) as PolicyCondition;
 
   test.each([
-    ['any-of', any(T, T), true],
-    ['any-of', any(F, T), true],
-    ['any-of', any(F, F), false],
-    ['any-of', any(U, T), true],
-    ['any-of', any(T, U), true],
-    ['any-of', any(U, F), undefined],
-    ['any-of', any(U, U), undefined],
-    ['all-of', all(T, T), true],
-    ['all-of', all(T, F), false],
-    ['all-of', all(U, F), false],
-    ['all-of', all(F, U), false],
-    ['all-of', all(T, U), undefined],
-    ['all-of', all(U, U), undefined]
+    ['or', any(T, T), true],
+    ['or', any(F, T), true],
+    ['or', any(F, F), false],
+    ['or', any(U, T), true],
+    ['or', any(T, U), true],
+    ['or', any(U, F), undefined],
+    ['or', any(U, U), undefined],
+    ['and', all(T, T), true],
+    ['and', all(T, F), false],
+    ['and', all(U, F), false],
+    ['and', all(F, U), false],
+    ['and', all(T, U), undefined],
+    ['and', all(U, U), undefined]
   ])('%s %j', async (_name, condition, expected) => {
     expect(await conditionHolds(condition, read)).toBe(expected);
   });
@@ -127,7 +135,7 @@ describe('policies over a tree', () => {
   }
   const editor = { username: 'erin', roles: ['editor'], isAuthenticated: true };
   const policy = (id: string, effect: string, condition: PolicyCondition): Policy => ({
-    id, effect, priority: 50,
+    id, effect,
     subjects: [{ type: 'role', value: 'editor' }],
     resources: [{ type: 'page', pattern: '*' }],
     actions: ['page-edit'],
@@ -144,33 +152,33 @@ describe('policies over a tree', () => {
   };
 
   test('an allow over any-of with one true branch applies, even beside a missing one', async () => {
-    const r = await decide([policy('a', 'allow', { 'any-of': [U, T] })]);
+    const r = await decide([policy('a', 'allow', { or: [U, T] })]);
     expect(r).toMatchObject({ allowed: true, policyIds: ['a'] });
   });
 
   test('an allow whose only undecided branch is unknown does not apply', async () => {
-    const r = await decide([policy('a', 'allow', { 'any-of': [U, F] })]);
+    const r = await decide([policy('a', 'allow', { or: [U, F] })]);
     expect(r).toMatchObject({ allowed: false, hasDecision: false });
   });
 
   test('a deny over not of unknown applies', async () => {
-    const r = await decide([policy('a', 'allow', T), policy('d', 'deny', { not: U })]);
+    const r = await decide([policy('a', 'allow', T), policy('d', 'deny', { not: [U] })]);
     expect(r).toMatchObject({ allowed: false, policyIds: ['d'] });
   });
 
   test('a deny over all-of with a false branch does not apply, however unknown the rest', async () => {
-    const r = await decide([policy('a', 'allow', T), policy('d', 'deny', { 'all-of': [U, F] })]);
+    const r = await decide([policy('a', 'allow', T), policy('d', 'deny', { and: [U, F] })]);
     expect(r).toMatchObject({ allowed: true, policyIds: ['a'] });
   });
 
   test('a nested not-equals deny refuses a non-author and not the author', async () => {
-    const d = policy('not-own', 'deny', { not: { attribute: 'resource:owner', equals: 'subject:id' } });
+    const d = policy('not-own', 'deny', notEqual(str('resource:owner'), str('subject:id')));
     expect(await decide([d], (n) => (n === 'resource:owner' ? 'sam' : facts[n]))).toMatchObject({ allowed: false, policyIds: ['not-own'] });
     expect(await decide([d, policy('a', 'allow', T)])).toMatchObject({ allowed: true, policyIds: ['a'] });
   });
 
   test('a condition with a problem inside a tree never applies as an allow, and applies as a deny', async () => {
-    const bad = { 'any-of': [T, { attribute: 'resource:department', equals: 'x' }] } as PolicyCondition;
+    const bad = { or: [T, { 'string-equal': [str('resource:department'), val('x')] }] } as PolicyCondition;
     expect(await decide([policy('a', 'allow', bad)])).toMatchObject({ allowed: false, hasDecision: false });
     expect(await decide([policy('d', 'deny', bad)])).toMatchObject({ allowed: false, policyIds: ['d'] });
   });
@@ -179,14 +187,14 @@ describe('policies over a tree', () => {
 describe('depth limit', () => {
   const nest = (levels: number): PolicyCondition => {
     let c: PolicyCondition = T;
-    for (let i = 1; i < levels; i++) c = { not: c };
+    for (let i = 1; i < levels; i++) c = { not: [c] };
     return c;
   };
   test('4 levels are fine', () => {
     expect(conditionProblems(nest(4), PAGE_ATTRIBUTES)).toEqual([]);
   });
   test('5 levels are refused', () => {
-    expect(conditionProblems(nest(5), PAGE_ATTRIBUTES)).toEqual(['conditions are nested 5 deep; the limit is 4; flatten with all-of or any-of']);
+    expect(conditionProblems(nest(5), PAGE_ATTRIBUTES)).toEqual(['conditions are nested 5 deep; the limit is 4; flatten with and or or']);
   });
   test('a condition nested too deep never holds', async () => {
     expect(await conditionHolds(nest(5), read)).toBeUndefined();
@@ -195,31 +203,35 @@ describe('depth limit', () => {
 
 describe('validator messages', () => {
   const problems = (condition: unknown) => conditionProblems(condition, PAGE_ATTRIBUTES);
+  const FUNCTIONS = 'string-equal, integer-equal, boolean-equal, string-is-in, integer-is-in, integer-greater-than, integer-greater-than-or-equal, integer-less-than, integer-less-than-or-equal, and, or, not';
 
   test.each([
-    [{ attribute: 'resource:owner', equals: 'subject:id', in: ['x'] }, "condition has both 'equals' and 'in'; use one operator per condition, combine with all-of"],
-    [{ attribute: 'resource:owner' }, /has no operator/],
-    [{ attribute: 'resource:owner', contains: 'x' }, "condition uses 'contains'; use one of equals, not-equals, in, greater-or-equal, less-or-equal, any-of, all-of, not"],
-    [{ 'any-of': [] }, "'any-of' is empty; list at least one condition, or remove the condition"],
-    [{ 'all-of': [] }, "'all-of' is empty; list at least one condition, or remove the condition"],
-    [{ 'any-of': 'x' }, /'any-of' must be a list of conditions/],
-    [{ 'any-of': [T], 'all-of': [T] }, "condition has both 'any-of' and 'all-of'; use one operator per condition, combine with all-of"],
-    [{ not: [] }, /condition must be an object/],
-    [{ attribute: 'resource:owner', in: [] }, "'in' is empty; list at least one value, or remove the condition"],
-    [{ attribute: 'resource:owner', in: 'x' }, /'in' must be a list of values or a list attribute/],
-    [{ attribute: 'resource:owner', in: ['subject:id'] }, /names an attribute; list literal values only/],
-    [{ attribute: 'resource:owner', in: 'resource:level' }, /'in' needs a list/],
-    [{ attribute: 'resource:department', equals: 'x' }, "condition reads 'resource:department', which is not declared; declare it on the page resource type in ngdpbase.access.resource-types"],
-    [{ attribute: 'subject:department-id', equals: 'x' }, /'subject:department-id', which is not declared/],
-    [{ attribute: 'environment:is-business-hours', equals: true }, /'environment:is-business-hours', which is not declared/],
-    [{ attribute: 'resource:level', equals: 'resource:owner' }, "condition compares 'resource:level' (integer) with 'resource:owner' (identity); both sides must have the same type"],
-    [{ attribute: 'resource:level', 'greater-or-equal': 'high' }, /compares 'resource:level' \(integer\) with "high" \(string\)/],
-    [{ attribute: 'resource:level', in: ['a'] }, /compares 'resource:level' \(integer\) with "a" \(string\)/],
-    [{ attribute: 'resource:owner', 'greater-or-equal': 1 }, /'greater-or-equal' works on integer attributes/],
-    [{ attribute: 'resource:tags', equals: 'a' }, /'equals' works on string, integer, boolean, identity attributes/],
-    [{ attribute: 'resource:draft', equals: 'no' }, /compares 'resource:draft' \(boolean\) with "no" \(string\)/],
-    [{ 'any-of': [T, { 'all-of': [{ attribute: 'resource:department', equals: 'x' }] }] }, /not declared/]
-  ])('%j', (condition, message) => {
+    [{ 'string-equal': [str('resource:owner'), str('subject:id')], 'string-is-in': [str('resource:owner'), val(['x'])] }, "condition has both 'string-equal' and 'string-is-in'; use one function per condition, combine with and"],
+    [{ 'string-equal': [str('resource:owner')] }, "'string-equal' takes two arguments; write { \"string-equal\": [ a, b ] }"],
+    [{ 'string-contains': [str('resource:owner'), val('x')] }, `condition uses 'string-contains'; use one of ${FUNCTIONS}`],
+    [{ or: [] }, "'or' is empty; list at least one condition, or remove the condition"],
+    [{ and: [] }, "'and' is empty; list at least one condition, or remove the condition"],
+    [{ or: 'x' }, /'or' must be a list of conditions/],
+    [{ or: [T], and: [T] }, "condition has both 'or' and 'and'; use one function per condition, combine with and"],
+    [{ not: [] }, "'not' takes a list of exactly one condition; write { \"not\": [ … ] }"],
+    [{ not: [T, F] }, /'not' takes a list of exactly one condition/],
+    [{ 'string-is-in': [str('resource:owner'), val([])] }, "'string-is-in' is empty; list at least one value, or remove the condition"],
+    [{ 'string-is-in': [str('resource:owner'), val('x')] }, /'string-is-in' needs a list/],
+    [{ 'string-is-in': [str('resource:owner'), int('resource:level')] }, /'string-is-in' needs a list; 'resource:level' is integer/],
+    [{ 'string-equal': [str('resource:department'), val('x')] }, "condition reads 'resource:department', which is not declared; declare it on the page resource type in ngdpbase.access.resource-types"],
+    [{ 'string-equal': [str('subject:department-id'), val('x')] }, /'subject:department-id', which is not declared/],
+    [{ 'boolean-equal': [bool('environment:is-business-hours'), val(true)] }, /'environment:is-business-hours', which is not declared/],
+    [{ 'string-equal': [str('resource:level'), val('x')] }, "'resource:level' is declared integer; its datatype must be \"integer\", not \"string\""],
+    [{ 'integer-equal': [int('resource:level'), str('resource:owner')] }, "'integer-equal' takes integer; 'resource:owner' has datatype \"string\""],
+    [{ 'string-equal': [str('resource:system-category'), str('resource:owner')] }, "condition compares 'resource:system-category' (string) with 'resource:owner' (identity); both sides must have the same type"],
+    [{ 'integer-greater-than-or-equal': [int('resource:level'), val('high')] }, "'integer-greater-than-or-equal' takes integer; value \"high\" has datatype \"string\""],
+    [{ 'integer-greater-than-or-equal': [int('resource:level'), val('high', 'integer')] }, /value "high" is a string, not the datatype "integer"/],
+    [{ 'integer-is-in': [int('resource:level'), val(['a'], 'integer')] }, /"a" is a string, not the datatype "integer"/],
+    [{ 'integer-greater-than-or-equal': [str('resource:owner'), val(1)] }, "'integer-greater-than-or-equal' takes integer; 'resource:owner' has datatype \"string\""],
+    [{ 'string-equal': [str('resource:tags'), val('a')] }, /'resource:tags' is a list; 'string-equal' needs a single value there/],
+    [{ 'boolean-equal': [bool('resource:draft'), val('no', 'boolean')] }, /value "no" is a string, not the datatype "boolean"/],
+    [{ or: [T, { and: [{ 'string-equal': [str('resource:department'), val('x')] }] }] }, /not declared/]
+  ] as Array<[unknown, string | RegExp]>)('%j', (condition, message) => {
     const got = problems(condition);
     expect(got.length).toBeGreaterThan(0);
     if (typeof message === 'string') expect(got).toEqual([message]);
@@ -227,11 +239,14 @@ describe('validator messages', () => {
   });
 
   test('valid trees have no problems', () => {
-    expect(problems({ 'any-of': [T, { not: leaf('resource:level', 'less-or-equal', 2) }, { 'all-of': [leaf('resource:system-category', 'in', ['a']), leaf('resource:owner', 'not-equals', 'subject:id')] }] })).toEqual([]);
+    expect(problems({ or: [T, { not: [{ 'integer-less-than-or-equal': [int('resource:level'), val(2)] }] }, { and: [{ 'string-is-in': [str('resource:system-category'), val(['a'])] }, notEqual(str('resource:owner'), str('subject:id'))] }] })).toEqual([]);
   });
 
-  test('the old { attribute, equals } form is valid as it was', () => {
-    expect(problems({ attribute: 'resource:owner', equals: 'subject:id' })).toEqual([]);
+  test('the old { attribute, equals } form is refused, and the message shows the new one', () => {
+    const got = problems({ attribute: 'resource:owner', equals: 'subject:id' });
+    expect(got).toHaveLength(1);
+    expect(got[0]).toContain('old form');
+    expect(got[0]).toContain('{ "string-equal": [ { "attributeid": "subject:department-id", "datatype": "string" }, { "value": "sales", "datatype": "string" } ] }');
   });
 
   test('PolicyValidator reports them as semantic errors on the condition field', () => {
@@ -242,8 +257,8 @@ describe('validator messages', () => {
     });
     const errors = validator.validateSemantics({
       id: 'p', effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'page', pattern: '*' }], actions: ['page-edit'],
-      conditions: [], condition: { 'any-of': [] }
+      conditions: [], condition: { or: [] }
     });
-    expect(errors).toContainEqual({ type: 'semantic', field: 'condition', message: "'any-of' is empty; list at least one condition, or remove the condition" });
+    expect(errors).toContainEqual({ type: 'semantic', field: 'condition', message: "'or' is empty; list at least one condition, or remove the condition" });
   });
 });

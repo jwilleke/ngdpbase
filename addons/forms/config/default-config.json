@@ -29,7 +29,6 @@
       "id": "forms-submit-access",
       "name": "Submit forms",
       "description": "Anyone may submit a form, unless the page it is on says otherwise",
-      "priority": 50,
       "effect": "allow",
       "subjects": [
         {

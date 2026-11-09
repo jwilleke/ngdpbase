@@ -9,6 +9,7 @@
  * decided in PolicyDecisionPoint and nowhere else, so enforcement and the
  * admin summary cannot disagree.
  */
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import PolicyDecisionPoint, { POLICIES_KEY, POLICIES_ENABLED_KEY } from '../PolicyDecisionPoint';
 
 function makePdp(values: Record<string, unknown>) {
@@ -18,7 +19,7 @@ function makePdp(values: Record<string, unknown>) {
   return { pdp: new PolicyDecisionPoint(engine), store };
 }
 
-const allow = (id: string, priority?: number) => ({ id, effect: 'allow', priority, subjects: [], actions: [] });
+const allow = (id: string, priority?: number) => ({ id, effect: 'allow', ...(priority === undefined ? {} : { priority }), subjects: [], actions: [] });
 
 describe('#1431 PolicyDecisionPoint.policies', () => {
   test('a policy changed after start is seen on the next read — no restart', () => {
@@ -34,9 +35,9 @@ describe('#1431 PolicyDecisionPoint.policies', () => {
     expect(makePdp({ [POLICIES_ENABLED_KEY]: false, [POLICIES_KEY]: [allow('a')] }).pdp.policies()).toEqual([]);
   });
 
-  test('highest priority first', () => {
+  test('in configuration order: a leftover priority changes nothing (#2330)', () => {
     const { pdp } = makePdp({ [POLICIES_ENABLED_KEY]: true, [POLICIES_KEY]: [allow('low', 1), allow('high', 100), allow('mid', 50)] });
-    expect(pdp.policies().map((p) => p.id)).toEqual(['high', 'mid', 'low']);
+    expect(pdp.policies().map((p) => p.id)).toEqual(['low', 'high', 'mid']);
   });
 
   test('an entry without a string id is not a policy', () => {
@@ -58,20 +59,25 @@ describe('#1431 PolicyDecisionPoint.policies', () => {
 });
 
 describe('#1431 what each role permits — the admin summary', () => {
-  const policy = (id: string, effect: string, role: string, actions: string[], priority = 0) =>
-    ({ id, effect, priority, subjects: [{ type: 'role', value: role }], actions });
+  const policy = (id: string, effect: string, role: string, actions: string[]) =>
+    ({ id, effect, subjects: [{ type: 'role', value: role }], actions });
 
   test('an allow policy grants its actions to the role it names', () => {
     const { pdp } = makePdp({ [POLICIES_ENABLED_KEY]: true, [POLICIES_KEY]: [policy('e', 'allow', 'editor', ['page-edit', 'page-read'])] });
     expect(pdp.rolePermissionLists()).toEqual({ editor: ['page-edit', 'page-read'] });
   });
 
-  test('a higher-priority deny takes an action away', () => {
+  test('a deny takes an action away, whether it is listed before or after the allow (#2330)', () => {
     const { pdp } = makePdp({
       [POLICIES_ENABLED_KEY]: true,
-      [POLICIES_KEY]: [policy('a', 'allow', 'editor', ['page-edit', 'page-delete'], 1), policy('d', 'deny', 'editor', ['page-delete'], 100)]
+      [POLICIES_KEY]: [policy('a', 'allow', 'editor', ['page-edit', 'page-delete']), policy('d', 'deny', 'editor', ['page-delete'])]
     });
     expect(pdp.rolePermissionLists()).toEqual({ editor: ['page-edit'] });
+    const reversed = makePdp({
+      [POLICIES_ENABLED_KEY]: true,
+      [POLICIES_KEY]: [policy('d', 'deny', 'editor', ['page-delete']), policy('a', 'allow', 'editor', ['page-edit', 'page-delete'])]
+    }).pdp;
+    expect(reversed.rolePermissionLists()).toEqual({ editor: ['page-edit'] });
   });
 
   test('permissionsForRoles is the union of the roles\' rows', () => {
@@ -86,5 +92,27 @@ describe('#1431 what each role permits — the admin summary', () => {
   test('with policies switched off, no role is given anything', () => {
     const { pdp } = makePdp({ [POLICIES_KEY]: [policy('e', 'allow', 'editor', ['page-edit'])] });
     expect(pdp.rolePermissionLists()).toEqual({});
+  });
+});
+
+describe('the role summary without priority (#2330)', () => {
+  const read = (f: string) => JSON.parse(readFileSync(f, 'utf8')) as Record<string, unknown>;
+  const files = ['config/app-default-config.json', ...readdirSync('addons').map((a) => `addons/${a}/config/default-config.json`).filter((f) => existsSync(f))];
+  const shipped = files.flatMap((f) => (read(f)[POLICIES_KEY] ?? []) as Array<Record<string, unknown>>);
+  const table = (policies: unknown[]) => makePdp({ [POLICIES_ENABLED_KEY]: true, [POLICIES_KEY]: policies }).pdp.rolePermissionLists();
+
+  test('the shipped policies carry no priority and still give every role its actions', () => {
+    expect(shipped.length).toBeGreaterThan(25);
+    expect(shipped.filter((p) => 'priority' in p)).toEqual([]);
+    const summary = table(shipped);
+    expect(summary.reader).toContain('page-read');
+    expect(summary.admin?.length ?? 0).toBeGreaterThan(summary.reader.length);
+    expect(Object.keys(summary)).toEqual([...Object.keys(summary)].sort());
+  });
+
+  test('is the same however the policies are ordered, and whatever a leftover priority says', () => {
+    const baseline = table(shipped);
+    const reordered = [...shipped].reverse().map((p, i) => ({ ...p, priority: (i * 37) % 101 }));
+    expect(table(reordered)).toEqual(baseline);
   });
 });
