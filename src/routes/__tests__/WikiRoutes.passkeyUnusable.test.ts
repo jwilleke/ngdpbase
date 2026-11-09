@@ -101,7 +101,7 @@ async function configurationScreen(s: Awaited<ReturnType<typeof site>>, custom: 
 
 describe('Admin → Configuration, passkeys on but the address cannot support them (#2317)', () => {
   test('http on a non-localhost host, enabled: the message and button show on that row', async () => {
-    const doc = await configurationScreen(await site({ baseUrl: 'http://wiki.home.lan:3000' }));
+    const doc = await configurationScreen(await site({ baseUrl: 'http://wiki.home.lan' }));
     const row = [...doc.querySelectorAll('#nav-current tbody tr')].find(tr => tr.querySelector('code')?.textContent === KEY);
     expect(row).toBeDefined();
     const note = row!.querySelector('.passkeys-cannot-work');
@@ -116,12 +116,12 @@ describe('Admin → Configuration, passkeys on but the address cannot support th
   });
 
   test('the same note shows on the row in Custom Overrides when the setting is overridden there', async () => {
-    const doc = await configurationScreen(await site({ baseUrl: 'http://wiki.home.lan:3000' }), { [KEY]: true });
+    const doc = await configurationScreen(await site({ baseUrl: 'http://wiki.home.lan' }), { [KEY]: true });
     expect(doc.querySelectorAll('#nav-custom .passkeys-cannot-work')).toHaveLength(1);
   });
 
   test('the note is for home users: no key name, issue number, path or log', async () => {
-    const doc = await configurationScreen(await site({ baseUrl: 'http://wiki.home.lan:3000' }));
+    const doc = await configurationScreen(await site({ baseUrl: 'http://wiki.home.lan' }));
     const text = doc.querySelector('.passkeys-cannot-work')!.textContent!;
     expect(text).not.toMatch(/#\d|docs\/|ngdpbase\.|\blog\b/i);
   });
@@ -129,7 +129,7 @@ describe('Admin → Configuration, passkeys on but the address cannot support th
   test.each([
     ['an https address', { baseUrl: 'https://wiki.example.com' }],
     ['http on localhost', { baseUrl: 'http://localhost:3000' }],
-    ['passkeys already off', { baseUrl: 'http://wiki.home.lan:3000', enabled: false }]
+    ['passkeys already off', { baseUrl: 'http://wiki.home.lan', enabled: false }]
   ])('%s: no message', async (_n, config) => {
     const doc = await configurationScreen(await site(config));
     expect(doc.querySelector('.passkeys-cannot-work')).toBeNull();
@@ -142,7 +142,7 @@ describe('Admin → Configuration, passkeys on but the address cannot support th
   });
 
   test('the button saves false through the normal save, as the signed-in admin', async () => {
-    const { routes, configManager } = await site({ baseUrl: 'http://wiki.home.lan:3000' });
+    const { routes, configManager } = await site({ baseUrl: 'http://wiki.home.lan' });
     vi.spyOn(routes as unknown as { freshEnough: () => Promise<boolean> }, 'freshEnough').mockResolvedValue(true);
     const r = res();
     await routes.adminUpdateConfiguration(req({ property: KEY, value: 'false' }), r);
@@ -151,7 +151,7 @@ describe('Admin → Configuration, passkeys on but the address cannot support th
   });
 
   test('the save asks for config-manage: without it nothing is written', async () => {
-    const { routes, configManager } = await site({ baseUrl: 'http://wiki.home.lan:3000' }, ['admin-read']);
+    const { routes, configManager } = await site({ baseUrl: 'http://wiki.home.lan' }, ['admin-read']);
     const r = res();
     await routes.adminUpdateConfiguration(req({ property: KEY, value: 'false' }), r);
     expect(r.status).toHaveBeenCalledWith(403);
@@ -159,7 +159,7 @@ describe('Admin → Configuration, passkeys on but the address cannot support th
   });
 
   test('the save asks for step-up first: a stale sign-in writes nothing', async () => {
-    const { routes, configManager } = await site({ baseUrl: 'http://wiki.home.lan:3000' });
+    const { routes, configManager } = await site({ baseUrl: 'http://wiki.home.lan' });
     const fresh = vi.spyOn(routes as unknown as { freshEnough: () => Promise<boolean> }, 'freshEnough').mockResolvedValue(false);
     const r = res();
     await routes.adminUpdateConfiguration(req({ property: KEY, value: 'false' }), r);
@@ -169,7 +169,7 @@ describe('Admin → Configuration, passkeys on but the address cannot support th
   });
 
   test('showing the screen never writes the setting', async () => {
-    const s = await site({ baseUrl: 'http://wiki.home.lan:3000' });
+    const s = await site({ baseUrl: 'http://wiki.home.lan' });
     await configurationScreen(s);
     await s.authManager.initialize();
     expect(s.configManager.setProperty).not.toHaveBeenCalled();
@@ -178,7 +178,7 @@ describe('Admin → Configuration, passkeys on but the address cannot support th
 
 describe('sign-in screens while passkeys cannot work (#2317)', () => {
   test('/login offers no passkey', async () => {
-    const { routes } = await site({ baseUrl: 'http://wiki.home.lan:3000' });
+    const { routes } = await site({ baseUrl: 'http://wiki.home.lan' });
     const r = res();
     await routes.loginPage({ ...req(), userContext: { username: 'anonymous', isAuthenticated: false, roles: ['anonymous'] }, query: {} }, r);
     expect(r.render.mock.calls[0][0]).toBe('login');
@@ -201,7 +201,7 @@ describe('sign-in screens while passkeys cannot work (#2317)', () => {
   });
 
   test('/profile offers no passkey enrolment', async () => {
-    const { routes } = await site({ baseUrl: 'http://wiki.home.lan:3000' });
+    const { routes } = await site({ baseUrl: 'http://wiki.home.lan' });
     const r = res();
     await routes.profilePage({ ...req(), path: '/profile' }, r);
     const data = r.render.mock.calls.find(c => c[0] === 'profile')?.[1] as Record<string, unknown>;

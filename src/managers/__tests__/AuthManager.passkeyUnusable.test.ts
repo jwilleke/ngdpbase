@@ -42,14 +42,14 @@ describe('AuthManager.passkeysCannotWork (#2317)', () => {
   };
 
   test.each([
-    ['http, a host that is not localhost', 'http://wiki.home.lan:3000', true, true, true],
-    ['http, an IP address', 'http://192.168.1.20:3000', true, true, true],
+    ['http, a host that is not localhost', 'http://wiki.home.lan', true, true, true],
+    ['http, an IP address', 'http://192.168.1.20', true, true, true],
     ['not set explicitly, even if it would do', 'https://wiki.example.com', true, false, true],
     ['https', 'https://wiki.example.com', true, true, false],
     ['http on localhost', 'http://localhost:3000', true, true, false],
     ['http on *.localhost', 'http://wiki.localhost:3000', true, true, false],
-    ['passkeys set off, whatever the address', 'http://wiki.home.lan:3000', false, true, false],
-    ['the setting left unset (it ships true)', 'http://wiki.home.lan:3000', undefined, true, true]
+    ['passkeys set off, whatever the address', 'http://wiki.home.lan', false, true, false],
+    ['the setting left unset (it ships true)', 'http://wiki.home.lan', undefined, true, true]
   ])('%s', async (_n, baseUrl, enabled, explicit, cannot) => {
     const am = await started(baseUrl, enabled, explicit);
     expect(am.passkeysCannotWork()).toBe(cannot);
