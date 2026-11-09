@@ -128,7 +128,7 @@ export function pageWritePolicyFindings(policies: readonly Policy[]): PolicyFind
     if (everyone && granted.length > 0) {
       out.push({
         log: `'${policy.id}' grants ${granted.join(', ')} to ${everyone}, so ${everyone} can do that, beyond reading; grant it to named roles instead (#2261)`,
-        plain: `The rule '${policy.id}' lets ${everyone} do more than read. Give those abilities to named roles instead.`
+        plain: `The rule '${policy.id}' lets ${everyone.replace(', including signed-out visitors', ' (including signed-out visitors)')} do more than read. Give those abilities to named roles instead.`
       });
     }
     const writes = (policy.actions ?? []).filter((a) => (PAGE_WRITES as readonly string[]).includes(a) || a === '*');

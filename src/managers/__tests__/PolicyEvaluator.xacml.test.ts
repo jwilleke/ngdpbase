@@ -452,7 +452,7 @@ describe('every line of the access-policies needs-attention item is plain (#2348
 
   test('a grant to everyone: no permission ids', async () => {
     const { item, log } = await run([sample('open-edit', 'allow', { subjects: [{ type: 'anyone' }], actions: ['page-read', 'page-edit'] })]);
-    expect(item).toBe("Access policies need review (1 problem): The rule 'open-edit' lets anyone, including signed-out visitors do more than read. Give those abilities to named roles instead.");
+    expect(item).toBe("Access policies need review (1 problem): The rule 'open-edit' lets anyone (including signed-out visitors) do more than read. Give those abilities to named roles instead.");
     expectPlain(item);
     expect(log).toContain("'open-edit' grants page-edit to anyone, including signed-out visitors, so");
     expect(log).toContain('(#2261)');
