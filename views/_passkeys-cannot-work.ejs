@@ -1,0 +1,12 @@
+<%# #2317: ngdpbase.auth.passkey.enabled is true, but the site's address cannot support passkeys.
+    The button saves false through the ordinary Admin → Configuration save (POST /admin/configuration),
+    with its permission check and fresh sign-in; nothing is rewritten quietly. %>
+<div class="small text-warning-emphasis mt-1 passkeys-cannot-work" style="max-width: 15rem">
+    <i class="fas fa-exclamation-triangle"></i> Passkeys can't work on this site's address. They need an https address.
+    <form method="POST" action="/admin/configuration" class="mt-1">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="property" value="ngdpbase.auth.passkey.enabled">
+        <input type="hidden" name="value" value="false">
+        <button type="submit" class="btn btn-sm btn-outline-secondary"<%- lockedUnless('config-manage') %>>Turn passkeys off</button>
+    </form>
+</div>

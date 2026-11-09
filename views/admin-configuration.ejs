@@ -204,6 +204,9 @@
                                                     <% ((typeof configProblems !== 'undefined' && configProblems[key]) || []).forEach(function (problem) { %>
                                                         <div class="text-danger small config-problem"><i class="fas fa-exclamation-triangle"></i> <%= problem %></div>
                                                     <% }); %>
+                                                <% if (key === 'ngdpbase.auth.passkey.enabled' && typeof passkeysCannotWork !== 'undefined' && passkeysCannotWork) { %>
+                                                    <%- include('_passkeys-cannot-work', { csrfToken, lockedUnless }) %>
+                                                <% } %>
                                                 </td>
                                                 <td>
                                                     <%# Secrets are stripped server-side, so there is no value here to hide —
@@ -311,6 +314,9 @@
                                                         <% ((typeof configProblems !== 'undefined' && configProblems[key]) || []).forEach(function (problem) { %>
                                                             <div class="text-danger small config-problem"><i class="fas fa-exclamation-triangle"></i> <%= problem %></div>
                                                         <% }); %>
+                                                        <% if (key === 'ngdpbase.auth.passkey.enabled' && typeof passkeysCannotWork !== 'undefined' && passkeysCannotWork) { %>
+                                                            <%- include('_passkeys-cannot-work', { csrfToken, lockedUnless }) %>
+                                                        <% } %>
                                                         <% if (envInfo) { %>
                                                             <span class="badge bg-secondary ms-1" title="Owned by the environment">
                                                                 <i class="fas fa-lock"></i> env
@@ -480,6 +486,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (window.followReauth(data)) return;
                 if (data.success) {
                     showConfigAlert('success', data.message || 'Configuration updated successfully');
+                    var settled = form.closest('.passkeys-cannot-work'); // #2317: saved, so the note no longer applies
+                    if (settled) settled.remove();
                 } else {
                     showConfigAlert('danger', data.error || 'Failed to update configuration');
                 }

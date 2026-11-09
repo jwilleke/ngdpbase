@@ -14427,6 +14427,8 @@ ${panes}
         ...commonData,
         title: 'Configuration Management',
         configProblems,
+        // #2317: passkeys are on in the setting but the site's address cannot support them.
+        passkeysCannotWork: this.engine.getManager<AuthManager>('AuthManager')?.passkeysCannotWork?.() ?? false,
         // #2330: stated above the table, so the rule the policies are read under is visible.
         ruleCombiningAlgorithm: { value: configManager.getProperty(RULE_COMBINING_ALGORITHM_KEY, 'deny-overrides'), explanation: DENY_OVERRIDES_EXPLANATION },
         message: req.query.success,
