@@ -1,0 +1,50 @@
+name: npm ci with cached ffmpeg-static
+description: >-
+  Runs scripts/npm-ci-retry.sh, keeping the ffmpeg-static binary in the
+  Actions cache so a GitHub release outage does not fail CI (#2318).
+runs:
+  using: composite
+  steps:
+    # The lock file's version fixes the release tag, so it is the cache key.
+    - name: Find the ffmpeg-static version
+      id: version
+      shell: bash
+      run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/ffmpeg-static'].version")" >> "$GITHUB_OUTPUT"
+
+    # Holds <release tag>/ with the three files install.js downloads, laid out
+    # as on the release page. npm ci empties node_modules, so a binary cannot be
+    # left there; install.js reads FFMPEG_BINARIES_URL, so on a hit it is
+    # pointed at a server on this machine. Saved by this step's post-job hook
+    # when it missed.
+    - name: Cache ffmpeg-static binary
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}/ffmpeg-mirror
+        key: ffmpeg-static-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
+
+    # Hit: no request goes to github.com. Miss: it downloads as before, and
+    # the retry stays (#1450).
+    - name: Install dependencies
+      shell: bash
+      env:
+        MIRROR: ${{ runner.temp }}/ffmpeg-mirror
+        HIT: ${{ steps.cache.outputs.cache-hit }}
+      run: |
+        if [ "$HIT" = "true" ]; then
+          python3 -m http.server 18765 --bind 127.0.0.1 --directory "$MIRROR" >/dev/null 2>&1 &
+          pid=$!
+          trap "kill $pid" EXIT
+          export FFMPEG_BINARIES_URL=http://127.0.0.1:18765
+          echo "ffmpeg-static: cache hit, downloading from $FFMPEG_BINARIES_URL"
+          sh scripts/npm-ci-retry.sh
+        else
+          sh scripts/npm-ci-retry.sh
+          pkg=node_modules/ffmpeg-static
+          tag=$(node -p "const p=require('./$pkg/package.json');p['ffmpeg-static']['binary-release-tag']")
+          plat=$(node -p "process.platform+'-'+process.arch")
+          mkdir -p "$MIRROR/$tag"
+          gzip -c "$pkg/ffmpeg" > "$MIRROR/$tag/ffmpeg-$plat.gz"
+          cp "$pkg/ffmpeg.README" "$MIRROR/$tag/$plat.README"
+          cp "$pkg/ffmpeg.LICENSE" "$MIRROR/$tag/$plat.LICENSE"
+        fi
