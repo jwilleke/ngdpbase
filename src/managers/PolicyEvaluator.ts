@@ -3,7 +3,7 @@ import BaseManager from './BaseManager.js';
 // sat here and drifted from it.
 import type { Policy, PolicySubject, PolicyResource, PolicyCondition } from '../types/Policy.js';
 import { isAttributeName } from '../types/Policy.js';
-import { readDeclaredAsWritten, COMPARISON_FUNCTIONS, CONDITION_EXAMPLE, CONDITION_FUNCTIONS, DATATYPES, GROUP_FUNCTIONS, LEGACY_CONDITION_KEYS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_FUNCTION, OPERAND_KEYS, RULE_COMBINING_ALGORITHM_KEY, combiningAlgorithmProblem, compareLeaf, datatypeOf, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, environmentDeclarationProblem, literalFits, literalType, subjectAttributesProblems, subjectDeclarationProblem, unenforcedConditionsLine, type DeclaredEnvironmentAttribute, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
+import { readDeclaredAsWritten, COMPARISON_FUNCTIONS, CONDITION_EXAMPLE, CONDITION_FUNCTIONS, DATATYPES, GROUP_FUNCTIONS, LEGACY_CONDITION_KEYS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_FUNCTION, OPERAND_KEYS, RULE_COMBINING_ALGORITHM_KEY, combiningAlgorithmProblem, compareLeaf, datatypeOf, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, environmentDeclarationProblem, literalFits, literalType, subjectAttributesProblems, subjectDeclarationProblem, unenforcedConditionsLine, unenforcedConditionsNotice, type DeclaredEnvironmentAttribute, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
 import { SCHEDULES_KEY, TIME_ZONE_KEY, scheduleIsEnabled, scheduleProblem, type Schedule } from '../utils/availability.js';
 import { normalizeUsername } from '../utils/username.js';
 import logger from '../utils/logger.js';
@@ -515,6 +515,7 @@ class PolicyEvaluator extends BaseManager {
       lines.push(`${withPriority.join(', ')} ${withPriority.length === 1 ? 'has' : 'have'} a priority, which is ignored: under deny-overrides any matching deny wins and order and priority don't matter; remove it (#2330)`);
     }
     // #2334: the old plural `conditions` array is read by nothing.
+    // The log keeps the long form; the needs-attention entry shows plain words (below).
     const unenforced = unenforcedConditionsLine(this.policies());
     if (unenforced) lines.push(unenforced);
     for (const { id, effect, problems } of this.conditionProblemsInForce()) {
@@ -540,7 +541,9 @@ class PolicyEvaluator extends BaseManager {
     }
     if (lines.length === 0) return;
     for (const line of lines) logger.warn(`[POLICY] ${line}`);
-    this.markNeedsAttention(`Access policies need review after the #2255 upgrade (${lines.length}): ${lines.join('; ')}. See the start-up log and docs/access-policies.md.`, 'ngdpbase.access.policies');
+    const notice = unenforcedConditionsNotice(this.policies());
+    const shown = lines.map((l) => (l === unenforced && notice ? notice.replace(/\.$/, '') : l));
+    this.markNeedsAttention(`Access policies need review (${lines.length}): ${shown.join('; ')}. See the start-up log and docs/access-policies.md.`, 'ngdpbase.access.policies');
   }
 
   /**

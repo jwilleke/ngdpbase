@@ -399,19 +399,41 @@ export function environmentAttributesProblems(raw: unknown): string[] {
  * What the old plural `conditions` array's entry types become in the single `condition` (#2334).
  * Only a user-attribute entry with an equality operator (`==` or `===`) has an equivalent: a string comparison.
  */
+const CONDITIONS_DECLARATION = '{ "department": { "type": "string", "from": "profile:department" } }';
 const CONDITIONS_EXAMPLE = '{ "string-equal": [ { "attributeid": "subject:department", "datatype": "string" }, { "value": "IT", "datatype": "string" } ] }';
 
+/** The policies that carry a non-empty old plural `conditions` array, named by id or by position (#2334). An empty array limits nothing either way, so it is not named. */
+function policiesWithOldConditions(policies: unknown): string[] {
+  if (!Array.isArray(policies)) return [];
+  return [...policies.entries()]
+    .filter(([, p]) => {
+      const c = (p as { conditions?: unknown } | null)?.conditions;
+      return Array.isArray(c) && c.length > 0;
+    })
+    .map(([i, p]) => `'${typeof (p as { id?: unknown }).id === 'string' ? (p as { id: string }).id : `#${i + 1}`}'`);
+}
+
 /**
- * One line naming each policy that carries the old plural `conditions` array, or null when none does (#2334).
+ * The words an administrator sees (the needs-attention entry and the save message) when a policy carries
+ * the old plural `conditions` array, or null when none does (#2334). Plain words: no issue number, no JSON.
+ */
+export function unenforcedConditionsNotice(policies: unknown): string | null {
+  const names = policiesWithOldConditions(policies);
+  if (names.length === 0) return null;
+  const one = names.length === 1;
+  return `${one ? 'This rule has' : 'These rules have'} an old 'conditions' list that the site ignores, so it doesn't limit anyone: ${names.join(', ')}. Move ${one ? 'it' : 'each one'} into the rule's condition, or remove it.`;
+}
+
+/**
+ * The start-up log line for the same policies, in full: the condition to write, the attribute
+ * declaration it needs, and the entry types with no equivalent (#2334). Null when none has one.
  * Nothing in the decision path reads that array, so a rule written there limits no access.
- * Used at start-up and on save in Admin → Configuration, the same words in both.
  */
 export function unenforcedConditionsLine(policies: unknown): string | null {
-  if (!Array.isArray(policies)) return null;
-  const withConditions = policies.filter((p) => Array.isArray((p as { conditions?: unknown } | null)?.conditions));
-  if (withConditions.length === 0) return null;
-  const names = withConditions.map((p, i) => `'${typeof (p as { id?: unknown }).id === 'string' ? (p as { id: string }).id : `#${i + 1}`}'`);
+  const names = policiesWithOldConditions(policies);
+  if (names.length === 0) return null;
   return `${names.join(', ')} ${names.length === 1 ? 'has' : 'have'} a conditions array, which is not enforced: nothing reads it, so it limits no access. `
-    + `Replace it with the single condition in the XACML form. A user-attribute entry with the == or === operator becomes ${CONDITIONS_EXAMPLE} (declare the attribute in ngdpbase.access.subject-attributes first). `
+    + `Replace it with the single condition in the XACML form. A user-attribute entry with the == or === operator becomes ${CONDITIONS_EXAMPLE}, `
+    + `which needs the attribute declared with a source in ngdpbase.access.subject-attributes, for example ${CONDITIONS_DECLARATION} (see docs/access-policies.md#subject-attributes). `
     + 'The other entry types (time-range, ip-range, context-attribute, session-attribute, environment, and user-attribute with any other operator) have no equivalent: a rule you need cannot be written yet, so do not rely on it (#2334)';
 }
