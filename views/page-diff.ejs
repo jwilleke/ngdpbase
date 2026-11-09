@@ -65,6 +65,11 @@
         </div>
       </div>
 
+      <% if (locals.tooLarge) { %>
+      <div class="alert alert-warning" id="diffTooLarge">
+        This change is too large to show line by line. Version <%= version1.version %> is <%= tooLarge.oldBytes %> characters and version <%= version2.version %> is <%= tooLarge.newBytes %> characters.
+      </div>
+      <% } else { %>
       <!-- View Mode Selector -->
       <div class="btn-group mb-3" role="group">
         <button type="button" class="btn btn-primary active" id="btnUnified" onclick="showView('unified')">
@@ -77,7 +82,7 @@
 
       <!-- Unified Diff View -->
       <div id="unifiedView" class="diff-container">
-        <pre class="diff-pre"><code id="unifiedDiff">Loading...</code></pre>
+        <div class="diff-pre" id="unifiedDiff">Loading...</div>
       </div>
 
       <!-- Side-by-Side Diff View -->
@@ -89,7 +94,7 @@
                 <h6 class="mb-0">Version <%= version1.version %> (Old)</h6>
               </div>
               <div class="card-body p-0">
-                <pre class="diff-pre mb-0"><code id="oldVersion">Loading...</code></pre>
+                <div class="diff-pre mb-0" id="oldVersion">Loading...</div>
               </div>
             </div>
           </div>
@@ -99,12 +104,13 @@
                 <h6 class="mb-0">Version <%= version2.version %> (New)</h6>
               </div>
               <div class="card-body p-0">
-                <pre class="diff-pre mb-0"><code id="newVersion">Loading...</code></pre>
+                <div class="diff-pre mb-0" id="newVersion">Loading...</div>
               </div>
             </div>
           </div>
         </div>
       </div>
+      <% } %>
     </div>
   </div>
 </div>
@@ -133,6 +139,7 @@
   color: var(--alert-success-text);
   padding: 2px 5px;
   display: block;
+  min-height: 1.5em;
 }
 
 .diff-line-deleted {
@@ -140,12 +147,27 @@
   color: var(--alert-danger-text);
   padding: 2px 5px;
   display: block;
+  min-height: 1.5em;
 }
 
 .diff-line-unchanged {
   padding: 2px 5px;
   display: block;
+  min-height: 1.5em;
   color: var(--text-primary);
+}
+
+/* Dark mode: the shared alert tokens leave removed text at 4.1:1 on a grey
+   background, so the diff carries its own colours. */
+[data-bs-theme="dark"] .diff-line-added { background-color: #123d24; color: #7ee787; }
+[data-bs-theme="dark"] .diff-line-deleted { background-color: #4a1a1f; color: #ff9b94; }
+[data-bs-theme="dark"] .diff-line-added .diff-line-marker,
+[data-bs-theme="dark"] .diff-line-deleted .diff-line-marker { color: inherit; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-bs-theme]) .diff-line-added { background-color: #123d24; color: #7ee787; }
+  :root:not([data-bs-theme]) .diff-line-deleted { background-color: #4a1a1f; color: #ff9b94; }
+  :root:not([data-bs-theme]) .diff-line-added .diff-line-marker,
+  :root:not([data-bs-theme]) .diff-line-deleted .diff-line-marker { color: inherit; }
 }
 
 .diff-line-marker {
@@ -249,6 +271,7 @@ function escapeHtml(text) {
 
 // Initialize diffs on page load
 document.addEventListener('DOMContentLoaded', function() {
+  if (!document.getElementById('unifiedDiff')) return;
   renderUnifiedDiff();
   renderSideBySideDiff();
 });
