@@ -88,14 +88,19 @@ const includer = (original: string): { template: string } | undefined =>
   original === 'header' || original === 'footer' ? { template: '<!-- stub -->' } : undefined;
 
 /** The real admin-configuration template, fed what the handler gave it. */
-async function configurationScreen(s: Awaited<ReturnType<typeof site>>, custom: Record<string, unknown> = {}, locked = false): Promise<Document> {
+async function configurationScreen(s: Awaited<ReturnType<typeof site>>, custom: Record<string, unknown> = {}, locked = false, envControlled: Record<string, unknown> = {}, opts: { scripts?: (w: Record<string, unknown>) => void } = {}): Promise<Document> {
   const r = res();
   await s.routes.adminConfiguration(req(), r);
   const data = r.render.mock.calls[0][1] as Record<string, unknown>;
   const html = await ejs.renderFile(path.join(VIEWS, 'admin-configuration.ejs'), {
     ...data, customProperties: custom, csrfToken: 'tok', lockedUnless: () => (locked ? ' disabled aria-disabled="true" title="Requires the permission"' : ''), locals: {}, cspNonce: 'n',
-    securityPosture: null, secretKeys: [], secretIsSet: {}, canRevealSecrets: false, envControlled: {}
+    securityPosture: null, secretKeys: [], secretIsSet: {}, canRevealSecrets: false, envControlled
   }, { includer });
+  if (opts.scripts) {
+    const dom = new JSDOM(html, { runScripts: 'dangerously', beforeParse: w => opts.scripts(w) });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    return dom.window.document;
+  }
   return new JSDOM(html).window.document;
 }
 
@@ -141,9 +146,70 @@ describe('Admin → Configuration, passkeys on but the address cannot support th
     const note = doc.querySelector('#nav-current .passkeys-cannot-work')!;
     expect(note.textContent!.replace(/\s+/g, ' ')).toContain(`${MESSAGE} Set the site address to https, or turn passkeys off.`);
     expect(note.textContent).toContain('This saves right away. You can turn passkeys back on once the site uses https.');
-    expect(note.querySelector('a')!.getAttribute('href')).toBe('#config-row-base-url');
+    expect(note.querySelector('a')!.getAttribute('href')).toBe('#nav-add'); // not set anywhere: Add New, address filled in
+    expect(note.querySelector('a')!.getAttribute('data-prefill')).toBe('ngdpbase.application.base-url');
     expect(doc.querySelector('#nav-current td:nth-child(2) .d-lg-block .passkeys-cannot-work')).not.toBeNull();
     expect(note.querySelector('button')!.disabled).toBe(false);
+  });
+
+  test('base-url set by the environment: says plainly it is changed outside this page, no link, no variable name (#2317 review)', async () => {
+    const baseKey = 'ngdpbase.application.base-url';
+    const doc = await configurationScreen(await site({ baseUrl: 'http://wiki.home.lan' }), {}, false, { [baseKey]: { envVar: 'X', source: 'env', effective: 'http://wiki.home.lan' } });
+    const note = doc.querySelector('#nav-current .passkeys-cannot-work')!;
+    const text = note.textContent!.replace(/\s+/g, ' ');
+    expect(text).toContain("The site address is set outside this page, in the server's settings. To use https, change it there and restart the server, or turn passkeys off.");
+    expect(note.querySelector('a')).toBeNull();
+    expect(text).not.toMatch(/NGDPBASE_|\.env|ngdpbase\./);
+  });
+
+  test('base-url in Custom Overrides: the link goes to that editable row (#2317 review)', async () => {
+    const baseKey = 'ngdpbase.application.base-url';
+    const doc = await configurationScreen(await site({ baseUrl: 'http://wiki.home.lan' }), { [baseKey]: 'http://wiki.home.lan' });
+    const a = doc.querySelector('#nav-current .passkeys-cannot-work a')!;
+    expect(a.getAttribute('data-config-jump')).toBe('nav-custom-tab');
+    const row = doc.getElementById(a.getAttribute('data-row'))!;
+    expect(row.closest('#nav-custom')).not.toBeNull();
+    expect(row.querySelector('input.form-control')).not.toBeNull();
+  });
+
+  describe('after a save in the page (browser script)', () => {
+    const saveRow = async (property: string, value: string) => {
+      const fetched: string[] = [];
+      const doc = await configurationScreen(await site({ baseUrl: 'http://wiki.home.lan' }), { [KEY]: true, 'ngdpbase.other': 'x' }, false, {}, {
+        scripts: w => {
+          w.csrfFetch = (_u: string, o: { body: string }) => { fetched.push(o.body); return Promise.resolve({ json: () => Promise.resolve({ success: true, message: 'ok' }) }); };
+          w.followReauth = () => false;
+        }
+      });
+      const form = [...doc.querySelectorAll('form[action="/admin/configuration"]')].find(f =>
+        (f.querySelector('[name=property]'))?.value === property && (property !== KEY || (f.querySelector('[name=value]') as HTMLInputElement).value === value))
+        ?? doc.querySelector('#nav-add form')!;
+      if ((form.querySelector('[name=property]') as HTMLInputElement).type !== 'hidden') {
+        (form.querySelector('[name=property]') as HTMLInputElement).value = property;
+        (form.querySelector('[name=value]') as HTMLInputElement).value = value;
+      }
+      form.dispatchEvent(new doc.defaultView!.Event('submit', { cancelable: true, bubbles: true }));
+      await new Promise(resolve => setTimeout(resolve, 20));
+      return { doc, fetched };
+    };
+
+    test('turning passkeys off removes the note and the row reads false', async () => {
+      const { doc, fetched } = await saveRow(KEY, 'false');
+      expect(fetched).toHaveLength(1);
+      expect(doc.querySelector('.passkeys-cannot-work')).toBeNull();
+      const row = [...doc.querySelectorAll('#nav-current tbody tr')].find(tr => tr.querySelector('code')?.textContent === KEY)!;
+      expect(row.querySelector('td:nth-child(2) > code')?.textContent).toBe('false');
+    });
+
+    test('saving another property leaves the note in place and the passkey value unchanged', async () => {
+      const { doc, fetched } = await saveRow('ngdpbase.other', 'y');
+      expect(fetched).toHaveLength(1);
+      expect(doc.querySelectorAll('.passkeys-cannot-work').length).toBeGreaterThan(0);
+      const row = [...doc.querySelectorAll('#nav-current tbody tr')].find(tr => tr.querySelector('code')?.textContent === KEY)!;
+      expect(row.querySelector('td:nth-child(2) > code')?.textContent).toBe('true');
+      const field = doc.querySelector('#nav-custom input[name=value][value="true"], #nav-custom input.form-control');
+      expect(field?.value).not.toBe('false');
+    });
   });
 
   test('without config-manage the button is disabled and says why', async () => {
