@@ -278,11 +278,9 @@ describe('GET /diff/:page renders Compare Versions (#2319)', () => {
     expect(summary).toMatch(new RegExp(`Unchanged:\\s*${lines(dom, 'unchanged').length}\\b`));
   });
 
-  test('L1/L2: diff lines keep a minimum height and dark mode has its own colours', async () => {
+  test('L1/L2: dark mode has its own diff colours', async () => {
     await saveThree();
     const res = await request(appFor()).get(`/diff/${PAGE}?v1=1&v2=2`);
-    expect(res.text).toMatch(/\.diff-line-added[^{]*\{[^}]*min-height:\s*calc\(1\.5em \+ 4px\)/);
-    expect(res.text).toMatch(/\.diff-line-unchanged[^{]*\{[^}]*min-height:\s*calc\(1\.5em \+ 4px\)/);
     expect(res.text).toMatch(/\[data-bs-theme="dark"\][^{]*\.diff-line-deleted/);
   });
 
@@ -321,5 +319,109 @@ describe('GET /diff/:page renders Compare Versions (#2319)', () => {
     const doc = new JSDOM(res.text).window.document;
     expect((doc.getElementById('version1') as HTMLSelectElement).value).toBe('2');
     expect((doc.getElementById('version2') as HTMLSelectElement).value).toBe('3');
+  });
+
+  // #2352: side by side pairs removed and added lines, padding the short side.
+  async function sideBySide(before: string, after: string) {
+    await provider.savePage(PAGE, before, fm, ctx as never);
+    await sleep(15);
+    await provider.savePage(PAGE, after, fm, ctx as never);
+    const dom = await diffDom(1, 2);
+    const rows = (id: string) => Array.from(dom.window.document.querySelectorAll(`#${id} > span`)).map(e => ({
+      cls: e.className,
+      text: e.textContent ?? ''
+    }));
+    return { dom, oldRows: rows('oldVersion'), newRows: rows('newVersion') };
+  }
+
+  test('#2352: a removed line with no replacement gets a filler on the new side', async () => {
+    const { oldRows, newRows } = await sideBySide('A\nB\nC\nD', 'A\nC\nD');
+    expect(oldRows.length).toBe(newRows.length);
+    expect(oldRows.map(r => r.cls)).toEqual(['diff-line-unchanged', 'diff-line-deleted', 'diff-line-unchanged', 'diff-line-unchanged']);
+    expect(newRows.map(r => r.cls)).toEqual(['diff-line-unchanged', 'diff-line-filler', 'diff-line-unchanged', 'diff-line-unchanged']);
+    expect(oldRows[2].text).toBe(newRows[2].text);
+  });
+
+  test('#2352: two lines replaced by three pair row by row with one filler', async () => {
+    const { oldRows, newRows } = await sideBySide('A\nb1\nb2\nZ', 'A\nn1\nn2\nn3\nZ');
+    expect(oldRows.length).toBe(5);
+    expect(newRows.length).toBe(5);
+    expect(oldRows.map(r => r.cls)).toEqual(['diff-line-unchanged', 'diff-line-deleted', 'diff-line-deleted', 'diff-line-filler', 'diff-line-unchanged']);
+    expect(newRows.map(r => r.cls)).toEqual(['diff-line-unchanged', 'diff-line-added', 'diff-line-added', 'diff-line-added', 'diff-line-unchanged']);
+    expect(oldRows[4].text).toBe('Z');
+    expect(newRows[4].text).toBe('Z');
+  });
+
+  test('#2352: a long replaced line stays one row in each pane, inside a shared grid', async () => {
+    const long = 'word '.repeat(80).trim();
+    const { dom, oldRows, newRows } = await sideBySide('A\nshort\nZ', `A\n${long}\nZ`);
+    expect(oldRows.length).toBe(3);
+    expect(newRows.length).toBe(3);
+    expect(newRows[1].text).toBe(long);
+    const grid = dom.window.document.getElementById('sbsGrid') as HTMLElement;
+    expect(grid.style.getPropertyValue('--sbs-rows')).toBe('3');
+    expect(dom.window.document.body.innerHTML).toMatch(/\.sbs-pane \.diff-pre[^{]*\{[^}]*grid-template-rows:\s*subgrid/);
+  });
+
+  test('#2352: fillers are hidden from assistive tech, empty, and not counted as changes', async () => {
+    const { dom } = await sideBySide('A\nB\nC', 'A\nC');
+    const filler = dom.window.document.querySelector('#newVersion .diff-line-filler') as HTMLElement;
+    expect(filler.getAttribute('aria-hidden')).toBe('true');
+    expect(filler.textContent).toBe('');
+    const summary = dom.window.document.querySelector('.alert-info')?.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(summary).toMatch(/Additions:\s*0\b/);
+    expect(summary).toMatch(/Deletions:\s*1\b/);
+    // Copying a pane gives its own lines only.
+    expect(dom.window.document.getElementById('newVersion')?.textContent).toBe('AC');
+  });
+
+  test('#2352: row height follows the padding: no row class uses calc(), blank rows get the zero-width line', async () => {
+    await saveThree();
+    const res = await request(appFor()).get(`/diff/${PAGE}?v1=1&v2=2`);
+    const css = res.text.slice(res.text.indexOf('<style'), res.text.indexOf('</style>'));
+    expect(css).toMatch(/\.diff-line-filler::before,[^{]*\.diff-line-added:empty::before,[^{]*\.diff-line-deleted:empty::before,[^{]*\.diff-line-unchanged:empty::before\s*\{[^}]*width:\s*0/);
+    for (const cls of ['filler', 'added', 'deleted', 'unchanged']) {
+      expect(css).not.toMatch(new RegExp(`\\.diff-line-${cls}\\s*\\{[^}]*calc\\(`));
+    }
+  });
+
+  test('#2352: below 768px the panes stack and the fillers are hidden', async () => {
+    await saveThree();
+    const res = await request(appFor()).get(`/diff/${PAGE}?v1=1&v2=2`);
+    expect(res.text).toMatch(/@media \(max-width: 767\.98px\) \{[^@]*\.sbs \.diff-line-filler \{ display: none; \}/);
+  });
+
+  describe('pairSideBySide', () => {
+    type Part = [number, string];
+    type Row = { oldText: string | null; newText: string | null; changed: boolean };
+    let pair: (parts: Part[]) => Row[];
+    beforeEach(async () => {
+      await saveThree();
+      const dom = await diffDom(1, 2);
+      const fn = (dom.window as unknown as { pairSideBySide: (p: Part[]) => Row[] }).pairSideBySide;
+      pair = parts => JSON.parse(JSON.stringify(fn(parts)));
+    });
+    const row = (oldText: string | null, newText: string | null, changed = true): Row => ({ oldText, newText, changed });
+
+    test.each([
+      ['an added line with no partner', [[0, 'A'], [1, 'B'], [0, 'C']], [row('A', 'A', false), row(null, 'B'), row('C', 'C', false)]],
+      ['3 removed, 1 added', [[-1, 'x1'], [-1, 'x2'], [-1, 'x3'], [1, 'y']], [row('x1', 'y'), row('x2', null), row('x3', null)]],
+      ['1 removed, 3 added', [[-1, 'x'], [1, 'y1'], [1, 'y2'], [1, 'y3']], [row('x', 'y1'), row(null, 'y2'), row(null, 'y3')]],
+      ['a change at the very start', [[-1, 'a'], [1, 'b'], [0, 'C']], [row('a', 'b'), row('C', 'C', false)]],
+      ['a change at the very end', [[0, 'C'], [-1, 'a'], [1, 'b']], [row('C', 'C', false), row('a', 'b')]],
+      ['two change blocks one unchanged line apart', [[-1, 'a'], [1, 'b'], [0, 'M'], [-1, 'c'], [1, 'd']],
+        [row('a', 'b'), row('M', 'M', false), row('c', 'd')]],
+      ['an empty removed line against a non-empty added one', [[-1, ''], [1, 'x']], [row('', 'x')]],
+      ['a non-empty removed line against an empty added one', [[-1, 'x'], [1, '']], [row('x', '')]],
+      ['an added line added before the removed one is listed', [[1, 'n'], [-1, 'o']], [row('o', 'n')]]
+    ] as Array<[string, Part[], Row[]]>)('%s', (_name, parts, expected) => {
+      expect(pair(parts)).toEqual(expected);
+    });
+  });
+
+  test('#2352: the inline view is unchanged by pairing', async () => {
+    const { dom } = await sideBySide('A\nB\nC', 'A\nC');
+    expect(dom.window.document.querySelectorAll('#unifiedDiff .diff-line-filler').length).toBe(0);
+    expect(lines(dom, 'deleted')).toEqual(['B']);
   });
 });
