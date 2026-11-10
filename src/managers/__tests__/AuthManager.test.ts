@@ -394,7 +394,7 @@ describe('AuthManager', () => {
       test('a SHIPPED level no factor reaches acts at what is reachable and degrades; it does not refuse the boot (#448)', async () => {
         const manager = await withRoles({ admin: 2, reader: 1 }, {}, {});
         expect(manager.checkRequiredAal()).toEqual([]);
-        expect(manager.getManagerStatus()).toEqual(expect.objectContaining({ state: 'degraded', configKey: 'ngdpbase.auth.factors' }));
+        expect(manager.getManagerStatus()).toEqual(expect.objectContaining({ state: 'degraded', configKey: 'ngdpbase.application.base-url' }));
         expect(manager.requiredAalFor(['admin'])).toBe(1);
         expect(manager.rolesAtSignIn(['admin', 'reader'], 1)).toEqual({ kept: ['admin', 'reader'], steppedDown: [] });
       });

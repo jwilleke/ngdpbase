@@ -45,7 +45,7 @@ import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { emailDomain, errorForLog } from '../utils/emailForLog.js';
 
 /** The degraded reason while sends fail; cleared by the next success. */
-export const SEND_FAILING_REASON = 'outbound email is failing — see the server log and the administrator notification';
+export const SEND_FAILING_REASON = "The site can't send email right now. Check the email settings.";
 
 /** Shipped value of `ngdpbase.mail.failure-notice.window-minutes`. */
 const DEFAULT_NOTICE_WINDOW_MINUTES = 60;

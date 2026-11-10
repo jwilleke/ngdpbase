@@ -328,11 +328,13 @@ describe('a page\'s files go where the page goes (#1842)', () => {
 
     const status = attachments.getManagerStatus();
     expect(status.state).toBe('degraded');
-    expect(status.reason).toContain(`molly/notes page ${UUID}`);
-    expect(status.reason).toContain('molly/phr pages named by shared records');
-    expect(status.reason).not.toContain('Old Secret');
-    expect(status.reason).not.toContain('labs.txt');
+    // #2354: plain words on the dashboard; the owners and pages are in the notice and the log.
+    expect(status.reason).toMatch(/^2 private vault pages use files from the shared attachment pool/);
+    expect(status.reason).not.toContain('molly');
     expect(notifications).toHaveLength(1);
+    expect(String(notifications[0].message)).toContain(`molly/notes page ${UUID}`);
+    expect(String(notifications[0].message)).toContain('molly/phr pages named by shared records');
+    expect(String(notifications[0].message)).not.toContain('Old Secret');
     expect(notifications[0]).toMatchObject({ level: 'error' });
     expect((await filesUnder(testDir)).sort()).toEqual(before);
   });

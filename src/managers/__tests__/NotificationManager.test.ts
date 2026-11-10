@@ -586,7 +586,7 @@ describe('NotificationManager', () => {
       const m = await managerWithIdentities(dir, IDS, opts);
       // Sabotage check: rethrowing in the conversion's catch stops initialize.
       expect((await saved(dir)).targetUsers).toEqual(['john']);
-      expect(m.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringContaining('identity store unavailable, conversion postponed') });
+      expect(m.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/^Some notifications still name their recipients the old way.*Restart the site to try again\.$/) });
       const id = await m.createNotification({ title: 'still works', targetUsers: ['john'] });
       const stored = (m as unknown as { notifications: Map<string, { targetUsers: string[] }> }).notifications.get(id);
       expect(stored?.targetUsers).toEqual(['john']);

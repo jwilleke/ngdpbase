@@ -343,7 +343,9 @@ describe('#2097 page authorship conversion', () => {
     expect(result).toMatchObject({ status: 'done', pagesSkipped: 1, skipErrors: ['EACCES'] });
     expect(matter(await fs.readFile(pageFile(site, uuids.b), 'utf8')).data.author).toBe('orphan:bob');
     const reasons = attention.mock.calls.map((c) => c[0]).join('\n');
-    expect(reasons).toContain('EACCES');
+    // #2354: plain words on the dashboard; the error class is in the log and in the result.
+    expect(reasons).toMatch(/^1 page could not be updated to name their authors the new way/);
+    expect(reasons).not.toContain('EACCES');
     expect(reasons).not.toContain(site.pagesDir);
     // Not recorded as complete: the next start visits every page again.
     const record = await fs.readJson(path.join(site.dir, 'site-migrations.json'));

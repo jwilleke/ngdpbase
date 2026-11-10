@@ -139,7 +139,7 @@ describe('#2041 footnotes', () => {
     const fm = new FootnoteManager(engine(fakeIdentityManager(IDS, { down: true })));
     await fm.initialize();
     expect((JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, { createdBy: string }>)['1'].createdBy).toBe('alice');
-    expect(status(fm)).toMatchObject({ state: 'degraded', reason: expect.stringContaining('identity store unavailable, conversion postponed') });
+    expect(status(fm)).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/^Some (footnotes|comments) still name their authors the old way.*Restart the site to try again\.$/) });
     const written = await fm.addFootnote(pub('p4'), { display: 'd', url: 'https://x.test/', note: 'n' }, subject('alice'));
     expect(written.createdBy).toBe('alice');
   });
@@ -150,7 +150,7 @@ describe('#2041 footnotes', () => {
     // Sabotage check: rethrowing in the catch stops initialize.
     await fm.initialize();
     expect((JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, { createdBy: string }>)['1'].createdBy).toBe('alice');
-    expect(status(fm)).toMatchObject({ state: 'degraded', reason: expect.stringContaining('identity store unavailable, conversion postponed') });
+    expect(status(fm)).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/^Some (footnotes|comments) still name their authors the old way.*Restart the site to try again\.$/) });
   });
 });
 
@@ -197,7 +197,7 @@ describe('#2041 comments', () => {
     fs.writeFileSync(path.join(dir, 'c1.json'), JSON.stringify({ id: 'c1', pageUuid: 'p5', author: 'alice', authorDisplayName: 'A', content: 'x', createdAt: 't' }));
     const cm = new CommentManager(engine(fakeIdentityManager(IDS, opts)));
     await cm.initialize();
-    expect(status(cm)).toMatchObject({ state: 'degraded', reason: expect.stringContaining('identity store unavailable, conversion postponed') });
+    expect(status(cm)).toMatchObject({ state: 'degraded', reason: expect.stringMatching(/^Some (footnotes|comments) still name their authors the old way.*Restart the site to try again\.$/) });
     const c = await cm.addComment(pub('p6'), subject('alice'), 'hi');
     expect(c.author).toBe('alice');
   });
