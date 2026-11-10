@@ -229,6 +229,7 @@ describe('ConsentManager (#1603)', () => {
       expect((await cm.pendingFor('ann')).map((d) => d.id)).toEqual(['privacy-policy']);
       expect(cm.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention' });
       expect(cm.getManagerStatus().reason).toMatch(/^The 'terms-of-service' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync, or remove it from the consent documents setting\./);
+      expect(cm.getManagerStatus().configKey).toBe('ngdpbase.consent.documents');
 
       pages['privacy-policy'] = null;
       expect(await cm.pendingFor('ann')).toEqual([]);
@@ -335,7 +336,10 @@ describe('ConsentManager (#1603)', () => {
     test('a missing page asks nothing and needs attention', async () => {
       pages['recovery-words'] = null;
       expect(await cm.pendingFor('ann', 'recovery-words', WORDS)).toEqual([]);
-      expect(cm.getManagerStatus().reason).toMatch(/^The 'recovery-words' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync, or remove it from the consent documents setting\./);
+      expect(cm.getManagerStatus().reason).toMatch(/^The 'recovery-words' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync\.$/);
+      expect(cm.getManagerStatus().reason).not.toMatch(/consent documents setting/);
+      expect(cm.getManagerStatus().configKey).toBeUndefined();
+      expect(cm.getManagerStatus().fixUrl).toBe('/admin/required-pages');
     });
 
     test('no add-on may take its scope', () => {
@@ -371,7 +375,10 @@ describe('ConsentManager (#1603)', () => {
     test('a missing page asks nothing and needs attention', async () => {
       pages[SCOPE] = null;
       expect(await cm.pendingFor('ann', SCOPE, ORG_WORDS)).toEqual([]);
-      expect(cm.getManagerStatus().reason).toMatch(/^The 'shared-folders-recovery-words' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync, or remove it from the consent documents setting\./);
+      expect(cm.getManagerStatus().reason).toMatch(/^The 'shared-folders-recovery-words' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync\.$/);
+      expect(cm.getManagerStatus().reason).not.toMatch(/consent documents setting/);
+      expect(cm.getManagerStatus().configKey).toBeUndefined();
+      expect(cm.getManagerStatus().fixUrl).toBe('/admin/required-pages');
     });
   });
 

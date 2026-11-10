@@ -74,7 +74,8 @@ function slotsOf(src: string): string[] {
 }
 
 /** A slot that prints a number, or chooses between words by one. Anything else could print developer text. */
-const PLAIN_SLOT = /^(?:[\w.]+\.length|[\w.]*\b(?:total|count|n|\w+Skipped|\w+Refused)|localTime\([\w.]+\)|[\w.]+(?:\.length)?\s*(?:===|!==|>|<)\s*\d+\s*\?[\s\S]*|[\w.\s=!<>]+\?\s*(['"])[^'"]*\1\s*:\s*(['"])[^'"]*\2)$/;
+const WORDS = String.raw`(?:'[^']*'|"[^"]*"|`+'`[^`]*`'+String.raw`)`; // a string literal; a template's own slots are checked on their own
+const PLAIN_SLOT = new RegExp(String.raw`^(?:[\w.]+\.length|[\w.]*\b(?:total|count|n|\w+Skipped|\w+Refused)|localTime\([\w.]+\)|[\w.]+(?:\.length)?\s*(?:===|!==|>|<)\s*\d+\s*\?\s*${WORDS}\s*:\s*${WORDS}|[\w.\s=!<>]+\?\s*${WORDS}\s*:\s*${WORDS})$`);
 
 /** Slots that are fixed words, not input: named per file so a new one has to be argued for. */
 const FIXED_WORDS: Array<[string, string]> = [
@@ -196,7 +197,7 @@ function collect(): { reasons: Reason[]; unresolved: string[] } {
   let statuses = 0;
   for (const file of files) {
     const text = fs.readFileSync(file, 'utf8');
-    for (const m of text.matchAll(/state: '(?:degraded|failed)'[^}]*?reason: ([\w.]+)/g)) {
+    for (const m of text.matchAll(/state: '(?:degraded|failed)'[^}]*?reason: ([\w.]+|`(?:[^`\\]|\\.)*`|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")/g)) {
       statuses++;
       const rel = path.relative(ROOT, file);
       let source = m[1];
@@ -243,6 +244,8 @@ describe('#2354 every dashboard reason is in plain words', () => {
 
   test('the slot rule would catch an error message in a reason', () => {
     expect(badSlots('`Could not start: ${err.message}`', 'X.ts')).toEqual(['err.message']);
+    expect(badSlots('`Failed: ${n.length === 1 ? err.message : \'\'}`', 'X.ts')).toEqual(["n.length === 1 ? err.message : ''"]);
+    expect(badSlots('`${n.length}`'+' ${x === 1 ? \'a\' : err.message}', 'X.ts')).toEqual(["x === 1 ? 'a' : err.message"]);
     expect(badSlots('`${n.length} of ${total} files${n.length === 1 ? \' is\' : \' are\'}`', 'X.ts')).toEqual([]);
   });
 
