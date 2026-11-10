@@ -214,28 +214,28 @@
                                     <td>
                                         <% if (page.status === 'modified') { %>
                                         <button class="btn btn-sm btn-outline-info"
-                                                onclick="showDiff('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')">
+                                                data-row-action="showDiff" data-row-args="<%= JSON.stringify([page.uuid, page.title].map(v => v ?? '')) %>">
                                             <i class="fas fa-code-branch"></i> Diff
                                         </button>
                                         <% } %>
                                         <% if (page.status === 'uuid-mismatch') { %>
                                         <button class="btn btn-sm btn-outline-info"
-                                                onclick="showDiff('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>', '<%= page.liveUuid %>')"
+                                                data-row-action="showDiff" data-row-args="<%= JSON.stringify([page.uuid, page.title, page.liveUuid].map(v => v ?? '')) %>"
                                                 title="Compare the shipped page with the page already here">
                                             <i class="fas fa-code-branch"></i> Diff
                                         </button>
                                         <button class="btn btn-sm btn-warning"
-                                                onclick="adoptUuidOne('<%= page.uuid %>', '<%= page.liveUuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')"
+                                                data-row-action="adoptUuidOne" data-row-args="<%= JSON.stringify([page.uuid, page.liveUuid, page.title].map(v => v ?? '')) %>"
                                                 title="Keep the page already here and make it this shipped page">
                                             <i class="fas fa-id-card"></i> Adopt UUID
                                         </button>
                                         <button class="btn btn-sm btn-outline-danger"
-                                                onclick="reconcileOne('<%= page.uuid %>', '<%= page.liveUuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')"
+                                                data-row-action="reconcileOne" data-row-args="<%= JSON.stringify([page.uuid, page.liveUuid, page.title].map(v => v ?? '')) %>"
                                                 title="Move the page already here to the trash and add the shipped page">
                                             <i class="fas fa-exchange-alt"></i> Replace
                                         </button>
                                         <button class="btn btn-sm btn-outline-secondary"
-                                                onclick="declineOne('<%= page.source %>', '<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>', 'A page with slug or title already exists under UUID <%= page.liveUuid %>')"
+                                                data-row-action="declineOne" data-row-args="<%= JSON.stringify([page.source, page.uuid, page.title, 'A page with slug or title already exists under UUID ' + (page.liveUuid ?? '')].map(v => v ?? '')) %>"
                                                 title="Keep the live page. This site stops being offered this shipped page.">
                                             <i class="fas fa-ban"></i> Don't Seed Here
                                         </button>
@@ -245,7 +245,7 @@
                                         <% } %>
                                         <% if (page.userModified || page.titleDrift) { %>
                                         <button class="btn btn-sm btn-outline-warning"
-                                                onclick="pushToSourceOne('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')"
+                                                data-row-action="pushToSourceOne" data-row-args="<%= JSON.stringify([page.uuid, page.title].map(v => v ?? '')) %>"
                                                 title="Push live edits back to required-pages/ source">
                                             <i class="fas fa-upload"></i> Push to Source
                                         </button>
@@ -305,7 +305,7 @@
                                     <td><small><%= page.lastModified ? page.lastModified.slice(0, 10) : '—' %></small></td>
                                     <td>
                                         <button class="btn btn-sm btn-outline-primary"
-                                                onclick="pushToSourceOne('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')"
+                                                data-row-action="pushToSourceOne" data-row-args="<%= JSON.stringify([page.uuid, page.title].map(v => v ?? '')) %>"
                                                 title="Copy the live page into the required-pages source folder (not committed)">
                                             <i class="fas fa-upload"></i> Push to source
                                         </button>
@@ -399,13 +399,13 @@
                                     <td>
                                         <% if (page.status === 'modified') { %>
                                         <button class="btn btn-sm btn-outline-info"
-                                                onclick="showDiff('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')">
+                                                data-row-action="showDiff" data-row-args="<%= JSON.stringify([page.uuid, page.title].map(v => v ?? '')) %>">
                                             <i class="fas fa-code-branch"></i> Diff
                                         </button>
                                         <% } %>
                                         <% if (page.status === 'uuid-mismatch') { %>
                                         <button class="btn btn-sm btn-outline-secondary"
-                                                onclick="declineOne('<%= page.source %>', '<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>', 'A page with slug or title already exists under UUID <%= page.liveUuid %>')"
+                                                data-row-action="declineOne" data-row-args="<%= JSON.stringify([page.source, page.uuid, page.title, 'A page with slug or title already exists under UUID ' + (page.liveUuid ?? '')].map(v => v ?? '')) %>"
                                                 title="Keep the live page. This site stops being offered this addon page.">
                                             <i class="fas fa-ban"></i> Don't Seed Here
                                         </button>
@@ -464,7 +464,7 @@
                                     <td><small class="text-muted"><%= page.at %> by <%= page.by %></small></td>
                                     <td>
                                         <button class="btn btn-sm btn-outline-primary"
-                                                onclick="allowOne('<%= page.source %>', '<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')"
+                                                data-row-action="allowOne" data-row-args="<%= JSON.stringify([page.source, page.uuid, page.title].map(v => v ?? '')) %>"
                                                 title="Offer this page again at the next start-up or sync">
                                             <i class="fas fa-undo"></i> Seed Here
                                         </button>
@@ -526,7 +526,7 @@
                                         </a>
                                         <% } %>
                                         <button class="btn btn-sm btn-outline-danger"
-                                                onclick="removeOrphan('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')"
+                                                data-row-action="removeOrphan" data-row-args="<%= JSON.stringify([page.uuid, page.title].map(v => v ?? '')) %>"
                                                 title="Delete this orphaned page (a revertable version is kept)">
                                             <i class="fas fa-trash"></i> Remove
                                         </button>
@@ -707,6 +707,16 @@ document.addEventListener('click', function (e) {
     if (!button) return;
     if (button.dataset.confirm && !confirm(button.dataset.confirm)) return;
     void syncOne(button.dataset.syncId, button.dataset.syncName, button.dataset.action === 'force-sync');
+});
+
+// A row's Diff, Adopt UUID, Replace, Decline, Allow, Push and Remove buttons
+// name their function on data-row-action and its arguments, as a JSON list,
+// on data-row-args.
+const ROW_ACTIONS = ['showDiff', 'adoptUuidOne', 'reconcileOne', 'declineOne', 'allowOne', 'pushToSourceOne', 'removeOrphan'];
+document.addEventListener('click', function (e) {
+    const button = e.target.closest('button[data-row-action]');
+    if (!button || !ROW_ACTIONS.includes(button.dataset.rowAction)) return;
+    void window[button.dataset.rowAction](...JSON.parse(button.dataset.rowArgs));
 });
 
 async function syncByStatus(status) {
