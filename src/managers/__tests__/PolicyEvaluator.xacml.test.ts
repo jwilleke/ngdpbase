@@ -352,9 +352,8 @@ describe('the needs-attention item for the access policies (#2343)', () => {
     await ev.initialize();
     warn.mockRestore();
     const text = itemText(attention.mock.calls[0]);
-    expect(text).toContain('Access policies need review (3 problems): ');
+    expect(text).toContain('Access policies need review (2 problems): ');
     expect(text).toContain("'old-priority'");
-    expect(text).toContain('locked');
     expect(text).toContain("'old-list'");
     expect(text).not.toMatch(/#\d/);
     expect(text).not.toContain('docs/');
@@ -369,7 +368,6 @@ describe('the needs-attention item for the access policies (#2343)', () => {
     const all = warn.mock.calls.map((c) => String(c[0]));
     warn.mockRestore();
     expect(all.find((l) => l.includes('a priority'))).toContain('(#2330)');
-    expect(all.find((l) => l.includes('system-category locked'))).toContain('(#2255)');
     expect(all.find((l) => l.includes('conditions array'))).toContain('docs/access-policies.md#subject-attributes');
   });
 
@@ -401,15 +399,7 @@ describe('the needs-attention item for the access policies (#2343)', () => {
     expect(text).not.toContain('; ');
   });
 
-  test('an uneditable category alone: singular', async () => {
-    const text = await itemFor([], { locked: stored('Locked') });
-    expect(text).toBe('Access policies need review (1 problem): Nobody can edit the pages in this category, not even an admin: locked. Add a rule that lets a role edit it.');
-  });
-
-  test('two uneditable categories: plural', async () => {
-    const text = await itemFor([], { locked: stored('Locked'), shut: stored('Shut') });
-    expect(text).toBe('Access policies need review (1 problem): Nobody can edit the pages in these categories, not even an admin: locked, shut. Add a rule that lets a role edit them.');
-  });
+  // Stored categories nobody can edit are an upgrade check now (upgradeChecks/uneditablePages.ts), not part of this item.
 
   test('the parts are joined as separate sentences, not with a semicolon', async () => {
     const { ev, attention } = withAll();
@@ -425,9 +415,9 @@ describe('the needs-attention item for the access policies (#2343)', () => {
     await ev.initialize();
     warn.mockRestore();
     const [headline, key, opts] = attention.mock.calls[0] as [string, string, { details: string[] }];
-    expect(headline).toBe('Access policies need review (3 problems):');
+    expect(headline).toBe('Access policies need review (2 problems):');
     expect(key).toBe('ngdpbase.access.policies');
-    expect(opts.details).toHaveLength(3);
+    expect(opts.details).toHaveLength(2);
     for (const line of opts.details) expect(line).toMatch(/\.$/);
   });
 
