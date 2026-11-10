@@ -150,7 +150,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text || '';
-        return div.innerHTML;
+        // Quotes too: the result also goes into attribute values.
+        return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     function formatSize(bytes) {
@@ -465,7 +466,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function esc(s) {
         var d = document.createElement('div');
         d.textContent = String(s == null ? '' : s);
-        return d.innerHTML;
+        // Quotes too: the result also goes into attribute values.
+        return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
     function fmtSize(n) {
         if (typeof n !== 'number') return '—';
