@@ -58,6 +58,7 @@ import { sweepOrphanedKeys } from './utils/privateStoreUnlock.js';
 import { endSession, type SessionEndReason } from './utils/sessionEnd.js';
 import type PageManager from './managers/PageManager.js';
 import type BackgroundJobManager from './managers/BackgroundJobManager.js';
+import type { StrongerSignInWays } from './managers/AuthManager.js';
 import { OIDC_INTERACTION_PREFIX, OIDC_MOUNT, type OidcManager } from './managers/OidcManager.js';
 import { registerOidcRoutes } from './routes/OidcRoutes.js';
 import { bearerProviderIds } from './utils/bearerProviders.js';
@@ -856,8 +857,7 @@ void (async (): Promise<void> => {
     aalCapFor?(username: string): Promise<1 | 2 | 3 | 0>;
     aalReachFor?(username: string): Promise<{ now: 1 | 2 | 3 | 0; ifEnrolled: 1 | 2 | 3 | 0 }>;
     rolesAwaitingEnrolment?(roles: readonly string[], reach: { now: number; ifEnrolled: number }): string[];
-    hasCredential?(username: string, kind: 'passkey'): boolean;
-    passkeysAvailable?(): boolean;
+    strongerSignInWays?(username: string): Promise<StrongerSignInWays>;
     subjectActingFor?(req: Request, self: NonNullable<Request['userContext']>): Promise<NonNullable<Request['userContext']>>;
     actingForChoices?(req: Request): { grants: unknown[] } | null;
     takeStepUpNotice?(req: Request): boolean;
@@ -959,21 +959,16 @@ void (async (): Promise<void> => {
           // #1690: a role held below its level only because no factor is
           // enrolled — the person keeps it, and every page says to add one.
           const awaiting = reach ? authManagerForRoles?.rolesAwaitingEnrolment?.(sessionContext.roles ?? [], reach) ?? [] : [];
-          if (awaiting.length > 0) res.locals.aalEnrolNag = {
-            roles: awaiting,
-            // #2345: name a passkey only where one can be added (not off, not an address passkeys can't use).
-            passkeysAvailable: Boolean(authManagerForRoles?.passkeysAvailable?.())
-          };
           // #2145: back from a fresh sign-in that could not redo the action; say it can be done now.
           if (authManagerForRoles?.takeStepUpNotice?.(req)) res.locals.stepUpConfirmed = true;
           const stepDown = authManagerForRoles?.rolesAtSignIn?.(sessionContext.roles ?? [], req.session.signIn?.aal ?? 1, aalCap);
-          if (stepDown && stepDown.steppedDown.length > 0) {
-            res.locals.aalStepDown = {
-              roles: stepDown.steppedDown,
-              hasPasskey: authManagerForRoles?.hasCredential?.(sessionContext.username, 'passkey') ?? false,
-              passkeysAvailable: Boolean(authManagerForRoles?.passkeysAvailable?.())
-            };
-          }
+          // #2356: the banners name only what this account can add or use here,
+          // read for this request and this account, and only when one shows.
+          const ways = awaiting.length > 0 || (stepDown?.steppedDown.length ?? 0) > 0
+            ? await authManagerForRoles?.strongerSignInWays?.(sessionContext.username)
+            : undefined;
+          if (awaiting.length > 0) res.locals.aalEnrolNag = { roles: awaiting, ways };
+          if (stepDown && stepDown.steppedDown.length > 0) res.locals.aalStepDown = { roles: stepDown.steppedDown, ways };
           const self = {
             ...sessionContext,
             ...(stepDown ? { roles: stepDown.kept } : {}),
