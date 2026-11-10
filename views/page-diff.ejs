@@ -69,6 +69,10 @@
       <div class="alert alert-warning" id="diffTooLarge">
         This change is too large to show line by line. Version <%= version1.version %> is <%= tooLarge.oldBytes %> characters and version <%= version2.version %> is <%= tooLarge.newBytes %> characters.
       </div>
+      <% } else if (stats.additions === 0 && stats.deletions === 0) { %>
+      <div class="alert alert-secondary" id="diffNoChanges">
+        No changes to the text.
+      </div>
       <% } else { %>
       <!-- View Mode Selector -->
       <div class="btn-group mb-3" role="group">
@@ -139,7 +143,7 @@
   color: var(--alert-success-text);
   padding: 2px 5px;
   display: block;
-  min-height: 1.5em;
+  min-height: calc(1.5em + 4px);
 }
 
 .diff-line-deleted {
@@ -147,13 +151,13 @@
   color: var(--alert-danger-text);
   padding: 2px 5px;
   display: block;
-  min-height: 1.5em;
+  min-height: calc(1.5em + 4px);
 }
 
 .diff-line-unchanged {
   padding: 2px 5px;
   display: block;
-  min-height: 1.5em;
+  min-height: calc(1.5em + 4px);
   color: var(--text-primary);
 }
 
