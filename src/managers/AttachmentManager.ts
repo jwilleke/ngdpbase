@@ -1201,6 +1201,27 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     return await this.attachmentProvider.getAttachment(attachmentId);
   }
 
+  /**
+   * May `ctx` read this file, by the rules `GET /attachments/:id` serves it
+   * under: a file in the requester's own store, else `asset-read`, and a
+   * private file only to its owner or their delegate (PIP). No bytes are read.
+   */
+  async mayReadAttachment(attachmentId: string, ctx: ActorContext): Promise<boolean> {
+    if (await this.isOwnPrivateStoreFile(attachmentId, ctx)) return true;
+    if (!(await this.checkPermission('asset-read', ctx))) return false;
+    const meta = await this.getAttachmentMetadata(attachmentId);
+    if (!meta) return false;
+    if (!meta.isPrivate) return true;
+    return this.mayReach(ctx, typeof meta.creator === 'string' ? meta.creator : '', `attachment:${attachmentId}`, 'view');
+  }
+
+  /** A file's original bytes and metadata, when {@link mayReadAttachment} lets `ctx` read it; else null. */
+  async readAttachmentFor(attachmentId: string, ctx: ActorContext): Promise<{ buffer: Buffer; metadata: AttachmentMetadata } | null> {
+    const own = await this.getPrivateStoreAttachment(attachmentId, ctx);
+    if (own) return own;
+    return (await this.mayReadAttachment(attachmentId, ctx)) ? this.getAttachment(attachmentId) : null;
+  }
+
   // ── Files in a private store (#1400, every store since #1460) ─────────────
   //
   // A private file is reached only through the context whose container it is

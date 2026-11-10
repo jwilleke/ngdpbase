@@ -160,7 +160,7 @@ D10 is built: a feed is a URL source fetched by the engine, read by a core shim,
 
 ### Export through the engine ([#2120](https://github.com/jwilleke/ngdpbase/issues/2120), built 2026-10-30)
 
-Export starts from the thing being exported, and there is no general export screen (operator, 2026-10-28). Built for pages; search results and add-on lists are the follow-up. The reference is [ImportManager.md § Export](../managers/ImportManager.md#export-2120).
+Export starts from the thing being exported, and there is no general export screen (operator, 2026-10-28). Built for pages, then search results (a zip of pages and files, [#2174](https://github.com/jwilleke/ngdpbase/issues/2174)); add-on lists are the follow-up. The reference is [ImportManager.md § Export](../managers/ImportManager.md#export-2120).
 
 - __A source per owner.__ The owner of the data registers an export source: the kind of items it yields, whether a user may export a thing (an affordance, for offering the action) and the door that reads it for export with the user's context. The engine has no export permission of its own (D5); the source asks its owner's existing one. `core.pages` yields `ncm` and asks `page-export` (in the vault for a vault page), then reads through the page door, which decides `page-read`; it records `page-export` with the format once the run has ended, as a success or a failure.
 - __Only the formats that fit.__ The Export action lists the `out` shims that make a file and can be reached from the source's kind through other `out` shims (D9), each by its shortest chain: NCM as stored, HTML, Markdown (from the rendered page) and PDF for a page. A shim a site switches off, or PDF with no provider chosen, is not offered.

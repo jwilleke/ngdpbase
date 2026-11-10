@@ -11,12 +11,15 @@
  * - the source's owner checks its existing read permission (D5) before
  *   anything is read; the engine has no export permission of its own;
  * - shims chain: each one's output is the next one's input, matched by kind;
- *   the last makes exactly one `file`;
+ *   the last makes `file`s: one is the download as it is, several (or a
+ *   source that asks for it) are packed into one zip. A `file` the source
+ *   already made, such as an attachment's original, skips the chain;
  * - every limit is configuration: the chain's length, and the bytes any step
  *   may hold ({@link runExportChain}).
  *
  * This file writes nothing anywhere: the caller holds the file it returns.
  */
+import { packZip } from '../utils/zipArchive.js';
 import { EXPORT_FILE_KIND } from './types.js';
 import type { ExportShimTools, IceItem, IceKind, RegisteredShim } from './types.js';
 
@@ -97,26 +100,43 @@ export function checkExportSize(items: readonly IceItem[], maxBytes: number): vo
   }
 }
 
+/** A name not yet in `taken`: `scan.pdf`, then `scan (2).pdf`, `scan (3).pdf`. */
+function freeName(name: string, taken: Set<string>): string {
+  const dot = name.lastIndexOf('.');
+  const [base, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
+  let candidate = name;
+  for (let n = 2; taken.has(candidate); n++) candidate = `${base} (${n})${extension}`;
+  taken.add(candidate);
+  return candidate;
+}
+
 /**
  * Run the source's items through the chain, each shim's output the next
- * one's input, and return the one file the last shim made. What came before
+ * one's input, and return the file the last shim made. What came before
  * travels with each item while a shim keeps the count: earlier metadata
  * under later, as an import's chain does.
  *
+ * Items that are already `file`s skip the chain and join what it makes. One
+ * file is returned as it is; several, or any when `zipName` is given, are
+ * packed into `<zipName>.zip` (`export.zip` by default), each under its own
+ * name, a repeated name made unique. The zip is held to `maxBytes` too.
+ *
  * @throws IceExportFailed when a step holds more than `maxBytes`, a shim
- *   makes something other than what it declares, or the end is not one file
+ *   makes something other than what it declares, or the end is no file
  */
 export async function runExportChain(
   items: IceItem[],
   chain: readonly RegisteredShim[],
   tools: (shim: RegisteredShim) => ExportShimTools,
-  settings: IceExportSettings
+  settings: IceExportSettings,
+  zipName?: string
 ): Promise<IceItem> {
   if (chain.length === 0 || chain.length > settings.maxChainDepth) {
     throw new IceExportFailed(`An export runs through 1 to ${settings.maxChainDepth} shims.`);
   }
   checkExportSize(items, settings.maxBytes);
-  let current = items;
+  const made = items.filter(i => i.kind === EXPORT_FILE_KIND);
+  let current = items.filter(i => i.kind !== EXPORT_FILE_KIND);
   for (const shim of chain) {
     if (!writesOut(shim)) throw new IceExportFailed(`${shim.label ?? shim.id} cannot be made on this site right now.`);
     const produced = await shim.write!(current, tools(shim));
@@ -126,12 +146,19 @@ export async function runExportChain(
     const carried = produced.length === current.length
       ? produced.map((p, n) => ({ ...p, metadata: { ...(current[n].metadata ?? {}), ...(p.metadata ?? {}) } }))
       : produced;
-    checkExportSize(carried, settings.maxBytes);
+    checkExportSize([...carried, ...made], settings.maxBytes);
     current = carried;
   }
-  if (current.length !== 1 || current[0].kind !== EXPORT_FILE_KIND) {
-    throw new IceExportFailed('An export makes one file.');
+  const files = [...current, ...made];
+  if (files.length === 0 || files.some(f => f.kind !== EXPORT_FILE_KIND)) {
+    throw new IceExportFailed('An export makes at least one file.');
   }
-  const [file] = current;
-  return { ...file, bytes: file.bytes ?? Buffer.from(file.text ?? '', 'utf8'), mediaType: file.mediaType ?? 'application/octet-stream' };
+  const withBytes = files.map(f => ({ ...f, bytes: f.bytes ?? Buffer.from(f.text ?? '', 'utf8'), mediaType: f.mediaType ?? 'application/octet-stream' }));
+  if (withBytes.length === 1 && zipName === undefined) return withBytes[0];
+  const taken = new Set<string>();
+  const zip = await packZip(withBytes.map(f => ({ path: freeName(f.name, taken), bytes: f.bytes })));
+  if (zip.length > settings.maxBytes) {
+    throw new IceExportFailed(`This export is larger than this site allows (${Math.round(settings.maxBytes / 1024 / 1024)} MB).`);
+  }
+  return { kind: EXPORT_FILE_KIND, name: `${zipName ?? 'export'}.zip`, mediaType: 'application/zip', bytes: zip };
 }

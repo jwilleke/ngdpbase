@@ -684,6 +684,8 @@ export const EXPORT_FILE_KIND = 'file';
 export interface ExportReadInfo {
   /** The shim that will make the file (`core.pdf`). */
   format: string;
+  /** Tell the user something about what was read (what was left out and why); shown with the finished export. */
+  note(text: string): void;
 }
 
 /**
@@ -698,6 +700,8 @@ export interface IceExportSource {
   label?: string;
   /** The kind of the items it yields, e.g. `ncm` for a page. */
   yields: IceKind;
+  /** Make the export a zip with this name (`search-results`) even when it holds one file. */
+  zipAs?: string;
   /**
    * Would this context be allowed to export `ref`? Asked only to decide
    * whether to offer the Export action: an affordance, which records nothing.
@@ -774,6 +778,8 @@ export interface IceExportReport {
   startedAt?: string;
   finishedAt?: string;
   error?: string;
+  /** What the source says about what it read, such as how many items were left out. */
+  notes?: string[];
   file?: IceExportFile;
   /** When the file is let go (`ngdpbase.export.engine.keep-minutes`). */
   expiresAt?: string;

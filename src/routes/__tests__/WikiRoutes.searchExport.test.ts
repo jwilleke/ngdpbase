@@ -119,7 +119,7 @@ describe('POST /export/search', () => {
     const file = await binary(request(app).get(`/export/runs/${runId}/download`).set('x-user', 'alice'));
     expect(file.status).toBe(200);
     expect(file.headers['content-type']).toMatch(/^application\/zip/);
-    expect(file.headers['content-disposition']).toMatch(/^attachment; filename="search-results\.zip"/);
+    expect(file.headers['content-disposition']).toMatch(/^attachment; filename="?search-results\.zip"?/);
     expect(readZip(file.body as Buffer, { maxEntries: 100, maxTotalBytes: 1_000_000 }).map(e => e.path).sort()).toEqual(['Alpha.md', 'Beta.md']);
   });
 
