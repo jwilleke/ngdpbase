@@ -222,7 +222,7 @@ describe('search export — media-library files', () => {
 });
 
 describe('search export — files and their names', () => {
-  test('a file on a page the user may not read is not in the zip', async () => {
+  test('a file the download rule refuses is left out', async () => {
     const { im } = await setup({
       found: ['Alpha'], readable: ['Alpha'],
       files: { 'plan.jpg': JPG, 'secret.jpg': JPG }, attachedTo: { 'plan.jpg': 'Alpha', 'secret.jpg': 'Hidden' }
