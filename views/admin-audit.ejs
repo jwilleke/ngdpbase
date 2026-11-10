@@ -347,51 +347,69 @@
             window.location.reload();
         }
 
+        // The details pane shows every recorded value as text, exactly as it
+        // was recorded: the pane is built from elements and text nodes.
+        const SEVERITIES = ['low', 'medium', 'high', 'critical'];
+
+        function renderLogDetails(data) {
+            function el(tag, className, children) {
+                const node = document.createElement(tag);
+                if (className) node.className = className;
+                [].concat(children === undefined ? [] : children).forEach(function (child) {
+                    node.append(child instanceof Node ? child : String(child));
+                });
+                return node;
+            }
+            function row(label, value) {
+                return el('tr', '', [el('td', '', el('strong', '', label)), el('td', '', value)]);
+            }
+            // tbody as the HTML parser would add it, so Bootstrap's table rules apply.
+            function table(rows) {
+                return el('table', 'table table-sm', el('tbody', '', rows));
+            }
+            function jsonBlock(title, value) {
+                return el('div', 'row mt-3', el('div', 'col-12', [
+                    el('h6', '', title),
+                    el('pre', 'bg-body-secondary p-2 rounded', el('code', '', JSON.stringify(value, null, 2)))
+                ]));
+            }
+
+            const severityClass = SEVERITIES.includes(data.severity) ? 'severity-' + data.severity : '';
+            const basic = [
+                row('ID:', data.id),
+                row('Timestamp:', new Date(data.timestamp).toLocaleString()),
+                row('User:', data.user)
+            ];
+            if (data.actor) basic.push(row('Acted by:', data.actor));
+            basic.push(
+                row('Event Type:', data.eventType),
+                row('Severity:', el('span', severityClass, [el('i', 'fas fa-circle'), ' ', data.severity]))
+            );
+
+            const fragment = document.createDocumentFragment();
+            fragment.append(
+                el('div', 'row', [
+                    el('div', 'col-md-6', [el('h6', '', 'Basic Information'), table(basic)]),
+                    el('div', 'col-md-6', [el('h6', '', 'Event Details'), table([
+                        row('Resource:', data.resource || '-'),
+                        row('Action:', data.action || '-'),
+                        row('Result:', data.result),
+                        row('Reason:', data.reason),
+                        row('Duration:', data.duration ? data.duration + 'ms' : '-')
+                    ])])
+                ]),
+                jsonBlock('Additional Context', data.context || {})
+            );
+            if (data.metadata) fragment.append(jsonBlock('Metadata', data.metadata));
+            return fragment;
+        }
+
         function viewLogDetails(logId) {
             // Fetch log details via AJAX
-            fetch(`/admin/audit/details/${logId}`)
+            fetch(`/admin/audit/details/${encodeURIComponent(logId)}`)
                 .then(response => response.json())
                 .then(data => {
-                    const detailsHtml = `
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h6>Basic Information</h6>
-                                <table class="table table-sm">
-                                    <tr><td><strong>ID:</strong></td><td>${data.id}</td></tr>
-                                    <tr><td><strong>Timestamp:</strong></td><td>${new Date(data.timestamp).toLocaleString()}</td></tr>
-                                    <tr><td><strong>User:</strong></td><td>${data.user}</td></tr>
-                                    ${data.actor ? `<tr><td><strong>Acted by:</strong></td><td>${data.actor}</td></tr>` : ''}
-                                    <tr><td><strong>Event Type:</strong></td><td>${data.eventType}</td></tr>
-                                    <tr><td><strong>Severity:</strong></td><td><span class="severity-${data.severity}"><i class="fas fa-circle"></i> ${data.severity}</span></td></tr>
-                                </table>
-                            </div>
-                            <div class="col-md-6">
-                                <h6>Event Details</h6>
-                                <table class="table table-sm">
-                                    <tr><td><strong>Resource:</strong></td><td>${data.resource || '-'}</td></tr>
-                                    <tr><td><strong>Action:</strong></td><td>${data.action || '-'}</td></tr>
-                                    <tr><td><strong>Result:</strong></td><td>${data.result}</td></tr>
-                                    <tr><td><strong>Reason:</strong></td><td>${data.reason}</td></tr>
-                                    <tr><td><strong>Duration:</strong></td><td>${data.duration ? data.duration + 'ms' : '-'}</td></tr>
-                                </table>
-                            </div>
-                        </div>
-                        <div class="row mt-3">
-                            <div class="col-12">
-                                <h6>Additional Context</h6>
-                                <pre class="bg-body-secondary p-2 rounded"><code>${JSON.stringify(data.context || {}, null, 2)}</code></pre>
-                            </div>
-                        </div>
-                        ${data.metadata ? `
-                        <div class="row mt-3">
-                            <div class="col-12">
-                                <h6>Metadata</h6>
-                                <pre class="bg-body-secondary p-2 rounded"><code>${JSON.stringify(data.metadata, null, 2)}</code></pre>
-                            </div>
-                        </div>` : ''}
-                    `;
-
-                    $('#logDetailsContent').html(detailsHtml);
+                    document.getElementById('logDetailsContent').replaceChildren(renderLogDetails(data));
                     $('#logDetailsModal').modal('show');
                 })
                 .catch(error => {
