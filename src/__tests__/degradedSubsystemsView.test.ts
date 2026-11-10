@@ -62,6 +62,27 @@ describe('#1946 the dashboard separates down from needs-attention', () => {
     expect(doc.querySelector('code')).toBeNull();
   });
 
+  test('#2348 each item leads with its plain feature name and carries the manager id as data; the class name is not shown', async () => {
+    const doc = await render([], [{ ...reminder, feature: 'Backups', reason: 'No good backup since: never' }]);
+    const li = doc.querySelector('#subsystems-attention li');
+    expect(li?.getAttribute('data-manager')).toBe('BackupManager');
+    expect(li?.querySelector('strong')?.textContent).toBe('Backups:');
+    expect(li?.textContent).toContain('No good backup since: never');
+    expect(doc.body.textContent).not.toContain('BackupManager');
+  });
+
+  test('#2348 the feature name is not repeated when the reason starts with it, and absent when unknown', async () => {
+    const doc = await render([], [
+      { manager: 'PolicyEvaluator', state: 'degraded', kind: 'attention', feature: 'Access policies', reason: 'Access policies need review (1 problem): x.' },
+      { manager: 'Mystery', state: 'degraded', kind: 'attention', reason: 'Something to do' }
+    ]);
+    const [a, b] = [...doc.querySelectorAll('#subsystems-attention li')];
+    expect(a.querySelector('strong')).toBeNull();
+    expect(a.textContent).toContain('Access policies need review');
+    expect(b.querySelector('strong')).toBeNull();
+    expect(b.textContent).not.toContain('Mystery');
+  });
+
   test('#2348 a setting changed in Admin → Configuration gets a plain link there; an environment variable gets none', async () => {
     const doc = await render([], [reminder, { manager: 'BackupManager', state: 'degraded', kind: 'attention', reason: 'The backup key is not set', configKey: 'NGDPBASE_BACKUP_KEY' }]);
     const links = [...doc.querySelectorAll('#subsystems-attention a')];

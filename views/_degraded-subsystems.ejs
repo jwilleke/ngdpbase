@@ -10,15 +10,19 @@
     down, `attention` works but has something for an admin to do (save the
     backup key, fix a value). Telling an operator backups are "silently doing
     nothing" while they run is a false alarm. Each shows only with entries. %>
-<%# #2348: an item is its reason alone. The internal manager name ("PolicyEvaluator") and the
+<%# #2348: an item leads with a plain feature name (`feature`, mapped from the manager in
+    utils/featureNames; omitted when the reason already starts with it or none is known),
+    then its reason; data-manager carries the id for tests. The internal manager name ("PolicyEvaluator") and the
     configuration key mean nothing to an administrator, so neither is shown. The state word
     ("degraded") is not either: the section's headline already says down or needs attention.
     Where the item came from a setting changed in Admin → Configuration, a plain link goes there. %>
 <% function subsystemList(entries) { %>
     <ul class="small text-muted mt-1 mb-0">
         <% entries.forEach(function (m) { %>
-            <li>
-                <%= m.reason || 'No details were recorded.' %>
+            <li data-manager="<%= m.manager %>">
+                <% var reasonText = m.reason || 'No details were recorded.';
+                   var lead = m.feature && reasonText.toLowerCase().indexOf(String(m.feature).toLowerCase()) !== 0 ? m.feature : ''; %>
+                <% if (lead) { %><strong><%= lead %>:</strong> <% } %><%= reasonText %>
                 <% if (m.configKey && String(m.configKey).indexOf('ngdpbase.') === 0) { %>
                     <br><a href="/admin/configuration">Change this in Admin &rarr; Configuration</a>
                 <% } %>

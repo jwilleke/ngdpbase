@@ -713,8 +713,9 @@ describe('WikiRoutes — coverage batch 4', () => {
       const res = await request(own).get('/admin');
       expect(res.status).toBe(200);
       const dashboard = rendered.find((r) => r.view === 'admin-dashboard');
-      expect(dashboard?.data.degradedManagers).toEqual([down, failed]);
-      expect(dashboard?.data.attentionManagers).toEqual([reminder]);
+      expect(dashboard?.data.degradedManagers).toEqual([{ ...down, feature: 'Metrics' }, { ...failed, feature: 'Database' }]);
+      // #2348: each carries the plain feature name the view leads with.
+      expect(dashboard?.data.attentionManagers).toEqual([{ ...reminder, feature: 'Backups' }]);
     });
 
     test('returns 403 when a signed-in user lacks admin-read', async () => {
