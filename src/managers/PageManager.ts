@@ -3121,6 +3121,22 @@ class PageManager extends BaseManager implements CatalogSource {
       .map((p) => ({ name: formatPrivatePageName(owner, vault, p.title), title: p.title, uuid: p.uuid }));
   }
 
+  /**
+   * Every public page stamped with one system-category (#2299), by the name
+   * `mayShowPage` takes. Vault pages are not listed: they are their owners', not
+   * an administrator's to be told about. Says nothing about who may see a page;
+   * the caller asks `mayShowPage` as the reader.
+   *
+   * @param category - The category's key or label, any case
+   */
+  async listCategoryPages(category: string): Promise<string[]> {
+    if (!this.provider) return [];
+    const wanted = category.toLowerCase();
+    return (await this.provider.getAllPageInfo())
+      .filter((info) => String(info.metadata?.['system-category'] ?? '').toLowerCase() === wanted)
+      .map((info) => info.title);
+  }
+
   /** The store ids the requester has of their own (#1387). */
   async listOwnStoreIds(ctx: ActorContext): Promise<string[]> {
     if (!ctx) throw new Error('PageManager.listOwnStoreIds requires an ActorContext');

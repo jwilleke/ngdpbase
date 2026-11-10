@@ -12,7 +12,6 @@ import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { pageWritePolicyFindings } from '../utils/pageWritePolicies.js';
-import { categoryStored } from './ValidationManager.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 
 /**
@@ -496,27 +495,30 @@ class PolicyEvaluator extends BaseManager {
   }
 
   /**
-   * Say at boot what an administrator should look at in the policies after
-   * #2255, one warning each, and one needs-attention entry for them all:
-   * stored policies the upgrade rewrote, policies it left that now decide
-   * differently (a deny) or reach pushed pages, conditions that never hold,
-   * and stored categories no policy lets anyone change (their pages are
-   * changed by nobody, admin included).
+   * Say at boot what a developer should look at in the policies after #2255,
+   * one warning each: stored policies the upgrade rewrote, policies it left
+   * that now decide differently (a deny) or reach pushed pages, and conditions
+   * that never hold. These are log lines only; categories no policy lets anyone
+   * change are an upgrade check (`upgradeChecks/uneditablePages.ts`).
    */
   private reportPageWritePolicies(): void {
     const config = this.configManager;
-    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
-    if (!config || !pdp) return;
+    if (!config) return;
     // The log keeps each line in full; `shown` is what the needs-attention item says, in plain words
     // (no permission ids, issue numbers, setting names or file paths). A line with no entry in `shown` is already plain.
     const migration = config as { pageWritePolicyMigration?: string[]; pageWritePolicyMigrationShown?: Record<string, string> };
     const lines: string[] = [...(migration.pageWritePolicyMigration ?? [])];
     const shown = new Map<string, string>(Object.entries(migration.pageWritePolicyMigrationShown ?? {}));
+    const logOnly: string[] = [];
     const add = (finding: { log: string; plain: string }): void => {
       lines.push(finding.log);
       shown.set(finding.log, finding.plain);
     };
-    pageWritePolicyFindings(this.policies()).forEach(add);
+    // An open allow rule is the upgrade notice's to-do (`upgradeChecks/openWriteRules.ts`), so the box leaves it out and the log keeps it.
+    for (const finding of pageWritePolicyFindings(this.policies())) {
+      if (finding.coveredByUpgradeNotice) logOnly.push(finding.log);
+      else add(finding);
+    }
     // #2330: `priority` is gone; a leftover one changes nothing.
     const withPriority = this.policies().filter((p) => p.priority !== undefined).map((p) => `'${p.id}'`);
     if (withPriority.length > 0) {
@@ -539,24 +541,8 @@ class PolicyEvaluator extends BaseManager {
     // #2261 slice 4: the environment declarations, and each schedule one names that is missing (the attribute is then missing and fails closed).
     environmentAttributesFindings(readDeclaredAsWritten(config, ENVIRONMENT_ATTRIBUTES_KEY)).forEach(add);
     this.scheduleProblems().forEach(add);
-    const catalogue = config.getProperty('ngdpbase.system-category', {}) as Record<string, { label?: string; storageLocation?: unknown; owner?: unknown }> | null;
-    const writable = new Set([...pdp.categoriesGranting('page-edit'), ...pdp.categoriesGranting('pushed-pages-edit')]);
-    // An installed add-on's category is declared even while the add-on is off
-    // (#1559), and its policies are not; that is the add-on being off, not a gap.
-    const addonOff = (owner: unknown): boolean => typeof owner === 'string' && owner !== 'admin'
-      && config.getProperty(`ngdpbase.addons.${owner}.enabled`, false) !== true;
-    const unwritable = Object.entries(catalogue ?? {})
-      .filter(([, entry]) => categoryStored(entry) !== 'none' && !addonOff(entry?.owner))
-      .map(([key, entry]) => (typeof entry?.label === 'string' && entry.label ? entry.label : key).toLowerCase())
-      .filter((category) => !writable.has(category));
-    if (unwritable.length > 0) {
-      add({
-        log: `no policy grants page-edit or pushed-pages-edit on system-category ${unwritable.join(', ')}, so nobody can change those pages, admin included; add a policy on the system-category resource type (#2255)`,
-        plain: `Nobody can edit the pages in ${unwritable.length === 1 ? 'this category' : 'these categories'}, not even an admin: ${unwritable.join(', ')}. Add a rule that lets a role edit ${unwritable.length === 1 ? 'it' : 'them'}.`
-      });
-    }
+    for (const line of [...lines, ...logOnly]) logger.warn(`[POLICY] ${line}`);
     if (lines.length === 0) return;
-    for (const line of lines) logger.warn(`[POLICY] ${line}`);
     // Each part is a full sentence, so they are joined with a space.
     // Several log lines can say one plain thing (a rule with two bad conditions), so it is said, and counted, once.
     const plain = [...new Set(lines.map((l) => `${(shown.get(l) ?? l).replace(/\.$/, '')}.`))];
