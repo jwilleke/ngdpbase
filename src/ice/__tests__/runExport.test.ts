@@ -7,6 +7,7 @@ import { exportChains, runExportChain, IceExportFailed } from '../runExport';
 import { exportShims, exportFileName, withoutRemoteUrls, type ExportShimDoors } from '../shims/export';
 import type { ExportShimTools, IceItem, IceShim, RegisteredShim } from '../types';
 import type { ActorContext } from '../../context/ActorContext';
+import { readZip } from '../../utils/zipArchive';
 
 const ALICE = { username: 'alice', roles: ['reader'], isAuthenticated: true } as unknown as ActorContext;
 const PDF = Buffer.from('%PDF-1.7 fake');
@@ -127,12 +128,51 @@ describe('runExportChain', () => {
     await expect(runExportChain([page], registered([liar]), tools(ALICE), { maxBytes: 1024, maxChainDepth: 5 })).rejects.toThrow(/other than file/);
   });
 
-  test('an export must end in one file', async () => {
-    const two: IceShim = {
-      name: 'two', direction: 'out', accepts: { kinds: ['ncm'] }, produces: 'file', receivers: [],
-      write: async () => [{ kind: 'file', name: 'a', text: 'a' }, { kind: 'file', name: 'b', text: 'b' }]
-    };
-    await expect(runExportChain([page], registered([two]), tools(ALICE), { maxBytes: 1024, maxChainDepth: 5 })).rejects.toThrow(/one file/);
+  test('an export that ends in no file fails', async () => {
+    const none: IceShim = { name: 'none', direction: 'out', accepts: { kinds: ['ncm'] }, produces: 'file', receivers: [], write: async () => [] };
+    await expect(runExportChain([page], registered([none]), tools(ALICE), { maxBytes: 1024, maxChainDepth: 5 })).rejects.toThrow(/at least one file/);
+  });
+
+  describe('many files make a zip (search results)', () => {
+    const settings = { maxBytes: 1024 * 1024, maxChainDepth: 5 };
+    const second: IceItem = { ...page, name: 'Packing List', text: 'Socks.', metadata: { title: 'Packing List' } };
+    const ncm = () => exportChains(registered(exportShims(doors())), 'ncm', 5).get('core.ncm-file')!;
+    const unzip = (file: IceItem) => readZip(file.bytes, { maxEntries: 100, maxTotalBytes: 10_000_000 });
+
+    test('a chain that makes several files ends in one zip holding each of them', async () => {
+      const file = await runExportChain([page, second], ncm(), tools(ALICE), settings);
+      expect(file).toMatchObject({ kind: 'file', name: 'export.zip', mediaType: 'application/zip' });
+      const entries = unzip(file);
+      expect(entries.map(e => e.path).sort()).toEqual(['Packing List.md', 'Trip Notes.md']);
+      expect(entries.find(e => e.path === 'Trip Notes.md')!.bytes.toString()).toBe('Packed __light__.');
+    });
+
+    test('one file stays one plain file unless the source asks for a zip', async () => {
+      expect(await runExportChain([page], ncm(), tools(ALICE), settings)).toMatchObject({ name: 'Trip Notes.md' });
+      const zipped = await runExportChain([page], ncm(), tools(ALICE), settings, 'search-results');
+      expect(zipped).toMatchObject({ name: 'search-results.zip', mediaType: 'application/zip' });
+      expect(unzip(zipped).map(e => e.path)).toEqual(['Trip Notes.md']);
+    });
+
+    test('a file the source already made travels into the zip as it is, beside the made files', async () => {
+      const original: IceItem = { kind: 'file', name: 'photo.jpg', mediaType: 'image/jpeg', bytes: Buffer.from([0xff, 0xd8, 0x00, 0x01]) };
+      const file = await runExportChain([page, original], ncm(), tools(ALICE), settings, 'search-results');
+      const entries = unzip(file);
+      expect(entries.map(e => e.path).sort()).toEqual(['Trip Notes.md', 'photo.jpg']);
+      expect(entries.find(e => e.path === 'photo.jpg')!.bytes.equals(original.bytes)).toBe(true);
+    });
+
+    test('two files with one name are both kept, the second under another name', async () => {
+      const a: IceItem = { kind: 'file', name: 'scan.pdf', bytes: Buffer.from('one') };
+      const b: IceItem = { kind: 'file', name: 'scan.pdf', bytes: Buffer.from('two') };
+      const entries = unzip(await runExportChain([a, b], ncm(), tools(ALICE), settings, 'search-results'));
+      expect(entries.map(e => e.path).sort()).toEqual(['scan (2).pdf', 'scan.pdf']);
+    });
+
+    test('the whole zip is held to the byte limit', async () => {
+      const big: IceItem = { kind: 'file', name: 'big.bin', bytes: Buffer.alloc(2048, 1) };
+      await expect(runExportChain([big], ncm(), tools(ALICE), { ...settings, maxBytes: 1024 }, 'search-results')).rejects.toBeInstanceOf(IceExportFailed);
+    });
   });
 });
 
