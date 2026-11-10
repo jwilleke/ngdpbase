@@ -119,7 +119,9 @@ describe('the reminder to save .env when its key set changes (#1976)', () => {
     props[ENV_KEYS_SAVED_KEY] = ['NGDPBASE_BACKUP_KEY', 'NGDPBASE_SESSION_SECRET'];
     writeEnv(['NGDPBASE_SESSION_SECRET', BACKUP_KEY_ENV, 'NGDPBASE_CREDENTIALS_KEY']);
     const bm = await start();
-    expect(bm.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', configKey: ENV_KEYS_SAVED_KEY, fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup', reason: expect.stringContaining('(1 added)') });
+    expect(bm.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup', reason: expect.stringContaining('(1 added)') });
+    // #2354: the saved-key setting is a record the app writes; the reminder links the Backup page only.
+    expect(bm.getManagerStatus().configKey).toBeUndefined();
     expect(reminders()).toHaveLength(1);
     expect(reminders()[0].message).toMatch(/Download it on the Backup page/);
     await start();
@@ -161,6 +163,7 @@ describe('the reminder to save .env when its key set changes (#1976)', () => {
     writeEnv([BACKUP_KEY_ENV, 'NGDPBASE_SESSION_SECRET']);
     const bm = await start();
     expect(bm.getManagerStatus()).toMatchObject({ fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup', reason: expect.stringMatching(/^Save the backup key somewhere other than this server/) });
+    expect(bm.getManagerStatus().configKey).toBeUndefined();
     expect(reminders()).toHaveLength(1);
     const info = bm.envKeysInfo()!;
     expect(info.holdsBackupKey).toBe(true);
@@ -187,9 +190,10 @@ describe('the reminder to save .env when its key set changes (#1976)', () => {
       writeEnv([BACKUP_KEY_ENV, SHARED_FOLDERS_KEY_ENV]);
       const bm = await start();
       expect(bm.getManagerStatus()).toMatchObject({
-        state: 'degraded', kind: 'attention', configKey: SHARED_FOLDERS_KEY_SAVED_KEY,
+        state: 'degraded', kind: 'attention', fixUrl: '/admin/backup',
         reason: expect.stringMatching(/^Save a copy of the server's key file somewhere other than this server: it holds the key that opens every shared folder/)
       });
+      expect(bm.getManagerStatus().configKey).toBeUndefined();
       expect(bm.sharedFoldersKeyInfo()).toEqual({ set: true, fingerprint: sharedFoldersKeyFingerprint(SHARED), saved: false });
       expect(bm.envKeysInfo()!.holdsSharedFoldersKey).toBe(true);
     });
@@ -219,7 +223,7 @@ describe('the reminder to save .env when its key set changes (#1976)', () => {
       writeEnv([BACKUP_KEY_ENV, SHARED_FOLDERS_KEY_ENV]);
       const bm = await start();
       await bm.confirmBackupKeySaved(CTX, backupKeyFingerprint(KEY));
-      expect(bm.getManagerStatus()).toMatchObject({ configKey: SHARED_FOLDERS_KEY_SAVED_KEY });
+      expect(bm.getManagerStatus()).toMatchObject({ fixUrl: '/admin/backup', reason: expect.stringMatching(/^Save a copy of the server's key file/) });
     });
 
     test('a .env that does not hold the current shared-folders key does not count', async () => {
@@ -228,14 +232,14 @@ describe('the reminder to save .env when its key set changes (#1976)', () => {
       const bm = await start();
       await bm.confirmBackupKeySaved(CTX, backupKeyFingerprint(KEY), bm.envKeysInfo()!.fingerprint);
       expect(props[SHARED_FOLDERS_KEY_SAVED_KEY]).toBeUndefined();
-      expect(bm.getManagerStatus()).toMatchObject({ configKey: SHARED_FOLDERS_KEY_SAVED_KEY });
+      expect(bm.getManagerStatus()).toMatchObject({ fixUrl: '/admin/backup', reason: expect.stringMatching(/^Save a copy of the server's key file/) });
     });
 
     test('a different shared-folders key asks again', async () => {
       props[ENV_KEYS_SAVED_KEY] = ['NGDPBASE_BACKUP_KEY', SHARED_FOLDERS_KEY_ENV];
       props[SHARED_FOLDERS_KEY_SAVED_KEY] = sharedFoldersKeyFingerprint('an earlier key');
       writeEnv([BACKUP_KEY_ENV, SHARED_FOLDERS_KEY_ENV]);
-      expect((await start()).getManagerStatus()).toMatchObject({ configKey: SHARED_FOLDERS_KEY_SAVED_KEY });
+      expect((await start()).getManagerStatus()).toMatchObject({ fixUrl: '/admin/backup', reason: expect.stringMatching(/^Save a copy of the server's key file/) });
     });
   });
 
