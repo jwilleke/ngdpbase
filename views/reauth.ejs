@@ -15,7 +15,11 @@
           <% } %>
           <p>This change protects your account, so it needs a fresh sign-in. You are then sent back to finish it.</p>
           <% if (needsPasskey) { %>
+            <% if (typeof passkeysAvailable !== 'undefined' && !passkeysAvailable) { %>
+            <p class="small text-muted">Your role needs your password with your authenticator app's code for this; a password alone is not enough.</p>
+            <% } else { %>
             <p class="small text-muted">Your role needs a passkey<%= (typeof hasTotp !== 'undefined' && hasTotp) ? ', or your password with your authenticator app\'s code,' : '' %> for this; a password alone is not enough.</p>
+            <% } %>
           <% } %>
 
           <% if (hasPasskey) { %>
@@ -61,7 +65,7 @@
           <% } %>
 
           <% if (!hasPasskey && !(typeof hasTotp !== 'undefined' && hasTotp) && (needsPasskey || !hasPassword)) { %>
-            <p class="mb-0">This account has no way to confirm here<%= needsPasskey ? ' that reaches the level your role needs' : '' %>. Add a passkey on your <a href="/profile">profile</a>, or ask an administrator.</p>
+            <p class="mb-0">This account has no way to confirm here<%= needsPasskey ? ' that reaches the level your role needs' : '' %>. Add <%= (typeof passkeysAvailable !== 'undefined' && !passkeysAvailable) ? 'an authenticator app' : 'a passkey' %> on your <a href="/profile">profile</a>, or ask an administrator.</p>
           <% } %>
 
           <%# #2193: a script's prompt is cancelled on the server too, so the page
