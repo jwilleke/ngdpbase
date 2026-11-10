@@ -6,6 +6,7 @@ import { JSDOM } from 'jsdom';
 import UpgradeCheckManager from '../../managers/UpgradeCheckManager';
 import AuthManager from '../../managers/AuthManager';
 import { shippedLiveChecks } from '../index';
+import { PASSKEYS_ADDRESS_IN_SERVER_SETTINGS } from '../../utils/passkeyAddressWording';
 import { admin, cleanup, makeFixture, type Fixture } from '../../test-support/upgradeChecks';
 
 const KEY = 'ngdpbase.auth.passkey.enabled';
@@ -41,6 +42,21 @@ describe('passkeys on, address cannot support them (#2340)', () => {
     expect(item).toBeDefined();
     expect(item.action).toMatchObject({ label: 'Turn passkeys off', property: KEY, value: 'false' });
     expect(item.text).not.toMatch(/#\d|docs\/|ngdpbase\.|\blog\b/i);
+  });
+
+  test('site address set in the server settings: the item says so, with no link to the address row', async () => {
+    const config = (f.engine.getManager('ConfigurationManager') as unknown) as Record<string, unknown>;
+    config.getEnvControlledKeys = () => ({ 'ngdpbase.application.base-url': 'NGDPBASE_APPLICATION_BASE_URL' });
+    const [item] = await passkeyItems();
+    expect(item.text).toContain(PASSKEYS_ADDRESS_IN_SERVER_SETTINGS);
+    expect(item.link).toBeUndefined();
+    const html = await ejs.renderFile(path.join(VIEWS, 'admin-upgrade.ejs'), {
+      title: 't', heading: 'h', intro: 'i', empty: 'e', success: null, error: null, items: [item], csrfToken: 'tok',
+      can: () => true, locals: {}, lockedUnless: () => '', readOnly: 'r'
+    }, { includer: (o: string) => (o === 'header' || o === 'footer' ? { template: '' } : undefined) });
+    const doc = new JSDOM(html).window.document;
+    expect(doc.body.textContent).toContain("in the server's settings");
+    expect(doc.querySelector('a[href*="config-ngdpbase.application.base-url"]')).toBeNull();
   });
 
   test('the action posts false to the ordinary configuration save, and the page then shows no item', async () => {
