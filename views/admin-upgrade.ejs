@@ -20,7 +20,7 @@
     <% (items || []).forEach(function(item) { %>
     <div class="card mb-3">
         <div class="card-body">
-            <p class="mb-0"><%= item.text %> <a href="<%= item.link.href %>"><%= item.link.label %></a></p>
+            <p class="mb-0"><%= item.text %><% if (item.link) { %> <a href="<%= item.link.href %>"><%= item.link.label %></a><% } %></p>
             <% if (item.action) { %>
             <form method="POST" action="/admin/configuration" class="mt-2 upgrade-setting-action">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">

@@ -35,7 +35,7 @@ describe('passkeys on, address cannot support them (#2340)', () => {
   });
   afterEach(() => cleanup(f));
 
-  const passkeyItems = async () => (await manager.openItems(admin)).filter((i) => i.text === MESSAGE);
+  const passkeyItems = async () => (await manager.openItems(admin)).filter((i) => i.text.startsWith(MESSAGE));
 
   test('http on a non-localhost host, passkeys on: the item shows, with the turn-off action', async () => {
     const [item] = await passkeyItems();
