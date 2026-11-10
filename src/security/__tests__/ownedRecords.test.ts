@@ -309,9 +309,14 @@ describe('PR #2324 review findings M1 to M4 (#1823)', () => {
     await expect(pdp.decideOwnedRecord(trea, ledgerRecord(''))).rejects.toBeInstanceOf(OwnedRecordError);
   });
 
-  test.each([['.'], ['..']])('M2: the id %s is refused, not decided', async (id) => {
+  test.each([['.'], ['..'], ['\n'], ['\r'], [' '], ['a\nb']])('M2: the id %j is refused, not decided', async (id) => {
     const { pdp } = await build([ledgerCapability]);
     await expect(pdp.decideOwnedRecord(trea, ledgerRecord(id))).rejects.toBeInstanceOf(OwnedRecordError);
+  });
+
+  test.each([['...'], ['a.b'], ['.a'], ['a..b']])('M2: the id %s is still accepted', async (id) => {
+    const { pdp } = await build([ledgerCapability]);
+    await expect(pdp.decideOwnedRecord(trea, ledgerRecord(id))).resolves.toBeDefined();
   });
 
   test.each([
