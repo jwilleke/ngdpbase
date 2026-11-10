@@ -34,7 +34,9 @@ export interface UpgradeItem {
   /** The whole sentence: "7 pages can't be edited after the update to 5.43.0." */
   text: string;
   /** Where the administrator goes from here: "See the pages", or the setting to change. */
-  link: { label: string; href: string };
+  link?: { label: string; href: string };
+  /** A button that saves one setting through the ordinary Admin → Configuration save (its permission check, fresh sign-in and audit). */
+  action?: { label: string; property: string; value: string; note: string };
 }
 
 /** One page of the list an item links to: pages the viewer may see, and the one button that settles them. */
@@ -75,7 +77,7 @@ export interface UpgradeCheck {
 
 /**
  * A to-do worked out from how the site is set up now, each time Admin is shown, not once per version:
- * it appears when the setting is there and goes when the setting is changed. It has no button.
+ * it appears when the setting is there and goes when the setting is changed. It may carry a settings button (`action`).
  */
 export interface LiveUpgradeCheck {
   id: string;
