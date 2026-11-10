@@ -7136,8 +7136,10 @@ ${panes}
     const prompt = stepUpPromptId(req.query.prompt ?? (req.body as { prompt?: unknown } | undefined)?.prompt) ?? '';
     const needsPasskey = (authManager?.requiredAalFor(user.roles ?? [], user.aalCap) ?? 0) >= 2;
     const hasPassword = await this.engine.getManager<IUserManager>('UserManager')?.hasPassword(user.username).catch(() => false) ?? false;
+    // #2356: what this account may add or use here; a method its allowed sign-in methods exclude is never offered.
+    const ways = await authManager?.strongerSignInWays(user.username);
     // #421 slice 2c: the app's code alone is AAL1; at AAL2 it goes with the password.
-    const hasTotp = Boolean(authManager?.stepUpTotpOffered?.(user.username)) && (!needsPasskey || hasPassword);
+    const hasTotp = Boolean(ways?.useTotp) && (!needsPasskey || hasPassword);
     const commonData = await this.getCommonTemplateData(req);
     res.set('Cache-Control', 'no-store');
     res.status(view.error ? 401 : 200).render('reauth', {
@@ -7146,8 +7148,8 @@ ${panes}
       next,
       prompt,
       needsPasskey,
-      passkeysAvailable: Boolean(authManager?.passkeysAvailable()),
-      hasPasskey: Boolean(authManager?.passkeyRelyingParty() && authManager.hasCredential(user.username, 'passkey')),
+      ways,
+      hasPasskey: Boolean(ways?.usePasskey),
       hasPassword,
       hasTotp,
       ...view
