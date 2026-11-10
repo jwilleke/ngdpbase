@@ -363,6 +363,11 @@ export interface RestoreReport {
 
 /** BackupManager's fault, and the dashboard banner, while there is no backup key (#1561, #1912). */
 export const BACKUP_KEY_MISSING = `${BACKUP_KEY_ENV} is not set, so backups are NOT encrypted: the document (password hashes, settings with their secrets) and the file archives beside it are in the clear, and the credentials store, the databases and the instance .env are left out`;
+/**
+ * What the dashboard says while there is no backup key (#2354): plain words, one thing to do.
+ * The key is set outside the app, so there is nothing to link to.
+ */
+export const BACKUP_KEY_MISSING_PLAIN = "Backups are not encrypted, and some data (the databases and saved secrets) is left out of them, because no backup key is set. This is set in the server's settings, outside this page.";
 /** The title of the one notification about it. */
 export const BACKUP_KEY_MISSING_TITLE = 'Backups are not encrypted';
 
@@ -374,8 +379,8 @@ export const BACKUP_KEY_MISSING_TITLE = 'Backups are not encrypted';
 export const BACKUP_KEY_SAVED_KEY = 'ngdpbase.backup.key-saved-fingerprint';
 
 /** The banner while no admin has confirmed the backup key is saved off the server (#1876). */
-export function backupKeyNotSaved(fingerprint: string): string {
-  return `Save the backup key off this server: Admin → Backup shows it (fingerprint ${fingerprint}). Every backup is encrypted with it, and a restore on a new server needs it. This stays until an admin confirms it is saved`;
+export function backupKeyNotSaved(): string {
+  return 'Save the backup key somewhere other than this server. Every backup is encrypted with it, and restoring on a new server needs it. This stays until you confirm it is saved.';
 }
 
 /**
@@ -400,22 +405,22 @@ export const ENV_KEYS_CHANGED_TITLE = 'Save a copy of .env';
  */
 export const SHARED_FOLDERS_KEY_SAVED_KEY = 'ngdpbase.backup.shared-folders-key-saved-fingerprint';
 
-const ENV_KEYS_CHANGED_PREFIX = 'The keys in .env changed since an admin last saved it';
-const KEY_NOT_SAVED_PREFIX = 'Save the backup key off this server';
-const SHARED_FOLDERS_KEY_NOT_SAVED_PREFIX = 'Save .env off this server: it holds the shared-folders key';
+const ENV_KEYS_CHANGED_PREFIX = 'The server\'s key file has changed since you last saved a copy';
+const KEY_NOT_SAVED_PREFIX = 'Save the backup key somewhere other than this server';
+const SHARED_FOLDERS_KEY_NOT_SAVED_PREFIX = 'Save a copy of the server\'s key file somewhere other than this server';
 
 /** The banner while no admin has confirmed a saved `.env` holding the current shared-folders key (#2124). */
-export function sharedFoldersKeyNotSaved(fingerprint: string): string {
-  return `${SHARED_FOLDERS_KEY_NOT_SAVED_PREFIX} (${SHARED_FOLDERS_KEY_ENV}, fingerprint ${fingerprint}), which opens every shared folder. Download .env on Admin → Backup and keep the copy off this server. This stays until an admin confirms it is saved`;
+export function sharedFoldersKeyNotSaved(): string {
+  return `${SHARED_FOLDERS_KEY_NOT_SAVED_PREFIX}: it holds the key that opens every shared folder. Download it on the Backup page. This stays until you confirm it is saved.`;
 }
 
 /** The banner while the instance `.env` sets other names than the ones an admin last confirmed saved (#1976): names only, never a value. */
 export function envKeysChanged(change: { added: readonly string[]; removed: readonly string[] }): string {
   const parts = [
-    ...(change.added.length > 0 ? [`added: ${change.added.join(', ')}`] : []),
-    ...(change.removed.length > 0 ? [`removed: ${change.removed.join(', ')}`] : [])
+    ...(change.added.length > 0 ? [`${change.added.length} added`] : []),
+    ...(change.removed.length > 0 ? [`${change.removed.length} removed`] : [])
   ];
-  return `${ENV_KEYS_CHANGED_PREFIX} (${parts.join('; ')}). Download .env on Admin → Backup and keep the copy off this server. This stays until an admin confirms it is saved`;
+  return `${ENV_KEYS_CHANGED_PREFIX} (${parts.join(', ')}). Download it on the Backup page and keep the copy somewhere other than this server. This stays until you confirm it is saved.`;
 }
 
 /** What Admin → Backup shows about the instance `.env` key set (#1976): names only, never a value. */
@@ -475,6 +480,15 @@ interface BackupHealthRecord {
   failure?: BackupFailure;
   /** The last good backup (its time, or `never`) the "no recent backup" notification was sent for: once per stretch. */
   staleNotified?: string;
+}
+
+/** What the dashboard says for a health fault (#2354): plain words; the developer reason stays in the log and on the Backup page. */
+export function backupHealthPlain(health: Pick<BackupHealth, 'failure' | 'lastGood'>): string {
+  const since = health.lastGood ? localTime(health.lastGood.at) : null;
+  const last = since ? `The last good backup was ${since}.` : 'There is no good backup yet.';
+  return health.failure
+    ? `The last backup failed (${localTime(health.failure.at)}), so backups are not working. ${last} Open the Backup page to see what went wrong and make a new one.`
+    : `${since ? `There has been no good backup since ${since}` : 'This site has no backup yet'}. Open the Backup page and make one.`;
 }
 
 /** Whether backups are working, as Admin → Backup and the /admin dashboard show it (#1563). */
@@ -1118,27 +1132,27 @@ class BackupManager extends BaseManager {
     const envReminder = await this.checkInstanceEnvKeys();
     const key = currentBackupKey();
     if (key) {
-      this.markReadyIfDegradedBy(BACKUP_KEY_MISSING);
+      this.markReadyIfDegradedBy(BACKUP_KEY_MISSING_PLAIN);
       // #1876: the banner asking an admin to save the key off the server, until one confirms;
       // then #1976's, while the .env key set differs from the one last confirmed. One at a time,
       // and one confirmation ("I have saved .env", which holds the key) can clear both.
       // #2124: then the shared-folders key's, while no saved .env holding the current one is confirmed.
       const shared = this.sharedFoldersKeyInfo();
-      const sharedReminder = shared.set && !shared.saved && shared.fingerprint ? sharedFoldersKeyNotSaved(shared.fingerprint) : null;
-      const reminder = this.backupKeyInfo().saved ? (envReminder ?? sharedReminder) : backupKeyNotSaved(backupKeyFingerprint(key));
+      const sharedReminder = shared.set && !shared.saved && shared.fingerprint ? sharedFoldersKeyNotSaved() : null;
+      const reminder = this.backupKeyInfo().saved ? (envReminder ?? sharedReminder) : backupKeyNotSaved();
       const status = this.getManagerStatus();
       const ours = status.state === 'degraded' && [KEY_NOT_SAVED_PREFIX, ENV_KEYS_CHANGED_PREFIX, SHARED_FOLDERS_KEY_NOT_SAVED_PREFIX].some((p) => status.reason?.startsWith(p));
       if (!reminder) {
         if (ours) this.markReady();
       } else if (status.state !== 'degraded' || ours) {
-        // The saved-key settings are records the app writes when an admin confirms; the fix is the Backup page.
-        this.markNeedsAttention(reminder, reminder === envReminder ? ENV_KEYS_SAVED_KEY : reminder === sharedReminder ? SHARED_FOLDERS_KEY_SAVED_KEY : BACKUP_KEY_SAVED_KEY, BACKUP_PAGE_FIX);
+        // The saved-key settings are records the app writes when an admin confirms, not values to edit: the fix is the Backup page, with no link to them (#2348, #2354).
+        this.markNeedsAttention(reminder, undefined, BACKUP_PAGE_FIX);
       }
       return;
     }
     // A degraded backup directory (preflight) is the worse fault, and keeps the banner.
     const status = this.getManagerStatus();
-    if (status.state !== 'degraded' || status.reason === BACKUP_KEY_MISSING) this.markNeedsAttention(BACKUP_KEY_MISSING, BACKUP_KEY_ENV);
+    if (status.state !== 'degraded' || status.reason === BACKUP_KEY_MISSING_PLAIN) this.markNeedsAttention(BACKUP_KEY_MISSING_PLAIN, BACKUP_KEY_ENV);
     if (this.alreadyNotified(BACKUP_KEY_MISSING_TITLE)) return;
     await this.notifyAdmins('error', BACKUP_KEY_MISSING_TITLE, `${BACKUP_KEY_MISSING}. Set ${BACKUP_KEY_ENV} in the environment or the instance .env, and restart. Until then the dashboard lists Backup under "Working, but needs your attention"; this is the only notification about it.`);
   }
@@ -1188,7 +1202,13 @@ class BackupManager extends BaseManager {
     }
     if (info.added.length === 0 && info.removed.length === 0) return null;
     const reminder = envKeysChanged(info);
-    const message = `${reminder}. The /admin dashboard lists Backup under "Working, but needs your attention" until then.`;
+    // The notification keeps the names (never a value); the dashboard item says only how many.
+    const names = [
+      ...(info.added.length > 0 ? [`added: ${info.added.join(', ')}`] : []),
+      ...(info.removed.length > 0 ? [`removed: ${info.removed.join(', ')}`] : [])
+    ];
+    logger.info(`[BackupManager] The instance .env key set changed since an admin last saved it (${names.join('; ')})`);
+    const message = `${reminder} Changes: ${names.join('; ')}. The /admin dashboard lists Backup under "Working, but needs your attention" until then.`;
     if (!this.alreadyNotified(ENV_KEYS_CHANGED_TITLE, message)) await this.notifyAdmins('warning', ENV_KEYS_CHANGED_TITLE, message);
     return reminder;
   }
@@ -1483,8 +1503,9 @@ class BackupManager extends BaseManager {
       if (this.provider) {
         health = await this.getBackupHealth();
         if (health.fault) {
-          this.markDegraded(health.fault, health.failure ? undefined : 'ngdpbase.backup.auto-backup', BACKUP_PAGE_FIX);
-          this.healthFault = health.fault;
+          const plain = backupHealthPlain(health);
+          this.markDegraded(plain, health.failure ? undefined : 'ngdpbase.backup.auto-backup', BACKUP_PAGE_FIX);
+          this.healthFault = plain;
           if (!health.failure) await this.notifyStaleOnce(health);
         } else if (this.healthFault) {
           this.markReadyIfDegradedBy(this.healthFault);

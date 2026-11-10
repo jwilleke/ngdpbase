@@ -69,7 +69,7 @@ describe('MediaManager private storage (#2195)', () => {
     const status = mgr.getManagerStatus();
     expect(status.state).toBe('degraded');
     expect(status.configKey).toBe('ngdpbase.media.folders');
-    expect(status.reason).toContain('Media folder 2 in ngdpbase.media.folders is inside the vault storage');
+    expect(status.reason).toBe('A media folder overlaps private storage, so it is not scanned. Choose a folder outside private storage.');
     expect(notifyAdmins).toHaveBeenCalledTimes(1);
     const said = JSON.stringify([status, notifyAdmins.mock.calls]);
     expect(said).not.toContain('jim');

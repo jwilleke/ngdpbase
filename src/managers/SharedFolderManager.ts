@@ -314,7 +314,8 @@ class SharedFolderManager extends BaseManager {
     const key = currentSharedFoldersKey();
     if (!key) {
       this.unavailable = `${SHARED_FOLDERS_KEY_ENV} is not set, so no shared folder can be opened. Set it in the instance .env (a restart makes one when it is missing)`;
-      this.markDegraded(this.unavailable, SHARED_FOLDERS_KEY_ENV);
+      logger.error(`[SharedFolderManager] ${this.unavailable}`);
+      this.markDegraded("Shared folders can't be opened, because the key that protects them is not set. This is set in the server's settings, outside this page.", SHARED_FOLDERS_KEY_ENV);
       return;
     }
     this.wrapKey = sharedFoldersWrapKey(key);
@@ -323,12 +324,14 @@ class SharedFolderManager extends BaseManager {
       this.file = await this.readKeysFile();
     } catch (err) {
       this.unavailable = `The shared-folders keys could not be read: ${(err as Error).message}`;
-      this.markDegraded(this.unavailable, STORAGE_KEY);
+      logger.error(`[SharedFolderManager] ${this.unavailable}`);
+      this.markDegraded('The keys for the shared folders could not be read, so none of them can be opened. Check that the folder holding them is there and can be read; this is done on the server, outside this page.', STORAGE_KEY);
       return;
     }
     if (this.file && this.file.serverKeyFingerprint !== this.keyFingerprint) {
       this.unavailable = `${SHARED_FOLDERS_KEY_ENV} is not the key the shared folders were made under (fingerprint ${this.keyFingerprint}, expected ${this.file.serverKeyFingerprint}), so none of them can be opened. Put the saved .env back and restart`;
-      this.markDegraded(this.unavailable, SHARED_FOLDERS_KEY_ENV);
+      logger.error(`[SharedFolderManager] ${this.unavailable}`);
+      this.markDegraded("The server's key is not the one the shared folders were made with, so none of them can be opened. Put back the saved copy of the server's key file; this is done on the server, outside this page.", SHARED_FOLDERS_KEY_ENV);
       return;
     }
     // #2125: a folder's key reaches the store I/O only for a context the PDP

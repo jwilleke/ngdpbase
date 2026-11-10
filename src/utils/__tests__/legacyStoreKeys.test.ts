@@ -58,7 +58,8 @@ describe('legacyStoreKeys (#2246)', () => {
   it('builds one reason that lists every key', () => {
     const found = legacyStoreKeys({ 'ngdpbase.stores.default.owner': 'admin', 'ngdpbase.stores.default.encrypt': true }, categories);
     const reason = legacyStoreKeysReason(found);
-    expect(reason).toContain('2 removed vault settings');
-    expect(reason).toContain('ngdpbase.stores.default.owner, ngdpbase.stores.default.encrypt');
+    // #2354: plain words; the keys are named in the start-up warnings.
+    expect(reason).toContain('2 old vault settings');
+    expect(reason).not.toContain('ngdpbase.');
   });
 });

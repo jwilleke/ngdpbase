@@ -18,7 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { applyInstanceEnvAtStart } from '../../utils/instanceEnvBackup';
-import BackupManager, { BACKUP_KEY_MISSING, BACKUP_KEY_MISSING_TITLE, BACKUPS_NOT_WORKING_TITLE, describeNotRestored } from '../BackupManager';
+import BackupManager, { BACKUP_KEY_MISSING_PLAIN, BACKUP_KEY_MISSING_TITLE, BACKUPS_NOT_WORKING_TITLE, describeNotRestored } from '../BackupManager';
 import AuthManager from '../AuthManager';
 import BackgroundJobManager from '../BackgroundJobManager';
 import FileCredentialsProvider from '../../providers/FileCredentialsProvider';
@@ -265,9 +265,9 @@ describe('slice 2 of the site restore (#1876)', () => {
     delete process.env[BACKUP_KEY_ENV];
     const site = await start();
     // #1563: a site with no backup at all is an outage, which the reminder never hides.
-    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'outage', reason: expect.stringMatching(/^No good backup since: never/) });
+    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'outage', reason: expect.stringMatching(/^This site has no backup yet/) });
     await site.backup.createBackup(CTX, { filename: '2026-01-01T00-00-00-000Z-ngdpbase-backup.json.gz' });
-    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: BACKUP_KEY_MISSING, configKey: BACKUP_KEY_ENV });
+    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: BACKUP_KEY_MISSING_PLAIN, configKey: BACKUP_KEY_ENV });
     await site.backup.createBackup(CTX, { filename: '2026-01-02T00-00-00-000Z-ngdpbase-backup.json.gz' });
     await stop(site);
     const restarted = await start();
@@ -283,12 +283,12 @@ describe('slice 2 of the site restore (#1876)', () => {
     process.env[BACKUP_KEY_ENV] = KEY;
     await restarted.backup.createBackup(CTX, { filename: '2026-01-04T00-00-00-000Z-ngdpbase-backup.json.gz' });
     // The missing-key banner gives way to the one asking for the key to be saved (#1876).
-    expect(restarted.backup.getManagerStatus().reason).toMatch(/^Save the backup key off this server/);
+    expect(restarted.backup.getManagerStatus().reason).toMatch(/^Save the backup key somewhere other than this server/);
     await stop(restarted);
 
     process.env[BACKUP_KEY_ENV] = KEY;
     const keyed = await start();
-    expect(keyed.backup.getManagerStatus().reason).not.toBe(BACKUP_KEY_MISSING);
+    expect(keyed.backup.getManagerStatus().reason).not.toBe(BACKUP_KEY_MISSING_PLAIN);
     await keyed.backup.createBackup(CTX);
     expect(notifications.filter((n) => n.title === BACKUP_KEY_MISSING_TITLE)).toHaveLength(1);
     await stop(keyed);
@@ -315,7 +315,7 @@ describe('slice 2 of the site restore (#1876)', () => {
     await site.backup.createBackup(CTX);
     const info = site.backup.backupKeyInfo();
     expect(info).toEqual({ set: true, fingerprint: backupKeyFingerprint(KEY), saved: false });
-    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: expect.stringContaining(`fingerprint ${info.fingerprint}`) });
+    expect(site.backup.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: expect.stringMatching(/^Save the backup key somewhere other than this server/), fixUrl: '/admin/backup' });
     expect(site.backup.getManagerStatus().reason).not.toContain(KEY);
     await expect(site.backup.confirmBackupKeySaved(CTX, 'not-the-fingerprint')).rejects.toThrow(/not the fingerprint of the current backup key/);
     await site.backup.confirmBackupKeySaved(CTX, info.fingerprint);

@@ -23,6 +23,7 @@ import type { FormOption } from '../utils/pluginFormatters.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import type { ActorContext } from '../context/ActorContext.js';
+import { STAGED_RESTORE_FIX, stagedRestoreNotApplied, UNUSABLE_FOLDER_REASON } from '../utils/plainAttention.js';
 
 /**
  * Backup data structure returned by backup() method
@@ -424,7 +425,9 @@ abstract class BaseManager {
     const { applyStagedPartsAtStart } = await import('./BackupManager.js');
     this.stagedRestore = applyStagedPartsAtStart(this.engine, this.registeredName(), declared);
     if (this.stagedRestore?.refused) {
-      this.markNeedsAttention(`A staged restore of ${declared.map((d) => d.part).join(', ')} was not applied: ${this.stagedRestore.refused}`);
+      // #2354: the dashboard says it in plain words; the parts and the cause stay in the log.
+      logger.warn(`[${this.constructor.name}] A staged restore of ${declared.map((d) => d.part).join(', ')} was not applied: ${this.stagedRestore.refused}`);
+      this.markNeedsAttention(stagedRestoreNotApplied('some of the site\'s data'), undefined, STAGED_RESTORE_FIX);
     }
   }
 
@@ -506,7 +509,8 @@ abstract class BaseManager {
       // degrading manager already goes through, so setting the state here is
       // what makes twelve invisible degradations visible without each caller
       // remembering to say so.
-      this.markDegraded(result.message ?? 'the configured path could not be used', configKey);
+      // #2354: the dashboard says it in plain words; the path and key are in the line above.
+      this.markDegraded(UNUSABLE_FOLDER_REASON, configKey);
     }
     return result;
   }
@@ -551,8 +555,8 @@ abstract class BaseManager {
   }
 
   /** Record that this manager could not initialise at all (#1155). */
-  protected markFailed(reason: string, configKey?: string): boolean {
-    return this.transition({ state: 'failed', reason, configKey, kind: 'outage' });
+  protected markFailed(reason: string, configKey?: string, opts: AttentionOptions = {}): boolean {
+    return this.transition({ state: 'failed', reason, configKey, kind: 'outage', ...opts });
   }
 
   /**

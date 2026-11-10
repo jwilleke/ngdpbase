@@ -406,8 +406,10 @@ export class VaultPageNotesCheck {
     const reason = `${this.found.length} vault page(s) have ${roots.kind} stored outside their vault, unencrypted, in ${roots.publicDir}: ${detail}. ` +
       'They are not shown on the page and were left as they are; "Move into vault" on the admin dashboard, or on the owner\'s profile for a sealed vault, moves them in (#1839, #1842)';
     logger.error(`📄 ${reason}`);
-    this.reason = reason;
-    if (this.state.markNeedsAttention(reason) && opts.notify) {
+    // #2354: the dashboard says it in plain words; the owners and folder are in the log line above.
+    const plain = `${this.found.length === 1 ? 'A private vault page has its' : `${this.found.length} private vault pages have their`} ${roots.kind} stored outside the vault, where they are not encrypted. Use "Move into vault" on this page, or on the owner's profile for a sealed vault.`;
+    this.reason = plain;
+    if (this.state.markNeedsAttention(plain) && opts.notify) {
       try {
         await this.engine.getManager<NotificationManager>('NotificationManager')
           ?.notifyAdmins({ level: 'error', title: `Vault pages have ${roots.kind} outside their vault`, message: `${reason}.` });

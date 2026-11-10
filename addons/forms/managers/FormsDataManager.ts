@@ -340,8 +340,9 @@ export default class FormsDataManager {
     this.attention = null;
     if (!identities) return;
     const postponed = 'Form submitters were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041)';
+    const plain = 'Some form submissions still name who sent them the old way, because the contacts were not available when the site started. Restart the site to try again.';
     if (!identities.canAnswer()) {
-      this.attention = postponed;
+      this.attention = plain;
       console.warn(`[FormsDataManager] ${postponed}`);
       return;
     }
@@ -360,7 +361,7 @@ export default class FormsDataManager {
         await fsp.rename(tmp, filePath);
       }
     } catch (error) {
-      this.attention = postponed;
+      this.attention = plain;
       console.warn(`[FormsDataManager] ${postponed}: ${(error as Error).message}`);
       return;
     }

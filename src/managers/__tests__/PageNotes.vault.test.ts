@@ -285,11 +285,13 @@ describe('a vault page\'s footnotes and comments live in its vault (#1839)', () 
     for (const manager of [footnotes, comments]) {
       const status = manager.getManagerStatus();
       expect(status.state).toBe('degraded');
-      expect(status.reason).toContain(`molly/phr page ${UUID}`);
-      expect(status.reason).not.toContain('dddddddd');
+      // #2354: plain words on the dashboard; the owner and page are in the notice and the log.
+      expect(status.reason).toMatch(/^A private vault page has its (footnotes|comments) stored outside the vault, where they are not encrypted/);
+      expect(status.reason).not.toContain(UUID);
       expect(status.reason).not.toContain('cholesterol');
     }
     expect(notifications).toHaveLength(2);
+    for (const n of notifications) expect(String(n.message)).toContain(`molly/phr page ${UUID}`);
     expect(notifications.map((n) => n.level)).toEqual(['error', 'error']);
     // Read only: nothing moved, sealed or deleted.
     expect((await filesUnder(testDir)).sort()).toEqual(before);

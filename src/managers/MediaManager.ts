@@ -311,9 +311,14 @@ class MediaManager extends BaseManager implements CatalogSource {
       return;
     }
     const total = Math.max(this.mediaFolders.length, unreachable.length);
-    const reasons = [...this.overlapReasons];
+    // #2354: the dashboard says it in plain words; the folders are in the log.
+    const reasons: string[] = [];
+    if (this.overlapReasons.length > 0) {
+      reasons.push(`${this.overlapReasons.length === 1 ? 'A media folder overlaps' : `${this.overlapReasons.length} media folders overlap`} private storage, so ${this.overlapReasons.length === 1 ? 'it is' : 'they are'} not scanned. Choose ${this.overlapReasons.length === 1 ? 'a folder' : 'folders'} outside private storage.`);
+    }
     if (unreachable.length > 0) {
-      reasons.push(`${unreachable.length} of ${total} configured media folder(s) cannot be read: ${unreachable.join(', ')}`);
+      logger.warn(`[MediaManager] ${unreachable.length} of ${total} configured media folder(s) cannot be read: ${unreachable.join(', ')}`);
+      reasons.push(`${unreachable.length} of ${total} media ${total === 1 ? 'folder' : 'folders'} cannot be read, so ${unreachable.length === 1 ? 'its' : 'their'} files are not shown. Check that the drive is connected to the server; this is done outside this page.`);
     }
     this.markDegraded(reasons.join(' '), 'ngdpbase.media.folders');
   }
