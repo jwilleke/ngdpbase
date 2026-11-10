@@ -135,7 +135,6 @@
   color: var(--alert-success-text);
   padding: 2px 5px;
   display: block;
-  min-height: calc(1.5em + 4px);
 }
 
 .diff-line-deleted {
@@ -143,13 +142,11 @@
   color: var(--alert-danger-text);
   padding: 2px 5px;
   display: block;
-  min-height: calc(1.5em + 4px);
 }
 
 .diff-line-unchanged {
   padding: 2px 5px;
   display: block;
-  min-height: calc(1.5em + 4px);
   color: var(--text-primary);
 }
 
@@ -176,11 +173,13 @@
 @media (max-width: 767.98px) {
   .sbs, .sbs-pane, .sbs-pane .diff-pre { display: block; }
   .sbs-pane { margin-bottom: 1rem; }
+  .diff-line-filler { display: none; }
 }
 
 /* Filler: stands in for a line the other side has. It takes its height from the
    paired row (the grid stretches it); its ::before is a zero-width text line so
-   an unpaired filler is as tall as a text row, whatever the padding. */
+   an unpaired filler is as tall as a text row, whatever the padding. A blank
+   text row gets the same line, so it follows the padding too. */
 .diff-line-filler {
   display: block;
   padding: 2px 5px;
@@ -190,7 +189,10 @@
 }
 [data-bs-theme="dark"] .diff-line-filler { --diff-filler-line: #8b949e; }
 @media (prefers-color-scheme: dark) { :root:not([data-bs-theme]) .diff-line-filler { --diff-filler-line: #8b949e; } }
-.diff-line-filler::before { content: ''; display: inline-block; width: 0; }
+.diff-line-filler::before,
+.diff-line-added:empty::before,
+.diff-line-deleted:empty::before,
+.diff-line-unchanged:empty::before { content: ''; display: inline-block; width: 0; }
 
 .diff-line-marker {
   display: inline-block;

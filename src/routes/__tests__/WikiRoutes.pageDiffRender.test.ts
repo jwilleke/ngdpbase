@@ -278,11 +278,9 @@ describe('GET /diff/:page renders Compare Versions (#2319)', () => {
     expect(summary).toMatch(new RegExp(`Unchanged:\\s*${lines(dom, 'unchanged').length}\\b`));
   });
 
-  test('L1/L2: diff lines keep a minimum height and dark mode has its own colours', async () => {
+  test('L1/L2: dark mode has its own diff colours', async () => {
     await saveThree();
     const res = await request(appFor()).get(`/diff/${PAGE}?v1=1&v2=2`);
-    expect(res.text).toMatch(/\.diff-line-added[^{]*\{[^}]*min-height:\s*calc\(1\.5em \+ 4px\)/);
-    expect(res.text).toMatch(/\.diff-line-unchanged[^{]*\{[^}]*min-height:\s*calc\(1\.5em \+ 4px\)/);
     expect(res.text).toMatch(/\[data-bs-theme="dark"\][^{]*\.diff-line-deleted/);
   });
 
@@ -377,11 +375,48 @@ describe('GET /diff/:page renders Compare Versions (#2319)', () => {
     expect(dom.window.document.getElementById('newVersion')?.textContent).toBe('AC');
   });
 
-  test('#2352: the filler row height follows the row padding, not a copied calc', async () => {
+  test('#2352: row height follows the padding: no row class uses calc(), blank rows get the zero-width line', async () => {
     await saveThree();
     const res = await request(appFor()).get(`/diff/${PAGE}?v1=1&v2=2`);
-    expect(res.text).toMatch(/\.diff-line-filler::before\s*\{[^}]*width:\s*0/);
-    expect(res.text).not.toMatch(/\.diff-line-filler\s*\{[^}]*calc\(/);
+    const css = res.text.slice(res.text.indexOf('<style'), res.text.indexOf('</style>'));
+    expect(css).toMatch(/\.diff-line-filler::before,[^{]*\.diff-line-added:empty::before,[^{]*\.diff-line-deleted:empty::before,[^{]*\.diff-line-unchanged:empty::before\s*\{[^}]*width:\s*0/);
+    for (const cls of ['filler', 'added', 'deleted', 'unchanged']) {
+      expect(css).not.toMatch(new RegExp(`\\.diff-line-${cls}\\s*\\{[^}]*calc\\(`));
+    }
+  });
+
+  test('#2352: below 768px the panes stack and the fillers are hidden', async () => {
+    await saveThree();
+    const res = await request(appFor()).get(`/diff/${PAGE}?v1=1&v2=2`);
+    expect(res.text).toMatch(/@media \(max-width: 767\.98px\) \{[^@]*\.diff-line-filler \{ display: none; \}/);
+  });
+
+  describe('pairSideBySide', () => {
+    type Part = [number, string];
+    type Row = { oldText: string | null; newText: string | null; changed: boolean };
+    let pair: (parts: Part[]) => Row[];
+    beforeEach(async () => {
+      await saveThree();
+      const dom = await diffDom(1, 2);
+      const fn = (dom.window as unknown as { pairSideBySide: (p: Part[]) => Row[] }).pairSideBySide;
+      pair = parts => JSON.parse(JSON.stringify(fn(parts)));
+    });
+    const row = (oldText: string | null, newText: string | null, changed = true): Row => ({ oldText, newText, changed });
+
+    test.each([
+      ['an added line with no partner', [[0, 'A'], [1, 'B'], [0, 'C']], [row('A', 'A', false), row(null, 'B'), row('C', 'C', false)]],
+      ['3 removed, 1 added', [[-1, 'x1'], [-1, 'x2'], [-1, 'x3'], [1, 'y']], [row('x1', 'y'), row('x2', null), row('x3', null)]],
+      ['1 removed, 3 added', [[-1, 'x'], [1, 'y1'], [1, 'y2'], [1, 'y3']], [row('x', 'y1'), row(null, 'y2'), row(null, 'y3')]],
+      ['a change at the very start', [[-1, 'a'], [1, 'b'], [0, 'C']], [row('a', 'b'), row('C', 'C', false)]],
+      ['a change at the very end', [[0, 'C'], [-1, 'a'], [1, 'b']], [row('C', 'C', false), row('a', 'b')]],
+      ['two change blocks one unchanged line apart', [[-1, 'a'], [1, 'b'], [0, 'M'], [-1, 'c'], [1, 'd']],
+        [row('a', 'b'), row('M', 'M', false), row('c', 'd')]],
+      ['an empty removed line against a non-empty added one', [[-1, ''], [1, 'x']], [row('', 'x')]],
+      ['a non-empty removed line against an empty added one', [[-1, 'x'], [1, '']], [row('x', '')]],
+      ['an added line added before the removed one is listed', [[1, 'n'], [-1, 'o']], [row('o', 'n')]]
+    ] as Array<[string, Part[], Row[]]>)('%s', (_name, parts, expected) => {
+      expect(pair(parts)).toEqual(expected);
+    });
   });
 
   test('#2352: the inline view is unchanged by pairing', async () => {
