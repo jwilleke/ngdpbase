@@ -232,6 +232,7 @@ import { LoginThrottle } from '../utils/LoginThrottle.js';
 import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY, ADMIN_SWITCH_REASON } from '../utils/maintenanceState.js';
 import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
 import { untrustedFileHeaders, vaultFileDisposition } from '../utils/securityHeaders.js';
+import { featureNameFor } from '../utils/featureNames.js';
 import { PAGE_DATA_TOPIC } from '../cache/CacheDependencies.js';
 
 /**
@@ -13204,9 +13205,9 @@ ${panes}
         logger.warn('[adminDashboard] Last job runs could not be read:', jobErr);
       }
 
-      const degraded = (this.engine as unknown as {
+      const degraded = ((this.engine as unknown as {
         getDegradedManagers?: () => Array<{ manager: string; state: string; reason?: string; configKey?: string; kind?: string }>;
-      }).getDegradedManagers?.() ?? [];
+      }).getDegradedManagers?.() ?? []).map((m) => ({ ...m, feature: featureNameFor(m.manager) }));
 
       const templateData = {
         ...commonData,
