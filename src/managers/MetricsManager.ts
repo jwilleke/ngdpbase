@@ -139,7 +139,7 @@ class MetricsManager extends BaseManager {
       this.enabled = false;
       // #1155: configured, wanted, and not working — which is exactly the
       // state that used to be visible only as this log line.
-      this.markDegraded('Metrics are turned on but could not start. Turn them off in the settings, or ask whoever runs the server to look into it.', 'ngdpbase.metrics.enabled');
+      this.markDegraded('Metrics are turned on but could not start. Turn them off in the settings, or ask whoever runs the server to look into it.', 'ngdpbase.telemetry.enabled');
     }
   }
 

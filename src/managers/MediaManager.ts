@@ -318,7 +318,7 @@ class MediaManager extends BaseManager implements CatalogSource {
     }
     if (unreachable.length > 0) {
       logger.warn(`[MediaManager] ${unreachable.length} of ${total} configured media folder(s) cannot be read: ${unreachable.join(', ')}`);
-      reasons.push(`${unreachable.length} of ${total} media ${total === 1 ? 'folder' : 'folders'} cannot be read, so ${unreachable.length === 1 ? 'its' : 'their'} files are not shown. Check that the drive is connected.`);
+      reasons.push(`${unreachable.length} of ${total} media ${total === 1 ? 'folder' : 'folders'} cannot be read, so ${unreachable.length === 1 ? 'its' : 'their'} files are not shown. Check that the drive is connected to the server; this is done outside this page.`);
     }
     this.markDegraded(reasons.join(' '), 'ngdpbase.media.folders');
   }

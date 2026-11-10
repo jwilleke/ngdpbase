@@ -108,8 +108,8 @@ class ConsentManager extends BaseManager {
   private readonly addons = new Map<string, { documents: string[]; paths: string[] }>();
   /** Username → their records, read once and dropped on every write. */
   private readonly cache = new Map<string, ConsentRecord[]>();
-  /** Document id → why it cannot be asked for; the needs-attention reason is made from these. */
-  private readonly problems = new Map<string, string>();
+  /** Document id → why it cannot be asked for (the needs-attention reason is made from these), and whether it comes with an add-on (core's Required Pages Sync does not restore those). */
+  private readonly problems = new Map<string, { text: string; addon: boolean }>();
   private attentionReason: string | null = null;
 
   constructor(engine: WikiEngine) {
@@ -225,16 +225,19 @@ class ConsentManager extends BaseManager {
       logger.warn(`[ConsentManager] could not read the page '${id}': ${(err as Error).message}`);
     }
     const whose = scope === CORE_CONSENT_SCOPE ? '' : ` (${scope})`;
+    const addon = scope !== CORE_CONSENT_SCOPE && !SUBJECT_CONSENT_SCOPES.includes(scope);
     if (!meta) {
-      const fix = 'Restore it with Required Pages Sync';
-      logger.warn(`[ConsentManager] No '${id}' page${whose}: nobody is asked to accept it`);
-      this.problems.set(id, `The '${id}' page is missing, so nobody is asked to accept it. ${fix}.`);
+      const fix = addon
+        ? 'It comes with an add-on; update or reinstall that add-on.'
+        : 'Restore it with Required Pages Sync, or remove it from the consent documents setting.';
+      logger.warn(`[ConsentManager] No '${id}' page${whose}: nobody is asked to accept it. ${addon ? "Restore it (Admin → Required Pages Sync restores core's pages only; update or reinstall the add-on) or remove it from the add-on's registration" : `Restore it (Admin → Required Pages Sync) or remove it from ${CONSENT_DOCUMENTS_KEY}`}`);
+      this.problems.set(id, { text: `The '${id}' page is missing, so nobody is asked to accept it. ${fix}`, addon });
       return null;
     }
     const version = versionOf(meta['version']);
     if (!version) {
-      logger.warn(`[ConsentManager] The '${id}' page${whose} has no version in its front matter, so nobody is asked to accept it`);
-      this.problems.set(id, `The '${id}' page has no version number, so nobody is asked to accept it. Add one to the page.`);
+      logger.warn(`[ConsentManager] The '${id}' page${whose} has no version in its front matter, so nobody is asked to accept it. Add a version: to its front matter`);
+      this.problems.set(id, { text: `The '${id}' page has no version number, so nobody is asked to accept it. ${addon ? 'It comes with an add-on; update or reinstall that add-on.' : 'Add one to the page.'}`, addon });
       return null;
     }
     this.problems.delete(id);
@@ -249,9 +252,11 @@ class ConsentManager extends BaseManager {
 
   /** Needs attention while any document cannot be asked for; ready again once none is (warn, never force). */
   private reportProblems(): void {
-    const reason = this.problems.size > 0 ? [...this.problems.values()].join(' ') : null;
+    const all = [...this.problems.values()];
+    const reason = all.length > 0 ? all.map((p) => p.text).join(' ') : null;
     if (reason === this.attentionReason) return;
-    if (reason) this.markNeedsAttention(reason, CONSENT_DOCUMENTS_KEY, { fixUrl: '/admin/required-pages', fixLabel: 'Open Admin → Required Pages Sync' });
+    // Core's pages are restored by Required Pages Sync; an add-on's are not, so with only add-on problems there is no link.
+    if (reason) this.markNeedsAttention(reason, undefined, all.some((p) => !p.addon) ? { fixUrl: '/admin/required-pages', fixLabel: 'Open Admin → Required Pages Sync' } : {});
     else if (this.attentionReason) this.markReadyIfDegradedBy(this.attentionReason);
     this.attentionReason = reason;
   }

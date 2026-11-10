@@ -325,7 +325,7 @@ class SharedFolderManager extends BaseManager {
     } catch (err) {
       this.unavailable = `The shared-folders keys could not be read: ${(err as Error).message}`;
       logger.error(`[SharedFolderManager] ${this.unavailable}`);
-      this.markDegraded('The keys for the shared folders could not be read, so none of them can be opened. Check that the folder holding them is there and can be read.', STORAGE_KEY);
+      this.markDegraded('The keys for the shared folders could not be read, so none of them can be opened. Check that the folder holding them is there and can be read; this is done on the server, outside this page.', STORAGE_KEY);
       return;
     }
     if (this.file && this.file.serverKeyFingerprint !== this.keyFingerprint) {

@@ -228,7 +228,7 @@ describe('ConsentManager (#1603)', () => {
       pages['terms-of-service'] = null;
       expect((await cm.pendingFor('ann')).map((d) => d.id)).toEqual(['privacy-policy']);
       expect(cm.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention' });
-      expect(cm.getManagerStatus().reason).toMatch(/^The 'terms-of-service' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync\./);
+      expect(cm.getManagerStatus().reason).toMatch(/^The 'terms-of-service' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync, or remove it from the consent documents setting\./);
 
       pages['privacy-policy'] = null;
       expect(await cm.pendingFor('ann')).toEqual([]);
@@ -249,6 +249,15 @@ describe('ConsentManager (#1603)', () => {
   describe('add-ons', () => {
     beforeEach(() => {
       pages['phr-terms-of-service'] = { title: 'PHR Terms', version: 3, effective: '2026-10-01' };
+    });
+
+    test('an add-on\'s missing page is not fixed by Required Pages Sync, so it does not say so or link there', async () => {
+      cm.registerAddonDocuments('phr', { documents: ['phr-terms-of-service'], paths: ['/phr/'] });
+      pages['phr-terms-of-service'] = null;
+      expect(await cm.pendingFor('ann', 'phr')).toEqual([]);
+      const status = cm.getManagerStatus();
+      expect(status.reason).toBe("The 'phr-terms-of-service' page is missing, so nobody is asked to accept it. It comes with an add-on; update or reinstall that add-on.");
+      expect(status.fixUrl).toBeUndefined();
     });
 
     test('an add-on registers its own documents, asked separately from core\'s', async () => {
@@ -326,7 +335,7 @@ describe('ConsentManager (#1603)', () => {
     test('a missing page asks nothing and needs attention', async () => {
       pages['recovery-words'] = null;
       expect(await cm.pendingFor('ann', 'recovery-words', WORDS)).toEqual([]);
-      expect(cm.getManagerStatus().reason).toMatch(/^The 'recovery-words' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync\./);
+      expect(cm.getManagerStatus().reason).toMatch(/^The 'recovery-words' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync, or remove it from the consent documents setting\./);
     });
 
     test('no add-on may take its scope', () => {
@@ -362,7 +371,7 @@ describe('ConsentManager (#1603)', () => {
     test('a missing page asks nothing and needs attention', async () => {
       pages[SCOPE] = null;
       expect(await cm.pendingFor('ann', SCOPE, ORG_WORDS)).toEqual([]);
-      expect(cm.getManagerStatus().reason).toMatch(/^The 'shared-folders-recovery-words' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync\./);
+      expect(cm.getManagerStatus().reason).toMatch(/^The 'shared-folders-recovery-words' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync, or remove it from the consent documents setting\./);
     });
   });
 

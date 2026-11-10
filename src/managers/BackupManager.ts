@@ -482,7 +482,6 @@ interface BackupHealthRecord {
   staleNotified?: string;
 }
 
-/** Whether backups are working, as Admin → Backup and the /admin dashboard show it (#1563). */
 /** What the dashboard says for a health fault (#2354): plain words; the developer reason stays in the log and on the Backup page. */
 export function backupHealthPlain(health: Pick<BackupHealth, 'failure' | 'lastGood'>): string {
   const since = health.lastGood ? localTime(health.lastGood.at) : null;
@@ -492,6 +491,7 @@ export function backupHealthPlain(health: Pick<BackupHealth, 'failure' | 'lastGo
     : `${since ? `There has been no good backup since ${since}` : 'This site has no backup yet'}. Open the Backup page and make one.`;
 }
 
+/** Whether backups are working, as Admin → Backup and the /admin dashboard show it (#1563). */
 export interface BackupHealth {
   /** The newest backup in the backup directory that is not a failed one: when, how big (with the files beside it), where. */
   lastGood: { filename: string; at: string; size: number; location: string } | null;

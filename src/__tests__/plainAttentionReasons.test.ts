@@ -5,10 +5,16 @@
  * call, not shown.
  *
  * The scan reads each call to markNeedsAttention / markDegraded / markFailed in
- * src and addons, collects the string pieces of its reason (following a local
- * variable to where it is built), and checks them. Reasons built in a helper are
- * scanned where they are built (EXTRA_SOURCES) or are exported constants and
- * functions checked directly below.
+ * src and addons, and each `reason:` a getManagerStatus() returns, collects the
+ * string pieces of its reason (following a local variable to where it is built),
+ * and checks them. Reasons built in a wrapper (OidcManager.refuse,
+ * DatabaseManager.markUnavailable and fault) are scanned at the wrapper's call
+ * sites (EXTRA_SOURCES); the rest are exported constants and functions checked
+ * directly below.
+ *
+ * A `${…}` slot in a scanned reason must be a count or a plural choice: anything
+ * else (an error message, a name, a path) would print developer text on the
+ * dashboard, and the test fails on it.
  */
 import fs from 'fs';
 import path from 'path';
@@ -33,9 +39,55 @@ const BANNED: Array<[string, RegExp]> = [
 ];
 
 function violations(raw: string): string[] {
-  // A template's ${...} slots are code, not words; what they print is checked where it is built.
+  // A template's ${...} slots are code, not words; they are limited to counts and plural choices by badSlots.
   const text = raw.replace(/\$\{[^}]*\}/g, '');
   return BANNED.filter(([, re]) => re.test(text)).map(([what]) => what);
+}
+
+/** The index of the `}` closing the `${` whose body starts at `from`. */
+function slotEnd(src: string, from: number): number {
+  let depth = 1;
+  for (let i = from; i < src.length; i++) {
+    const c = src[i];
+    if (c === '\\') i++;
+    else if (c === "'" || c === '"') {
+      for (i++; i < src.length && src[i] !== c; i++) if (src[i] === '\\') i++;
+    } else if (c === '`') {
+      for (i++; i < src.length && src[i] !== '`'; i++) {
+        if (src[i] === '\\') i++;
+        else if (src[i] === '$' && src[i + 1] === '{') i = slotEnd(src, i + 2);
+      }
+    } else if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) return i;
+  }
+  return src.length;
+}
+
+/** Every `${…}` expression in the template literals of `src`, nested ones too. */
+function slotsOf(src: string): string[] {
+  const out: string[] = [];
+  for (let i = src.indexOf('${'); i >= 0; i = src.indexOf('${', i + 1)) {
+    const end = slotEnd(src, i + 2);
+    out.push(src.slice(i + 2, end).trim());
+  }
+  return out;
+}
+
+/** A slot that prints a number, or chooses between words by one. Anything else could print developer text. */
+const PLAIN_SLOT = /^(?:[\w.]+\.length|[\w.]*\b(?:total|count|n|\w+Skipped|\w+Refused)|localTime\([\w.]+\)|[\w.]+(?:\.length)?\s*(?:===|!==|>|<)\s*\d+\s*\?[\s\S]*|[\w.\s=!<>]+\?\s*(['"])[^'"]*\1\s*:\s*(['"])[^'"]*\2)$/;
+
+/** Slots that are fixed words, not input: named per file so a new one has to be argued for. */
+const FIXED_WORDS: Array<[string, string]> = [
+  ['pageNotes.ts', 'roots.kind'], // 'footnotes' or 'comments'
+  ['ConsentManager.ts', 'id'], // the page's own name
+  ['ConsentManager.ts', 'fix'] // a sentence written just above
+];
+
+function badSlots(src: string, where: string): string[] {
+  // OidcManager's wrapper puts the cause in `plain`, which is scanned at each refuse() call.
+  return slotsOf(src).filter((e) => !PLAIN_SLOT.test(e)
+    && !(where.includes('OidcManager.ts') && e === 'plain')
+    && !FIXED_WORDS.some(([file, slot]) => where.includes(file) && e === slot));
 }
 
 const walk = (dir: string): string[] =>
@@ -79,13 +131,20 @@ function literals(expr: string): string[] {
   return [...expr.matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|`((?:[^`\\]|\\.)*)`/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? '');
 }
 
-interface Reason { where: string; text: string }
+interface Reason { where: string; text: string; source: string }
 
 /** Pieces of a reason that are built outside the marking call. */
 const EXTRA_SOURCES: Array<{ file: string; call: string; arg: number }> = [
   { file: 'src/managers/ConsentManager.ts', call: 'this.problems.set(', arg: 1 },
   { file: 'src/managers/MediaManager.ts', call: 'reasons.push(', arg: 0 },
-  { file: 'src/managers/DatabaseManager.ts', call: 'this.faults.set(', arg: 1 }
+  // Wrappers whose plain-words argument is shown: the argument at every call.
+  { file: 'src/managers/OidcManager.ts', call: 'this.refuse(', arg: 1 },
+  { file: 'src/managers/DatabaseManager.ts', call: 'this.markUnavailable(', arg: 1 }
+];
+
+/** A statement that builds shown words, from its start to the end of the statement. */
+const EXTRA_STATEMENTS: Array<{ file: string; start: string }> = [
+  { file: 'src/managers/DatabaseManager.ts', start: 'const plain = cause' }
 ];
 
 const MARKERS = /(?<![\w.])(?:this\.|this\.state\.)(markNeedsAttention|markDegraded|markFailed)\(/g;
@@ -110,7 +169,7 @@ function collect(): { reasons: Reason[]; unresolved: string[] } {
         if (decl >= 0) pieces = literals(text.slice(decl, text.indexOf(';\n', decl)));
         else pieces = [];
       }
-      reasons.push({ where: `${rel}:${line}`, text: pieces.join(' ') });
+      reasons.push({ where: `${rel}:${line}`, text: pieces.join(' '), source: /^[A-Za-z_]\w*$/.test(first) ? text.slice(text.lastIndexOf(`const ${first}`, m.index), text.indexOf(';\n', text.lastIndexOf(`const ${first}`, m.index))) : first });
       if (pieces.length === 0) unresolved.push(`${rel}:${line} ${first}`);
     }
   }
@@ -120,12 +179,39 @@ function collect(): { reasons: Reason[]; unresolved: string[] } {
     let found = 0;
     while (at >= 0) {
       const arg = argsAt(text, at + extra.call.length - 1)[extra.arg] ?? '';
-      reasons.push({ where: `${extra.file} ${extra.call}`, text: literals(arg).join(' ') });
+      reasons.push({ where: `${extra.file} ${extra.call}`, text: literals(arg).join(' '), source: arg });
       found++;
       at = text.indexOf(extra.call, at + 1);
     }
     expect(found).toBeGreaterThan(0);
   }
+  for (const st of EXTRA_STATEMENTS) {
+    const text = fs.readFileSync(path.join(ROOT, st.file), 'utf8');
+    const at = text.indexOf(st.start);
+    expect(at).toBeGreaterThan(0);
+    const source = text.slice(at, text.indexOf(';\n', at));
+    reasons.push({ where: `${st.file} ${st.start}`, text: literals(source).join(' '), source });
+  }
+  // A reason a manager returns from getManagerStatus() itself (the add-ons'): follow it to where it is set.
+  let statuses = 0;
+  for (const file of files) {
+    const text = fs.readFileSync(file, 'utf8');
+    for (const m of text.matchAll(/state: '(?:degraded|failed)'[^}]*?reason: ([\w.]+)/g)) {
+      statuses++;
+      const rel = path.relative(ROOT, file);
+      let source = m[1];
+      if (m[1].startsWith('this.')) {
+        // Every assignment to that field; an identifier on the right is the `const` it names.
+        const field = m[1].replace(/\./g, '\\.');
+        source = [...text.matchAll(new RegExp(`${field} = ([^;]+);`, 'g'))]
+          .map((a) => (/^[A-Za-z_]\w*$/.test(a[1]) ? text.slice(text.indexOf(`const ${a[1]} =`), text.indexOf(';\n', text.indexOf(`const ${a[1]} =`))) : a[1]))
+          .join('\n');
+      }
+      reasons.push({ where: `${rel} getManagerStatus reason: ${m[1]}`, text: literals(source).join(' '), source });
+      if (literals(source).length === 0) unresolved.push(`${rel} getManagerStatus reason: ${m[1]} (no words found)`);
+    }
+  }
+  expect(statuses).toBeGreaterThanOrEqual(2); // the Forms and Calendar add-ons
   return { reasons, unresolved };
 }
 
@@ -138,7 +224,7 @@ describe('#2354 every dashboard reason is in plain words', () => {
 
   test('every call is read: a reason built elsewhere is one of the known helpers', () => {
     // Each of these is built by an exported helper or a method scanned through EXTRA_SOURCES, and checked below.
-    const allowed = /ConsentManager\.ts:\d+ reason|MediaManager\.ts:\d+ |DatabaseManager\.ts:\d+ (reason|plain)|ConfigurationManager\.ts:\d+ legacyStoreKeysReason|BackupManager\.ts:\d+ (reminder|BACKUP_KEY_MISSING_PLAIN|plain)|EmailManager\.ts:\d+ SEND_FAILING_REASON|ExportManager\.ts:\d+ PDF_UNAVAILABLE_REASON|BaseManager\.ts:\d+ (UNUSABLE_FOLDER_REASON|stagedRestoreNotApplied)|AttachmentManager\.ts:\d+ stagedRestoreNotApplied|PolicyEvaluator\.ts/;
+    const allowed = /ConsentManager\.ts:\d+ reason|MediaManager\.ts:\d+ reasons\.join|DatabaseManager\.ts:\d+ (reason|plain)|ConfigurationManager\.ts:\d+ legacyStoreKeysReason|BackupManager\.ts:\d+ (reminder|BACKUP_KEY_MISSING_PLAIN|plain)|EmailManager\.ts:\d+ SEND_FAILING_REASON|ExportManager\.ts:\d+ PDF_UNAVAILABLE_REASON|BaseManager\.ts:\d+ (UNUSABLE_FOLDER_REASON|stagedRestoreNotApplied)|AttachmentManager\.ts:\d+ stagedRestoreNotApplied|PolicyEvaluator\.ts/;
     expect(unresolved.filter((u) => !allowed.test(u))).toEqual([]);
   });
 
@@ -148,6 +234,16 @@ describe('#2354 every dashboard reason is in plain words', () => {
       .map((r) => ({ where: r.where, text: r.text, found: violations(r.text) }))
       .filter((r) => r.found.length > 0);
     expect(bad).toEqual([]);
+  });
+
+  test('a ${…} slot in a shown reason is a count or a plural choice, never developer text', () => {
+    const bad = reasons.map((r) => ({ where: r.where, slots: badSlots(r.source, r.where) })).filter((r) => r.slots.length > 0);
+    expect(bad).toEqual([]);
+  });
+
+  test('the slot rule would catch an error message in a reason', () => {
+    expect(badSlots('`Could not start: ${err.message}`', 'X.ts')).toEqual(['err.message']);
+    expect(badSlots('`${n.length} of ${total} files${n.length === 1 ? \' is\' : \' are\'}`', 'X.ts')).toEqual([]);
   });
 
   test('the exported reasons and the text built by helpers are plain too', () => {
