@@ -86,6 +86,13 @@ How to add a manager or a provider. The invariant is in [guiding-framework.md](.
 - 3 Add `docs/managers/YourManager.md` with `code: src/managers/YourManager.ts` in the same commit. The index in [Developer-Documentation.md](../Developer-Documentation.md) is generated from that frontmatter.
 - 4 If it stores bytes, add a provider that extends the right `Base*Provider` and a Null or file default.
 
+## How to add an upgrade check
+
+- 1 Add a file in `src/upgradeChecks/` returning an `UpgradeCheck` (`id`, `since`, `detect`, `item`, `fix`) and list it in `src/upgradeChecks/index.ts`. See [UpgradeCheckManager](../managers/UpgradeCheckManager.md).
+- 2 Word the item for a home administrator: pages by title and what to do, never categories, policies, permissions, configuration keys, issue numbers, `docs/` paths or logs. Name only pages the viewer may see and count the rest.
+- 3 Make the fix go through the normal checked and audited route (`setProperty` with the person's context for a setting).
+- 4 Extend the stand-in engine in `src/test-support/upgradeChecks.ts` if the check needs more; `uneditablePages.test.ts` fails on a banned word in any registered check.
+
 ## How to add a provider
 
 - 1 Scaffold from [docs/templates/Provider-Template.md](../templates/Provider-Template.md).

@@ -30,7 +30,7 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 45 | 50 | Core system managers |
+| [Managers](#managers) | 46 | 51 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
 | [Providers](#providers) | 47 | 52 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
@@ -96,6 +96,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | ShareManager | ✅ [doc](managers/ShareManager.md) | Share-link capability tokens (#842) — issue/validate/revoke/list + live keyword-scope resolution |
 | TemplateManager | 📘 [doc](managers/TemplateManager.md) + [guide](managers/TemplateManager-Complete-Guide.md) | Page templates for /create and theme-driven layout templates for /view |
 | ThemeManager | ✅ [doc](managers/ThemeManager.md) | Manages theme discovery + active-theme selection + CSS path resolution for the page-render pipeline |
+| UpgradeCheckManager | ✅ [doc](managers/UpgradeCheckManager.md) | Run-once checks for each release; what an update left for an administrator to decide becomes an item on "After updating" in Admin, with one button that fixes it (#2301) |
 | UserManager | 📘 [doc](managers/UserManager.md) + [guide](managers/UserManager-Complete-Guide.md) | User CRUD, sessions, authentication, profile-page binding, contact-recipient resolution |
 | ValidationManager | ✅ [doc](managers/ValidationManager.md) | Central data-integrity enforcement: UUID-based naming, YAML frontmatter validation, slug-conflict detection |
 | VariableManager | ✅ [doc](managers/VariableManager.md) | Variable expansion in content — `[{$pagename}]`, `[{$applicationname}]`, custom user variables (JSPWiki-compatible) |
@@ -349,7 +350,7 @@ Before contributing, please review:
 Honest accounting of doc coverage. Targets are pragmatic — abstract base classes and trivial null/no-op providers don't need long-form docs, but every module should at least have a stub or appear in this index.
 
 <!-- AUTO:doc-status BEGIN -->
-__Managers:__ 45/45 with quick-reference docs (100%); 17 with Complete Guides.
+__Managers:__ 46/46 with quick-reference docs (100%); 17 with Complete Guides.
 
 __Plugins:__ 32/32 with quick-reference docs (100%).
 
