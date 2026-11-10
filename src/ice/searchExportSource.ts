@@ -7,9 +7,12 @@
  *
  * - pages come from SearchManager, which keeps only pages the user may open,
  *   and each is read again through PageManager's door (`page-read`);
- * - files are the attachments the search finds, each checked with the rule the
- *   download of a file uses ({@link AttachmentLike.mayReadAttachment}) and
- *   handed over as its original;
+ * - a page is also checked the way exporting it alone is ({@link SearchExportDeps.mayExportPage}),
+ *   so a private page or a shared folder's page the user may read but not export is left out;
+ * - files are the attachments and media-library files the search finds, each
+ *   checked with the rule its own door uses (the download rule for an
+ *   attachment, the media library's own for a media file) and handed over as
+ *   its original;
  * - people are not files: they are counted and left out;
  * - the site's limits (`max-items` pages and files together, `max-bytes`) end
  *   the list, and the source says how many readable matches that left out.
@@ -17,11 +20,15 @@
  * What an item the user may not read is never revealed: it is not in the zip
  * and not in any count.
  */
+import fs from 'fs-extra';
 import type { ActorContext } from '../context/ActorContext.js';
 import { EXPORT_FILE_KIND, type ExportReadInfo, type IceExportSource, type IceItem } from './types.js';
 
-/** The most matches looked at, so a huge site cannot make one export read it all. shortcut: more matches than this are not counted as left out. */
+/** The most matches looked at, so a huge site cannot make one export read it all. Reaching it is said on the finished screen. */
 const LOOK_AHEAD = 5000;
+
+/** The media library's id among the asset providers. */
+const MEDIA_LIBRARY = 'media-library';
 
 /** Core's search export source. */
 export const SEARCH_EXPORT_SOURCE = 'core.search';
@@ -97,7 +104,7 @@ export function pageItem(name: string, content: string, metadata: Record<string,
 
 interface Manager { getManager<M>(name: string): M | null | undefined }
 type PageHit = { name: string };
-type FileHit = { id: string; filename?: string; name?: string };
+type FileHit = { id: string; providerId?: string; filename?: string; name?: string };
 interface PageManagerLike {
   mayShowPage(ref: string, ctx: ActorContext): Promise<boolean>;
   readPage(ref: string, ctx: ActorContext): Promise<{ ok: true; name: string; metadata: Record<string, unknown>; value: { content: string } } | { ok: false }>;
@@ -108,8 +115,15 @@ interface AttachmentLike {
   readAttachmentFor(id: string, ctx: ActorContext): Promise<{ buffer: Buffer; metadata: { name?: unknown; encodingFormat?: unknown } } | null>;
 }
 
+interface MediaLike {
+  /** The media item when the user in `wikiContext` may read it, else null. */
+  getItem(id: string, wikiContext: unknown): Promise<{ filePath: string; mimeType?: string; filename?: string } | null>;
+}
+
 export interface SearchExportDeps {
   engine: Manager;
+  /** May this user export this page alone (`page-export` for it, in its private store or shared folder)? */
+  mayExportPage(ctx: ActorContext, pageName: string): Promise<boolean>;
   limits(): { maxItems: number; maxBytes: number };
   /** Is the Export action for a search offered to this user (page-export held)? */
   offered(ctx: ActorContext): Promise<boolean>;
@@ -128,7 +142,8 @@ function sizeWords(bytes: number): string {
 /** A name for a file in a zip: its own, with no folder in it and nothing a file system refuses. */
 function zipFileName(name: string): string {
   // eslint-disable-next-line no-control-regex
-  return name.split(/[\\/]/).pop()!.replace(/[:*?"<>|\u0000-\u001f]+/g, '-').trim() || 'file';
+  const clean = name.split(/[\\/]/).pop()!.replace(/[:*?"<>|\u0000-\u001f]+/g, '-').trim();
+  return /^\.*$/.test(clean) ? 'file' : clean;
 }
 
 export function searchExportSource(deps: SearchExportDeps): IceExportSource {
@@ -136,17 +151,19 @@ export function searchExportSource(deps: SearchExportDeps): IceExportSource {
   const attachments = (): AttachmentLike | null => deps.engine.getManager<AttachmentLike>('AttachmentManager') ?? null;
 
   /** The matches: page names and file ids in the order the search lists them, and how many people matched. */
-  async function find(p: SearchExportParams, ctx: ActorContext): Promise<{ pages: PageHit[]; files: FileHit[]; people: number }> {
+  async function find(p: SearchExportParams, ctx: ActorContext): Promise<{ pages: PageHit[]; files: FileHit[]; people: number; capped: boolean }> {
     const types = p.types ?? '';
     const all = types === '' || types === 'all';
     const narrowed = Boolean(p.mimeCategory) || Boolean(p.year);
     // The search page's own rules: a file facet leaves pages and people out of "all sources".
     const wantPages = types === 'page' || (all && !narrowed);
     const wantPeople = types === 'user' || (all && !narrowed);
-    const wantFiles = all || types === 'local' || types === 'attachment';
+    const wantFiles = all || types === 'local' || types === 'attachment' || types === 'media' || types === 'media-library';
+    // All sources asks every file store; a narrower search asks that one.
+    const providers = all ? undefined : types === 'media' || types === 'media-library' ? ['media-library'] : ['local'];
     // shortcut: the search only needs a context's user; this stands in for the request's WikiContext.
     const wikiContext = { userContext: ctx } as never;
-    const out = { pages: [] as PageHit[], files: [] as FileHit[], people: 0 };
+    const out = { pages: [] as PageHit[], files: [] as FileHit[], people: 0, capped: false };
 
     const search = deps.engine.getManager<{ advancedSearchWithContext?(c: unknown, o: Record<string, unknown>): Promise<PageHit[]> }>('SearchManager');
     if (wantPages && search?.advancedSearchWithContext && await deps.permits(ctx, 'search-page')) {
@@ -160,20 +177,23 @@ export function searchExportSource(deps: SearchExportDeps): IceExportSource {
         ...(p.date || p.since || p.until ? { dateRange: { ...(p.date || p.since ? { from: p.date || p.since } : {}), ...(p.date || p.until ? { to: p.date || p.until } : {}) } } : {}),
         maxResults: LOOK_AHEAD
       });
+      if (out.pages.length >= LOOK_AHEAD) out.capped = true;
     }
 
     const users = deps.engine.getManager<{ searchUsers?(q: string, o: object, c: ActorContext): Promise<unknown[]> }>('UserManager');
     if (wantPeople && users?.searchUsers && await deps.permits(ctx, 'search-user')) {
       out.people = (await users.searchUsers(p.q ?? '', { limit: LOOK_AHEAD, activeOnly: true }, ctx)).length;
+      if (out.people >= LOOK_AHEAD) out.capped = true;
     }
 
     const assets = deps.engine.getManager<{ search(o: Record<string, unknown>, c: ActorContext): Promise<{ results: FileHit[] }> }>('AssetService');
     if (wantFiles && assets && await deps.permits(ctx, 'asset-upload')) {
       const mimeCategory = MIME_CATEGORIES.find(c => c === p.mimeCategory);
       out.files = (await assets.search({
-        query: p.q ?? '', types: ['local'], mimeCategory, year: p.year, pageSize: LOOK_AHEAD, offset: 0, sort: 'date', order: 'asc',
+        query: p.q ?? '', ...(providers ? { types: providers } : {}), mimeCategory, year: p.year, pageSize: LOOK_AHEAD, offset: 0, sort: 'date', order: 'asc',
         wikiContext, userRoles: (ctx as { roles?: string[] }).roles ?? [], username: ctx.username
       }, ctx))?.results ?? [];
+      if (out.files.length >= LOOK_AHEAD) out.capped = true;
     }
     return out;
   }
@@ -193,11 +213,15 @@ export function searchExportSource(deps: SearchExportDeps): IceExportSource {
       const found = await find(params, ctx);
       const pm = pageManager();
       const am = attachments();
+      const media = deps.engine.getManager<MediaLike>('MediaManager');
+      const wikiContext = { userContext: ctx };
 
       type Candidate = { page: string } | { file: FileHit };
       const candidates: Candidate[] = [...found.pages.map(h => ({ page: h.name })), ...found.files.map(file => ({ file }))];
       const mayRead = async (c: Candidate): Promise<boolean> =>
-        'page' in c ? Boolean(await pm?.mayShowPage(c.page, ctx)) : Boolean(await am?.mayReadAttachment(c.file.id, ctx));
+        'page' in c
+          ? Boolean(await pm?.mayShowPage(c.page, ctx)) && await deps.mayExportPage(ctx, c.page)
+          : c.file.providerId === MEDIA_LIBRARY ? Boolean(await media?.getItem(c.file.id, wikiContext)) : Boolean(await am?.mayReadAttachment(c.file.id, ctx));
 
       const items: IceItem[] = [];
       let used = 0;
@@ -217,8 +241,25 @@ export function searchExportSource(deps: SearchExportDeps): IceExportSource {
         }
         let item: IceItem | null = null;
         if ('page' in c) {
+          if (!await deps.mayExportPage(ctx, c.page)) continue;
           const read = await pm?.readPage(c.page, ctx);
           if (read?.ok) item = pageItem(read.name, read.value.content, read.metadata);
+        } else if (c.file.providerId === MEDIA_LIBRARY) {
+          const found = await media?.getItem(c.file.id, wikiContext);
+          const size = found ? (await fs.stat(found.filePath).catch(() => null))?.size : undefined;
+          if (found && size !== undefined) {
+            if (used + size > maxBytes) {
+              leftOut++;
+              reason = `the export would be larger than the ${sizeWords(maxBytes)} this site allows.`;
+              continue;
+            }
+            item = {
+              kind: EXPORT_FILE_KIND,
+              name: zipFileName(found.filename || c.file.filename || c.file.name || c.file.id),
+              mediaType: found.mimeType || 'application/octet-stream',
+              bytes: await fs.readFile(found.filePath)
+            };
+          }
         } else {
           const file = await am?.readAttachmentFor(c.file.id, ctx);
           if (file) {
@@ -241,6 +282,7 @@ export function searchExportSource(deps: SearchExportDeps): IceExportSource {
         items.push(item);
       }
       if (leftOut > 0) info.note(`${leftOut} matching ${plural(leftOut, 'item was', 'items were')} left out: ${reason}`);
+      if (found.capped) info.note(`More than ${LOOK_AHEAD} matches; only the first ${LOOK_AHEAD} were looked at.`);
       if (found.people > 0) info.note(`${found.people} ${plural(found.people, 'person was', 'people were')} left out.`);
       return items;
     }

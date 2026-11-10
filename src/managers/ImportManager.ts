@@ -1480,6 +1480,7 @@ class ImportManager extends BaseManager {
       engine: this.engine,
       limits: () => this.exportSettings(),
       offered: (ctx) => this.mayExportPage(ctx, '', true),
+      mayExportPage: async (ctx, pageName) => (await this.mayExportPage(ctx, pageName, false)) === 'permit',
       allowed: async (ctx) => {
         const may = await this.mayExportPage(ctx, '', false);
         if (may === 'step-up') throw new IceExportNeedsFreshSignIn('page-export');
