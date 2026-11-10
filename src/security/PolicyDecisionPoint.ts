@@ -798,10 +798,11 @@ export class PolicyDecisionPoint extends BaseManager {
    * caller fails closed. This records nothing.
    */
   async decideOwnedRecord(input: DecisionInput, request: OwnedRecordAsk): Promise<Decision> {
-    // A policy glob cannot cover an empty id, '.', '..' or one with a path separator, so
-    // a deny on the type would not reach it (PR #2324 review, M2).
+    // A policy glob cannot cover an id its own matcher rejects (empty, '.', '..', blank, a line
+    // break), nor one with a path separator, so a deny on the type would not reach it. Test with
+    // the matcher and options PolicyEvaluator.namesDeclaredType uses (PR #2324 review, M2).
     const id = request.resource.id;
-    if (typeof id !== 'string' || id === '' || id === '.' || id === '..' || id.includes('/')) throw new OwnedRecordError(`record id '${String(id)}' cannot be decided: it must be non-empty, not '.' or '..', and contain no '/'`);
+    if (typeof id !== 'string' || id.includes('/') || !micromatch.isMatch(id, '*', { dot: true }) || !micromatch.isMatch(id, '**', { dot: true })) throw new OwnedRecordError(`record id '${String(id)}' cannot be decided: it must be non-empty, contain no '/', no line break, and not be '.' or '..'`);
     const prepared = await this.prepareOwned(input, request.action, request.resource.type);
     if ('decision' in prepared) return prepared.decision;
     const { subject, userContext } = prepared;
