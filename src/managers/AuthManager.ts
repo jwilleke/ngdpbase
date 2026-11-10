@@ -184,6 +184,16 @@ function passkeyRelyingPartyOf(configManager: ConfigurationManager): PasskeyRely
  */
 const ENROLLED_FACTORS: Readonly<Record<string, CredentialKind>> = { passkey: 'passkey', totp: 'totp' };
 
+/** What an account can add or use toward a stronger sign-in (#2356); see `strongerSignInWays`. */
+export interface StrongerSignInWays {
+  addPasskey: boolean;
+  addTotp: boolean;
+  usePasskey: boolean;
+  useTotp: boolean;
+  password: boolean;
+  outside: string[];
+}
+
 export interface Factor {
   provider: string;
   primary: boolean;
@@ -3021,15 +3031,55 @@ class AuthManager extends BaseManager {
    * is told, on every page, to close.
    */
   async aalReachFor(username: string): Promise<{ now: Aal; ifEnrolled: Aal }> {
+    const { offered, usable } = await this.accountFactors(username);
+    const reach = (factors: Factor[]): Aal => Math.max(factors.some(f => f.primary) ? this.assess(factors).aal : 0, 1) as Aal;
+    return { now: reach(usable), ifEnrolled: reach(offered) };
+  }
+
+  /**
+   * The site's factors this account may use (`offered`: narrowed to its
+   * `allowedAuthMethods`), and of those the ones it can use now (`usable`: a
+   * factor that must be enrolled counts only once it is). One reading for
+   * the level the account can reach and for what it is told to add (#2356).
+   */
+  private async accountFactors(username: string): Promise<{ offered: Factor[]; usable: Factor[] }> {
     const user = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
     const allowed = user?.allowedAuthMethods;
     const offered = this.getFactors().filter(f => allowsProvider(allowed, f.provider));
-    const reach = (factors: Factor[]): Aal => Math.max(factors.some(f => f.primary) ? this.assess(factors).aal : 0, 1) as Aal;
     const usable = offered.filter(f => {
       const kind = ENROLLED_FACTORS[f.provider];
       return kind === undefined || this.hasCredential(username, kind);
     });
-    return { now: reach(usable), ifEnrolled: reach(offered) };
+    return { offered, usable };
+  }
+
+  /**
+   * What this account can add or use here toward a stronger sign-in (#2356),
+   * for the sign-in banners and the confirm page's wording. Never a decision:
+   * who steps down and what step-up needs stay with `rolesAtSignIn` and
+   * `stepUpNeeded`. "Add" is a passkey or an authenticator app the site
+   * offers, the account is allowed and has not set up; "use" is one it has,
+   * is allowed, and the site offers (the app's code as step-up offers it).
+   * `password` is a password it has and is allowed, which the app's code
+   * needs to reach AAL2. `outside` names any other allowed sign-in method
+   * that reaches AAL2 by itself, such as an outside provider's.
+   * Computed per call; never cached across accounts.
+   */
+  async strongerSignInWays(username: string): Promise<StrongerSignInWays> {
+    const { offered, usable } = await this.accountFactors(username);
+    const has = (list: Factor[], id: string): boolean => list.some(f => f.provider === id);
+    const password = has(usable, 'password')
+      && (await this.engine.getManager<UserManager>('UserManager')?.hasPassword(username).catch(() => false) ?? false);
+    return {
+      addPasskey: has(offered, 'passkey') && !has(usable, 'passkey'),
+      addTotp: has(offered, 'totp') && !has(usable, 'totp'),
+      usePasskey: has(usable, 'passkey'),
+      useTotp: has(usable, 'totp') && this.stepUpTotpOffered(username),
+      password,
+      outside: usable
+        .filter(f => f.primary && f.aal >= 2 && f.provider !== 'passkey')
+        .map(f => this.providers.get(f.provider)?.displayName ?? f.provider)
+    };
   }
 
   /**
