@@ -79,15 +79,19 @@
                                             </td>
                                             <td>
                                                 <div class="btn-group btn-group-sm">
-                                                    <button class="btn btn-sm btn-outline-primary" onclick="editOrganization('<%= org.name.toLowerCase() %>')" 
+                                                    <button class="btn btn-sm btn-outline-primary" data-org-action="edit"
+                                                            data-org-id="<%= org.name.toLowerCase() %>"
                                                             data-org="<%= JSON.stringify(org) %>">
                                                         <i class="fas fa-edit"></i>
                                                     </button>
-                                                    <button class="btn btn-sm btn-outline-info" onclick="viewOrganizationSchema('<%= org.name.toLowerCase() %>')"
+                                                    <button class="btn btn-sm btn-outline-info" data-org-action="schema"
+                                                            data-org-id="<%= org.name.toLowerCase() %>"
                                                             data-org="<%= JSON.stringify(org) %>">
                                                         <i class="fas fa-code"></i>
                                                     </button>
-                                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteOrganization('<%= org.name.toLowerCase() %>', '<%= org.name %>')">
+                                                    <button class="btn btn-sm btn-outline-danger" data-org-action="delete"
+                                                            data-org-id="<%= org.name.toLowerCase() %>"
+                                                            data-org-name="<%= org.name %>">
                                                         <i class="fas fa-trash"></i>
                                                     </button>
                                                 </div>
@@ -387,11 +391,11 @@ function removeContactPoint(button) {
 }
 
 // #624: edit/delete now talk to OrganizationManager via the rewired admin
-// routes. The button passes the org's `name` (lowercased) as the identifier
-// and embeds the full Organization JSON-LD record on `data-org` for the
-// modal's pre-population.
-function editOrganization(identifier) {
-    const button = event.target.closest('button');
+// routes. Each row button carries the org's `name` (lowercased) on
+// `data-org-id` as the identifier; edit and schema also carry the full
+// Organization JSON-LD record on `data-org` for the modal's pre-population.
+// The click listener below reads them and calls the matching function.
+function editOrganization(identifier, button) {
     const org = JSON.parse(button.dataset.org);
 
     document.getElementById('editOrgIdentifier').value = identifier;
@@ -465,8 +469,7 @@ function addEditContactPoint() {
     document.getElementById('editContactPointsContainer').appendChild(buildContactPointRow());
 }
 
-function viewOrganizationSchema(identifier) {
-    const button = event.target.closest('button');
+function viewOrganizationSchema(identifier, button) {
     const org = JSON.parse(button.dataset.org);
     
     document.getElementById('schemaDisplay').textContent = JSON.stringify(org, null, 2);
@@ -490,6 +493,15 @@ async function deleteOrganization(identifier, name) {
         alert('Error deleting organization: ' + err.message);
     }
 }
+
+document.addEventListener('click', (e) => {
+    const button = e.target.closest('button[data-org-action]');
+    if (!button) return;
+    const { orgAction, orgId, orgName } = button.dataset;
+    if (orgAction === 'edit') editOrganization(orgId, button);
+    else if (orgAction === 'schema') viewOrganizationSchema(orgId, button);
+    else if (orgAction === 'delete') deleteOrganization(orgId, orgName);
+});
 
 function copySchema() {
     const schemaText = document.getElementById('schemaDisplay').textContent;
