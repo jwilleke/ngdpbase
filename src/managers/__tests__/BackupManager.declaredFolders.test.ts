@@ -208,7 +208,7 @@ describe('declared folders are BackupManager\'s (#1985)', () => {
     fs.writeFileSync(path.join(paths().notes, 'note.txt'), 'note edited later');
     const restarted = await start();
     expect(restarted.notes.seenAtStart).toBe('note edited later');
-    expect(restarted.notes.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: expect.stringMatching(/A staged restore of notes was not applied/) });
+    expect(restarted.notes.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', reason: expect.stringMatching(/^A saved copy of some of the site's data was not put back/), fixUrl: '/admin/backup' });
     expect(notifications.map((n) => n.title)).toContain('A site restore was not applied');
   });
 

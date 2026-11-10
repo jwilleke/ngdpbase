@@ -10,6 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
+import logger from '../../utils/logger';
 import OidcManager, { OIDC_COOKIE_KEYS_ENV, OIDC_JWKS_ENV, OIDC_MOUNT, aalOfAcr, apiResourceFor, delegablePermissions, issuerFor, operatorOidcConfig, withTestAccountClaim } from '../OidcManager';
 
 const ENV_NAMES = [OIDC_JWKS_ENV, OIDC_COOKIE_KEYS_ENV];
@@ -89,23 +90,33 @@ describe('OidcManager (#1570)', () => {
 
   test('a derived key set by hand is refused, as one decision (#1574)', async () => {
     custom['oidc-auth-server.trust-proxy'] = true;
+    const errors = vi.spyOn(logger, 'error');
     const manager = await started();
     expect(manager.getManagerStatus().state).toBe('degraded');
-    expect(manager.getManagerStatus().reason).toMatch(/oidc-auth-server\.trust-proxy is set by ngdpbase/);
+    // #2354: plain words on the dashboard; the developer reason is in the log.
+    expect(manager.getManagerStatus().reason).toBe('Single sign-on is turned on but has not started: one of its settings is not valid. Correct it in the settings.');
+    expect(errors.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(/oidc-auth-server\.trust-proxy is set by ngdpbase/);
+    errors.mockRestore();
   });
 
   test('an unknown package key is refused by the package loader', async () => {
     custom['oidc-auth-server.no-such-setting'] = 1;
+    const errors = vi.spyOn(logger, 'error');
     const manager = await started();
     expect(manager.getManagerStatus().state).toBe('degraded');
-    expect(manager.getManagerStatus().reason).toMatch(/no-such-setting is not a known setting/);
+    expect(manager.getManagerStatus().reason).toMatch(/^Single sign-on is turned on but has not started: /);
+    expect(errors.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(/no-such-setting is not a known setting/);
+    errors.mockRestore();
   });
 
   test('a secret written into the config file is refused (environment-only)', async () => {
     custom['oidc-auth-server.cookie-keys'] = 'a-cookie-key-that-must-not-live-in-a-file';
+    const errors = vi.spyOn(logger, 'error');
     const manager = await started();
     expect(manager.getManagerStatus().state).toBe('degraded');
-    expect(manager.getManagerStatus().reason).toMatch(/owned by the environment/);
+    expect(manager.getManagerStatus().reason).toMatch(/^Single sign-on is turned on but has not started: /);
+    expect(errors.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(/owned by the environment/);
+    errors.mockRestore();
   });
 
   test('on: generates both keys into the instance .env once, owner-only, and reuses them', async () => {
@@ -163,9 +174,12 @@ describe('OidcManager (#1570)', () => {
     expect((await started()).start({ trustProxy: false })).not.toBeNull();
 
     baseUrl = 'http://wiki.example.com';
+    const errors = vi.spyOn(logger, 'error');
     const remote = await started();
     expect(remote.getManagerStatus().state).toBe('degraded');
-    expect(remote.getManagerStatus().reason).toMatch(/https/);
+    expect(remote.getManagerStatus().reason).toMatch(/^Single sign-on is turned on but has not started: /);
+    expect(errors.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(/https/);
+    errors.mockRestore();
   });
 
   test('findAccount: claims without roles; a disabled or missing account fails closed', async () => {

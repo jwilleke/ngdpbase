@@ -35,7 +35,7 @@ export type { PdfOptions, PdfMargin, PdfPageSize } from '../export/pdfEngine.js'
  * render that works.
  */
 export const PDF_UNAVAILABLE_REASON =
-  'PDF export unavailable: choose a PDF provider (local-chrome or chrome-service) in ngdpbase.export.pdf.provider, or fix the one chosen (the server log says why)';
+  "PDFs can't be made right now. Choose how PDFs are made in the settings, or fix the one already chosen.";
 
 /** Shipped defaults of the `ngdpbase.export.pdf.*` keys. */
 const PDF_DEFAULTS = { provider: 'none', pageSize: 'Letter', timeoutMs: 30_000, maxConcurrent: 2, serviceMaxBytes: 52_428_800 };

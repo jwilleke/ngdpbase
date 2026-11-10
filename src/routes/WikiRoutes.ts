@@ -66,6 +66,7 @@ import { CONSENT_PATH, CORE_CONSENT_SCOPE, RECOVERY_WORDS_CONSENT_SCOPE, REMEMBE
 import { recoveryWordsPending, recoveryWordsState } from '../utils/recoveryWordsConsent.js';
 import { sharedFoldersWordsState } from '../utils/sharedFoldersWordsConsent.js';
 import type SharedFolderManager from '../managers/SharedFolderManager.js';
+import { PASSKEYS_ADDRESS_IN_SERVER_SETTINGS, PASSKEYS_CANNOT_WORK, PASSKEYS_OFF_BUTTON, PASSKEYS_OFF_HINT, PASSKEY_SETTING } from '../utils/passkeyAddressWording.js';
 import type UpgradeCheckManager from '../managers/UpgradeCheckManager.js';
 import type { OpenUpgradeItem } from '../managers/UpgradeCheckManager.js';
 import { UPGRADE_INTRO, UPGRADE_LIST_HEADING, UPGRADE_READ_ONLY, upgradeEmpty, upgradeHeading, upgradeListLead, upgradeNotice, upgradeResult, type UpgradeResultKey } from '../upgradeChecks/wording.js';
@@ -14494,6 +14495,7 @@ ${panes}
         configProblems,
         // #2317: passkeys are on in the setting but the site's address cannot support them.
         passkeysCannotWork: this.engine.getManager<AuthManager>('AuthManager')?.passkeysCannotWork?.() ?? false,
+        passkeyWording: { cannotWork: PASSKEYS_CANNOT_WORK, addressInServerSettings: PASSKEYS_ADDRESS_IN_SERVER_SETTINGS, button: PASSKEYS_OFF_BUTTON, hint: PASSKEYS_OFF_HINT, setting: PASSKEY_SETTING },
         // #2330: stated above the table, so the rule the policies are read under is visible.
         ruleCombiningAlgorithm: { value: configManager.getProperty(RULE_COMBINING_ALGORITHM_KEY, 'deny-overrides'), explanation: DENY_OVERRIDES_EXPLANATION },
         message: req.query.success,

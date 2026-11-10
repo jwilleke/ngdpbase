@@ -97,7 +97,9 @@ describe('a role member must have credentials, on a real engine (#2040)', () => 
     engine = await boot();
     const status = engine.getManager<RoleManager>('RoleManager')!.getManagerStatus();
     expect(status).toMatchObject({ state: 'degraded', kind: 'attention' });
-    expect(status.reason).toContain("'editor' lists 1");
+    // #2354: plain words on the dashboard; the role and count are in the notice and the log.
+    expect(status.reason).toMatch(/^Some roles list contacts as members/);
+    expect(status.reason).not.toContain("'editor'");
     const notices = () => engine.getManager<NotificationManager>('NotificationManager')!.getAllNotifications(false).filter((n) => n.title === CONTACT_MEMBERS_TITLE);
     expect(notices()).toHaveLength(1);
     // #2041: notification recipients are stored by identity @id.
@@ -108,7 +110,7 @@ describe('a role member must have credentials, on a real engine (#2040)', () => 
 
     // The next start reports it again on the dashboard, but adds no second notification.
     engine = await boot();
-    expect(engine.getManager<RoleManager>('RoleManager')!.getManagerStatus().reason).toContain("'editor' lists 1");
+    expect(engine.getManager<RoleManager>('RoleManager')!.getManagerStatus().reason).toMatch(/^Some roles list contacts as members/);
     expect(notices()).toHaveLength(1);
     const after = JSON.parse(fs.readFileSync(file, 'utf8')) as { member: { '@id': string }[] };
     expect(after.member.map((m) => m['@id'])).toContain(contact['@id']);

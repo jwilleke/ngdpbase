@@ -2,6 +2,7 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type { LiveUpgradeCheck, UpgradeCheck } from '../managers/UpgradeCheckManager.js';
 import { uneditablePagesCheck } from './uneditablePages.js';
 import { openWriteRulesCheck } from './openWriteRules.js';
+import { passkeyAddressCheck } from './passkeyAddress.js';
 
 /** Every check this release registers, oldest first. A new release adds its checks here. */
 export const shippedUpgradeChecks = (engine: WikiEngine): UpgradeCheck[] => [
@@ -10,5 +11,6 @@ export const shippedUpgradeChecks = (engine: WikiEngine): UpgradeCheck[] => [
 
 /** To-dos worked out from the site's set-up on each look, not once per version. */
 export const shippedLiveChecks = (engine: WikiEngine): LiveUpgradeCheck[] => [
-  openWriteRulesCheck(engine)
+  openWriteRulesCheck(engine),
+  passkeyAddressCheck(engine)
 ];

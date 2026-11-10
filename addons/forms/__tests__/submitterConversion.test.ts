@@ -79,7 +79,9 @@ test.each([{ down: true }, { failLookups: true }])('the identity store down (%o)
   const m = manager(fakeIdentityManager(IDS, opts));
   await m.initialize();
   expect((await read(file)).submittedBy).toBe('ann');
-  expect(m.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringContaining('identity store unavailable, conversion postponed') });
+  expect(m.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringContaining('Some form submissions still name who sent them the old way') });
+  const shown = (m.getManagerStatus() as { reason?: string }).reason ?? '';
+  expect(shown).not.toMatch(/#\d|@ids/);
 });
 
 test('delete bob, convert, create a new bob, restart: the new bob is not the submitter of old bob\'s submissions', async () => {

@@ -105,7 +105,7 @@ describe('backups never fail silently (#1563)', () => {
   describe('a site that has never made a backup', () => {
     test('is an outage at start, "never", with ONE notification across restarts', async () => {
       const bm = await start();
-      expect(bm.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'outage', fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup', reason: expect.stringMatching(/^No good backup since: never/) });
+      expect(bm.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'outage', fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup', reason: expect.stringMatching(/^This site has no backup yet\. Open the Backup page and make one\.$/) });
       expect(notWorking()).toHaveLength(1);
       expect(notWorking()[0]).toMatchObject({ level: 'error', message: expect.stringMatching(/never/) });
       const restarted = await start();
@@ -128,7 +128,9 @@ describe('backups never fail silently (#1563)', () => {
       const provider = (bm as unknown as { provider: { writeBackup: (n: string, d: Buffer) => Promise<string> } }).provider;
       provider.writeBackup = async () => { throw Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' }); };
       await expect(bm.createBackup(CTX)).rejects.toThrow(/no space left/);
-      expect(bm.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'outage', reason: expect.stringMatching(/^Backups are not working: the backup destination is out of space.*Last good backup: (?!never)/) });
+      expect(bm.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'outage', reason: expect.stringMatching(/^The last backup failed \(.*\), so backups are not working\. The last good backup was .*Open the Backup page/) });
+      // #2354: the dashboard is plain; the cause stays on the Backup page and in the notice.
+      expect((await bm.getBackupHealth()).fault).toMatch(/^Backups are not working: the backup destination is out of space.*Last good backup: (?!never)/);
       expect(notWorking()).toHaveLength(1);
       expect(notWorking()[0].message).toMatch(/A backup failed: the backup destination is out of space/);
       // The same failure again is not a second notification.
@@ -136,7 +138,7 @@ describe('backups never fail silently (#1563)', () => {
       expect(notWorking()).toHaveLength(1);
       // A restart does not forget it.
       const restarted = await start();
-      expect(restarted.getManagerStatus()).toMatchObject({ kind: 'outage', reason: expect.stringMatching(/out of space/) });
+      expect(restarted.getManagerStatus()).toMatchObject({ kind: 'outage', reason: expect.stringMatching(/^The last backup failed/) });
       // The next good backup clears it, for good.
       await restarted.createBackup(CTX);
       expect(restarted.getManagerStatus()).toEqual({ state: 'ready' });
@@ -149,7 +151,8 @@ describe('backups never fail silently (#1563)', () => {
       const provider = (bm as unknown as { provider: { writeBackup: unknown } }).provider;
       provider.writeBackup = async () => { throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }); };
       await expect(bm.createBackup(CTX)).rejects.toThrow();
-      expect(bm.getManagerStatus().reason).toMatch(/permission denied writing to the backup destination/);
+      expect((await bm.getBackupHealth()).fault).toMatch(/permission denied writing to the backup destination/);
+      expect(bm.getManagerStatus().reason).toMatch(/^The last backup failed/);
     });
 
     test('a manager part failing: "A backup is incomplete" (the existing notice), an outage, and that backup is not counted as good', async () => {
@@ -162,7 +165,8 @@ describe('backups never fail silently (#1563)', () => {
       later(1000);
       await site.createBackup(CTX, { filename: 'incomplete-ngdpbase-backup.json.gz' });
       expect(notifications.map((n) => n.title)).toEqual(['A backup is incomplete']);
-      expect(site.getManagerStatus()).toMatchObject({ kind: 'outage', reason: expect.stringMatching(/a backup is incomplete — UserManager: the user store could not be read/) });
+      expect(site.getManagerStatus()).toMatchObject({ kind: 'outage', reason: expect.stringMatching(/^The last backup failed/) });
+      expect((await site.getBackupHealth()).fault).toMatch(/a backup is incomplete — UserManager: the user store could not be read/);
       expect((await site.getBackupHealth()).lastGood!.filename).toBe(goodBefore);
     });
   });
@@ -177,7 +181,8 @@ describe('backups never fail silently (#1563)', () => {
       later(2 * DAY);
       const health = (await bm.refreshBackupHealth())!;
       expect(health).toMatchObject({ stale: true, autoBackup: false, staleAfterMs: 7 * DAY });
-      expect(bm.getManagerStatus()).toMatchObject({ kind: 'outage', configKey: 'ngdpbase.backup.auto-backup', reason: expect.stringMatching(/^No good backup since .*automatic backups are off/) });
+      expect(bm.getManagerStatus()).toMatchObject({ kind: 'outage', configKey: 'ngdpbase.backup.auto-backup', reason: expect.stringMatching(/^There has been no good backup since .*Open the Backup page and make one\.$/) });
+      expect(health.fault).toMatch(/^No good backup since .*automatic backups are off/);
       expect(notWorking()).toHaveLength(2); // the fresh site's "never" at start, then this stretch
       await bm.refreshBackupHealth();
       expect(notWorking()).toHaveLength(2);
@@ -192,7 +197,8 @@ describe('backups never fail silently (#1563)', () => {
       expect((await bm.refreshBackupHealth())).toMatchObject({ stale: false, autoBackup: true, staleAfterMs: 2 * DAY, nextRun: '2030-01-01T02:00:00.000Z' });
       later(1 * DAY);
       await bm.refreshBackupHealth();
-      expect(bm.getManagerStatus()).toMatchObject({ kind: 'outage', reason: expect.stringMatching(/automatic backups are on, but none has succeeded/) });
+      expect(bm.getManagerStatus()).toMatchObject({ kind: 'outage', reason: expect.stringMatching(/^There has been no good backup since/) });
+      expect((await bm.getBackupHealth()).fault).toMatch(/automatic backups are on, but none has succeeded/);
     });
 
     test('automatic backups paused in Admin → Scheduled Jobs count as off', async () => {
@@ -240,7 +246,7 @@ describe('backups never fail silently (#1563)', () => {
       const bm = await start();
       await bm.createBackup(CTX);
       later(8 * DAY);
-      expect((await start()).getManagerStatus()).toMatchObject({ kind: 'outage', reason: expect.stringMatching(/^No good backup since/) });
+      expect((await start()).getManagerStatus()).toMatchObject({ kind: 'outage', reason: expect.stringMatching(/^There has been no good backup since/) });
     });
   });
 
@@ -262,7 +268,8 @@ describe('backups never fail silently (#1563)', () => {
     provider.freeSpace = async () => 10;
     await expect(bm.createBackup(CTX)).rejects.toThrow(/not enough free space at the backup destination .*10 B free.*Nothing was written/);
     expect(fs.readdirSync(backups()).sort()).toEqual(before);
-    expect(bm.getManagerStatus()).toMatchObject({ kind: 'outage', reason: expect.stringMatching(/not enough free space/) });
+    expect(bm.getManagerStatus()).toMatchObject({ kind: 'outage', reason: expect.stringMatching(/^The last backup failed/) });
+    expect((await bm.getBackupHealth()).fault).toMatch(/not enough free space/);
     provider.freeSpace = async () => 1024 ** 4;
     await bm.createBackup(CTX);
     expect(bm.getManagerStatus()).toEqual({ state: 'ready' });
@@ -286,7 +293,8 @@ describe('backups never fail silently (#1563)', () => {
       await expect(bm.createBackup(CTX, { filename: 'corrupt-ngdpbase-backup.json.gz' })).rejects.toThrow(/does not read back, so it was removed/);
       expect(fs.existsSync(path.join(backups(), 'corrupt-ngdpbase-backup.json.gz.enc'))).toBe(false);
       expect(fs.readdirSync(backups()).filter((f) => f.startsWith('corrupt-'))).toEqual([]);
-      expect(bm.getManagerStatus()).toMatchObject({ kind: 'outage', reason: expect.stringMatching(/does not read back/) });
+      expect(bm.getManagerStatus()).toMatchObject({ kind: 'outage', reason: expect.stringMatching(/^The last backup failed/) });
+      expect((await bm.getBackupHealth()).fault).toMatch(/does not read back/);
     });
 
     test('a bad GCM tag (the last byte) fails the read-back', async () => {

@@ -57,6 +57,7 @@ import type FileManager from './FileManager.js';
 import type { FilePlace } from '../types/File.js';
 import { storeKindFromConfig } from '../utils/privateStoreDoor.js';
 import type NotificationManager from './NotificationManager.js';
+import { STAGED_RESTORE_FIX, stagedRestoreNotApplied } from '../utils/plainAttention.js';
 
 /**
  * Minimal interface for MediaManager — avoids a circular import.
@@ -411,7 +412,10 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       await this.attachmentProvider.initialize(config.readOnly === true ? { readOnly: true } : {});
       // #1876: a staged restore of the files that was set aside is shown, not just logged.
       const restored = this.attachmentProvider.takeRestoreAtStart?.();
-      if (restored?.refused) this.markNeedsAttention(`A staged restore of the attachment files was not applied: ${restored.refused}`);
+      if (restored?.refused) {
+        logger.warn(`[AttachmentManager] A staged restore of the attachment files was not applied: ${restored.refused}`);
+        this.markNeedsAttention(stagedRestoreNotApplied('the attached files'), undefined, STAGED_RESTORE_FIX);
+      }
 
       logger.info(`📎 AttachmentManager initialized with ${this.providerClass}`);
       logger.info(`📎 Max attachment size: ${this.formatSize(this.maxSize)}`);
@@ -999,7 +1003,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       // The pool's own failure (a metadata file it cannot write, a full disk): named by class, tried at the next start.
       const reason = `File uploaders were not converted to identity @ids (${errorClassOf(err)}); the next start tries again (#2097)`;
       logger.warn(`[AttachmentManager] ${reason}`);
-      this.markNeedsAttention(reason);
+      this.markNeedsAttention('Some files still name who uploaded them the old way, because the update did not finish. Restart the site to try again.');
       return;
     }
     this.reportUploaderConversion(changed, counts, 'shared file');
@@ -1041,9 +1045,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
   /** The identity store could not answer: nothing is converted this start, and the next start tries again (#2097). */
   private postponeUploaderConversion(why: string): void {
-    const reason = 'File uploaders were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2097)';
-    logger.warn(`[AttachmentManager] ${reason}: ${why}`);
-    this.markNeedsAttention(reason);
+    logger.warn(`[AttachmentManager] File uploaders were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2097): ${why}`);
+    // #2354: the dashboard says it in plain words; the developer detail is in the line above.
+    this.markNeedsAttention('Some files still name who uploaded them the old way, because the contacts were not available when the site started. Restart the site to try again.');
   }
 
   /**
@@ -2291,8 +2295,10 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const reason = `Vault pages use files in the shared attachment pool, which is served like any public attachment: ${detail}. ` +
       'They were left as they are; "Move into vault" on the admin dashboard, or on the owner\'s profile for a sealed vault, moves them in (#1842)';
     logger.error(`📎 ${reason}`);
-    this.poolFileReason = reason;
-    if (this.markNeedsAttention(reason) && opts.notify) {
+    // #2354: the dashboard says it in plain words; the owners and counts are in the log line above.
+    const plain = `${this.poolFileFindings.length === 1 ? 'A private vault page uses' : `${this.poolFileFindings.length} private vault pages use`} files from the shared attachment pool, which anyone can open like any public attachment. Use "Move into vault" on this page, or on the owner's profile for a sealed vault.`;
+    this.poolFileReason = plain;
+    if (this.markNeedsAttention(plain) && opts.notify) {
       try {
         await this.engine.getManager<NotificationManager>('NotificationManager')
           ?.notifyAdmins({ level: 'error', title: 'Vault pages use files outside their vault', message: `${reason}.` });

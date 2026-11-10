@@ -781,8 +781,12 @@ class PageManager extends BaseManager implements CatalogSource {
       }
       const reason = reasons.join('. ');
       logger.error(`📄 ${reason}`);
+      // #2354: the dashboard says it in plain words; the owners and files are in the log line above.
+      const plain = found.length > 0
+        ? `${found.length === 1 ? 'A private vault is' : `${found.length} private vaults are`} marked as encrypted but ${found.length === 1 ? 'holds' : 'hold'} files that are not, so ${found.length === 1 ? 'it stays' : 'they stay'} closed. Move or remove those files on the server, outside this page, then ask the owner to open the vault.`
+        : `${mixed.length === 1 ? 'An encrypted private vault holds' : `${mixed.length} encrypted private vaults hold`} files that are not encrypted. Decide what to do with those files; they were left as they are.`;
       // Closed vaults are down; open ones holding plaintext work and need an admin (#1946).
-      if (found.length > 0 ? this.markDegraded(reason) : this.markNeedsAttention(reason)) {
+      if (found.length > 0 ? this.markDegraded(plain) : this.markNeedsAttention(plain)) {
         try {
           await this.engine.getManager<NotificationManager>('NotificationManager')?.notifyAdmins({
             level: 'error', title: 'Encrypted vaults hold unencrypted files', message: `${reason}.`
@@ -4807,7 +4811,7 @@ class PageManager extends BaseManager implements CatalogSource {
       const classes = [...new Set(result.skipErrors)].sort().join(', ');
       const reason = `${result.pagesSkipped} ${what}(s) or deleted page(s) were skipped by the authorship conversion (${classes}) and keep their usernames; the next start tries them again (#2097)`;
       logger.warn(`[PageManager] ${reason}`);
-      this.markNeedsAttention(reason);
+      this.markNeedsAttention(`${result.pagesSkipped} ${result.pagesSkipped === 1 ? 'page' : 'pages'} could not be updated to name their authors the new way and still use the old way. Restart the site to try again.`);
     }
     if (result.pagesRefused > 0) {
       logger.info(`[PageManager] ${result.pagesRefused} ${what}(s) kept their username author/editor: their frontmatter could not be rewritten line by line (#2097)`);
@@ -4816,9 +4820,9 @@ class PageManager extends BaseManager implements CatalogSource {
 
   /** The identity store could not answer: nothing more is converted this start, and the next start tries again (#2097). */
   private postponeAuthorshipConversion(why: string): void {
-    const reason = 'Page authorship was not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2097)';
-    logger.warn(`[PageManager] ${reason}: ${why}`);
-    this.markNeedsAttention(reason);
+    logger.warn(`[PageManager] Page authorship was not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2097): ${why}`);
+    // #2354: the dashboard says it in plain words; the developer detail is in the line above.
+    this.markNeedsAttention('Some pages still name their authors the old way, because the contacts were not available when the site started. Restart the site to try again.');
   }
 
   /**
