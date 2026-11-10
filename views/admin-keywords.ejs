@@ -655,9 +655,15 @@ document.addEventListener('DOMContentLoaded', function() {
           const pagesList = document.getElementById('deletePagesList');
 
           if (result.pages.length > 0) {
-            pagesList.innerHTML = '<ul class="list-group">' +
-              result.pages.map(p => `<li class="list-group-item list-group-item-sm">${p}</li>`).join('') +
-              '</ul>';
+            const ul = document.createElement('ul');
+            ul.className = 'list-group';
+            result.pages.forEach(p => {
+              const li = document.createElement('li');
+              li.className = 'list-group-item list-group-item-sm';
+              li.textContent = p;
+              ul.appendChild(li);
+            });
+            pagesList.replaceChildren(ul);
           } else {
             pagesList.innerHTML = '<p class="text-muted">No pages are using this keyword.</p>';
           }
