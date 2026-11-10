@@ -91,26 +91,18 @@
 
       <!-- Side-by-Side Diff View -->
       <div id="sideBySideView" class="diff-container" style="display: none;">
-        <div class="row">
-          <div class="col-md-6">
-            <div class="card">
-              <div class="card-header bg-danger text-white">
-                <h6 class="mb-0">Version <%= version1.version %> (Old)</h6>
-              </div>
-              <div class="card-body p-0">
-                <div class="diff-pre mb-0" id="oldVersion">Loading...</div>
-              </div>
+        <div class="sbs" id="sbsGrid">
+          <div class="card sbs-pane">
+            <div class="card-header bg-danger text-white">
+              <h6 class="mb-0">Version <%= version1.version %> (Old)</h6>
             </div>
+            <div class="diff-pre mb-0" id="oldVersion">Loading...</div>
           </div>
-          <div class="col-md-6">
-            <div class="card">
-              <div class="card-header bg-success text-white">
-                <h6 class="mb-0">Version <%= version2.version %> (New)</h6>
-              </div>
-              <div class="card-body p-0">
-                <div class="diff-pre mb-0" id="newVersion">Loading...</div>
-              </div>
+          <div class="card sbs-pane">
+            <div class="card-header bg-success text-white">
+              <h6 class="mb-0">Version <%= version2.version %> (New)</h6>
             </div>
+            <div class="diff-pre mb-0" id="newVersion">Loading...</div>
           </div>
         </div>
       </div>
@@ -173,6 +165,32 @@
   :root:not([data-bs-theme]) .diff-line-added .diff-line-marker,
   :root:not([data-bs-theme]) .diff-line-deleted .diff-line-marker { color: inherit; }
 }
+
+/* Side by side (#2352): each pane is a subgrid over one shared set of row
+   tracks, so a pair of lines is as tall as the taller of the two and the panes
+   stay level when a line wraps on one side. Below 768px the panes stack. */
+.sbs { display: grid; grid-template-columns: 1fr 1fr; column-gap: 1.5rem; row-gap: 1.5rem; }
+.sbs-pane { grid-row: 1 / span calc(var(--sbs-rows, 1) + 1); display: grid; grid-template-rows: subgrid; row-gap: 0; }
+.sbs-pane .diff-pre { grid-row: 2 / span var(--sbs-rows, 1); display: grid; grid-template-rows: subgrid; row-gap: 0; align-content: start; border: 0; border-radius: 0; }
+.sbs-pane .diff-pre > span { min-width: 0; }
+@media (max-width: 767.98px) {
+  .sbs, .sbs-pane, .sbs-pane .diff-pre { display: block; }
+  .sbs-pane { margin-bottom: 1rem; }
+}
+
+/* Filler: stands in for a line the other side has. It takes its height from the
+   paired row (the grid stretches it); its ::before is a zero-width text line so
+   an unpaired filler is as tall as a text row, whatever the padding. */
+.diff-line-filler {
+  display: block;
+  padding: 2px 5px;
+  user-select: none;
+  background-color: var(--code-bg);
+  background-image: repeating-linear-gradient(135deg, transparent 0 5px, var(--diff-filler-line, #6c757d) 5px 6px);
+}
+[data-bs-theme="dark"] .diff-line-filler { --diff-filler-line: #8b949e; }
+@media (prefers-color-scheme: dark) { :root:not([data-bs-theme]) .diff-line-filler { --diff-filler-line: #8b949e; } }
+.diff-line-filler::before { content: ''; display: inline-block; width: 0; }
 
 .diff-line-marker {
   display: inline-block;
@@ -238,32 +256,51 @@ function renderUnifiedDiff() {
   container.innerHTML = html;
 }
 
+// Pair the lines of one changed block (a run of removed and added lines) row
+// by row; the shorter side gets filler rows (#2352).
+function pairSideBySide(parts) {
+  const rows = [];
+  let removed = [];
+  let added = [];
+  const flush = () => {
+    const n = Math.max(removed.length, added.length);
+    for (let i = 0; i < n; i++) {
+      rows.push({ oldText: i < removed.length ? removed[i] : null, newText: i < added.length ? added[i] : null, changed: true });
+    }
+    removed = [];
+    added = [];
+  };
+  parts.forEach(([type, text]) => {
+    if (type === -1) removed.push(text);
+    else if (type === 1) added.push(text);
+    else {
+      flush();
+      rows.push({ oldText: text, newText: text, changed: false });
+    }
+  });
+  flush();
+  return rows;
+}
+
 // Render side-by-side diff
 function renderSideBySideDiff() {
   const oldContainer = document.getElementById('oldVersion');
   const newContainer = document.getElementById('newVersion');
+  const side = (text, cls) => text === null
+    ? '<span class="diff-line-filler" aria-hidden="true"></span>'
+    : `<span class="${cls}">${escapeHtml(text)}</span>`;
 
+  const rows = pairSideBySide(diffData);
   let oldHtml = '';
   let newHtml = '';
-
-  diffData.forEach(part => {
-    const [type, text] = part;
-
-    if (type === -1) {
-      // Deletion - only in old version
-      oldHtml += `<span class="diff-line-deleted">${escapeHtml(text)}</span>`;
-    } else if (type === 1) {
-      // Addition - only in new version
-      newHtml += `<span class="diff-line-added">${escapeHtml(text)}</span>`;
-    } else {
-      // Unchanged - in both versions
-      oldHtml += `<span class="diff-line-unchanged">${escapeHtml(text)}</span>`;
-      newHtml += `<span class="diff-line-unchanged">${escapeHtml(text)}</span>`;
-    }
+  rows.forEach(row => {
+    oldHtml += side(row.oldText, row.changed ? 'diff-line-deleted' : 'diff-line-unchanged');
+    newHtml += side(row.newText, row.changed ? 'diff-line-added' : 'diff-line-unchanged');
   });
 
   oldContainer.innerHTML = oldHtml;
   newContainer.innerHTML = newHtml;
+  document.getElementById('sbsGrid').style.setProperty('--sbs-rows', String(rows.length));
 }
 
 // Escape HTML for display
