@@ -20,11 +20,46 @@
     <% (items || []).forEach(function(item) { %>
     <div class="card mb-3">
         <div class="card-body">
-            <p class="mb-0"><%= item.text %> <a href="<%= item.link.href %>"><%= item.link.label %></a></p>
+            <p class="mb-0"><%= item.text %><% if (item.link) { %> <a href="<%= item.link.href %>"><%= item.link.label %></a><% } %></p>
+            <% if (item.action) { %>
+            <form method="POST" action="/admin/configuration" class="mt-2 upgrade-setting-action">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="property" value="<%= item.action.property %>">
+                <input type="hidden" name="value" value="<%= item.action.value %>">
+                <button type="submit" class="btn btn-sm btn-warning"<%- lockedUnless('config-manage') %>><%= item.action.label %></button>
+                <div class="text-muted small mt-1"><%= item.action.note %></div>
+            </form>
+            <% } %>
         </div>
     </div>
     <% }); %>
 
 </div>
+
+<% if ((items || []).some(function(i) { return i.action; })) { %>
+<script nonce="<%= locals.cspNonce %>">
+    // The same save Admin → Configuration makes, with its fresh sign-in prompt; the list is shown again once it is saved.
+    document.querySelectorAll('form.upgrade-setting-action').forEach(function(form) {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var btn = form.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            csrfFetch('/admin/configuration', {
+                method: 'POST',
+                headers: { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+                body: new URLSearchParams(new FormData(form)).toString()
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (window.followReauth(data)) return;
+                if (data.success) { window.location.href = '/admin/upgrade'; return; }
+                btn.disabled = false;
+                alert(data.error || 'Nothing was changed. Try again.');
+            })
+            .catch(function() { btn.disabled = false; alert('Nothing was changed. Try again.'); });
+        });
+    });
+</script>
+<% } %>
 
 <%- include('footer') %>
