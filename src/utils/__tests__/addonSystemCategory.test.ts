@@ -254,7 +254,9 @@ describe('#1559 a mistyped site entry warns, never forces', () => {
       expect(seen.blocked).toEqual([]);
       const status = vm.getManagerStatus();
       expect(status).toMatchObject({ state: 'degraded', configKey: SC });
-      expect(status.reason).toMatch(/system-category 'general': encrypt must be true or false, got "true"; it is read as false, so the vault is not sealed/);
+      // #2354: plain words on the dashboard; the entry and value are in the log and the notice.
+      expect(status.reason).toMatch(/^Some page categories have a yes\/no setting that holds something else/);
+      expect(error.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(/system-category 'general': encrypt must be true or false, got "true"; it is read as false, so the vault is not sealed/);
       expect(seen.notifications).toHaveLength(1);
       expect(seen.notifications[0]).toMatchObject({ level: 'error' });
       expect(String(seen.notifications[0].message)).toMatch(/encrypt.*"true".*read as false/);
@@ -268,7 +270,8 @@ describe('#1559 a mistyped site entry warns, never forces', () => {
     const seen: Seen = { blocked: [], notifications: [] };
     const merged = mergeConfigWithAddons(shipped, { [SC]: { general: { defaultPrivate: 'true' } } }, root).merged;
     const vm = await validationManagerFor(merged, seen);
-    expect(vm.getManagerStatus().reason).toMatch(/defaultPrivate .* got "true"; it is read as false, so new pages start public/);
+    expect(vm.getManagerStatus().reason).toMatch(/new pages may start public/);
+    expect(String(seen.notifications[0].message)).toMatch(/defaultPrivate .* got "true"; it is read as false, so new pages start public/);
   });
 
   test('a sound map raises nothing', async () => {

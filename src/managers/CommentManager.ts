@@ -123,9 +123,9 @@ export default class CommentManager extends BaseManager {
 
   /** The identity store could not answer: nothing more is converted this start, and the next start tries again (#2041). */
   private postponeConversion(why: string): void {
-    const reason = 'Comment authors were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041)';
-    logger.warn(`[CommentManager] ${reason}: ${why}`);
-    this.markNeedsAttention(reason);
+    logger.warn(`[CommentManager] Comment authors were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041): ${why}`);
+    // #2354: the dashboard says it in plain words; the developer detail is in the line above.
+    this.markNeedsAttention('Some comments still name their authors the old way, because the contacts were not available when the site started. Restart the site to try again.');
   }
 
   /**

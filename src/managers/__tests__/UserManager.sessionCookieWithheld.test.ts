@@ -34,7 +34,8 @@ describe('UserManager.reportSessionCookieWithheld (#2071)', () => {
     expect(manager.getManagerStatus()).toMatchObject({
       state: 'degraded',
       kind: 'attention',
-      reason: SESSION_COOKIE_WITHHELD_MESSAGE,
+      // #2354: plain words on the dashboard; the developer message is in the log and the notice.
+      reason: 'Nobody can sign in over a plain http connection. Serve the site over https.',
       configKey: 'ngdpbase.session.secure'
     });
     expect(notes).toHaveLength(1);

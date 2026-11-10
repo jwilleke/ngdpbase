@@ -271,9 +271,9 @@ class NotificationManager extends BaseManager {
 
   /** The identity store could not answer: nothing is converted this start, and the next start tries again (#2041). */
   private postponeConversion(why: string): void {
-    const reason = 'Notification recipients were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041)';
-    this.logger.warn(`${reason}: ${why}`);
-    this.markNeedsAttention(reason);
+    this.logger.warn(`Notification recipients were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041): ${why}`);
+    // #2354: the dashboard says it in plain words; the developer detail is in the line above.
+    this.markNeedsAttention('Some notifications still name their recipients the old way, because the contacts were not available when the site started. Restart the site to try again.');
   }
 
   /**

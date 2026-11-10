@@ -228,7 +228,7 @@ describe('ConsentManager (#1603)', () => {
       pages['terms-of-service'] = null;
       expect((await cm.pendingFor('ann')).map((d) => d.id)).toEqual(['privacy-policy']);
       expect(cm.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention' });
-      expect(cm.getManagerStatus().reason).toMatch(/No 'terms-of-service' page/);
+      expect(cm.getManagerStatus().reason).toMatch(/^The 'terms-of-service' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync\./);
 
       pages['privacy-policy'] = null;
       expect(await cm.pendingFor('ann')).toEqual([]);
@@ -326,7 +326,7 @@ describe('ConsentManager (#1603)', () => {
     test('a missing page asks nothing and needs attention', async () => {
       pages['recovery-words'] = null;
       expect(await cm.pendingFor('ann', 'recovery-words', WORDS)).toEqual([]);
-      expect(cm.getManagerStatus().reason).toMatch(/No 'recovery-words' page/);
+      expect(cm.getManagerStatus().reason).toMatch(/^The 'recovery-words' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync\./);
     });
 
     test('no add-on may take its scope', () => {
@@ -362,7 +362,7 @@ describe('ConsentManager (#1603)', () => {
     test('a missing page asks nothing and needs attention', async () => {
       pages[SCOPE] = null;
       expect(await cm.pendingFor('ann', SCOPE, ORG_WORDS)).toEqual([]);
-      expect(cm.getManagerStatus().reason).toMatch(/No 'shared-folders-recovery-words' page/);
+      expect(cm.getManagerStatus().reason).toMatch(/^The 'shared-folders-recovery-words' page is missing, so nobody is asked to accept it\. Restore it with Required Pages Sync\./);
     });
   });
 

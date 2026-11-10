@@ -1,0 +1,186 @@
+/**
+ * #2354 — every reason a manager can show in the dashboard's "needs attention" and
+ * "not working" boxes is in plain words: no issue number, setting name, environment
+ * variable, file path, or "see the log". The developer detail is logged beside the
+ * call, not shown.
+ *
+ * The scan reads each call to markNeedsAttention / markDegraded / markFailed in
+ * src and addons, collects the string pieces of its reason (following a local
+ * variable to where it is built), and checks them. Reasons built in a helper are
+ * scanned where they are built (EXTRA_SOURCES) or are exported constants and
+ * functions checked directly below.
+ */
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { BACKUP_KEY_MISSING_PLAIN, backupKeyNotSaved, envKeysChanged, sharedFoldersKeyNotSaved, backupHealthPlain } from '../managers/BackupManager';
+import { SEND_FAILING_REASON } from '../managers/EmailManager';
+import { PDF_UNAVAILABLE_REASON } from '../managers/ExportManager';
+import { legacyStoreKeysReason } from '../utils/legacyStoreKeys';
+import { STAGED_RESTORE_FIX, stagedRestoreNotApplied, UNUSABLE_FOLDER_REASON } from '../utils/plainAttention';
+
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+/** What a home user must never be shown. */
+const BANNED: Array<[string, RegExp]> = [
+  ['an issue number', /#\d/],
+  ['a setting name', /ngdpbase\./i],
+  ['an environment variable', /NGDPBASE_/],
+  ['a docs path', /docs\//],
+  ['a file path', /(?:^|[\s(])(?:\.{1,2}\/|\/)[\w.-]+|[\w-]+\/[\w.-]+\.\w{1,5}\b|\b\w+\.(?:json|env|db|ts|js|ejs|md|ya?ml)\b|\*\.\w+/],
+  ['the log', /\blogs?\b/i],
+  ['JSON', /[{}]|\bJSON\b/i]
+];
+
+function violations(raw: string): string[] {
+  // A template's ${...} slots are code, not words; what they print is checked where it is built.
+  const text = raw.replace(/\$\{[^}]*\}/g, '');
+  return BANNED.filter(([, re]) => re.test(text)).map(([what]) => what);
+}
+
+const walk = (dir: string): string[] =>
+  fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    if (['__tests__', 'node_modules', 'dist'].includes(e.name)) return [];
+    const full = path.join(dir, e.name);
+    return e.isDirectory() ? walk(full) : [full];
+  });
+
+/** The top-level arguments of the call whose `(` is at `open`. */
+function argsAt(text: string, open: number): string[] {
+  const args: string[] = [];
+  let depth = 0;
+  let start = open + 1;
+  let quote = '';
+  for (let i = open; i < text.length; i++) {
+    const c = text[i];
+    if (quote) {
+      if (c === '\\') i++;
+      else if (c === quote) quote = '';
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') quote = c;
+    else if ('([{'.includes(c)) depth++;
+    else if (')]}'.includes(c)) {
+      depth--;
+      if (depth === 0) {
+        args.push(text.slice(start, i).trim());
+        return args;
+      }
+    } else if (c === ',' && depth === 1) {
+      args.push(text.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  return args;
+}
+
+/** The text of every quoted piece in `expr`, template pieces included. */
+function literals(expr: string): string[] {
+  return [...expr.matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|`((?:[^`\\]|\\.)*)`/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? '');
+}
+
+interface Reason { where: string; text: string }
+
+/** Pieces of a reason that are built outside the marking call. */
+const EXTRA_SOURCES: Array<{ file: string; call: string; arg: number }> = [
+  { file: 'src/managers/ConsentManager.ts', call: 'this.problems.set(', arg: 1 },
+  { file: 'src/managers/MediaManager.ts', call: 'reasons.push(', arg: 0 },
+  { file: 'src/managers/DatabaseManager.ts', call: 'this.faults.set(', arg: 1 }
+];
+
+const MARKERS = /(?<![\w.])(?:this\.|this\.state\.)(markNeedsAttention|markDegraded|markFailed)\(/g;
+
+function collect(): { reasons: Reason[]; unresolved: string[] } {
+  const reasons: Reason[] = [];
+  const unresolved: string[] = [];
+  const files = [...walk(path.join(ROOT, 'src')), ...(fs.existsSync(path.join(ROOT, 'addons')) ? walk(path.join(ROOT, 'addons')) : [])]
+    .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.endsWith('.d.ts'));
+  for (const file of files) {
+    const text = fs.readFileSync(file, 'utf8');
+    const rel = path.relative(ROOT, file);
+    for (const m of text.matchAll(MARKERS)) {
+      const line = text.slice(0, m.index).split('\n').length;
+      const first = argsAt(text, m.index + m[0].length - 1)[0] ?? '';
+      // A reason passed on, not built: the manager that builds it is scanned.
+      if (first === 'reason' && /markNeedsAttention: \(reason\)/.test(text.slice(Math.max(0, m.index - 80), m.index + 80))) continue;
+      let pieces = literals(first);
+      if (/^[A-Za-z_]\w*$/.test(first)) {
+        // A local variable: its declaration, up to the statement's end.
+        const decl = text.slice(0, m.index).lastIndexOf(`const ${first}`);
+        if (decl >= 0) pieces = literals(text.slice(decl, text.indexOf(';\n', decl)));
+        else pieces = [];
+      }
+      reasons.push({ where: `${rel}:${line}`, text: pieces.join(' ') });
+      if (pieces.length === 0) unresolved.push(`${rel}:${line} ${first}`);
+    }
+  }
+  for (const extra of EXTRA_SOURCES) {
+    const text = fs.readFileSync(path.join(ROOT, extra.file), 'utf8');
+    let at = text.indexOf(extra.call);
+    let found = 0;
+    while (at >= 0) {
+      const arg = argsAt(text, at + extra.call.length - 1)[extra.arg] ?? '';
+      reasons.push({ where: `${extra.file} ${extra.call}`, text: literals(arg).join(' ') });
+      found++;
+      at = text.indexOf(extra.call, at + 1);
+    }
+    expect(found).toBeGreaterThan(0);
+  }
+  return { reasons, unresolved };
+}
+
+describe('#2354 every dashboard reason is in plain words', () => {
+  const { reasons, unresolved } = collect();
+
+  test('the scan finds the call sites', () => {
+    expect(reasons.length).toBeGreaterThan(40);
+  });
+
+  test('every call is read: a reason built elsewhere is one of the known helpers', () => {
+    // Each of these is built by an exported helper or a method scanned through EXTRA_SOURCES, and checked below.
+    const allowed = /ConsentManager\.ts:\d+ reason|MediaManager\.ts:\d+ |DatabaseManager\.ts:\d+ (reason|plain)|ConfigurationManager\.ts:\d+ legacyStoreKeysReason|BackupManager\.ts:\d+ (reminder|BACKUP_KEY_MISSING_PLAIN|plain)|EmailManager\.ts:\d+ SEND_FAILING_REASON|ExportManager\.ts:\d+ PDF_UNAVAILABLE_REASON|BaseManager\.ts:\d+ (UNUSABLE_FOLDER_REASON|stagedRestoreNotApplied)|AttachmentManager\.ts:\d+ stagedRestoreNotApplied|PolicyEvaluator\.ts/;
+    expect(unresolved.filter((u) => !allowed.test(u))).toEqual([]);
+  });
+
+  test('no reason has an issue number, setting, variable, path, JSON or "log" in it', () => {
+    const bad = reasons
+      .filter((r) => !r.where.includes('PolicyEvaluator.ts')) // #2350's, tested with it
+      .map((r) => ({ where: r.where, text: r.text, found: violations(r.text) }))
+      .filter((r) => r.found.length > 0);
+    expect(bad).toEqual([]);
+  });
+
+  test('the exported reasons and the text built by helpers are plain too', () => {
+    const shown = [
+      BACKUP_KEY_MISSING_PLAIN,
+      backupKeyNotSaved(),
+      sharedFoldersKeyNotSaved(),
+      envKeysChanged({ added: ['NGDPBASE_SOMETHING'], removed: ['NGDPBASE_OTHER', 'NGDPBASE_THIRD'] }),
+      backupHealthPlain({ failure: { reason: 'EACCES /data/backups', at: '2026-01-02T03:04:05Z' } as never, lastGood: null }),
+      backupHealthPlain({ failure: null, lastGood: { filename: 'x.json', at: '2026-01-02T03:04:05Z', size: 1, location: '/data' } }),
+      SEND_FAILING_REASON,
+      PDF_UNAVAILABLE_REASON,
+      legacyStoreKeysReason([{ key: 'ngdpbase.stores.default.encrypt', kind: 'default', setting: 'encrypt', message: 'x' }]),
+      legacyStoreKeysReason([
+        { key: 'ngdpbase.stores.a.owner', kind: 'a', setting: 'owner', message: 'x' },
+        { key: 'ngdpbase.stores.b.owner', kind: 'b', setting: 'owner', message: 'x' }
+      ]),
+      stagedRestoreNotApplied('the attached files'),
+      UNUSABLE_FOLDER_REASON
+    ];
+    for (const text of shown) expect({ text, found: violations(text) }).toEqual({ text, found: [] });
+  });
+
+  test('a link to where it is fixed points inside the app', () => {
+    expect(STAGED_RESTORE_FIX.fixUrl).toMatch(/^\/admin\//);
+  });
+
+  test('the scan would catch the wording it forbids', () => {
+    for (const bad of ['see the server log', 'Set ngdpbase.application.base-url', 'NGDPBASE_BACKUP_KEY is not set', 'closed (#1723)', 'in ./data/x.json', 'see docs/guides/x', 'in /var/data']) {
+      expect(violations(bad).length).toBeGreaterThan(0);
+    }
+    for (const fine of ['Backups are not encrypted. This is set in the server\'s settings, outside this page.', 'Choose yes/no for each', 'over https, not plain http']) {
+      expect(violations(fine)).toEqual([]);
+    }
+  });
+});

@@ -226,15 +226,15 @@ class ConsentManager extends BaseManager {
     }
     const whose = scope === CORE_CONSENT_SCOPE ? '' : ` (${scope})`;
     if (!meta) {
-      const fix = SUBJECT_CONSENT_SCOPES.includes(scope)
-        ? 'Restore it (Admin → Required Pages Sync)'
-        : `Restore it (Admin → Required Pages Sync for core's) or remove it from ${scope === CORE_CONSENT_SCOPE ? CONSENT_DOCUMENTS_KEY : 'the add-on\'s registration'}`;
-      this.problems.set(id, `No '${id}' page${whose}: nobody is asked to accept it. ${fix}.`);
+      const fix = 'Restore it with Required Pages Sync';
+      logger.warn(`[ConsentManager] No '${id}' page${whose}: nobody is asked to accept it`);
+      this.problems.set(id, `The '${id}' page is missing, so nobody is asked to accept it. ${fix}.`);
       return null;
     }
     const version = versionOf(meta['version']);
     if (!version) {
-      this.problems.set(id, `The '${id}' page${whose} has no version: in its front matter, so nobody is asked to accept it.`);
+      logger.warn(`[ConsentManager] The '${id}' page${whose} has no version in its front matter, so nobody is asked to accept it`);
+      this.problems.set(id, `The '${id}' page has no version number, so nobody is asked to accept it. Add one to the page.`);
       return null;
     }
     this.problems.delete(id);
@@ -251,7 +251,7 @@ class ConsentManager extends BaseManager {
   private reportProblems(): void {
     const reason = this.problems.size > 0 ? [...this.problems.values()].join(' ') : null;
     if (reason === this.attentionReason) return;
-    if (reason) this.markNeedsAttention(reason, CONSENT_DOCUMENTS_KEY);
+    if (reason) this.markNeedsAttention(reason, CONSENT_DOCUMENTS_KEY, { fixUrl: '/admin/required-pages', fixLabel: 'Open Admin → Required Pages Sync' });
     else if (this.attentionReason) this.markReadyIfDegradedBy(this.attentionReason);
     this.attentionReason = reason;
   }

@@ -235,7 +235,7 @@ export class OidcManager extends BaseManager {
     }
 
     if (!configManager.isBaseUrlExplicit()) {
-      this.refuse('the issuer is ngdpbase.application.base-url + /oidc, and that key is not set explicitly (#642)', 'ngdpbase.application.base-url');
+      this.refuse('the issuer is ngdpbase.application.base-url + /oidc, and that key is not set explicitly (#642)', "the site's web address has not been set. Set it in the settings.", 'ngdpbase.application.base-url');
       return;
     }
     this.issuer = issuerFor(configManager.getBaseURL());
@@ -243,7 +243,7 @@ export class OidcManager extends BaseManager {
 
     const { config: operatorConfig, problems } = operatorOidcConfig(configManager.getCustomProperties());
     if (problems.length > 0) {
-      this.refuse(problems.join('; '), DERIVED.find((k) => problems.some((p) => p.startsWith(k))));
+      this.refuse(problems.join('; '), 'one of its settings is not valid. Correct it in the settings.', DERIVED.find((k) => problems.some((p) => p.startsWith(k))));
       return;
     }
 
@@ -251,7 +251,7 @@ export class OidcManager extends BaseManager {
     try {
       this.ensureKeys(dataFolder);
     } catch (err) {
-      this.refuse((err as Error).message);
+      this.refuse((err as Error).message, "its signing keys could not be saved. The server's data folder must be writable; this is fixed on the server, outside this page.");
       return;
     }
 
@@ -287,7 +287,7 @@ export class OidcManager extends BaseManager {
       // Throws on unsafe options now, at boot, rather than at the first request.
       this.pkg.assertSafeOptions(this.options);
     } catch (err) {
-      this.refuse((err as Error).message);
+      this.refuse((err as Error).message, 'its settings were refused as unsafe. Review the single sign-on settings.');
       return;
     }
     logger.info(`[OidcManager] configured: issuer ${this.issuer}; starts once trust proxy is resolved`);
@@ -303,7 +303,7 @@ export class OidcManager extends BaseManager {
     try {
       this.auth = this.pkg.createAuthServer({ ...this.options, trustProxy: settings.trustProxy });
     } catch (err) {
-      this.refuse((err as Error).message);
+      this.refuse((err as Error).message, 'it could not be set up. Ask whoever runs the server to look into it.');
       return null;
     }
     this.markReady();
@@ -645,9 +645,10 @@ export class OidcManager extends BaseManager {
   }
 
   /** Enabled but unusable: say why, loudly, and mount nothing. */
-  private refuse(reason: string, configKey?: string): void {
+  private refuse(reason: string, plain: string, configKey?: string): void {
     this.options = null;
-    this.markDegraded(`OpenID Connect provider not started: ${reason}`, configKey);
+    // #2354: the dashboard shows the plain words; the log keeps the developer reason.
+    this.markDegraded(`Single sign-on is turned on but has not started: ${plain}`, configKey);
     logger.error(`[OidcManager] ${OIDC_ENABLED_KEY} is true but the provider is not started: ${reason}`);
   }
 }

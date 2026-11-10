@@ -307,7 +307,9 @@ class ValidationManager extends BaseManager {
     if (lines.length === 0) return;
     const reason = `${lines.join('. ')}. Fix ${SYSTEM_CATEGORY_KEY} in the configuration`;
     logger.error(`[ValidationManager] ${reason}`);
-    if (this.markNeedsAttention(reason, SYSTEM_CATEGORY_KEY)) {
+    // #2354: the dashboard says it in plain words; the entries and the values are in the log line above.
+    const plain = 'Some page categories have a yes/no setting that holds something else, so the site guesses what was meant (for example, new pages may start public, or a vault may stay unencrypted). Correct them in the settings.';
+    if (this.markNeedsAttention(plain, SYSTEM_CATEGORY_KEY)) {
       try {
         await this.engine.getManager<NotificationManager>('NotificationManager')?.notifyAdmins({
           level: 'error', title: 'A system-category value has the wrong type', message: `${reason}.`
