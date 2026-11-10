@@ -857,7 +857,7 @@ void (async (): Promise<void> => {
     aalReachFor?(username: string): Promise<{ now: 1 | 2 | 3 | 0; ifEnrolled: 1 | 2 | 3 | 0 }>;
     rolesAwaitingEnrolment?(roles: readonly string[], reach: { now: number; ifEnrolled: number }): string[];
     hasCredential?(username: string, kind: 'passkey'): boolean;
-    passkeyRelyingParty?(): unknown;
+    passkeysAvailable?(): boolean;
     subjectActingFor?(req: Request, self: NonNullable<Request['userContext']>): Promise<NonNullable<Request['userContext']>>;
     actingForChoices?(req: Request): { grants: unknown[] } | null;
     takeStepUpNotice?(req: Request): boolean;
@@ -962,7 +962,7 @@ void (async (): Promise<void> => {
           if (awaiting.length > 0) res.locals.aalEnrolNag = {
             roles: awaiting,
             // #2345: name a passkey only where one can be added (not off, not an address passkeys can't use).
-            passkeysAvailable: Boolean(authManagerForRoles?.passkeyRelyingParty?.())
+            passkeysAvailable: Boolean(authManagerForRoles?.passkeysAvailable?.())
           };
           // #2145: back from a fresh sign-in that could not redo the action; say it can be done now.
           if (authManagerForRoles?.takeStepUpNotice?.(req)) res.locals.stepUpConfirmed = true;
@@ -971,7 +971,7 @@ void (async (): Promise<void> => {
             res.locals.aalStepDown = {
               roles: stepDown.steppedDown,
               hasPasskey: authManagerForRoles?.hasCredential?.(sessionContext.username, 'passkey') ?? false,
-              passkeysAvailable: Boolean(authManagerForRoles?.passkeyRelyingParty?.())
+              passkeysAvailable: Boolean(authManagerForRoles?.passkeysAvailable?.())
             };
           }
           const self = {

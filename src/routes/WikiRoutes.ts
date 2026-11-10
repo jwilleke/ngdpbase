@@ -7145,7 +7145,7 @@ ${panes}
       next,
       prompt,
       needsPasskey,
-      passkeysAvailable: Boolean(authManager?.passkeyRelyingParty()),
+      passkeysAvailable: Boolean(authManager?.passkeysAvailable()),
       hasPasskey: Boolean(authManager?.passkeyRelyingParty() && authManager.hasCredential(user.username, 'passkey')),
       hasPassword,
       hasTotp,

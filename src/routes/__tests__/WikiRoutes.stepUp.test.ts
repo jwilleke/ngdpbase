@@ -26,7 +26,9 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
     authenticate: vi.fn(authenticate),
     reauthenticated: vi.fn(() => ({ provider: 'password', factors: [], amr: ['pwd'], aal: 1, acr: 'aal1', mfa: false, at: 'now' })),
     requiredAalFor: vi.fn(() => 1),
-    passkeyRelyingParty: vi.fn(() => null),
+    passkeyRelyingParty: vi.fn((): unknown => null),
+    // #2345: the real answer, from this double's relying party.
+    passkeysAvailable(...a: Parameters<AuthManager['passkeysAvailable']>) { return AuthManager.prototype.passkeysAvailable.apply(this as never, a); },
     hasCredential: vi.fn(() => false),
     // #1758: step-up is AuthManager's — the real answer, record and completion, on this double.
     engine: null as unknown,
@@ -417,6 +419,18 @@ describe('a page waiting on its prompt asks whether that prompt is confirmed (#2
     const bad = res();
     await env.r.reauthPage(req(session(), { method: 'GET', originalUrl: '/auth/reauth', query: { next: '/profile', prompt: '"><script>' } }), bad);
     expect(bad.render).toHaveBeenCalledWith('reauth', expect.objectContaining({ prompt: '' }));
+  });
+
+  test('#2345: the page is told whether passkeys can work, from the relying party', async () => {
+    const env = routes(false);
+    const flag = async () => {
+      const out = res();
+      await env.r.reauthPage(req(session(), { method: 'GET', originalUrl: '/auth/reauth', query: { next: '/profile' } }), out);
+      return (out.render.mock.calls[0][1] as { passkeysAvailable: boolean }).passkeysAvailable;
+    };
+    expect(await flag()).toBe(false); // off, or an http address passkeys can't use: no relying party
+    env.authManager.passkeyRelyingParty.mockReturnValue({ rpID: 'wiki.example.com' });
+    expect(await flag()).toBe(true);
   });
 
   test('Cancel marks the prompt cancelled, saves the session, and goes back on this site', async () => {

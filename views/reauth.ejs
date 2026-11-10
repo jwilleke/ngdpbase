@@ -65,7 +65,7 @@
           <% } %>
 
           <% if (!hasPasskey && !(typeof hasTotp !== 'undefined' && hasTotp) && (needsPasskey || !hasPassword)) { %>
-            <p class="mb-0">This account has no way to confirm here<%= needsPasskey ? ' that reaches the level your role needs' : '' %>. Add a passkey on your <a href="/profile">profile</a>, or ask an administrator.</p>
+            <p class="mb-0">This account has no way to confirm here<%= needsPasskey ? ' that reaches the level your role needs' : '' %>. Add <%= (typeof passkeysAvailable !== 'undefined' && !passkeysAvailable) ? 'an authenticator app' : 'a passkey' %> on your <a href="/profile">profile</a>, or ask an administrator.</p>
           <% } %>
 
           <%# #2193: a script's prompt is cancelled on the server too, so the page

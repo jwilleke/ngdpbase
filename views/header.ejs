@@ -631,13 +631,19 @@
                 <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2 mt-2" role="alert">
                     <i class="fas fa-key"></i>
                     <span>
+                        <% if (aalStepDown.passkeysAvailable) { %>
                         Your <strong><%= aalStepDown.roles.join(', ') %></strong> role<%= aalStepDown.roles.length === 1 ? ' needs' : 's need' %> a passkey sign-in, so <%= aalStepDown.roles.length === 1 ? 'it is' : 'they are' %> off while you are signed in with a password.
+                        <% } else { %>
+                        Your <strong><%= aalStepDown.roles.join(', ') %></strong> role<%= aalStepDown.roles.length === 1 ? ' needs' : 's need' %> a sign-in with your authenticator app's code, so <%= aalStepDown.roles.length === 1 ? 'it is' : 'they are' %> off while you are signed in with a password alone.
+                        <% } %>
                     </span>
-                    <% if (aalStepDown.hasPasskey) { %>
+                    <% if (aalStepDown.hasPasskey && aalStepDown.passkeysAvailable) { %>
                     <button type="button" class="btn btn-sm btn-warning d-none ms-auto" data-passkey-signin data-redirect="<%= typeof originalUrl !== 'undefined' && originalUrl ? originalUrl : '/' %>" data-error-target="aal-stepdown-error">Sign in with your passkey</button>
                     <script src="/js/passkey.js" defer></script>
-                    <% } else if (aalStepDown.passkeysAvailable) { %>
+                    <% } else if (aalStepDown.passkeysAvailable && !aalStepDown.hasPasskey) { %>
                     <a class="btn btn-sm btn-warning ms-auto" href="/profile">Add a passkey</a>
+                    <% } else { %>
+                    <a class="btn btn-sm btn-warning ms-auto" href="/auth/reauth?next=<%= encodeURIComponent(typeof originalUrl !== 'undefined' && originalUrl ? originalUrl : '/') %>">Sign in again</a>
                     <% } %>
                     <div id="aal-stepdown-error" class="w-100 small text-danger d-none"></div>
                 </div>

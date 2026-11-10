@@ -55,4 +55,14 @@ describe('reauth view (#2193)', () => {
     expect(off).not.toMatch(/passkey/i);
     expect(at(true)).toContain('Your role needs a passkey, or your password with your authenticator app');
   });
+
+  test('#2345: the no-way-to-confirm fallback names a passkey only where one can be added', () => {
+    const at = (passkeysAvailable: boolean, needsPasskey: boolean) => ejs.render(TEMPLATE, { next: '/profile', prompt: '', needsPasskey, passkeysAvailable, hasPasskey: false, hasPassword: needsPasskey, hasTotp: false, csrfToken: 'tok' });
+    for (const needsPasskey of [false, true]) {
+      const off = at(false, needsPasskey);
+      expect(off).toContain('Add an authenticator app on your <a href="/profile">profile</a>, or ask an administrator.');
+      expect(off).not.toMatch(/passkey/i);
+      expect(at(true, needsPasskey)).toContain('Add a passkey on your');
+    }
+  });
 });
