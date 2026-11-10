@@ -23,8 +23,16 @@
                 <% var reasonText = m.reason || 'No details were recorded.';
                    var lead = m.feature && reasonText.toLowerCase().indexOf(String(m.feature).toLowerCase()) !== 0 ? m.feature : ''; %>
                 <% if (lead) { %><strong><%= lead %>:</strong> <% } %><%= reasonText %>
-                <% if (m.configKey && String(m.configKey).indexOf('ngdpbase.') === 0) { %>
-                    <br><a href="/admin/configuration">Change this in Admin &rarr; Configuration</a>
+                <% if (Array.isArray(m.details) && m.details.length > 0) { %>
+                    <ul class="mb-0">
+                        <% m.details.forEach(function (line) { %><li><%= line %></li><% }); %>
+                    </ul>
+                <% } %>
+                <%# A caller names its own fix (a record the app writes is not a value to edit); a setting is the fallback. %>
+                <% if (m.fixUrl && String(m.fixUrl).charAt(0) === '/') { %>
+                    <br><a class="alert-link" href="<%= m.fixUrl %>"><%= m.fixLabel || 'Fix this' %></a>
+                <% } else if (m.configKey && String(m.configKey).indexOf('ngdpbase.') === 0) { %>
+                    <br><a class="alert-link" href="/admin/configuration#config-<%= m.configKey %>">Change this in Admin &rarr; Configuration</a>
                 <% } %>
             </li>
         <% }); %>

@@ -462,7 +462,7 @@ export function unenforcedConditionsNotice(policies: unknown): string | null {
   const names = policiesWithOldConditions(policies);
   if (names.length === 0) return null;
   const one = names.length === 1;
-  return `${one ? 'This rule has' : 'These rules have'} an old 'conditions' list that the site ignores, so it doesn't limit anyone: ${names.join(', ')}. Move ${one ? 'it' : 'each one'} into the rule's condition, or remove it.`;
+  return `${one ? 'This rule has' : 'These rules have'} an old 'conditions' list that the site ignores, so it doesn't limit anyone: ${names.join(', ')}. Move ${one ? 'it' : 'each one'} into ${one ? 'the' : 'its'} rule's condition, or remove it.`;
 }
 
 /**

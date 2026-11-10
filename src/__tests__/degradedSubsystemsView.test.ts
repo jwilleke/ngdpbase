@@ -83,12 +83,36 @@ describe('#1946 the dashboard separates down from needs-attention', () => {
     expect(b.textContent).not.toContain('Mystery');
   });
 
-  test('#2348 a setting changed in Admin → Configuration gets a plain link there; an environment variable gets none', async () => {
-    const doc = await render([], [reminder, { manager: 'BackupManager', state: 'degraded', kind: 'attention', reason: 'The backup key is not set', configKey: 'NGDPBASE_BACKUP_KEY' }]);
+  test('#2348 a setting gets a plain link to its own row in Admin → Configuration; an environment variable gets none', async () => {
+    const doc = await render([], [{ ...reminder, fixUrl: undefined }, { manager: 'BackupManager', state: 'degraded', kind: 'attention', reason: 'The backup key is not set', configKey: 'NGDPBASE_BACKUP_KEY' }]);
     const links = [...doc.querySelectorAll('#subsystems-attention a')];
     expect(links).toHaveLength(1);
-    expect(links[0].getAttribute('href')).toBe('/admin/configuration');
+    expect(links[0].getAttribute('href')).toBe('/admin/configuration#config-ngdpbase.backup.key-saved-fingerprint');
     expect(links[0].textContent).toBe('Change this in Admin → Configuration');
+  });
+
+  test('#2348 a caller that names its own fix gets that link and label, not the Configuration link', async () => {
+    const doc = await render([], [{ ...reminder, fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup' }]);
+    const links = [...doc.querySelectorAll('#subsystems-attention a')];
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')).toBe('/admin/backup');
+    expect(links[0].textContent).toBe('Open Admin → Backup');
+    expect(doc.body.textContent).not.toContain('Change this in Admin');
+  });
+
+  test('#2348 every link takes the alert\'s own link colour, which passes contrast', async () => {
+    const doc = await render([down], [reminder, { ...reminder, fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup' }]);
+    const links = [...doc.querySelectorAll('a')];
+    expect(links.length).toBeGreaterThan(0);
+    for (const a of links) expect(a.classList.contains('alert-link')).toBe(true);
+  });
+
+  test('#2348 details draw as a nested list, one problem per line, with the headline above', async () => {
+    const doc = await render([], [{ manager: 'PolicyEvaluator', state: 'degraded', kind: 'attention', feature: 'Access policies', reason: 'Access policies need review (2 problems):', details: ['First problem.', 'Second <b>problem</b>.'] }]);
+    const items = [...doc.querySelectorAll('#subsystems-attention li li')];
+    expect(items.map((li) => li.textContent?.trim())).toEqual(['First problem.', 'Second <b>problem</b>.']);
+    expect(doc.querySelector('#subsystems-attention li li b')).toBeNull();
+    expect(doc.querySelector('#subsystems-attention li')?.textContent).toContain('Access policies need review (2 problems):');
   });
 
   test('#2348 an entry with no reason still draws a line', async () => {

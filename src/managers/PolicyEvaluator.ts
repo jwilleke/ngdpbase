@@ -560,7 +560,7 @@ class PolicyEvaluator extends BaseManager {
     // Each part is a full sentence, so they are joined with a space.
     // Several log lines can say one plain thing (a rule with two bad conditions), so it is said, and counted, once.
     const plain = [...new Set(lines.map((l) => `${(shown.get(l) ?? l).replace(/\.$/, '')}.`))];
-    this.markNeedsAttention(`Access policies need review (${plain.length} ${plain.length === 1 ? 'problem' : 'problems'}): ${plain.join(' ')}`, 'ngdpbase.access.policies');
+    this.markNeedsAttention(`Access policies need review (${plain.length} ${plain.length === 1 ? 'problem' : 'problems'}):`, 'ngdpbase.access.policies', { details: plain });
   }
 
   /**

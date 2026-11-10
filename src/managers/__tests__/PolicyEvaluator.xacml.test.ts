@@ -11,6 +11,9 @@ import type { Policy, PolicyCondition } from '../../types/Policy';
 import { CONDITION_FUNCTIONS, DENY_OVERRIDES_EXPLANATION, RULE_COMBINING_ALGORITHM_KEY, unenforcedConditionsNotice } from '../../utils/policyAttributes';
 import logger from '../../utils/logger';
 
+/** The needs-attention item as an administrator reads it: the headline, then one line per problem (#2348). */
+const itemText = (call: unknown[]): string => [String(call[0]), ...(((call[2] as { details?: string[] } | undefined)?.details) ?? [])].join(' ');
+
 const PAGE_ATTRIBUTES = { owner: { type: 'identity' }, level: { type: 'integer' }, draft: { type: 'boolean' }, tags: { type: 'list' } };
 const SUBJECT_ATTRIBUTES = { 'department-id': { type: 'string', from: 'profile:department' } };
 const problems = (condition: unknown) => conditionProblems(condition, PAGE_ATTRIBUTES, { 'department-id': SUBJECT_ATTRIBUTES['department-id'], id: { type: 'identity', from: 'account:id' } });
@@ -348,7 +351,7 @@ describe('the needs-attention item for the access policies (#2343)', () => {
     const { ev, attention } = withAll();
     await ev.initialize();
     warn.mockRestore();
-    const text = String(attention.mock.calls[0][0]);
+    const text = itemText(attention.mock.calls[0]);
     expect(text).toContain('Access policies need review (3 problems): ');
     expect(text).toContain("'old-priority'");
     expect(text).toContain('locked');
@@ -377,7 +380,7 @@ describe('the needs-attention item for the access policies (#2343)', () => {
     (ev as unknown as { markNeedsAttention: typeof attention }).markNeedsAttention = attention;
     await ev.initialize();
     warn.mockRestore();
-    return attention.mock.calls.length ? String(attention.mock.calls[0][0]) : null;
+    return attention.mock.calls.length ? itemText(attention.mock.calls[0]) : null;
   };
   const onCategory = { resources: [{ type: 'system-category', pattern: 'general' }] };
   const stored = (label: string) => ({ label, storageLocation: { path: 'x' } });
@@ -413,7 +416,19 @@ describe('the needs-attention item for the access policies (#2343)', () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
     await ev.initialize();
     warn.mockRestore();
-    expect(String(attention.mock.calls[0][0])).toContain("Remove it. This rule has an old 'conditions' list");
+    expect(itemText(attention.mock.calls[0])).toContain("Remove it. This rule has an old 'conditions' list");
+  });
+
+  test('the problems are passed as a list, one per line, under a headline that counts them', async () => {
+    const { ev, attention } = withAll();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    await ev.initialize();
+    warn.mockRestore();
+    const [headline, key, opts] = attention.mock.calls[0] as [string, string, { details: string[] }];
+    expect(headline).toBe('Access policies need review (3 problems):');
+    expect(key).toBe('ngdpbase.access.policies');
+    expect(opts.details).toHaveLength(3);
+    for (const line of opts.details) expect(line).toMatch(/\.$/);
   });
 
   test('no problems: no item', async () => {
@@ -431,7 +446,7 @@ describe('every line of the access-policies needs-attention item is plain (#2348
     await ev.initialize();
     const log = warn.mock.calls.map((c) => String(c[0])).join('\n');
     warn.mockRestore();
-    return { item: attention.mock.calls.length ? String(attention.mock.calls[0][0]) : '', log };
+    return { item: attention.mock.calls.length ? itemText(attention.mock.calls[0]) : '', log };
   };
   /** What an administrator must never meet: ids, setting names, issue numbers, paths, "see the log", JSON. */
   const expectPlain = (item: string): void => {

@@ -119,7 +119,7 @@ describe('the reminder to save .env when its key set changes (#1976)', () => {
     props[ENV_KEYS_SAVED_KEY] = ['NGDPBASE_BACKUP_KEY', 'NGDPBASE_SESSION_SECRET'];
     writeEnv(['NGDPBASE_SESSION_SECRET', BACKUP_KEY_ENV, 'NGDPBASE_CREDENTIALS_KEY']);
     const bm = await start();
-    expect(bm.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', configKey: ENV_KEYS_SAVED_KEY, reason: expect.stringContaining('added: NGDPBASE_CREDENTIALS_KEY') });
+    expect(bm.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'attention', configKey: ENV_KEYS_SAVED_KEY, fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup', reason: expect.stringContaining('added: NGDPBASE_CREDENTIALS_KEY') });
     expect(reminders()).toHaveLength(1);
     expect(reminders()[0].message).toMatch(/Download \.env on Admin → Backup/);
     await start();
@@ -160,7 +160,7 @@ describe('the reminder to save .env when its key set changes (#1976)', () => {
     props = { [ENV_KEYS_SAVED_KEY]: ['NGDPBASE_BACKUP_KEY'] };
     writeEnv([BACKUP_KEY_ENV, 'NGDPBASE_SESSION_SECRET']);
     const bm = await start();
-    expect(bm.getManagerStatus().reason).toMatch(/^Save the backup key off this server/);
+    expect(bm.getManagerStatus()).toMatchObject({ fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup', reason: expect.stringMatching(/^Save the backup key off this server/) });
     expect(reminders()).toHaveLength(1);
     const info = bm.envKeysInfo()!;
     expect(info.holdsBackupKey).toBe(true);
