@@ -1145,8 +1145,8 @@ class BackupManager extends BaseManager {
       if (!reminder) {
         if (ours) this.markReady();
       } else if (status.state !== 'degraded' || ours) {
-        // The saved-key settings are records the app writes when an admin confirms; the fix is the Backup page.
-        this.markNeedsAttention(reminder, reminder === envReminder ? ENV_KEYS_SAVED_KEY : reminder === sharedReminder ? SHARED_FOLDERS_KEY_SAVED_KEY : BACKUP_KEY_SAVED_KEY, BACKUP_PAGE_FIX);
+        // The saved-key settings are records the app writes when an admin confirms, not values to edit: the fix is the Backup page, with no link to them (#2348, #2354).
+        this.markNeedsAttention(reminder, undefined, BACKUP_PAGE_FIX);
       }
       return;
     }
