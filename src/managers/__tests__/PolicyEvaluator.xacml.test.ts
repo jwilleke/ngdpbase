@@ -352,9 +352,8 @@ describe('the needs-attention item for the access policies (#2343)', () => {
     await ev.initialize();
     warn.mockRestore();
     const text = itemText(attention.mock.calls[0]);
-    expect(text).toContain('Access policies need review (3 problems): ');
+    expect(text).toContain('Access policies need review (2 problems): ');
     expect(text).toContain("'old-priority'");
-    expect(text).toContain('locked');
     expect(text).toContain("'old-list'");
     expect(text).not.toMatch(/#\d/);
     expect(text).not.toContain('docs/');
@@ -369,7 +368,6 @@ describe('the needs-attention item for the access policies (#2343)', () => {
     const all = warn.mock.calls.map((c) => String(c[0]));
     warn.mockRestore();
     expect(all.find((l) => l.includes('a priority'))).toContain('(#2330)');
-    expect(all.find((l) => l.includes('system-category locked'))).toContain('(#2255)');
     expect(all.find((l) => l.includes('conditions array'))).toContain('docs/access-policies.md#subject-attributes');
   });
 
@@ -401,15 +399,7 @@ describe('the needs-attention item for the access policies (#2343)', () => {
     expect(text).not.toContain('; ');
   });
 
-  test('an uneditable category alone: singular', async () => {
-    const text = await itemFor([], { locked: stored('Locked') });
-    expect(text).toBe('Access policies need review (1 problem): Nobody can edit the pages in this category, not even an admin: locked. Add a rule that lets a role edit it.');
-  });
-
-  test('two uneditable categories: plural', async () => {
-    const text = await itemFor([], { locked: stored('Locked'), shut: stored('Shut') });
-    expect(text).toBe('Access policies need review (1 problem): Nobody can edit the pages in these categories, not even an admin: locked, shut. Add a rule that lets a role edit them.');
-  });
+  // Stored categories nobody can edit are an upgrade check now (upgradeChecks/uneditablePages.ts), not part of this item.
 
   test('the parts are joined as separate sentences, not with a semicolon', async () => {
     const { ev, attention } = withAll();
@@ -425,9 +415,9 @@ describe('the needs-attention item for the access policies (#2343)', () => {
     await ev.initialize();
     warn.mockRestore();
     const [headline, key, opts] = attention.mock.calls[0] as [string, string, { details: string[] }];
-    expect(headline).toBe('Access policies need review (3 problems):');
+    expect(headline).toBe('Access policies need review (2 problems):');
     expect(key).toBe('ngdpbase.access.policies');
-    expect(opts.details).toHaveLength(3);
+    expect(opts.details).toHaveLength(2);
     for (const line of opts.details) expect(line).toMatch(/\.$/);
   });
 
@@ -465,20 +455,27 @@ describe('every line of the access-policies needs-attention item is plain (#2348
     expect(log).toContain("'no-docs' is a deny: since #2255 a deny overrides any allow");
   });
 
-  test('a grant to everyone: no permission ids', async () => {
+  test('a grant to everyone is the upgrade notice\'s to-do, so the item leaves it out; the log keeps it', async () => {
     const { item, log } = await run([sample('open-edit', 'allow', { subjects: [{ type: 'anyone' }], actions: ['page-read', 'page-edit'] })]);
-    expect(item).toBe("Access policies need review (1 problem): The rule 'open-edit' lets anyone (including signed-out visitors) do more than read. Give those abilities to named roles instead.");
-    expectPlain(item);
+    expect(item).toBe('');
     expect(log).toContain("'open-edit' grants page-edit to anyone, including signed-out visitors, so");
     expect(log).toContain('(#2261)');
   });
 
-  test('a page write by name: names the roles, not the permission or the resource type', async () => {
+  test('a page write by name is also left out of the item, and still logged', async () => {
     const { item, log } = await run([policy('my-own', 'allow', undefined, { actions: ['page-edit', 'page-delete'] })]);
-    expect(item).toBe("Access policies need review (1 problem): The rule 'my-own' lets the role editor change pages by name, which reaches system, documentation and add-on pages. Change it to apply to page categories instead.");
-    expectPlain(item);
+    expect(item).toBe('');
     expect(log).toContain("'my-own' grants page-edit, page-delete on pages by name to editor");
-    expect(log).toContain('grant it on system categories instead (#2255)');
+  });
+
+  test('a deny is still in the item beside an open allow rule, which is not', async () => {
+    const { item } = await run([
+      sample('open-edit', 'allow', { subjects: [{ type: 'anyone' }], actions: ['page-edit'] }),
+      sample('no-docs', 'deny', { actions: ['page-read'] })
+    ]);
+    expect(item).toContain("'no-docs'");
+    expect(item).not.toContain('open-edit');
+    expect(item).toContain('(1 problem)');
   });
 
   test('the upgrade of a stored policy: said without permission ids, saying to save', async () => {

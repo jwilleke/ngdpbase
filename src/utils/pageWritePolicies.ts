@@ -59,6 +59,8 @@ export interface PageWritePolicyReport {
 export interface PolicyFinding {
   log: string;
   plain: string;
+  /** Set when the finding is an allow rule the upgrade notice already lists (`openWriteRules`); the needs-attention item leaves it out. */
+  coveredByUpgradeNotice?: boolean;
 }
 
 function isPageStar(policy: Policy): boolean {
@@ -120,23 +122,21 @@ export function pageWritePolicyFindings(policies: readonly Policy[]): PolicyFind
       });
       continue;
     }
-    const everyone = (policy.subjects ?? []).some((s) => s.type === 'anyone') ? 'anyone, including signed-out visitors'
-      : (policy.subjects ?? []).some((s) => s.type === 'authenticated') ? 'every signed-in user' : null;
-    // Missing or empty `actions` means `*` (#2283); anything but page-read is flagged.
-    const held = (policy.actions ?? []).length > 0 ? (policy.actions ?? []) : ['*'];
-    const granted = held.filter((a) => a !== READ_ONLY_ACTION);
-    if (everyone && granted.length > 0) {
+    for (const rule of openWriteRules([policy])) {
+      if (rule.who.kind === 'roles') {
+        const roles = rule.who.roles;
+        out.push({
+          log: `'${policy.id}' grants ${rule.actions.join(', ')} on pages by name to ${roles.join(', ')}, which reaches system, documentation and add-on pages; grant it on system categories instead (#2255)`,
+          plain: `The rule '${policy.id}' lets ${roles.length === 1 ? 'the role' : 'the roles'} ${roles.join(', ')} change pages by name, which reaches system, documentation and add-on pages. Change it to apply to page categories instead.`,
+          coveredByUpgradeNotice: true
+        });
+        continue;
+      }
+      const everyone = rule.who.kind === 'anyone' ? 'anyone, including signed-out visitors' : 'every signed-in user';
       out.push({
-        log: `'${policy.id}' grants ${granted.join(', ')} to ${everyone}, so ${everyone} can do that, beyond reading; grant it to named roles instead (#2261)`,
-        plain: `The rule '${policy.id}' lets ${everyone.replace(', including signed-out visitors', ' (including signed-out visitors)')} do more than read. Give those abilities to named roles instead.`
-      });
-    }
-    const writes = (policy.actions ?? []).filter((a) => (PAGE_WRITES as readonly string[]).includes(a) || a === '*');
-    const roles = (policy.subjects ?? []).filter((s) => s.type === 'role' && s.value !== 'admin').map((s) => s.value);
-    if (writes.length > 0 && roles.length > 0 && (policy.resources ?? []).some((r) => r.type === 'page')) {
-      out.push({
-        log: `'${policy.id}' grants ${writes.join(', ')} on pages by name to ${roles.join(', ')}, which reaches system, documentation and add-on pages; grant it on system categories instead (#2255)`,
-        plain: `The rule '${policy.id}' lets ${roles.length === 1 ? 'the role' : 'the roles'} ${roles.join(', ')} change pages by name, which reaches system, documentation and add-on pages. Change it to apply to page categories instead.`
+        log: `'${policy.id}' grants ${rule.actions.join(', ')} to ${everyone}, so ${everyone} can do that, beyond reading; grant it to named roles instead (#2261)`,
+        plain: `The rule '${policy.id}' lets ${everyone.replace(', including signed-out visitors', ' (including signed-out visitors)')} do more than read. Give those abilities to named roles instead.`,
+        coveredByUpgradeNotice: true
       });
     }
   }
@@ -146,4 +146,39 @@ export function pageWritePolicyFindings(policies: readonly Policy[]): PolicyFind
 /** The log lines of {@link pageWritePolicyFindings}. */
 export function pageWritePoliciesToReview(policies: readonly Policy[]): string[] {
   return pageWritePolicyFindings(policies).map((f) => f.log);
+}
+
+/** An allow rule in force that lets more people write than the shipped rules do (#2355 handles denies, not this). */
+export interface OpenWriteRule {
+  id: string;
+  /** Who: everyone including signed-out visitors, every signed-in user, or the named roles other than admin. */
+  who: { kind: 'anyone' } | { kind: 'authenticated' } | { kind: 'roles'; roles: string[] };
+  /** The actions it grants; for `anyone` and `authenticated`, without page-read. `*` means everything. */
+  actions: string[];
+  resources: NonNullable<Policy['resources']>;
+}
+
+/**
+ * The allow rules in force that let `anyone` (signed-out visitors) or `authenticated` (every signed-in user)
+ * do more than page-read, or give page writes to a role other than admin. Deny rules are left out.
+ * Computed from the policies it is given, so what it returns follows the current policies.
+ */
+export function openWriteRules(policies: readonly Policy[]): OpenWriteRule[] {
+  const out: OpenWriteRule[] = [];
+  for (const policy of policies) {
+    if (policy.effect === 'deny') continue;
+    const subjects = policy.subjects ?? [];
+    const kind = subjects.some((s) => s.type === 'anyone') ? 'anyone' : subjects.some((s) => s.type === 'authenticated') ? 'authenticated' : null;
+    const resources = policy.resources ?? [];
+    // Missing or empty `actions` means `*` (#2283).
+    const held = (policy.actions ?? []).length > 0 ? (policy.actions ?? []) : ['*'];
+    const granted = held.filter((a) => a !== READ_ONLY_ACTION);
+    if (kind && granted.length > 0) out.push({ id: policy.id, who: { kind }, actions: granted, resources });
+    const writes = (policy.actions ?? []).filter((a) => (PAGE_WRITES as readonly string[]).includes(a) || a === '*');
+    const roles = subjects.filter((s) => s.type === 'role' && s.value !== 'admin').map((s) => s.value).filter((v): v is string => typeof v === 'string');
+    if (writes.length > 0 && roles.length > 0 && resources.some((r) => r.type === 'page')) {
+      out.push({ id: policy.id, who: { kind: 'roles', roles }, actions: writes, resources });
+    }
+  }
+  return out;
 }

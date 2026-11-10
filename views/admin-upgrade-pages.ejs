@@ -1,0 +1,43 @@
+<%- include('header', { pageName: title }) %>
+
+<div class="container mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h1><i class="fas fa-circle-up"></i> <%= heading %></h1>
+        <a href="/admin/upgrade" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to After updating
+        </a>
+    </div>
+    <p class="text-muted mb-3"><%= lead %></p>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="post" action="/admin/upgrade/fix">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="id" value="<%= id %>">
+                <p class="text-muted small mb-2"><%= list.note %></p>
+                <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage', 'read-only-fix') %>><%= list.button %></button>
+                <% if (!can('config-manage')) { %><p class="text-muted small mt-2 mb-0" id="read-only-fix"><%= readOnly %></p><% } %>
+            </form>
+        </div>
+    </div>
+
+    <ul class="list-group mb-3">
+        <% list.pages.forEach(function(page) { %>
+        <li class="list-group-item"><a href="<%= page.href %>"><%= page.title %></a></li>
+        <% }); %>
+    </ul>
+
+    <% if (list.pageCount > 1) { %>
+    <nav aria-label="Pages of the list">
+        <ul class="pagination">
+            <li class="page-item<%= list.page <= 1 ? ' disabled' : '' %>"><a class="page-link" href="?page=<%= list.page - 1 %>">Previous</a></li>
+            <li class="page-item disabled"><span class="page-link">Page <%= list.page %> of <%= list.pageCount %></span></li>
+            <li class="page-item<%= list.page >= list.pageCount ? ' disabled' : '' %>"><a class="page-link" href="?page=<%= list.page + 1 %>">Next</a></li>
+        </ul>
+    </nav>
+    <% } %>
+
+</div>
+
+<%- include('footer') %>

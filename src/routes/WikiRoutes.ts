@@ -66,6 +66,9 @@ import { CONSENT_PATH, CORE_CONSENT_SCOPE, RECOVERY_WORDS_CONSENT_SCOPE, REMEMBE
 import { recoveryWordsPending, recoveryWordsState } from '../utils/recoveryWordsConsent.js';
 import { sharedFoldersWordsState } from '../utils/sharedFoldersWordsConsent.js';
 import type SharedFolderManager from '../managers/SharedFolderManager.js';
+import type UpgradeCheckManager from '../managers/UpgradeCheckManager.js';
+import type { OpenUpgradeItem } from '../managers/UpgradeCheckManager.js';
+import { UPGRADE_INTRO, UPGRADE_LIST_HEADING, UPGRADE_READ_ONLY, upgradeEmpty, upgradeHeading, upgradeListLead, upgradeNotice, upgradeResult, type UpgradeResultKey } from '../upgradeChecks/wording.js';
 import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
 import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
@@ -1147,11 +1150,14 @@ class WikiRoutes {
      * Presentation only — the server still refuses the request. A disabled
      * button is a courtesy, never a control.
      */
-    const lockedUnless = (permission: string): string =>
+    const lockedUnless = (permission: string, describedBy?: string): string =>
       can(permission)
         ? ''
-        : ` disabled aria-disabled="true" title="Requires the '${permission}' permission —`
-          + ' this account has read-only access"';
+        // `describedBy` names a line on the page that says why, in place of the tooltip that names the permission (#2301).
+        : describedBy
+          ? ` disabled aria-disabled="true" aria-describedby="${describedBy}"`
+          : ` disabled aria-disabled="true" title="Requires the '${permission}' permission —`
+            + ' this account has read-only access"';
     const registrationRedirectPage = (configManager?.getProperty(
       'ngdpbase.application.registration.redirect-page',
       'request-access'
@@ -1224,7 +1230,7 @@ class WikiRoutes {
       canViewAdmin: boolean;
       canCreatePage: boolean;
       can: (permission: string) => boolean;
-      lockedUnless: (permission: string) => string;
+      lockedUnless: (permission: string, describedBy?: string) => string;
       registrationRedirectPage: string;
       contactAvailable: boolean;
       contactFooterEnabled: boolean;
@@ -13262,7 +13268,11 @@ ${panes}
         jobLastRuns,
         // #1842: what the startup checks found outside its vault, each with
         // a "Move into vault" action where this admin may (unsealed vaults).
-        vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : []
+        vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : [],
+        // #2301: one notice linking to "After updating" while it has items.
+        upgradeItems: currentUser ? await this.upgradeItemsFor(currentUser) : [],
+        upgradeVersion: this.upgradeVersion(),
+        upgradeNotice
       };
 
       res.render('admin-dashboard', templateData);
@@ -15357,6 +15367,97 @@ ${panes}
         success: false,
         error: getErrorMessage(err) || 'Error starting reindex'
       });
+    }
+  }
+
+  /** The "After updating" items `ctx` has open (#2301). Best-effort: a failure leaves the notice out, not the page. */
+  private async upgradeItemsFor(ctx: NonNullable<Request['userContext']>): Promise<OpenUpgradeItem[]> {
+    try {
+      return await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.openItems(ctx) ?? [];
+    } catch (err) {
+      logger.warn('[upgrade] The open items could not be read:', err);
+      return [];
+    }
+  }
+
+  /** The site version for the "After updating" wording; empty when it is not known, which the wording handles. */
+  private upgradeVersion(): string {
+    try {
+      return this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.version() ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  /** GET /admin/upgrade — "After updating to X.Y.Z": what the last update left for an administrator to decide (#2301). */
+  async adminUpgradePage(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await this.hasAdminViewAccess(wikiContext))) {
+        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page');
+      }
+      const version = this.upgradeVersion();
+      const result = upgradeResult(req.query.result, req.query.count);
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('admin-upgrade', {
+        ...commonData,
+        title: upgradeHeading(version),
+        version,
+        heading: upgradeHeading(version),
+        intro: UPGRADE_INTRO,
+        empty: upgradeEmpty(version),
+        readOnly: UPGRADE_READ_ONLY,
+        items: await this.upgradeItemsFor(wikiContext.userContext),
+        // The address carries a key; the words are written here.
+        success: result?.ok ? result.text : null,
+        error: result && !result.ok ? result.text : null
+      });
+    } catch (err: unknown) {
+      logger.error('[upgrade] Error showing the After updating page:', err);
+      return this.renderError(req, res, 500, 'Error', 'This page could not be shown.');
+    }
+  }
+
+  /** GET /admin/upgrade/pages/:id — the pages an item is about, 50 to a page, and the item's one button (#2301). Worked out afresh each time. */
+  async adminUpgradePages(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await this.hasAdminViewAccess(wikiContext))) {
+        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page');
+      }
+      const id = typeof req.params.id === 'string' ? req.params.id : '';
+      const asked = Number.parseInt(typeof req.query.page === 'string' ? req.query.page : '', 10);
+      const list = await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.openList(id, wikiContext.userContext, Number.isFinite(asked) ? asked : 1);
+      if (!list) return res.redirect('/admin/upgrade');
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('admin-upgrade-pages', {
+        ...commonData,
+        title: UPGRADE_LIST_HEADING,
+        heading: UPGRADE_LIST_HEADING,
+        lead: upgradeListLead(list.total),
+        readOnly: UPGRADE_READ_ONLY,
+        id,
+        list
+      });
+    } catch (err: unknown) {
+      logger.error('[upgrade] Error showing the list of pages:', err);
+      return this.renderError(req, res, 500, 'Error', 'This page could not be shown.');
+    }
+  }
+
+  /** POST /admin/upgrade/fix — the item's one button. A configuration change, so config-manage; the change is audited as any other (#2301). Redirects with a key, never text. */
+  async adminUpgradeFix(req: Request, res: Response) {
+    const back = (result: UpgradeResultKey, count = 0) => res.redirect(`/admin/upgrade?result=${result}${count > 0 ? `&count=${count}` : ''}`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return undefined;
+      const currentUser = wikiContext.userContext;
+      const id = typeof req.body?.id === 'string' ? req.body.id : '';
+      const changed = currentUser ? (await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.applyFix(id, currentUser)) ?? 0 : 0;
+      return back(changed > 0 ? 'fixed' : 'already', changed);
+    } catch (err: unknown) {
+      logger.error('[upgrade] The fix did not complete:', err);
+      return back('failed');
     }
   }
 
@@ -19045,6 +19146,9 @@ ${panes}
     app.post('/admin/restart', (req: Request, res: Response) => this.adminRestart(req, res));
     app.post('/admin/reindex', (req: Request, res: Response) => this.adminReindex(req, res));
     // #1842: move a vault page's leftovers into its vault — the owner, or admin-system for an unsealed vault.
+    app.get('/admin/upgrade', (req: Request, res: Response) => void this.adminUpgradePage(req, res));
+    app.get('/admin/upgrade/pages/:id', (req: Request, res: Response) => void this.adminUpgradePages(req, res));
+    app.post('/admin/upgrade/fix', (req: Request, res: Response) => void this.adminUpgradeFix(req, res));
     app.post('/vault-repair', (req: Request, res: Response) => void this.vaultRepair(req, res, false));
     app.post('/vault-repair/all', (req: Request, res: Response) => void this.vaultRepair(req, res, true));
     app.get('/admin/events', (req: Request, res: Response) => this.adminEvents(req, res));
