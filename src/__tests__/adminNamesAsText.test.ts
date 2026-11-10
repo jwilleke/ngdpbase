@@ -1,6 +1,6 @@
 /**
- * Admin pages whose row buttons act on a recorded name (Add-ons, InterWiki,
- * Organizations and Required Pages) hand that name to their script exactly as
+ * Pages whose row buttons act on a recorded name (Add-ons, InterWiki,
+ * Organizations, Required Pages and Page History) hand that name to their script exactly as
  * it was recorded, quotes and markup-like characters included.
  *
  * Each test renders the real view (header and footer left out), runs its own
@@ -87,8 +87,8 @@ describe('admin row buttons hand recorded names to the script as text', () => {
     });
     const started = spy(win, 'startEdit');
     const cancelled = spy(win, 'cancelEdit');
-    click(win, 'button[data-start-edit]');
-    click(win, 'button[data-cancel-edit]');
+    click(win, 'button[title="Edit"]');
+    click(win, 'button[title="Cancel"]');
     expect(started).toEqual([[encodeURIComponent(NAME)]]);
     expect(cancelled).toEqual([[encodeURIComponent(NAME)]]);
   });
@@ -99,9 +99,9 @@ describe('admin row buttons hand recorded names to the script as text', () => {
     const edited = spy(win, 'editOrganization');
     const shown = spy(win, 'viewOrganizationSchema');
     const deleted = spy(win, 'deleteOrganization');
-    click(win, 'button[data-org-action="edit"]');
-    click(win, 'button[data-org-action="schema"]');
-    click(win, 'button[data-org-action="delete"]');
+    click(win, 'button.btn-outline-primary');
+    click(win, 'button.btn-outline-info');
+    click(win, 'button.btn-outline-danger');
     expect(edited[0][0]).toBe(NAME.toLowerCase());
     expect(shown[0][0]).toBe(NAME.toLowerCase());
     expect(deleted).toEqual([[NAME.toLowerCase(), NAME]]);
@@ -116,13 +116,32 @@ describe('admin row buttons hand recorded names to the script as text', () => {
     const adopts = spy(win, 'adoptUuidOne');
     const declines = spy(win, 'declineOne');
     const pushes = spy(win, 'pushToSourceOne');
-    click(win, 'button[data-row-action="showDiff"]');
-    click(win, 'button[data-row-action="adoptUuidOne"]');
-    click(win, 'button[data-row-action="declineOne"]');
-    click(win, 'button[data-row-action="pushToSourceOne"]');
+    click(win, 'button[title="Compare the shipped page with the page already here"]');
+    click(win, 'button[title="Keep the page already here and make it this shipped page"]');
+    click(win, 'button[title^="Keep the live page"]');
+    click(win, 'button[title^="Push live edits"]');
     expect(diffs).toEqual([['u-1', NAME, 'u-2']]);
     expect(adopts).toEqual([['u-1', 'u-2', NAME]]);
     expect(declines).toEqual([['core', 'u-1', NAME, 'A page with slug or title already exists under UUID u-2']]);
     expect(pushes).toEqual([['u-1', NAME]]);
+  });
+
+  it('Page History views and compares versions of the page by its exact name', () => {
+    const versions = [
+      { version: 2, changeType: 'updated', comment: '', contentSize: 10, timestamp: '2026-01-02T00:00:00Z' },
+      { version: 1, changeType: 'created', comment: '', contentSize: 10, timestamp: '2026-01-01T00:00:00Z' }
+    ];
+    const { win } = runPage('page-history.ejs', {
+      pageName: NAME, versions, versionCount: 2, userContext: { isAuthenticated: false },
+      pageUrl: (n: string) => '/wiki/' + encodeURIComponent(n)
+    });
+    const viewed = spy(win, 'viewVersion');
+    const compared = spy(win, 'compareVersions');
+    click(win, 'button[title="View this version"]');
+    click(win, 'button[title="Compare with previous version"]');
+    expect(viewed).toEqual([[NAME, '2']]);
+    expect(compared).toEqual([[NAME, '2', '1']]);
+    // The name is shown as text: no element was made from its markup.
+    expect(win.document.querySelectorAll('table b').length).toBe(0);
   });
 });
