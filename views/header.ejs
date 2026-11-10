@@ -631,8 +631,9 @@
                     #2356: only a way this account can add or use here (AuthManager.strongerSignInWays). %>
                 <% const _sd = aalStepDown.ways || {};
                    const _sdOne = aalStepDown.roles.length === 1;
-                   const _sdWay = _sd.usePasskey ? 'use-passkey' : _sd.addPasskey ? 'add-passkey'
-                     : (_sd.useTotp && _sd.password) ? 'use-totp' : (_sd.addTotp && _sd.password) ? 'add-totp'
+                   // A way usable now comes before one to add: the app with the password restores the role at once.
+                   const _sdWay = _sd.usePasskey ? 'use-passkey' : (_sd.useTotp && _sd.password) ? 'use-totp'
+                     : _sd.addPasskey ? 'add-passkey' : (_sd.addTotp && _sd.password) ? 'add-totp'
                      : (_sd.outside && _sd.outside.length > 0) ? 'outside' : 'none'; %>
                 <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2 mt-2" role="alert" data-aal-step-down="<%= _sdWay %>">
                     <i class="fas fa-key"></i>
@@ -656,7 +657,12 @@
                     <% } else if (_sdWay === 'add-passkey') { %>
                     <a class="btn btn-sm btn-warning ms-auto" href="/profile">Add a passkey</a>
                     <% } else if (_sdWay === 'use-totp') { %>
-                    <a class="btn btn-sm btn-warning ms-auto" href="/auth/reauth?next=<%= encodeURIComponent(typeof originalUrl !== 'undefined' && originalUrl ? originalUrl : '/') %>">Sign in again</a>
+                    <span class="ms-auto d-inline-flex align-items-center gap-2">
+                        <a class="btn btn-sm btn-warning" href="/auth/reauth?next=<%= encodeURIComponent(typeof originalUrl !== 'undefined' && originalUrl ? originalUrl : '/') %>">Sign in again</a>
+                        <% if (_sd.addPasskey) { %>
+                        <a class="small text-nowrap" href="/profile" data-aal-step-down-secondary>or add a passkey</a>
+                        <% } %>
+                    </span>
                     <% } else if (_sdWay === 'add-totp') { %>
                     <a class="btn btn-sm btn-warning ms-auto" href="/profile#sign-in-methods">Add an authenticator app</a>
                     <% } %>
@@ -676,9 +682,10 @@
                 <div class="alert alert-danger d-flex flex-wrap align-items-center gap-2 mt-2" role="alert" data-aal-enrol-nag>
                     <i class="fas fa-key"></i>
                     <span>
-                        <%# #2356: only what this account can add here; nothing it can add, an administrator. %>
+                        <%# #2356: only what this account can add here; nothing it can add, an administrator.
+                            The app's code reaches the level only with a password, so the app needs one too. %>
                         <% const _nag = aalEnrolNag.ways || {};
-                           const _nagAdd = [_nag.addPasskey ? 'a passkey' : '', _nag.addTotp ? 'an authenticator app' : ''].filter(Boolean); %>
+                           const _nagAdd = [_nag.addPasskey ? 'a passkey' : '', (_nag.addTotp && _nag.password) ? 'an authenticator app' : ''].filter(Boolean); %>
                         <% if (_nagAdd.length > 0) { %>
                         Your <strong><%= aalEnrolNag.roles.join(', ') %></strong> role<%= aalEnrolNag.roles.length === 1 ? ' needs' : 's need' %> <%= _nagAdd.join(' or ') %>, and you have not added one. You are using <%= aalEnrolNag.roles.length === 1 ? 'it' : 'them' %> with a password alone until you do.
                         <% } else { %>

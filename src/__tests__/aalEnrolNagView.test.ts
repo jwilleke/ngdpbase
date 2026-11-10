@@ -19,7 +19,7 @@ const COMMON = {
   currentUser: { username: 'ann', displayName: 'Ann', roles: ['admin'], isAuthenticated: true }
 };
 
-interface Node_ { textContent: string | null; querySelector: (s: string) => { getAttribute: (n: string) => string | null } | null }
+interface Node_ { textContent: string | null; getAttribute: (n: string) => string | null; querySelector: (s: string) => { getAttribute: (n: string) => string | null } | null }
 
 async function stepDown(aalStepDown: Record<string, unknown>): Promise<Node_ | null> {
   const html = await ejs.renderFile(path.join(VIEWS, 'header.ejs'), { ...COMMON, aalStepDown, originalUrl: '/view/Ledger' });
@@ -34,19 +34,19 @@ const text = (el: Node_ | null): string => (el?.textContent ?? '').replace(/\s+/
 
 describe('#2345 the add-a-second-factor banner', () => {
   test('passkeys cannot work on the address: names only the authenticator app', async () => {
-    const b = await banner({ roles: ['admin'], ways: { addPasskey: false, addTotp: true } });
+    const b = await banner({ roles: ['admin'], ways: { addPasskey: false, addTotp: true, password: true } });
     expect(text(b)).toBe('Your admin role needs an authenticator app, and you have not added one. You are using it with a password alone until you do. Add one now');
     expect(text(b)).not.toMatch(/passkey/i);
     expect(b?.querySelector('a')?.getAttribute('href')).toBe('/profile#sign-in-methods');
   });
 
   test('https address: wording unchanged', async () => {
-    const b = await banner({ roles: ['admin'], ways: { addPasskey: true, addTotp: true } });
+    const b = await banner({ roles: ['admin'], ways: { addPasskey: true, addTotp: true, password: true } });
     expect(text(b)).toBe('Your admin role needs a passkey or an authenticator app, and you have not added one. You are using it with a password alone until you do. Add one now');
   });
 
   test('passkeys turned off: no passkey in the banner (same flag)', async () => {
-    const b = await banner({ roles: ['admin', 'editor'], ways: { addPasskey: false, addTotp: true } });
+    const b = await banner({ roles: ['admin', 'editor'], ways: { addPasskey: false, addTotp: true, password: true } });
     expect(text(b)).toContain('roles need an authenticator app');
     expect(text(b)).not.toMatch(/passkey/i);
   });
@@ -82,7 +82,7 @@ describe('#2356 the banners name only what this account can add or use', () => {
   });
 
   test('allowed methods exclude passkeys (https site): never a passkey, in either banner', async () => {
-    const nag = await banner({ roles: ['admin'], ways: { addPasskey: false, addTotp: true } });
+    const nag = await banner({ roles: ['admin'], ways: { addPasskey: false, addTotp: true, password: true } });
     expect(text(nag)).toContain('needs an authenticator app');
     expect(text(nag)).not.toMatch(/passkey/i);
     const down = await stepDown({ roles: ['admin'], ways: { usePasskey: false, addPasskey: false, useTotp: true, password: true } });
@@ -120,6 +120,29 @@ describe('#2356 the banners name only what this account can add or use', () => {
     const b = await banner({ roles: ['admin'], ways: { addPasskey: false, addTotp: false } });
     expect(text(b)).toBe('Your admin role needs a stronger sign-in than this account can set up here. You are using it with a password alone. Ask an administrator.');
     expect(b?.querySelector('a')).toBeNull();
+  });
+
+  test('https, allowed everything, an app and a password but no passkey: Sign in again first, adding a passkey second', async () => {
+    const b = await stepDown({ roles: ['admin'], ways: { addPasskey: true, usePasskey: false, useTotp: true, addTotp: false, password: true } });
+    expect(b?.getAttribute('data-aal-step-down')).toBe('use-totp');
+    expect(text(b)).toBe('Your admin role needs a sign-in with your authenticator app\'s code, so it is off while you are signed in with a password alone. Sign in again or add a passkey');
+    expect(b?.querySelector('a.btn')?.getAttribute('href')).toBe('/auth/reauth?next=%2Fview%2FLedger');
+    expect(b?.querySelector('[data-aal-step-down-secondary]')?.getAttribute('href')).toBe('/profile');
+  });
+
+  test('an app and a password, no passkey can be added: Sign in again with no passkey link', async () => {
+    const b = await stepDown({ roles: ['admin'], ways: { addPasskey: false, useTotp: true, password: true } });
+    expect(text(b)).not.toMatch(/passkey/i);
+    expect(b?.querySelector('[data-aal-step-down-secondary]')).toBeNull();
+  });
+
+  test('allowed a password but has none set (magic-link only): the red banner never names the app', async () => {
+    const b = await banner({ roles: ['admin'], ways: { addPasskey: true, addTotp: true, password: false } });
+    expect(text(b)).toBe('Your admin role needs a passkey, and you have not added one. You are using it with a password alone until you do. Add one now');
+    expect(text(b)).not.toMatch(/authenticator/i);
+    const none = await banner({ roles: ['admin'], ways: { addPasskey: false, addTotp: true, password: false } });
+    expect(text(none)).toBe('Your admin role needs a stronger sign-in than this account can set up here. You are using it with a password alone. Ask an administrator.');
+    expect(none?.querySelector('a')).toBeNull();
   });
 
   test('a provider\'s name is escaped', async () => {
