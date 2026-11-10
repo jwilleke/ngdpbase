@@ -47,7 +47,7 @@ describe('passkeys on, address cannot support them (#2340)', () => {
     const [item] = await passkeyItems();
     const html = await ejs.renderFile(path.join(VIEWS, 'admin-upgrade.ejs'), {
       title: 't', heading: 'h', intro: 'i', empty: 'e', success: null, error: null, items: [item], csrfToken: 'tok',
-      can: () => true, lockedUnless: () => '', readOnly: 'r'
+      can: () => true, locals: {}, lockedUnless: () => '', readOnly: 'r'
     }, { includer: (o: string) => (o === 'header' || o === 'footer' ? { template: '' } : undefined) });
     const bodies: string[] = [];
     const dom = new JSDOM(html, {
@@ -79,7 +79,7 @@ describe('passkeys on, address cannot support them (#2340)', () => {
     const [item] = await passkeyItems();
     const html = await ejs.renderFile(path.join(VIEWS, 'admin-upgrade.ejs'), {
       title: 't', heading: 'h', intro: 'i', empty: 'e', success: null, error: null, items: [item], csrfToken: 'tok',
-      can: () => false, lockedUnless: () => ' disabled aria-disabled="true"', readOnly: 'r'
+      can: () => false, locals: {}, lockedUnless: () => ' disabled aria-disabled="true"', readOnly: 'r'
     }, { includer: (o: string) => (o === 'header' || o === 'footer' ? { template: '' } : undefined) });
     expect(new JSDOM(html).window.document.querySelector('form[action="/admin/configuration"] button')!.hasAttribute('disabled')).toBe(true);
   });
