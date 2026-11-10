@@ -33,13 +33,13 @@ describe('roleGrants (#1521)', () => {
     expect(grants['vault-owner'].allows).toEqual([{ action: 'page-delete', limited: true, where: ['vault'] }]);
   });
 
-  test('a higher-priority deny takes a grant away; a lower-priority one does not (#1539, the evaluator\'s order)', () => {
+  test('a deny takes a grant away wherever it is listed (deny-overrides, #2330)', () => {
     const grants = roleGrants([
-      { id: 'a', effect: 'allow', priority: 50, subjects: [{ type: 'role', value: 'r' }], actions: ['page-edit', 'page-read'] },
-      { id: 'd', effect: 'deny', priority: 90, subjects: [{ type: 'role', value: 'r' }], actions: ['page-edit'] },
-      { id: 'low', effect: 'deny', priority: 10, subjects: [{ type: 'role', value: 'r' }], actions: ['page-read'] }
+      { id: 'low', effect: 'deny', subjects: [{ type: 'role', value: 'r' }], actions: ['page-read'] },
+      { id: 'a', effect: 'allow', subjects: [{ type: 'role', value: 'r' }], actions: ['page-edit', 'page-read', 'page-delete'] },
+      { id: 'd', effect: 'deny', subjects: [{ type: 'role', value: 'r' }], actions: ['page-edit'] }
     ] as never);
-    expect(grants.r.allows.map((g) => g.action)).toEqual(['page-read']);
+    expect(grants.r.allows.map((g) => g.action)).toEqual(['page-delete']);
     expect(grants.r.denies).toEqual(['page-edit', 'page-read']);
   });
 
@@ -54,9 +54,9 @@ describe('roleGrants (#1521)', () => {
 describe('jobGrants (#2067)', () => {
   test('what each job a policy names is granted, with the policies that grant it; role subjects are not jobs', () => {
     const policies = [
-      { id: 'a', effect: 'allow', priority: 10, subjects: [{ type: 'job', value: 'x.digest' }], actions: ['page-read'] },
-      { id: 'b', effect: 'allow', priority: 20, subjects: [{ type: 'job', value: 'x.digest' }, { type: 'role', value: 'reader' }], resources: [{ type: 'page', pattern: '*' }], actions: ['page-read', 'page-edit'] },
-      { id: 'c', effect: 'deny', priority: 30, subjects: [{ type: 'job', value: 'x.digest' }], actions: ['page-edit'] }
+      { id: 'a', effect: 'allow', subjects: [{ type: 'job', value: 'x.digest' }], actions: ['page-read'] },
+      { id: 'b', effect: 'allow', subjects: [{ type: 'job', value: 'x.digest' }, { type: 'role', value: 'reader' }], resources: [{ type: 'page', pattern: '*' }], actions: ['page-read', 'page-edit'] },
+      { id: 'c', effect: 'deny', subjects: [{ type: 'job', value: 'x.digest' }], actions: ['page-edit'] }
     ] as never;
     expect(jobGrants(policies)).toEqual({
       'x.digest': { allows: [{ action: 'page-read', limited: false, where: [], by: ['a', 'b'] }], denies: ['page-edit'] }

@@ -300,7 +300,16 @@ export interface ManagerStatus {
   configKey?: string;
   /** Whether the feature is down or works but needs an admin (#1946). Present when degraded or failed. */
   kind?: DegradedKind;
+  /** Where the fix is, when it is not the setting `configKey` names (a record the app writes, not a value to edit). */
+  fixUrl?: string;
+  /** What the link to `fixUrl` says, e.g. "Open Admin → Backup". */
+  fixLabel?: string;
+  /** One line per problem, drawn as a list under `reason` (#2348). `reason` stays the headline and the audit text. */
+  details?: string[];
 }
+
+/** What a caller may add to a needs-attention status (#2348). */
+export type AttentionOptions = Pick<ManagerStatus, 'fixUrl' | 'fixLabel' | 'details'>;
 
 abstract class BaseManager {
   /** Reference to the wiki engine */
@@ -522,8 +531,8 @@ abstract class BaseManager {
    *   starts degraded and stays degraded must not re-emit on every boot, or
    *   the signal is buried in its own noise.
    */
-  protected markDegraded(reason: string, configKey?: string): boolean {
-    return this.transition({ state: 'degraded', reason, configKey, kind: 'outage' });
+  protected markDegraded(reason: string, configKey?: string, opts: AttentionOptions = {}): boolean {
+    return this.transition({ state: 'degraded', reason, configKey, kind: 'outage', ...opts });
   }
 
   /**
@@ -532,8 +541,8 @@ abstract class BaseManager {
    * clears with `markReadyIfDegradedBy` — but shown as needing attention, not
    * as down.
    */
-  protected markNeedsAttention(reason: string, configKey?: string): boolean {
-    return this.transition({ state: 'degraded', reason, configKey, kind: 'attention' });
+  protected markNeedsAttention(reason: string, configKey?: string, opts: AttentionOptions = {}): boolean {
+    return this.transition({ state: 'degraded', reason, configKey, kind: 'attention', ...opts });
   }
 
   /** Record that this manager is deliberately off. Not a problem (#1155). */

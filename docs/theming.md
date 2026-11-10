@@ -12,7 +12,7 @@ themes/
 │   ├── css/
 │   │   └── variables.css     # CSS custom properties (colors, fonts, spacing, Bootstrap vars)
 │   └── assets/
-│       ├── logo.svg          # Optional logo (logo.svg → logo.png → favicon.svg → favicon.png)
+│       ├── logo.svg          # Optional logo (logo-header.svg → logo-header.png → logo.svg → logo.png → favicon.svg → favicon.png)
 │       └── favicon.png
 └── volcano/
     ├── theme.json
@@ -40,11 +40,14 @@ mkdir -p themes/my-theme/css themes/my-theme/assets
   "author": "Your Name",
   "fonts": [
     "https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap"
-  ]
+  ],
+  "stylesheets": ["site.css"]
 }
 ```
 
 The `fonts` array is optional. Each URL is injected as a `<link rel="stylesheet">` in `<head>` before the theme CSS, making them available to `variables.css`.
+
+`stylesheets` is optional. Each entry is a CSS filename in `themes/<name>/css/`. The page loads those files after `themes/core.css`, so a site can adjust type, focus, and chrome without editing the shared sheet. A path (`../` or a slash) is ignored. `variables.css` is loaded on its own and does not need to be listed.
 
 ### 3. Create `css/variables.css`
 
@@ -111,9 +114,15 @@ Bundled values for `--card-outline`; each is at least 3:1 against both the page 
 | default | `#868e96` | `#6e7681` | `#868e96` |
 | flatly | `#868e96` | `#6e7681` | `#868e96` |
 | volcano | `#8f7364` | `#9a6a58` | `#9a6a58` |
-| fairways | `#7f7e68` | `#7a869c` | `#7a869c` |
+| fairways | `#5e7568` | `#8aa396` | `#8aa396` |
 
 A custom theme that omits the variables gets `2px` and `#868e96`. Check the contrast of your own colours against your page and card backgrounds. Bootstrap border utilities such as `border-info` still override the colour.
+
+### Fairways: logos inside a page
+
+The Fairways theme shows a picture in a page as wide as the text column. A logo is the exception: it stays at most 18rem wide and, in dark mode, sits on a light panel like the header logo. A picture counts as a logo when its alt text contains "logo" or "wordmark", when the Image plugin gives it `class='logo'`, or when its address contains "logo" or "wordmark". The address only helps for static files such as the theme's own `logo.png`: an uploaded picture is served under a code, not its file name, so give it alt text such as "Fairways logo". Any other picture is sized as a picture.
+
+The Fairways header shows `assets/logo-header.png`, a copy of `assets/logo.png` with its thin blue frame cleared. Pages that link `logo.png` still get the original.
 
 ## Activating a Theme
 
@@ -191,9 +200,10 @@ Stylesheets are injected in this order:
 4. `themes/<active>/css/variables.css` — theme custom properties
 5. `themes/core.css` — structural layout
 6. `themes/plugins/location.css` — location plugin CSS
-7. __Add-on stylesheets__ (in registration order)
+7. `theme.json` `stylesheets[]` — site layout CSS, after core
+8. __Add-on stylesheets__ (in registration order)
 
-This means add-on CSS can reference any CSS variable defined by the active theme, and can override any `core.css` rule.
+Add-on CSS still loads last, so an add-on can override a theme rule. A theme stylesheet can override `core.css` for that site only.
 
 ## ThemeManager API
 
@@ -205,7 +215,8 @@ import { ThemeManager } from './managers/ThemeManager';
 const themeManager = new ThemeManager(activeTheme, themesDir);
 const paths = themeManager.paths;
 // paths.coreCssPath, paths.variablesCssPath, paths.logoPath,
-// paths.faviconPath, paths.locationCssPath, paths.themeInfo, paths.fontUrls
+// paths.faviconPath, paths.locationCssPath, paths.themeInfo,
+// paths.fontUrls, paths.themeStylesheets
 ```
 
 __Static helpers:__
@@ -225,8 +236,9 @@ The following variables are available in every EJS template:
 | `activeTheme` | `string` | Active theme folder name (e.g. `"volcano"`) |
 | `coreCssPath` | `string` | Path to `themes/core.css` |
 | `variablesCssPath` | `string` | Path to `themes/<active>/css/variables.css` |
-| `logoPath` | `string` | Path to theme logo (svg or png) |
+| `logoPath` | `string` | Path to the header logo (svg or png). A theme may ship `logo-header.*` to show a different copy in the header than the `logo.*` file pages link to. |
 | `faviconPath` | `string` | Path to theme favicon |
 | `locationCssPath` | `string` | Path to location plugin CSS |
 | `themeFontUrls` | `string[]` | Font URLs from `theme.json fonts[]` |
+| `themeStylesheets` | `string[]` | Theme CSS files from `theme.json stylesheets[]`, loaded after core |
 | `addonStylesheets` | `string[]` | Stylesheets registered by add-ons |

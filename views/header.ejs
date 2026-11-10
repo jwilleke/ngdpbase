@@ -32,6 +32,10 @@
     <link rel="stylesheet" href="<%= typeof variablesCssPath !== 'undefined' ? variablesCssPath : '/themes/default/css/variables.css' %>?v=3.0.7">
     <link rel="stylesheet" href="<%= typeof coreCssPath !== 'undefined' ? coreCssPath : '/themes/core.css' %>?v=3.0.7">
     <link rel="stylesheet" href="<%= typeof locationCssPath !== 'undefined' ? locationCssPath : '/themes/plugins/location.css' %>?v=3.0.7">
+    <!-- Theme stylesheets (theme.json stylesheets[]) load after core so one site can adjust layout -->
+    <% if (typeof themeStylesheets !== 'undefined' && themeStylesheets && themeStylesheets.length) { %>
+    <% themeStylesheets.forEach(function(url) { %><link rel="stylesheet" href="<%= url %>?v=3.0.7">
+    <% }); %><% } %>
     <!-- Add-on stylesheets (registered via AddonsManager.registerStylesheet()) -->
     <% if (typeof addonStylesheets !== 'undefined' && addonStylesheets && addonStylesheets.length) { %>
     <% addonStylesheets.forEach(function(url) { %><link rel="stylesheet" href="<%= url %>">
@@ -289,17 +293,14 @@
                                 <li><a class="dropdown-item" href="#" onclick="showPageInfo(); return false;">
                                     <i class="fas fa-info"></i> Page Information
                                 </a></li>
-                                <li><a class="dropdown-item" href="#" onclick="showPageHistory()">
+                                <li><a class="dropdown-item" href="#" onclick="showPageHistory(); return false;">
                                     <i class="fas fa-history"></i> Page History
                                 </a></li>
-                                <li><a class="dropdown-item" href="#" onclick="showPageSource()">
+                                <li><a class="dropdown-item" href="#" onclick="showPageSource(); return false;">
                                     <i class="fas fa-code"></i> View Page Source
                                 </a></li>
                                 <li><a class="dropdown-item" href="#" onclick="showPageStats(); return false;">
                                     <i class="fas fa-chart-bar"></i> Page Statistics
-                                </a></li>
-                                <li><a class="dropdown-item" href="/view/Recent%20Changes">
-                                    <i class="fas fa-clock"></i> Recent Changes
                                 </a></li>
                             </ul>
                         </div>
@@ -630,13 +631,19 @@
                 <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2 mt-2" role="alert">
                     <i class="fas fa-key"></i>
                     <span>
+                        <% if (aalStepDown.passkeysAvailable) { %>
                         Your <strong><%= aalStepDown.roles.join(', ') %></strong> role<%= aalStepDown.roles.length === 1 ? ' needs' : 's need' %> a passkey sign-in, so <%= aalStepDown.roles.length === 1 ? 'it is' : 'they are' %> off while you are signed in with a password.
+                        <% } else { %>
+                        Your <strong><%= aalStepDown.roles.join(', ') %></strong> role<%= aalStepDown.roles.length === 1 ? ' needs' : 's need' %> a sign-in with your authenticator app's code, so <%= aalStepDown.roles.length === 1 ? 'it is' : 'they are' %> off while you are signed in with a password alone.
+                        <% } %>
                     </span>
-                    <% if (aalStepDown.hasPasskey) { %>
+                    <% if (aalStepDown.hasPasskey && aalStepDown.passkeysAvailable) { %>
                     <button type="button" class="btn btn-sm btn-warning d-none ms-auto" data-passkey-signin data-redirect="<%= typeof originalUrl !== 'undefined' && originalUrl ? originalUrl : '/' %>" data-error-target="aal-stepdown-error">Sign in with your passkey</button>
                     <script src="/js/passkey.js" defer></script>
-                    <% } else if (aalStepDown.passkeysAvailable) { %>
+                    <% } else if (aalStepDown.passkeysAvailable && !aalStepDown.hasPasskey) { %>
                     <a class="btn btn-sm btn-warning ms-auto" href="/profile">Add a passkey</a>
+                    <% } else { %>
+                    <a class="btn btn-sm btn-warning ms-auto" href="/auth/reauth?next=<%= encodeURIComponent(typeof originalUrl !== 'undefined' && originalUrl ? originalUrl : '/') %>">Sign in again</a>
                     <% } %>
                     <div id="aal-stepdown-error" class="w-100 small text-danger d-none"></div>
                 </div>
@@ -654,7 +661,7 @@
                 <div class="alert alert-danger d-flex flex-wrap align-items-center gap-2 mt-2" role="alert" data-aal-enrol-nag>
                     <i class="fas fa-key"></i>
                     <span>
-                        Your <strong><%= aalEnrolNag.roles.join(', ') %></strong> role<%= aalEnrolNag.roles.length === 1 ? ' needs' : 's need' %> a passkey or an authenticator app, and you have not added one. You are using <%= aalEnrolNag.roles.length === 1 ? 'it' : 'them' %> with a password alone until you do.
+                        Your <strong><%= aalEnrolNag.roles.join(', ') %></strong> role<%= aalEnrolNag.roles.length === 1 ? ' needs' : 's need' %> <%= aalEnrolNag.passkeysAvailable === false ? 'an authenticator app' : 'a passkey or an authenticator app' %>, and you have not added one. You are using <%= aalEnrolNag.roles.length === 1 ? 'it' : 'them' %> with a password alone until you do.
                     </span>
                     <a class="btn btn-sm btn-danger ms-auto" href="/profile#sign-in-methods">Add one now</a>
                 </div>

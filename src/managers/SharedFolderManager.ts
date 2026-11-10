@@ -117,8 +117,6 @@ const ROLES_KEY = 'ngdpbase.roles.definitions';
  * blocks saving it, never hidden or overwritten.
  */
 const ACCESS_POLICY_PREFIX = 'shared-folder-access-';
-/** The priority of the screen's policies: that of the shipped folder policies. */
-const ACCESS_POLICY_PRIORITY = 60;
 /**
  * The role an anonymous visitor holds. Never given a folder: a folder is for
  * signed-in users, never public (#1775).
@@ -159,7 +157,6 @@ function accessPolicy(name: string, kind: 'read' | 'file', roles: string[]): Pol
     description: kind === 'read'
       ? `Who may open /shared/${name}: its pages, their history and its files. Set on Admin → Shared folders (#2126)`
       : `Who may add, edit and delete pages and files in /shared/${name}. Set on Admin → Shared folders (#2126)`,
-    priority: ACCESS_POLICY_PRIORITY,
     effect: 'allow',
     subjects: roles.map((value) => ({ type: 'role', value })),
     resources: [{ type: SHARED_FOLDER_RESOURCE_TYPE, pattern: sharedFolderResource(name) }],

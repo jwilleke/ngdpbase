@@ -7,6 +7,7 @@
 import PolicyValidator from '../PolicyValidator';
 import fs from 'fs';
 import path from 'path';
+import { attr, val } from './__fixtures__/conditions';
 
 const core = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
 
@@ -21,26 +22,26 @@ const withCondition = (condition: unknown) => [{ id: 'p', name: 'p', effect: 'al
 
 describe('policyProblems and subject attributes', () => {
   test('subject:aal is declared as shipped', async () => {
-    expect((await validatorWith()).policyProblems(withCondition({ attribute: 'subject:aal', 'greater-or-equal': 2 }))).toEqual([]);
+    expect((await validatorWith()).policyProblems(withCondition({ 'integer-greater-than-or-equal': [attr('subject:aal', 'integer'), val(2)] }))).toEqual([]);
   });
 
   test('an undeclared subject:department-id is refused with where to declare it', async () => {
-    const problems = (await validatorWith()).policyProblems(withCondition({ attribute: 'subject:department-id', equals: 'x' }));
+    const problems = (await validatorWith()).policyProblems(withCondition({ 'string-equal': [attr('subject:department-id'), val('x')] }));
     expect(problems.join(' ')).toContain("condition reads 'subject:department-id', which is not declared; add it to ngdpbase.access.subject-attributes");
   });
 
   test('declared with profile:department, it is accepted; with a bad source or type it is not', async () => {
     const declare = (decl: unknown) => ({ 'ngdpbase.access.subject-attributes': { 'department-id': decl } });
-    const cond = withCondition({ attribute: 'subject:department-id', equals: 'x' });
+    const cond = withCondition({ 'string-equal': [attr('subject:department-id'), val('x')] });
     expect((await validatorWith(declare({ type: 'string', from: 'profile:department' }))).policyProblems(cond)).toEqual([]);
     expect((await validatorWith(declare({ type: 'string', from: 'account:password' }))).policyProblems(cond).join(' ')).toContain("'account:password' cannot be used in a condition");
     expect((await validatorWith(declare({ type: 'string', from: 'somewhere' }))).policyProblems(cond).join(' ')).toContain('start it with account:, profile:, sign-in');
     expect((await validatorWith(declare({ type: 'number', from: 'profile:department' }))).policyProblems(cond).join(' ')).toContain('use one of string, integer, boolean, identity, list');
   });
 
-  test('greater-or-equal on a string attribute is still a type error', async () => {
+  test('integer-greater-than-or-equal on a string attribute is still a type error', async () => {
     const v = await validatorWith({ 'ngdpbase.access.subject-attributes': { 'department-id': { type: 'string', from: 'profile:department' } } });
-    expect(v.policyProblems(withCondition({ attribute: 'subject:department-id', 'greater-or-equal': 2 })).join(' ')).toContain("applies 'greater-or-equal' to 'subject:department-id' (string)");
+    expect(v.policyProblems(withCondition({ 'integer-greater-than-or-equal': [attr('subject:department-id'), val(2)] })).join(' ')).toContain("'integer-greater-than-or-equal' takes integer; 'subject:department-id' has datatype \"string\"");
   });
 });
 
@@ -64,7 +65,7 @@ describe('subjectAttributeProblems — the key itself (#2287)', () => {
 
   test('a policy reading subject:aal is judged against the built-in even when config redefines it', async () => {
     const v = await validatorWith({ 'ngdpbase.access.subject-attributes': { aal: { type: 'string', from: 'profile:department' } } });
-    expect(v.policyProblems(withCondition({ attribute: 'subject:aal', 'greater-or-equal': 2 }))).toEqual([]);
+    expect(v.policyProblems(withCondition({ 'integer-greater-than-or-equal': [attr('subject:aal', 'integer'), val(2)] }))).toEqual([]);
   });
 });
 

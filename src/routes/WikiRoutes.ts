@@ -31,7 +31,7 @@ import { actorOf, type ActorAttribution, type ActorContext } from '../context/Ac
 import { systemContext } from '../context/bootActions.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { hideDeclaredPaths, keepHiddenValues, NO_SECRETS, secretKeys, valueLevels } from '../utils/sensitiveValues.js';
-import { createPatch } from 'diff';
+import { createPatch, diffLines } from 'diff';
 import { exec } from 'child_process';
 import { Request, Response, Application, NextFunction } from 'express';
 import SchemaGenerator from '../utils/SchemaGenerator.js';
@@ -44,7 +44,7 @@ import {
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
-import { readDeclaredAsWritten } from '../utils/policyAttributes.js';
+import { DENY_OVERRIDES_EXPLANATION, RULE_COMBINING_ALGORITHM_KEY, readDeclaredAsWritten, unenforcedConditionsNotice } from '../utils/policyAttributes.js';
 import { sessionCookieWithheld, SESSION_COOKIE_WITHHELD_MESSAGE } from '../utils/sessionSecurity.js';
 import { formatLeftMenuContent } from '../utils/leftMenuNav.js';
 import { reportMissingPageMetadata } from '../utils/pageMetadataMissing.js';
@@ -235,6 +235,7 @@ import { LoginThrottle } from '../utils/LoginThrottle.js';
 import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY, ADMIN_SWITCH_REASON } from '../utils/maintenanceState.js';
 import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
 import { untrustedFileHeaders, vaultFileDisposition } from '../utils/securityHeaders.js';
+import { featureNameFor } from '../utils/featureNames.js';
 import { PAGE_DATA_TOPIC } from '../cache/CacheDependencies.js';
 
 /**
@@ -353,8 +354,8 @@ interface IVersionEntry {
 }
 
 interface IComparisonResult {
-  version1?: unknown;
-  version2?: unknown;
+  fromMetadata?: unknown;
+  toMetadata?: unknown;
   diff?: unknown;
   stats?: unknown;
   [key: string]: unknown;
@@ -1220,6 +1221,7 @@ class WikiRoutes {
       logoPath: string;
       locationCssPath: string;
       themeFontUrls: string[];
+      themeStylesheets: string[];
       addonStylesheets: string[];
       capabilities: Record<string, boolean>;
       allowRegistration: boolean;
@@ -1274,6 +1276,7 @@ class WikiRoutes {
       logoPath: (configManager?.getCustomProperty('ngdpbase.favicon-path') as string) || themePaths.logoPath,
       locationCssPath: themePaths.locationCssPath,
       themeFontUrls: themePaths.fontUrls,
+      themeStylesheets: themePaths.themeStylesheets,
       addonStylesheets,
       capabilities: this.engine.getCapabilities?.() ?? {},
       allowRegistration,
@@ -2800,6 +2803,47 @@ class WikiRoutes {
       }
       return shown as T;
     }));
+  }
+
+  /**
+   * #2319: one side of a compare, as page-diff.ejs reads it. The provider
+   * returns VersionMetadata (`timestamp`, `message`); the view reads
+   * `dateCreated` and `comment`.
+   */
+  private diffSide(meta: unknown): Record<string, unknown> {
+    const m = (meta ?? {}) as Record<string, unknown>;
+    return { ...m, dateCreated: m.dateCreated ?? m.timestamp, comment: m.comment ?? m.message };
+  }
+
+  /**
+   * #2326: the provider's diff is character level (fast-diff, also what the
+   * delta store keeps), which reads as noise on text. Rebuild the old and new
+   * text from it and diff by line for display, in the same [-1 | 0 | 1, text]
+   * shape the view already renders. Stats count those lines, so the summary
+   * matches what is shown. A rewrite too big to diff within the time limit
+   * comes back as `tooLarge`, with both versions' sizes, and no diff.
+   */
+  private lineDiffForDisplay(charDiff: Array<[number, string]>): {
+    diff: Array<[number, string]>;
+    stats: { additions: number; deletions: number; unchanged: number };
+    tooLarge?: { oldBytes: number; newBytes: number };
+  } {
+    const oldText = charDiff.filter(([op]) => op <= 0).map(([, t]) => t).join('');
+    const newText = charDiff.filter(([op]) => op >= 0).map(([, t]) => t).join('');
+    const stats = { additions: 0, deletions: 0, unchanged: 0 };
+    const changes = diffLines(oldText, newText, { ignoreNewlineAtEof: true, stripTrailingCr: true, timeout: 2000 });
+    if (!changes) {
+      return { diff: [], stats, tooLarge: { oldBytes: oldText.length, newBytes: newText.length } };
+    }
+    // One entry per line, so each line carries its own marker and colour.
+    const diff = changes.flatMap((c): Array<[number, string]> => {
+      const op = c.added ? 1 : c.removed ? -1 : 0;
+      return c.value.replace(/\r?\n$/, '').split('\n').map((line): [number, string] => {
+        if (op === 1) stats.additions++; else if (op === -1) stats.deletions++; else stats.unchanged++;
+        return [op, line.replace(/\r$/, '')];
+      });
+    });
+    return { diff, stats };
   }
 
   private _isPagePrivate(pageName: string): boolean {
@@ -7108,6 +7152,7 @@ ${panes}
       next,
       prompt,
       needsPasskey,
+      passkeysAvailable: Boolean(authManager?.passkeysAvailable()),
       hasPasskey: Boolean(authManager?.passkeyRelyingParty() && authManager.hasCredential(user.username, 'passkey')),
       hasPassword,
       hasTotp,
@@ -13166,9 +13211,9 @@ ${panes}
         logger.warn('[adminDashboard] Last job runs could not be read:', jobErr);
       }
 
-      const degraded = (this.engine as unknown as {
+      const degraded = ((this.engine as unknown as {
         getDegradedManagers?: () => Array<{ manager: string; state: string; reason?: string; configKey?: string; kind?: string }>;
-      }).getDegradedManagers?.() ?? [];
+      }).getDegradedManagers?.() ?? []).map((m) => ({ ...m, feature: featureNameFor(m.manager) }));
 
       const templateData = {
         ...commonData,
@@ -14379,10 +14424,13 @@ ${panes}
         ?.subjectAttributeProblems(readDeclaredAsWritten(configManager, 'ngdpbase.access.subject-attributes')) ?? [];
       const environmentProblems = this.engine.getManager('PolicyValidator')
         ?.environmentAttributeProblems(readDeclaredAsWritten(configManager, 'ngdpbase.access.environment-attributes')) ?? [];
+      const algorithmProblems = this.engine.getManager('PolicyValidator')
+        ?.combiningAlgorithmProblems(configManager.getProperty(RULE_COMBINING_ALGORITHM_KEY, 'deny-overrides')) ?? [];
       const configProblems: Record<string, string[]> = {
         ...(policyProblems.length > 0 ? { 'ngdpbase.access.policies': policyProblems } : {}),
         ...(subjectProblems.length > 0 ? { 'ngdpbase.access.subject-attributes': subjectProblems } : {}),
-        ...(environmentProblems.length > 0 ? { 'ngdpbase.access.environment-attributes': environmentProblems } : {})
+        ...(environmentProblems.length > 0 ? { 'ngdpbase.access.environment-attributes': environmentProblems } : {}),
+        ...(algorithmProblems.length > 0 ? { [RULE_COMBINING_ALGORITHM_KEY]: algorithmProblems } : {})
       };
 
       const commonData = await this.getCommonTemplateData(req);
@@ -14391,6 +14439,10 @@ ${panes}
         ...commonData,
         title: 'Configuration Management',
         configProblems,
+        // #2317: passkeys are on in the setting but the site's address cannot support them.
+        passkeysCannotWork: this.engine.getManager<AuthManager>('AuthManager')?.passkeysCannotWork?.() ?? false,
+        // #2330: stated above the table, so the rule the policies are read under is visible.
+        ruleCombiningAlgorithm: { value: configManager.getProperty(RULE_COMBINING_ALGORITHM_KEY, 'deny-overrides'), explanation: DENY_OVERRIDES_EXPLANATION },
         message: req.query.success,
         error: req.query.error,
         defaultProperties,
@@ -14671,6 +14723,16 @@ ${panes}
           return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);
         }
       }
+      // #2330: only deny-overrides is implemented; any other value is refused here, and stops the site at start-up.
+      if (property === RULE_COMBINING_ALGORITHM_KEY) {
+        const refused = this.engine.getManager('PolicyValidator')?.combiningAlgorithmProblems(parsedValue) ?? [];
+        if (refused.length > 0) {
+          const error = `Rule-combining algorithm not saved: ${refused.join('; ')}`;
+          const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
+          if (wantsJson) return res.status(400).json({ error });
+          return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);
+        }
+      }
       // #2261: an environment attribute reads a boolean from a schedule or a configuration key.
       if (property === 'ngdpbase.access.environment-attributes') {
         const refused = this.engine.getManager('PolicyValidator')?.environmentAttributeProblems(parsedValue) ?? [];
@@ -14705,6 +14767,12 @@ ${panes}
       // next start, with /admin down until the file is edited by hand, so it
       // is refused here. The rule is AuthManager's, the one start-up uses.
       let warning = '';
+      // #2334: like a leftover `priority`, a `conditions` array is reported, not refused: the
+      // policy is otherwise valid, and refusing would block saving the rest of the list.
+      if (property === 'ngdpbase.access.policies') {
+        const unenforced = unenforcedConditionsNotice(parsedValue);
+        if (unenforced) warning = ` ${unenforced}`;
+      }
       if (property === 'ngdpbase.auth.factors') {
         const check = (this.engine.getManager('AuthManager') as { checkFactorEntries?(v: unknown): { refused: string[]; ignored: string[] } } | null)
           ?.checkFactorEntries?.(parsedValue);
@@ -20972,7 +21040,8 @@ ${panes}
         pageName: pageName,
         pageUuid: pageMetadata?.uuid,
         // #2097: each version's editor as people see it, username and identity @id.
-        versions: await this.describeUsersIn(pagedVersions.items, ['editor', 'author']),
+        // #2326: the provider's `message` is the view's `comment` (as diffSide does for #2319).
+        versions: await this.describeUsersIn(pagedVersions.items.map((v: unknown) => this.diffSide(v)), ['editor', 'author']),
         versionCount: versions.length,
         paginationHtml: pagedVersions.paginationHtml
       });
@@ -21055,15 +21124,18 @@ ${panes}
       // Get left menu content
       const leftMenu = await this.getLeftMenu(req.userContext);
 
+      const lineDiff = this.lineDiffForDisplay(comparison.diff as Array<[number, string]>);
       res.render('page-diff', {
         ...templateData,
         leftMenu,
+        pageName,
         pageUuid: pageMetadata?.uuid,
         // #2097: each version's editor as people see it.
-        version1: (await this.describeUsersIn([comparison.version1 as object], ['author', 'editor']))[0],
-        version2: (await this.describeUsersIn([comparison.version2 as object], ['author', 'editor']))[0],
-        diff: comparison.diff,
-        stats: comparison.stats
+        version1: (await this.describeUsersIn([this.diffSide(comparison.fromMetadata)], ['author', 'editor']))[0],
+        version2: (await this.describeUsersIn([this.diffSide(comparison.toMetadata)], ['author', 'editor']))[0],
+        diff: lineDiff.diff,
+        stats: lineDiff.stats,
+        tooLarge: lineDiff.tooLarge ?? null
       });
 
     } catch (error: unknown) {

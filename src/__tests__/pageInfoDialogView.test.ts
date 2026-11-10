@@ -113,4 +113,28 @@ describe('#2304 the page info dialog', () => {
     const { html } = await load(LOCATION);
     expect(html).toMatch(/<a class="dropdown-item" href="#" onclick="showPageInfo\(\); return false;">/);
   });
+
+  // #2307 — History and Source in the same menu must not navigate to `#` either.
+  test.each(['showPageHistory', 'showPageSource'])('choosing the %s menu item leaves the address unchanged', async (fn) => {
+    const start = 'https://wiki.example.org/vaults/jim/default/JSW%20Health%20History?x=1';
+    const { window } = await load(start);
+    interface MenuWindow {
+      [name: string]: unknown;
+      document: { querySelector(sel: string): { dispatchEvent(e: unknown): boolean } | null };
+      MouseEvent: new (type: string, init: { bubbles: boolean; cancelable: boolean }) => { defaultPrevented: boolean };
+      location: { href: string };
+    }
+    const win = window as unknown as MenuWindow;
+    let called = 0;
+    win[fn] = () => { called++; };
+    const item = win.document.querySelector(`a.dropdown-item[onclick^="${fn}("]`);
+    expect(item).not.toBeNull();
+    const click = new win.MouseEvent('click', { bubbles: true, cancelable: true });
+    item.dispatchEvent(click);
+    // jsdom follows the link on a later tick, so wait before reading the address.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(called).toBe(1);
+    expect(click.defaultPrevented).toBe(true);
+    expect(win.location.href).toBe(start);
+  });
 });

@@ -1,7 +1,7 @@
 ---
 name: ThemeManager
 description: Manages theme discovery + active-theme selection + CSS path resolution for the page-render pipeline
-dateModified: '2026-05-28'
+dateModified: '2026-11-07'
 category: managers
 code: src/managers/ThemeManager.ts
 ---
@@ -20,6 +20,8 @@ interface ThemeInfo {
   author: string;
   /** Optional Google Fonts (or other) stylesheet URLs to inject in <head> */
   fonts?: string[];
+  /** Optional CSS filenames in css/, loaded after core.css */
+  stylesheets?: string[];
 }
 
 interface ThemePaths {
@@ -38,6 +40,7 @@ interface ThemePaths {
 - __Active-theme resolution__ — read `ngdpbase.theme.active` config; fall back to `default`.
 - __Path resolution__ — produce `ThemePaths` for the render pipeline.
 - __Font preload__ — surface `fonts[]` URLs so the renderer can inject `<link rel="stylesheet">` for Google Fonts etc.
+- __Theme stylesheets__ — surface `stylesheets[]` (a css basename that exists under that theme) as `themeStylesheets`, loaded after `core.css`.
 
 ## See Also
 

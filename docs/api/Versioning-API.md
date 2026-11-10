@@ -242,19 +242,27 @@ __Success (200)__:
   "success": true,
   "identifier": "Main",
   "comparison": {
-    "version1": {
+    "fromVersion": 1,
+    "toVersion": 2,
+    "fromMetadata": {
       "version": 1,
-      "dateCreated": "2024-10-14T09:00:00Z",
       "author": "admin",
-      "changeType": "created",
-      "comment": "Initial version"
+      "timestamp": "2024-10-14T09:00:00Z",
+      "changeType": "create",
+      "message": "Initial version",
+      "contentHash": "…",
+      "contentSize": 62,
+      "compressed": false
     },
-    "version2": {
+    "toMetadata": {
       "version": 2,
-      "dateCreated": "2024-10-15T15:45:00Z",
       "author": "john",
-      "changeType": "updated",
-      "comment": "Added new section"
+      "timestamp": "2024-10-15T15:45:00Z",
+      "changeType": "update",
+      "message": "Added new section",
+      "contentHash": "…",
+      "contentSize": 118,
+      "compressed": false
     },
     "diff": [
       [0, "# Welcome to Main\n"],
@@ -264,19 +272,21 @@ __Success (200)__:
       [1, "This section was added in v2.\n"]
     ],
     "stats": {
-      "additions": 2,
+      "additions": 46,
       "deletions": 0,
-      "unchanged": 3
+      "unchanged": 42
     }
   }
 }
 ```
 
+__Stats__: `additions`, `deletions` and `unchanged` count characters, not lines: each is the total length of the text in the `diff` entries of that kind. (The Compare Versions page diffs by line and counts lines; the API does not.)
+
 __Diff Format__:
 
-- `[0, "text"]`: Unchanged line
-- `[1, "text"]`: Added line (in v2, not in v1)
-- `[-1, "text"]`: Deleted line (in v1, not in v2)
+- `[0, "text"]`: Unchanged text
+- `[1, "text"]`: Added text (in v2, not in v1)
+- `[-1, "text"]`: Deleted text (in v1, not in v2)
 
 __Error Responses__:
 
@@ -422,9 +432,9 @@ Summary statistics for a comparison.
 
 ```typescript
 {
-  additions: number;    // Number of lines added
-  deletions: number;    // Number of lines deleted
-  unchanged: number;    // Number of lines unchanged
+  additions: number;    // Characters added
+  deletions: number;    // Characters deleted
+  unchanged: number;    // Characters unchanged
 }
 ```
 
@@ -556,9 +566,9 @@ async function showRecentChanges(pageName) {
 
     const stats = compareData.comparison.stats;
     console.log(`Recent changes to ${pageName}:`);
-    console.log(`  Added: ${stats.additions} lines`);
-    console.log(`  Removed: ${stats.deletions} lines`);
-    console.log(`  Unchanged: ${stats.unchanged} lines`);
+    console.log(`  Added: ${stats.additions} characters`);
+    console.log(`  Removed: ${stats.deletions} characters`);
+    console.log(`  Unchanged: ${stats.unchanged} characters`);
   } catch (error) {
     console.error('Failed to compare versions:', error);
   }

@@ -14,7 +14,7 @@ test.describe('#1563 — backups not working is an outage on the dashboard', () 
   test.use({ storageState: './tests/e2e/.auth/user.json' });
   test.setTimeout(240_000);
 
-  const backupRow = (page: Page) => page.locator('#subsystems-down li', { hasText: 'BackupManager' });
+  const backupRow = (page: Page) => page.locator('#subsystems-down li[data-manager="BackupManager"]', { hasText: 'No good backup since' });
 
   test('no backup at all: Backup is listed as not working, "No good backup since: never"', async ({ page }) => {
     await page.goto('/admin/backup');
@@ -25,7 +25,7 @@ test.describe('#1563 — backups not working is an outage on the dashboard', () 
     await page.goto('/admin');
     await expect(page.locator('#subsystems-down')).toBeVisible();
     await expect(backupRow(page)).toContainText('No good backup since: never');
-    await expect(backupRow(page)).toContainText('(degraded)');
+    await expect(backupRow(page)).toContainText('Backups');
     // The dashboard's own backup lines say the same, with the next run and free space.
     await expect(page.locator('#backup-health [data-testid=backup-health-fault]')).toContainText('Backups are not working');
     await expect(page.locator('#backup-health [data-testid=backup-last-good]')).toContainText('never');

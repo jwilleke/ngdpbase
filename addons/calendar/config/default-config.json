@@ -22,7 +22,6 @@
       "id": "calendar-manage-access",
       "name": "Calendar management",
       "description": "Manage calendar events and reservations",
-      "priority": 90,
       "effect": "allow",
       "subjects": [
         {
@@ -44,7 +43,6 @@
       "id": "calendar-reserve-access",
       "name": "Calendar reservations",
       "description": "Make and cancel one's own reservations",
-      "priority": 90,
       "effect": "allow",
       "subjects": [
         {

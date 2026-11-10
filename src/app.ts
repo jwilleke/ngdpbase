@@ -857,7 +857,7 @@ void (async (): Promise<void> => {
     aalReachFor?(username: string): Promise<{ now: 1 | 2 | 3 | 0; ifEnrolled: 1 | 2 | 3 | 0 }>;
     rolesAwaitingEnrolment?(roles: readonly string[], reach: { now: number; ifEnrolled: number }): string[];
     hasCredential?(username: string, kind: 'passkey'): boolean;
-    passkeyRelyingParty?(): unknown;
+    passkeysAvailable?(): boolean;
     subjectActingFor?(req: Request, self: NonNullable<Request['userContext']>): Promise<NonNullable<Request['userContext']>>;
     actingForChoices?(req: Request): { grants: unknown[] } | null;
     takeStepUpNotice?(req: Request): boolean;
@@ -959,7 +959,11 @@ void (async (): Promise<void> => {
           // #1690: a role held below its level only because no factor is
           // enrolled — the person keeps it, and every page says to add one.
           const awaiting = reach ? authManagerForRoles?.rolesAwaitingEnrolment?.(sessionContext.roles ?? [], reach) ?? [] : [];
-          if (awaiting.length > 0) res.locals.aalEnrolNag = { roles: awaiting };
+          if (awaiting.length > 0) res.locals.aalEnrolNag = {
+            roles: awaiting,
+            // #2345: name a passkey only where one can be added (not off, not an address passkeys can't use).
+            passkeysAvailable: Boolean(authManagerForRoles?.passkeysAvailable?.())
+          };
           // #2145: back from a fresh sign-in that could not redo the action; say it can be done now.
           if (authManagerForRoles?.takeStepUpNotice?.(req)) res.locals.stepUpConfirmed = true;
           const stepDown = authManagerForRoles?.rolesAtSignIn?.(sessionContext.roles ?? [], req.session.signIn?.aal ?? 1, aalCap);
@@ -967,7 +971,7 @@ void (async (): Promise<void> => {
             res.locals.aalStepDown = {
               roles: stepDown.steppedDown,
               hasPasskey: authManagerForRoles?.hasCredential?.(sessionContext.username, 'passkey') ?? false,
-              passkeysAvailable: Boolean(authManagerForRoles?.passkeyRelyingParty?.())
+              passkeysAvailable: Boolean(authManagerForRoles?.passkeysAvailable?.())
             };
           }
           const self = {
@@ -1248,6 +1252,12 @@ void (async (): Promise<void> => {
   //     Templates surface the token via getCommonTemplateData() as `csrfToken`;
   //     forms render `<input name="_csrf" value="<%= csrfToken %>">`;
   //     JS-driven fetches submit it via the `X-CSRF-Token` header.
+  // 6a'. The signed-out write gate (#2298): before the CSRF check and every route, so a
+  //      POST/PUT/PATCH/DELETE from someone not signed in gets one answer (sign-in redirect
+  //      or 401) whatever the route, unless it is on src/security/signedOutWrites.ts.
+  const { signedOutWriteGate } = await import('./middleware/signedOutWriteGate.js');
+  app.use(signedOutWriteGate(engine));
+
   const { csrfMiddleware } = await import('./middleware/csrf.js');
   app.use(csrfMiddleware);
 
@@ -1269,6 +1279,8 @@ void (async (): Promise<void> => {
   // same way (#1152), and is only known now that the add-ons have loaded.
   const reasonsBeforeAddons = new Set(engine.maintenance.reasons());
   await engine.initializeAddons();
+  // #2298: add-ons have declared their signed-out routes in register(); the list is closed.
+  (await import('./security/signedOutWrites.js')).sealSignedOutWrites();
   const addonBlocks = engine.maintenance.reasons().filter((r) => !reasonsBeforeAddons.has(r));
   // #1603: every document people are asked to accept, core's and the add-ons' just
   // registered, read once, so a missing one shows on the dashboard from start-up.
