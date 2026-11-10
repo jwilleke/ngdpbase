@@ -144,4 +144,24 @@ describe('admin row buttons hand recorded names to the script as text', () => {
     // The name is shown as text: no element was made from its markup.
     expect(win.document.querySelectorAll('table b').length).toBe(0);
   });
+
+  it('Page History restores a version and compares two chosen versions by the exact page name', () => {
+    const versions = [3, 2, 1].map(version => ({
+      version, changeType: 'updated', comment: '', contentSize: 10, timestamp: `2026-01-0${version}T00:00:00Z`
+    }));
+    const { win } = runPage('page-history.ejs', {
+      pageName: NAME, versions, versionCount: 3, userContext: { isAuthenticated: true },
+      pageUrl: (n: string) => '/wiki/' + encodeURIComponent(n)
+    });
+    const restored = spy(win, 'restoreVersion');
+    const compared = spy(win, 'compareVersions');
+    // The newest version has no Restore button, so the first one is for version 2.
+    click(win, 'button[title="Restore to this version"]');
+    // The form's From is the left side and To the right; compareVersions takes To first.
+    const doc = win.document as unknown as Document;
+    (doc.getElementById('version1') as HTMLSelectElement).value = '1';
+    doc.getElementById('compareForm').dispatchEvent(new (win.Event as typeof Event)('submit', { cancelable: true }));
+    expect(restored).toEqual([[NAME, '2']]);
+    expect(compared).toEqual([[NAME, '3', '1']]);
+  });
 });
