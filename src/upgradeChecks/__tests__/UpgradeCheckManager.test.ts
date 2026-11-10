@@ -5,7 +5,7 @@ import UpgradeCheckManager, { type UpgradeCheck } from '../../managers/UpgradeCh
 import logger from '../../utils/logger';
 import { admin, cleanup, makeFixture, type Fixture } from '../../test-support/upgradeChecks';
 
-const ITEM = { headline: 'Something', text: 'Something to do.', pages: [], more: '', note: 'A note.', button: 'Do it', done: 'It is done.' };
+const ITEM = { text: 'Something to do.', link: { label: 'See', href: '/somewhere' } };
 
 describe('UpgradeCheckManager (#2301)', () => {
   let f: Fixture;
@@ -16,6 +16,7 @@ describe('UpgradeCheckManager (#2301)', () => {
     since: '5.43.0',
     detect: async () => { detects += 1; return { affected, log: 'sample detail' }; },
     item: async () => ITEM,
+    list: async () => null,
     fix: async (a) => { fixed.push(a); },
     ...over
   });
@@ -61,10 +62,10 @@ describe('UpgradeCheckManager (#2301)', () => {
     const m = manager(check(['x']));
     await m.runAtBoot();
     expect(await m.openItems(admin)).toEqual([{ id: 'sample', ...ITEM }]);
-    expect(await m.applyFix('sample', admin)).toBe('It is done.');
+    expect(await m.applyFix('sample', admin)).toBe(true);
     expect(fixed).toEqual([['x']]);
     expect(await m.openItems(admin)).toEqual([]);
-    expect(await m.applyFix('sample', admin)).toBeNull();
+    expect(await m.applyFix('sample', admin)).toBe(false);
     expect(fixed).toHaveLength(1);
   });
 
@@ -85,7 +86,7 @@ describe('UpgradeCheckManager (#2301)', () => {
   test('an unknown id is refused', async () => {
     const m = manager(check(['x']));
     await m.runAtBoot();
-    expect(await m.applyFix('nope', admin)).toBeNull();
+    expect(await m.applyFix('nope', admin)).toBe(false);
   });
 
   describe('a damaged record or version never stops the start', () => {
@@ -125,9 +126,50 @@ describe('UpgradeCheckManager (#2301)', () => {
       expect(fs.readdirSync(f.dataDir).filter((n) => n.endsWith('.tmp'))).toEqual([]);
     });
 
-    test('a record is written through a temporary file that is renamed into place', async () => {
+    test('a record is written through a temporary file with a random name, renamed into place', async () => {
+      const written: string[] = [];
+      const renamed: Array<[string, string]> = [];
+      const fse = (await import('fs-extra')).default;
+      const realWrite = fse.writeJson.bind(fse);
+      const realRename = fse.rename.bind(fse);
+      vi.spyOn(fse, 'writeJson').mockImplementation(((target: string, ...rest: unknown[]) => { written.push(target); return (realWrite as (...a: unknown[]) => Promise<void>)(target, ...rest); }) as never);
+      vi.spyOn(fse, 'rename').mockImplementation(((from: string, to: string) => { renamed.push([from, to]); return realRename(from, to); }) as never);
       await manager(check(['x'])).runAtBoot();
+      await manager(check(['x'], { id: 'second' })).runAtBoot();
+      expect(written.length).toBeGreaterThanOrEqual(2);
+      expect(written).not.toContain(file());
+      expect(renamed.map(([, to]) => to)).toEqual(written.map(() => file()));
+      expect(renamed.map(([from]) => from)).toEqual(written);
+      expect(new Set(written).size).toBe(written.length); // never the same temporary name twice
+      expect(written[0]).toMatch(/upgrade-checks\.json\.[0-9a-f-]{36}\.tmp$/);
       expect(fs.readdirSync(f.dataDir)).toEqual(['upgrade-checks.json']);
+    });
+  });
+
+  test('a record that cannot be written after the fix is logged, and the fix still counts as done', async () => {
+    const m = manager(check(['x']));
+    await m.runAtBoot();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    vi.spyOn((await import('fs-extra')).default, 'rename').mockRejectedValueOnce(new Error('disk full'));
+    expect(await m.applyFix('sample', admin)).toBe(true);
+    expect(fixed).toEqual([['x']]);
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('could not be recorded'))).toBe(true);
+  });
+
+  describe('live checks', () => {
+    test('are worked out on each look, not recorded, and a failing one leaves the rest', async () => {
+      let rules = ['A'];
+      const m = manager(check([]));
+      m.registerLive({ id: 'live', items: async () => rules.map((r) => ({ text: r, link: { label: 'Go', href: '/x' } })) });
+      m.registerLive({ id: 'broken', items: async () => { throw new Error('boom'); } });
+      vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+      await m.runAtBoot();
+      expect((await m.openItems(admin)).map((i) => i.text)).toEqual(['A']);
+      rules = ['A', 'B'];
+      expect((await m.openItems(admin)).map((i) => i.text)).toEqual(['A', 'B']);
+      rules = [];
+      expect(await m.openItems(admin)).toEqual([]);
+      expect(fs.readFileSync(path.join(f.dataDir, 'upgrade-checks.json'), 'utf8')).not.toContain('live');
     });
   });
 });

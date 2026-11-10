@@ -20,14 +20,7 @@
     <% (items || []).forEach(function(item) { %>
     <div class="card mb-3">
         <div class="card-body">
-            <p class="mb-2"><%= item.text %><% item.pages.forEach(function(page, i) { %><%= i === 0 ? '' : ', ' %><a href="<%= page.href %>"><%= page.title %></a><% }); %><%= item.more %>.</p>
-            <form method="post" action="/admin/upgrade/fix">
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <input type="hidden" name="id" value="<%= item.id %>">
-                <p class="text-muted small mb-2"><%= item.note %></p>
-                <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage', 'read-only-' + item.id) %>><%= item.button %></button>
-                <% if (!can('config-manage')) { %><p class="text-muted small mt-2 mb-0" id="read-only-<%= item.id %>"><%= readOnly %></p><% } %>
-            </form>
+            <p class="mb-0"><%= item.text %> <a href="<%= item.link.href %>"><%= item.link.label %></a></p>
         </div>
     </div>
     <% }); %>

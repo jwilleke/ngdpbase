@@ -5,10 +5,18 @@
  */
 import type { OpenUpgradeItem } from '../managers/UpgradeCheckManager.js';
 
-export const UPGRADE_FIX_ERRORS = {
-  alreadyFixed: 'Those pages were already fixed. There\'s nothing more to do.',
-  failed: 'Nothing was changed. Try the button again. If it still doesn\'t work, restart the site and try once more.'
+/** What the button's result says. The address carries only the key, never the text, and the page writes the words. */
+export const UPGRADE_RESULTS = {
+  fixed: { ok: true, text: 'Administrators can now edit those pages.' },
+  already: { ok: false, text: 'Those pages were already fixed. There\'s nothing more to do.' },
+  failed: { ok: false, text: 'Nothing was changed. Try the button again. If it still doesn\'t work, restart the site and try once more.' }
 } as const;
+
+export type UpgradeResultKey = keyof typeof UPGRADE_RESULTS;
+
+/** The result for a key from the address, or null for anything else. */
+export const upgradeResult = (key: unknown): (typeof UPGRADE_RESULTS)[UpgradeResultKey] | null =>
+  typeof key === 'string' && Object.hasOwn(UPGRADE_RESULTS, key) ? UPGRADE_RESULTS[key as UpgradeResultKey] : null;
 
 export const UPGRADE_INTRO = 'Some updates change how your site works. Anything that needs a decision from you is listed here.';
 export const UPGRADE_READ_ONLY = 'Only an administrator who can change site settings can do this.';
@@ -18,9 +26,10 @@ export const upgradeHeading = (version: string): string => (version ? `After upd
 
 export const upgradeEmpty = (version: string): string => `Nothing needs your attention after updating${version ? ` to ${version}` : ''}.`;
 
-/** An item as one plain sentence: its lead, the page titles and the count of the rest. */
-export const itemSentence = (item: OpenUpgradeItem): string =>
-  `${item.text}${item.pages.length > 0 ? item.pages.map((p) => p.title).join(', ') : ''}${item.more}.`;
+/** The list page's heading and its lead line. */
+export const UPGRADE_LIST_HEADING = 'Pages that can\'t be edited';
+export const upgradeListLead = (total: number): string =>
+  `${total === 1 ? 'This page can\'t' : `These ${total} pages can't`} be edited by anyone, including you.`;
 
 export interface UpgradeNotice {
   text: string;
@@ -33,8 +42,7 @@ export interface UpgradeNotice {
  */
 export function upgradeNotice(items: OpenUpgradeItem[], version: string, canFix: boolean): UpgradeNotice | null {
   if (items.length === 0) return null;
-  const after = version ? `after the update to ${version}` : 'after the update';
-  if (items.length === 1) return { text: `${items[0].headline} ${after}.`, link: canFix ? 'Review and fix' : 'Review' };
+  if (items.length === 1) return { text: items[0].text, link: canFix ? 'Review and fix' : 'Review' };
   return {
     text: canFix
       ? `The update${version ? ` to ${version}` : ''} needs ${items.length} decisions from you.`

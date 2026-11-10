@@ -11,7 +11,7 @@ export interface Fixture {
   props: Record<string, unknown>;
   /** Every setProperty call: key, value, who. */
   saved: Array<{ key: string; value: unknown; ctx: ActorContext }>;
-  /** Category -> page names (a vault page is `owner/vault/Title`, the shape `parsePrivatePageName` reads is `private:`-prefixed in real use). */
+  /** Category -> public page names. */
   pages: Record<string, string[]>;
   /** Page names the viewer may not see. */
   hidden: Set<string>;
@@ -33,7 +33,7 @@ export function makeFixture(version = '5.43.0'): Fixture {
     ]
   };
   const f: Fixture = { engine: null as never, dataDir, props, saved: [], pages: {}, hidden: new Set(), policyProblems: [] };
-  const policies = (): Array<{ actions?: string[]; resources?: Array<{ type: string; pattern: string }> }> => props['ngdpbase.access.policies'] as never;
+  const policies = (): Array<{ id?: string; effect?: string; subjects?: Array<{ type: string; value?: string }>; actions?: string[]; resources?: Array<{ type: string; pattern: string }> }> => props['ngdpbase.access.policies'] as never;
   const managers: Record<string, unknown> = {
     ConfigurationManager: {
       getProperty: (key: string, fallback: unknown) => props[key] ?? fallback,
@@ -42,6 +42,7 @@ export function makeFixture(version = '5.43.0'): Fixture {
       setProperty: async (key: string, value: unknown, ctx: ActorContext) => { props[key] = value; f.saved.push({ key, value, ctx }); }
     },
     PolicyDecisionPoint: {
+      policies: () => policies(),
       categoriesGranting: (action: string) => policies()
         .filter((p) => (p.actions ?? []).includes(action))
         .flatMap((p) => (p.resources ?? []).filter((r) => r.type === 'system-category').map((r) => r.pattern))

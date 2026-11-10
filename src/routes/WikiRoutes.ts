@@ -68,7 +68,7 @@ import { sharedFoldersWordsState } from '../utils/sharedFoldersWordsConsent.js';
 import type SharedFolderManager from '../managers/SharedFolderManager.js';
 import type UpgradeCheckManager from '../managers/UpgradeCheckManager.js';
 import type { OpenUpgradeItem } from '../managers/UpgradeCheckManager.js';
-import { UPGRADE_FIX_ERRORS, UPGRADE_INTRO, UPGRADE_READ_ONLY, upgradeEmpty, upgradeHeading, upgradeNotice } from '../upgradeChecks/wording.js';
+import { UPGRADE_INTRO, UPGRADE_LIST_HEADING, UPGRADE_READ_ONLY, upgradeEmpty, upgradeHeading, upgradeListLead, upgradeNotice, upgradeResult, type UpgradeResultKey } from '../upgradeChecks/wording.js';
 import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
 import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
@@ -15395,6 +15395,7 @@ ${panes}
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page');
       }
       const version = this.upgradeVersion();
+      const result = upgradeResult(req.query.result);
       const commonData = await this.getCommonTemplateData(req);
       return res.render('admin-upgrade', {
         ...commonData,
@@ -15405,8 +15406,9 @@ ${panes}
         empty: upgradeEmpty(version),
         readOnly: UPGRADE_READ_ONLY,
         items: await this.upgradeItemsFor(wikiContext.userContext),
-        success: typeof req.query.success === 'string' ? req.query.success : null,
-        error: typeof req.query.error === 'string' ? req.query.error : null
+        // The address carries a key; the words are written here.
+        success: result?.ok ? result.text : null,
+        error: result && !result.ok ? result.text : null
       });
     } catch (err: unknown) {
       logger.error('[upgrade] Error showing the After updating page:', err);
@@ -15414,20 +15416,46 @@ ${panes}
     }
   }
 
-  /** POST /admin/upgrade/fix — the item's one button. A configuration change, so config-manage; the change is audited as any other (#2301). */
+  /** GET /admin/upgrade/pages/:id — the pages an item is about, 50 to a page, and the item's one button (#2301). Worked out afresh each time. */
+  async adminUpgradePages(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await this.hasAdminViewAccess(wikiContext))) {
+        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page');
+      }
+      const id = typeof req.params.id === 'string' ? req.params.id : '';
+      const asked = Number.parseInt(typeof req.query.page === 'string' ? req.query.page : '', 10);
+      const list = await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.openList(id, wikiContext.userContext, Number.isFinite(asked) ? asked : 1);
+      if (!list) return res.redirect('/admin/upgrade');
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('admin-upgrade-pages', {
+        ...commonData,
+        title: UPGRADE_LIST_HEADING,
+        heading: UPGRADE_LIST_HEADING,
+        lead: upgradeListLead(list.total),
+        readOnly: UPGRADE_READ_ONLY,
+        id,
+        list
+      });
+    } catch (err: unknown) {
+      logger.error('[upgrade] Error showing the list of pages:', err);
+      return this.renderError(req, res, 500, 'Error', 'This page could not be shown.');
+    }
+  }
+
+  /** POST /admin/upgrade/fix — the item's one button. A configuration change, so config-manage; the change is audited as any other (#2301). Redirects with a key, never text. */
   async adminUpgradeFix(req: Request, res: Response) {
-    const back = (kind: 'success' | 'error', text: string) => res.redirect(`/admin/upgrade?${kind}=${encodeURIComponent(text)}`);
+    const back = (result: UpgradeResultKey) => res.redirect(`/admin/upgrade?result=${result}`);
     try {
       const wikiContext = this.createWikiContext(req);
       if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return undefined;
       const currentUser = wikiContext.userContext;
       const id = typeof req.body?.id === 'string' ? req.body.id : '';
-      const done = currentUser ? await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.applyFix(id, currentUser) : null;
-      if (!done) return back('error', UPGRADE_FIX_ERRORS.alreadyFixed);
-      return back('success', done);
+      const done = currentUser ? await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.applyFix(id, currentUser) : false;
+      return back(done ? 'fixed' : 'already');
     } catch (err: unknown) {
       logger.error('[upgrade] The fix did not complete:', err);
-      return back('error', UPGRADE_FIX_ERRORS.failed);
+      return back('failed');
     }
   }
 
@@ -19117,6 +19145,7 @@ ${panes}
     app.post('/admin/reindex', (req: Request, res: Response) => this.adminReindex(req, res));
     // #1842: move a vault page's leftovers into its vault — the owner, or admin-system for an unsealed vault.
     app.get('/admin/upgrade', (req: Request, res: Response) => void this.adminUpgradePage(req, res));
+    app.get('/admin/upgrade/pages/:id', (req: Request, res: Response) => void this.adminUpgradePages(req, res));
     app.post('/admin/upgrade/fix', (req: Request, res: Response) => void this.adminUpgradeFix(req, res));
     app.post('/vault-repair', (req: Request, res: Response) => void this.vaultRepair(req, res, false));
     app.post('/vault-repair/all', (req: Request, res: Response) => void this.vaultRepair(req, res, true));

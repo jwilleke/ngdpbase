@@ -49,7 +49,7 @@ import ConsentManager from './managers/ConsentManager.js';
 import SharedFolderManager from './managers/SharedFolderManager.js';
 import ReviewManager from './managers/ReviewManager.js';
 import UpgradeCheckManager from './managers/UpgradeCheckManager.js';
-import { shippedUpgradeChecks } from './upgradeChecks/index.js';
+import { shippedLiveChecks, shippedUpgradeChecks } from './upgradeChecks/index.js';
 import OrganizationManager from './managers/OrganizationManager.js';
 import IdentityManager from './managers/IdentityManager.js';
 import RoleManager from './managers/RoleManager.js';
@@ -495,6 +495,7 @@ class WikiEngine extends Engine {
     this.registerManager('UpgradeCheckManager', upgradeChecks);
     await upgradeChecks.initialize();
     shippedUpgradeChecks(this).forEach((check) => upgradeChecks.register(check));
+    shippedLiveChecks(this).forEach((check) => upgradeChecks.registerLive(check));
     await upgradeChecks.runAtBoot();
 
     // Mark engine as initialized (required for Engine base class contract)

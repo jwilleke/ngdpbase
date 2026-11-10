@@ -12,6 +12,7 @@
  * "After updating" in Admin until its fix is applied. The site never contacts
  * GitHub: everything here is local.
  */
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fse from 'fs-extra';
 import semver from 'semver';
@@ -28,22 +29,30 @@ export interface UpgradePageLink {
   href: string;
 }
 
-/** What an administrator is told, and the one button that settles it. Plain words about pages, never about how the site is set up. */
+/** What an administrator is told: one plain sentence about pages or rules, and where to go next. Never about how the site is set up. */
 export interface UpgradeItem {
-  /** What is wrong, short: "7 pages can't be edited". The dashboard notice leads with it. */
-  headline: string;
-  /** The sentence before the pages: "These 7 pages can't be edited by anyone, including you". */
+  /** The whole sentence: "7 pages can't be edited after the update to 5.43.0." */
   text: string;
-  /** The pages `viewer` may see, in the order to show them. */
+  /** Where the administrator goes from here: "See the pages", or the setting to change. */
+  link: { label: string; href: string };
+}
+
+/** One page of the list an item links to: pages the viewer may see, and the one button that settles them. */
+export interface UpgradeList {
+  /** How many pages in all, across every page of the list. */
+  total: number;
+  /** The pages on this page of the list, by title A–Z. */
   pages: UpgradePageLink[];
-  /** What follows the pages, such as " and 2 private pages"; empty when there is nothing more. */
-  more: string;
+  /** This page of the list, from 1, and how many there are. */
+  page: number;
+  pageCount: number;
   /** What the button does and does not do, shown above it. */
   note: string;
   button: string;
-  /** What to tell the administrator once the button has worked. */
-  done: string;
 }
+
+/** Pages shown on one page of an item's list. */
+export const UPGRADE_LIST_PAGE_SIZE = 50;
 
 export interface UpgradeCheck {
   /** Kept in the record; never shown. */
@@ -56,10 +65,21 @@ export interface UpgradeCheck {
    * `log` is the one line for developers, whichever way it came out.
    */
   detect(ctx: ActorContext): Promise<{ affected: string[]; log: string }>;
-  /** What `viewer` is told about `affected`, or null when nothing is left to decide. */
-  item(affected: string[], viewer: ActorContext): Promise<UpgradeItem | null>;
+  /** What an administrator is told about `affected`, or null when nothing is left to decide. `version` is the site's. */
+  item(affected: string[], version: string): Promise<UpgradeItem | null>;
+  /** The list the item links to, read afresh each time it is asked for; null when nothing is left to decide. `page` counts from 1. */
+  list(affected: string[], viewer: ActorContext, page: number): Promise<UpgradeList | null>;
   /** The button: make the change as `ctx`, through the normal checked, audited route for it. */
   fix(affected: string[], ctx: ActorContext): Promise<void>;
+}
+
+/**
+ * A to-do worked out from how the site is set up now, each time Admin is shown, not once per version:
+ * it appears when the setting is there and goes when the setting is changed. It has no button.
+ */
+export interface LiveUpgradeCheck {
+  id: string;
+  items(viewer: ActorContext, version: string): Promise<UpgradeItem[]>;
 }
 
 /** An open item, as Admin shows it. */
@@ -80,6 +100,7 @@ const RECORD_FILE = 'upgrade-checks.json';
 class UpgradeCheckManager extends BaseManager {
   readonly description = 'Run-once checks for each release, shown to administrators as to-dos on "After updating"';
   private readonly checks = new Map<string, UpgradeCheck>();
+  private readonly live = new Map<string, LiveUpgradeCheck>();
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -90,6 +111,12 @@ class UpgradeCheckManager extends BaseManager {
     if (this.checks.has(check.id)) throw new Error(`UpgradeCheckManager: check '${check.id}' is registered twice`);
     if (!semver.valid(check.since)) throw new Error(`UpgradeCheckManager: check '${check.id}' has no valid 'since' version`);
     this.checks.set(check.id, check);
+  }
+
+  /** Register a to-do worked out afresh on each look. */
+  registerLive(check: LiveUpgradeCheck): void {
+    if (this.live.has(check.id) || this.checks.has(check.id)) throw new Error(`UpgradeCheckManager: check '${check.id}' is registered twice`);
+    this.live.set(check.id, check);
   }
 
   /** The version the site runs now. */
@@ -128,34 +155,56 @@ class UpgradeCheckManager extends BaseManager {
     }
   }
 
-  /** The items `viewer` has open, in registration order. Nothing affected, or already fixed, is not an item. */
+  /**
+   * The items `viewer` has open, in registration order: the run-once checks that found something and are not
+   * fixed, then the live ones. A live check that fails is logged and left out, not the whole list.
+   */
   async openItems(viewer: ActorContext): Promise<OpenUpgradeItem[]> {
     const record = await this.readRecord();
+    const version = this.version();
     const items: OpenUpgradeItem[] = [];
     for (const check of this.checks.values()) {
       const found = record[check.id];
       if (!found || found.fixedAt || found.affected.length === 0) continue;
-      const item = await check.item(found.affected, viewer);
+      const item = await check.item(found.affected, version);
       if (item) items.push({ id: check.id, ...item });
+    }
+    for (const check of this.live.values()) {
+      try {
+        items.push(...(await check.items(viewer, version)).map((item) => ({ id: check.id, ...item })));
+      } catch (err) {
+        logger.warn(`[UPGRADE] ${check.id} could not be worked out: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
     return items;
   }
 
+  /** One page of the list an open item links to, worked out now; null when there is no such open item or nothing is left in it. */
+  async openList(id: string, viewer: ActorContext, page: number): Promise<UpgradeList | null> {
+    const check = this.checks.get(id);
+    const found = (await this.readRecord())[id];
+    if (!check || !found || found.fixedAt || found.affected.length === 0) return null;
+    return check.list(found.affected, viewer, page);
+  }
+
   /**
-   * Apply one item's fix as `ctx` and close the item. Returns what to tell the
-   * administrator, or null when there is no such open item.
+   * Apply one item's fix as `ctx` and close the item. False when there is no such open item.
+   * Throws only when the fix itself failed; once it has been made, a failure to write the record
+   * is logged and the fix still counts, since the item is gone either way once nothing is left to fix.
    */
-  async applyFix(id: string, ctx: ActorContext): Promise<string | null> {
+  async applyFix(id: string, ctx: ActorContext): Promise<boolean> {
     const check = this.checks.get(id);
     const record = await this.readRecord();
     const found = record[id];
-    if (!check || !found || found.fixedAt || found.affected.length === 0) return null;
-    // Named before the change: once it is made, nothing is left to name.
-    const done = (await check.item(found.affected, ctx))?.done;
+    if (!check || !found || found.fixedAt || found.affected.length === 0) return false;
     await check.fix(found.affected, ctx);
     found.fixedAt = new Date().toISOString();
-    await this.writeRecord(record);
-    return done ?? 'Done.';
+    try {
+      await this.writeRecord(record);
+    } catch (err) {
+      logger.warn(`[UPGRADE] ${id} was fixed, but that could not be recorded: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return true;
   }
 
   private configManager(): ConfigurationManager {
@@ -189,7 +238,7 @@ class UpgradeCheckManager extends BaseManager {
   /** Written to a temporary file and renamed into place, so a crash or full disk never leaves a half-written record. */
   private async writeRecord(record: Record<string, CheckRecord>): Promise<void> {
     const file = this.recordPath();
-    const temp = `${file}.${process.pid}.tmp`;
+    const temp = `${file}.${randomUUID()}.tmp`;
     try {
       await fse.writeJson(temp, record, { spaces: 2 });
       await fse.rename(temp, file);

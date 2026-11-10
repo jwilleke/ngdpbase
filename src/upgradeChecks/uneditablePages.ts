@@ -4,29 +4,29 @@
  * Since #2255 a page is changed by whoever the policies on its system-category
  * allow. A stored category with no policy granting a page edit leaves its
  * pages unchangeable, administrators included. With no pages in it that is
- * only a log line; with pages, the administrator is told which pages and
- * offered one button.
+ * only a log line; with pages, the administrator is told how many, and a list
+ * page names them and offers one button. Only public pages count: a vault
+ * page is its owner's, and an administrator is not told about it (#2313).
  */
 import type { ActorContext } from '../context/ActorContext.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
-import type { UpgradeCheck, UpgradePageLink } from '../managers/UpgradeCheckManager.js';
+import { UPGRADE_LIST_PAGE_SIZE, type UpgradeCheck } from '../managers/UpgradeCheckManager.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type PageManager from '../managers/PageManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type PolicyValidator from '../managers/PolicyValidator.js';
 import type { Policy } from '../types/Policy.js';
 import { categoryStored } from '../managers/ValidationManager.js';
-import { parsePrivatePageName } from '../utils/privateStorePath.js';
+import { pageUrl } from '../utils/pageUrl.js';
 import { POLICIES_KEY } from '../security/PolicyDecisionPoint.js';
 
+/** Where the item's "See the pages" goes. */
+export const LIST_URL = '/admin/upgrade/pages/pages-nobody-can-edit';
 const POLICY_ID = 'admins-edit-pages-no-one-could';
-/** Titles named in an item before the rest are counted. */
-const MOST_TITLES = 10;
+/** How long the page names read from the site are reused, so each look at Admin does not walk every page. */
+const NAMES_FRESH_MS = 60_000;
 
-/** "A", "A and B", "A, B and C". */
-const list = (parts: string[]): string => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
-
-const titleOf = (name: string): string => parsePrivatePageName(name)?.title ?? name;
+const byName = (a: string, b: string): number => a.localeCompare(b, undefined, { sensitivity: 'base' });
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
@@ -36,16 +36,15 @@ export function uneditablePagesCheck(engine: WikiEngine): UpgradeCheck {
   const pdp = (): PolicyDecisionPoint => engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint') as PolicyDecisionPoint;
 
   /**
-   * Every page in each category, by title A–Z, read when the check ran (or the first time it is
-   * asked after a restart). A page cannot be added to or taken from a category nobody can edit,
-   * so what Admin shows does not walk the site on each load; who may see which is still asked per viewer.
+   * The public pages in each category by name, A–Z. The count on Admin reuses what was read
+   * for up to a minute; the list page reads afresh (`fresh`), so it never names a page that has gone.
    */
-  const known = new Map<string, string[]>();
-  const pagesIn = async (category: string): Promise<string[]> => {
+  const known = new Map<string, { at: number; names: string[] }>();
+  const pagesIn = async (category: string, fresh = false): Promise<string[]> => {
     const cached = known.get(category);
-    if (cached) return cached;
-    const names = [...(await pages().listCategoryPages(category))].sort((a, b) => titleOf(a).localeCompare(titleOf(b), undefined, { sensitivity: 'base' }));
-    known.set(category, names);
+    if (cached && !fresh && Date.now() - cached.at < NAMES_FRESH_MS) return cached.names;
+    const names = [...(await pages().listCategoryPages(category))].sort(byName);
+    known.set(category, { at: Date.now(), names });
     return names;
   };
 
@@ -80,34 +79,38 @@ export function uneditablePagesCheck(engine: WikiEngine): UpgradeCheck {
       };
     },
 
-    async item(affected: string[], viewer: ActorContext) {
+    async item(affected: string[], version: string) {
       // Still uncovered now: an administrator who fixed it another way has nothing left to decide.
       const open = uncovered().filter((category) => affected.includes(category));
-      const names = (await Promise.all(open.map(pagesIn))).flat();
-      if (names.length === 0) return null;
-      names.sort((a, b) => titleOf(a).localeCompare(titleOf(b), undefined, { sensitivity: 'base' }));
-      // Stop asking once enough titles are found; the pages not asked about are counted as "more".
-      const shown: UpgradePageLink[] = [];
-      let asked = 0;
-      for (const name of names) {
-        if (shown.length === MOST_TITLES) break;
-        asked += 1;
-        if (await pages().mayShowPage(name, viewer)) shown.push({ title: titleOf(name), href: `/view/${encodeURIComponent(name)}` });
-      }
-      const rest = names.length - shown.length;
-      const more = rest === 0 || shown.length === 0
-        ? ''
-        : ` and ${rest} ${asked < names.length ? 'more' : 'private'} ${rest === 1 ? 'page' : 'pages'}`;
-      const one = names.length === 1;
-      const who = one ? 'This page can\'t' : `These ${names.length} pages can't`;
+      const count = (await Promise.all(open.map((c) => pagesIn(c)))).reduce((n, names) => n + names.length, 0);
+      if (count === 0) return null;
       return {
-        headline: `${plural(names.length, 'page', 'pages')} can't be edited`,
-        text: `${who} be edited by anyone, including you${shown.length > 0 ? ': ' : ''}`,
-        pages: shown,
-        more,
+        text: `${plural(count, 'page', 'pages')} can't be edited after the update${version ? ` to ${version}` : ''}.`,
+        link: { label: 'See the pages', href: LIST_URL }
+      };
+    },
+
+    async list(affected: string[], viewer: ActorContext, page: number) {
+      const open = uncovered().filter((category) => affected.includes(category));
+      const names = [...new Set((await Promise.all(open.map((c) => pagesIn(c, true)))).flat())].sort(byName);
+      // Only pages this viewer may see are named, whatever the count on Admin says.
+      const shown: string[] = [];
+      for (let i = 0; i < names.length; i += UPGRADE_LIST_PAGE_SIZE) {
+        const chunk = names.slice(i, i + UPGRADE_LIST_PAGE_SIZE);
+        const may = await Promise.all(chunk.map((name) => pages().mayShowPage(name, viewer)));
+        shown.push(...chunk.filter((_, j) => may[j]));
+      }
+      if (shown.length === 0) return null;
+      const pageCount = Math.ceil(shown.length / UPGRADE_LIST_PAGE_SIZE);
+      const current = Math.min(Math.max(1, Math.floor(page) || 1), pageCount);
+      const one = shown.length === 1;
+      return {
+        total: shown.length,
+        pages: shown.slice((current - 1) * UPGRADE_LIST_PAGE_SIZE, current * UPGRADE_LIST_PAGE_SIZE).map((name) => ({ title: name, href: pageUrl(name) })),
+        page: current,
+        pageCount,
         note: `The button lets everyone who signs in as an administrator edit ${one ? 'it' : 'them'}. Nothing in the ${one ? 'page' : 'pages'} changes, and no one else gets access.`,
-        button: one ? 'Let administrators edit this page' : 'Let administrators edit these pages',
-        done: `Administrators can now edit ${shown.length > 0 ? list([...shown.map((p) => p.title), ...(more ? [more.slice(5)] : [])]) : (one ? 'that page' : 'those pages')}.`
+        button: one ? 'Let administrators edit this page' : 'Let administrators edit these pages'
       };
     },
 
@@ -121,7 +124,6 @@ export function uneditablePagesCheck(engine: WikiEngine): UpgradeCheck {
         id: POLICY_ID,
         name: 'Administrators change pages no one could',
         description: 'Added by the upgrade check: pages in these system categories had no policy granting a page edit',
-        priority: 100,
         effect: 'allow',
         subjects: [{ type: 'role', value: 'admin' }],
         resources: patterns.map((pattern) => ({ type: 'system-category', pattern })),
