@@ -386,6 +386,8 @@ export function backupKeyNotSaved(fingerprint: string): string {
  * removed.
  */
 export const ENV_KEYS_SAVED_KEY = 'ngdpbase.backup.env-keys-saved';
+/** Where a backup-key reminder is cleared: the Backup page, not the Configuration page (#2348). */
+const BACKUP_PAGE_FIX = { fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup' };
 
 /** The title of the one notification per change of the `.env` key set (#1976). */
 export const ENV_KEYS_CHANGED_TITLE = 'Save a copy of .env';
@@ -1129,7 +1131,8 @@ class BackupManager extends BaseManager {
       if (!reminder) {
         if (ours) this.markReady();
       } else if (status.state !== 'degraded' || ours) {
-        this.markNeedsAttention(reminder, reminder === envReminder ? ENV_KEYS_SAVED_KEY : reminder === sharedReminder ? SHARED_FOLDERS_KEY_SAVED_KEY : BACKUP_KEY_SAVED_KEY);
+        // The saved-key settings are records the app writes when an admin confirms; the fix is the Backup page.
+        this.markNeedsAttention(reminder, reminder === envReminder ? ENV_KEYS_SAVED_KEY : reminder === sharedReminder ? SHARED_FOLDERS_KEY_SAVED_KEY : BACKUP_KEY_SAVED_KEY, BACKUP_PAGE_FIX);
       }
       return;
     }
@@ -1480,7 +1483,7 @@ class BackupManager extends BaseManager {
       if (this.provider) {
         health = await this.getBackupHealth();
         if (health.fault) {
-          this.markDegraded(health.fault, health.failure ? undefined : 'ngdpbase.backup.auto-backup');
+          this.markDegraded(health.fault, health.failure ? undefined : 'ngdpbase.backup.auto-backup', BACKUP_PAGE_FIX);
           this.healthFault = health.fault;
           if (!health.failure) await this.notifyStaleOnce(health);
         } else if (this.healthFault) {

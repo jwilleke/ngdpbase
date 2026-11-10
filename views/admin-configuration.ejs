@@ -202,7 +202,7 @@
                                     </thead>
                                     <tbody>
                                         <% Object.entries(mergedProperties).sort().forEach(([key, value]) => { %>
-                                            <tr<% if (key === 'ngdpbase.application.base-url') { %> id="config-row-base-url"<% } %>>
+                                            <tr id="config-<%= key %>">
                                                 <td>
                                                     <code><%= key %></code>
                                                     <% ((typeof configProblems !== 'undefined' && configProblems[key]) || []).forEach(function (problem) { %>
