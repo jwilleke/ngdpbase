@@ -69,8 +69,8 @@ export interface UpgradeCheck {
   item(affected: string[], version: string): Promise<UpgradeItem | null>;
   /** The list the item links to, read afresh each time it is asked for; null when nothing is left to decide. `page` counts from 1. */
   list(affected: string[], viewer: ActorContext, page: number): Promise<UpgradeList | null>;
-  /** The button: make the change as `ctx`, through the normal checked, audited route for it. */
-  fix(affected: string[], ctx: ActorContext): Promise<void>;
+  /** The button: make the change as `ctx`, through the normal checked, audited route for it. Resolves to how many things it changed; 0 when there was nothing left to change. */
+  fix(affected: string[], ctx: ActorContext): Promise<number>;
 }
 
 /**
@@ -188,23 +188,24 @@ class UpgradeCheckManager extends BaseManager {
   }
 
   /**
-   * Apply one item's fix as `ctx` and close the item. False when there is no such open item.
+   * Apply one item's fix as `ctx` and close the item. Resolves to how many things the fix changed;
+   * 0 when there is no such open item, or when the fix found nothing left to change.
    * Throws only when the fix itself failed; once it has been made, a failure to write the record
    * is logged and the fix still counts, since the item is gone either way once nothing is left to fix.
    */
-  async applyFix(id: string, ctx: ActorContext): Promise<boolean> {
+  async applyFix(id: string, ctx: ActorContext): Promise<number> {
     const check = this.checks.get(id);
     const record = await this.readRecord();
     const found = record[id];
-    if (!check || !found || found.fixedAt || found.affected.length === 0) return false;
-    await check.fix(found.affected, ctx);
+    if (!check || !found || found.fixedAt || found.affected.length === 0) return 0;
+    const changed = await check.fix(found.affected, ctx);
     found.fixedAt = new Date().toISOString();
     try {
       await this.writeRecord(record);
     } catch (err) {
       logger.warn(`[UPGRADE] ${id} was fixed, but that could not be recorded: ${err instanceof Error ? err.message : String(err)}`);
     }
-    return true;
+    return changed;
   }
 
   private configManager(): ConfigurationManager {

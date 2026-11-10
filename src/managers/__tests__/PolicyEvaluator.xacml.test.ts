@@ -455,20 +455,27 @@ describe('every line of the access-policies needs-attention item is plain (#2348
     expect(log).toContain("'no-docs' is a deny: since #2255 a deny overrides any allow");
   });
 
-  test('a grant to everyone: no permission ids', async () => {
+  test('a grant to everyone is the upgrade notice\'s to-do, so the item leaves it out; the log keeps it', async () => {
     const { item, log } = await run([sample('open-edit', 'allow', { subjects: [{ type: 'anyone' }], actions: ['page-read', 'page-edit'] })]);
-    expect(item).toBe("Access policies need review (1 problem): The rule 'open-edit' lets anyone (including signed-out visitors) do more than read. Give those abilities to named roles instead.");
-    expectPlain(item);
+    expect(item).toBe('');
     expect(log).toContain("'open-edit' grants page-edit to anyone, including signed-out visitors, so");
     expect(log).toContain('(#2261)');
   });
 
-  test('a page write by name: names the roles, not the permission or the resource type', async () => {
+  test('a page write by name is also left out of the item, and still logged', async () => {
     const { item, log } = await run([policy('my-own', 'allow', undefined, { actions: ['page-edit', 'page-delete'] })]);
-    expect(item).toBe("Access policies need review (1 problem): The rule 'my-own' lets the role editor change pages by name, which reaches system, documentation and add-on pages. Change it to apply to page categories instead.");
-    expectPlain(item);
+    expect(item).toBe('');
     expect(log).toContain("'my-own' grants page-edit, page-delete on pages by name to editor");
-    expect(log).toContain('grant it on system categories instead (#2255)');
+  });
+
+  test('a deny is still in the item beside an open allow rule, which is not', async () => {
+    const { item } = await run([
+      sample('open-edit', 'allow', { subjects: [{ type: 'anyone' }], actions: ['page-edit'] }),
+      sample('no-docs', 'deny', { actions: ['page-read'] })
+    ]);
+    expect(item).toContain("'no-docs'");
+    expect(item).not.toContain('open-edit');
+    expect(item).toContain('(1 problem)');
   });
 
   test('the upgrade of a stored policy: said without permission ids, saying to save', async () => {

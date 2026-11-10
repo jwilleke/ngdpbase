@@ -15,8 +15,16 @@ export const UPGRADE_RESULTS = {
 export type UpgradeResultKey = keyof typeof UPGRADE_RESULTS;
 
 /** The result for a key from the address, or null for anything else. */
-export const upgradeResult = (key: unknown): (typeof UPGRADE_RESULTS)[UpgradeResultKey] | null =>
-  typeof key === 'string' && Object.hasOwn(UPGRADE_RESULTS, key) ? UPGRADE_RESULTS[key as UpgradeResultKey] : null;
+export const upgradeResult = (key: unknown, count?: unknown): { ok: boolean; text: string } | null => {
+  if (typeof key !== 'string' || !Object.hasOwn(UPGRADE_RESULTS, key)) return null;
+  const result = UPGRADE_RESULTS[key as UpgradeResultKey];
+  // "Administrators can now edit the 62 pages that couldn't be edited." The number is read as a number, never shown as given.
+  const n = typeof count === 'string' && /^\d{1,6}$/.test(count) ? Number(count) : 0;
+  if (key === 'fixed' && n > 0) {
+    return { ok: true, text: `Administrators can now edit ${n === 1 ? 'the page' : `the ${n} pages`} that couldn't be edited.` };
+  }
+  return result;
+};
 
 export const UPGRADE_INTRO = 'Some updates change how your site works. Anything that needs a decision from you is listed here.';
 export const UPGRADE_READ_ONLY = 'Only an administrator who can change site settings can do this.';

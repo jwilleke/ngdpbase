@@ -17,7 +17,7 @@ describe('UpgradeCheckManager (#2301)', () => {
     detect: async () => { detects += 1; return { affected, log: 'sample detail' }; },
     item: async () => ITEM,
     list: async () => null,
-    fix: async (a) => { fixed.push(a); },
+    fix: async (a) => { fixed.push(a); return 1; },
     ...over
   });
   const manager = (...checks: UpgradeCheck[]) => {
@@ -62,10 +62,10 @@ describe('UpgradeCheckManager (#2301)', () => {
     const m = manager(check(['x']));
     await m.runAtBoot();
     expect(await m.openItems(admin)).toEqual([{ id: 'sample', ...ITEM }]);
-    expect(await m.applyFix('sample', admin)).toBe(true);
+    expect(await m.applyFix('sample', admin)).toBe(1);
     expect(fixed).toEqual([['x']]);
     expect(await m.openItems(admin)).toEqual([]);
-    expect(await m.applyFix('sample', admin)).toBe(false);
+    expect(await m.applyFix('sample', admin)).toBe(0);
     expect(fixed).toHaveLength(1);
   });
 
@@ -86,7 +86,7 @@ describe('UpgradeCheckManager (#2301)', () => {
   test('an unknown id is refused', async () => {
     const m = manager(check(['x']));
     await m.runAtBoot();
-    expect(await m.applyFix('nope', admin)).toBe(false);
+    expect(await m.applyFix('nope', admin)).toBe(0);
   });
 
   describe('a damaged record or version never stops the start', () => {
@@ -151,7 +151,7 @@ describe('UpgradeCheckManager (#2301)', () => {
     await m.runAtBoot();
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
     vi.spyOn((await import('fs-extra')).default, 'rename').mockRejectedValueOnce(new Error('disk full'));
-    expect(await m.applyFix('sample', admin)).toBe(true);
+    expect(await m.applyFix('sample', admin)).toBe(1);
     expect(fixed).toEqual([['x']]);
     expect(warn.mock.calls.some((c) => String(c[0]).includes('could not be recorded'))).toBe(true);
   });

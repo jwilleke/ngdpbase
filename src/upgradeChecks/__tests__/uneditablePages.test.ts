@@ -133,6 +133,10 @@ describe('pages nobody can edit (#2299)', () => {
 
   test('results come from a key; anything else is nothing, and no text is taken from the address', () => {
     expect(upgradeResult('fixed')).toBe(UPGRADE_RESULTS.fixed);
+    expect(upgradeResult('fixed', '62')?.text).toBe("Administrators can now edit the 62 pages that couldn't be edited.");
+    expect(upgradeResult('fixed', '1')?.text).toBe("Administrators can now edit the page that couldn't be edited.");
+    expect(upgradeResult('fixed', '<b>9</b>')).toBe(UPGRADE_RESULTS.fixed);
+    expect(upgradeResult('already', '5')).toBe(UPGRADE_RESULTS.already);
     expect(upgradeResult('failed')?.ok).toBe(false);
     expect(upgradeResult('Budget 2026')).toBeNull();
     expect(upgradeResult('toString')).toBeNull();
@@ -142,7 +146,7 @@ describe('pages nobody can edit (#2299)', () => {
   test('the button adds a policy through setProperty as the person, and the item is gone without a restart', async () => {
     f.pages.notes = ['Trip Notes'];
     await manager.runAtBoot();
-    expect(await manager.applyFix('pages-nobody-can-edit', admin)).toBe(true);
+    expect(await manager.applyFix('pages-nobody-can-edit', admin)).toBe(1);
     expect(f.saved).toHaveLength(1);
     expect(f.saved[0].ctx).toBe(admin);
     expect(f.saved[0].key).toBe('ngdpbase.access.policies');
@@ -151,6 +155,20 @@ describe('pages nobody can edit (#2299)', () => {
     expect(added).not.toHaveProperty('priority');
     expect(added).toMatchObject({ actions: ['page-edit'], subjects: [{ type: 'role', value: 'admin' }], resources: [{ type: 'system-category', pattern: 'notes' }] });
     expect(await manager.openItems(admin)).toEqual([]);
+  });
+
+  test('the button counts the pages it opened up, and says nothing was changed when none are left', async () => {
+    f.pages.notes = ['Trip Notes', 'Budget 2026'];
+    await manager.runAtBoot();
+    expect(await manager.applyFix(ID, admin)).toBe(2);
+  });
+
+  test('when the pages are gone by the time the button runs, nothing is saved and no change is reported', async () => {
+    f.pages.notes = ['Trip Notes'];
+    await manager.runAtBoot();
+    f.pages.notes = [];
+    expect(await manager.applyFix(ID, admin)).toBe(0);
+    expect(f.saved).toHaveLength(0);
   });
 
   test('an item whose category was covered another way meanwhile is not shown', async () => {

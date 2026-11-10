@@ -116,7 +116,9 @@ export function uneditablePagesCheck(engine: WikiEngine): UpgradeCheck {
 
     async fix(affected: string[], ctx: ActorContext) {
       const categories = uncovered().filter((category) => affected.includes(category));
-      if (categories.length === 0) return;
+      const names = new Set((await Promise.all(categories.map((c) => pagesIn(c, true)))).flat());
+      // Nothing is left to change when no page is in a category still without a rule.
+      if (names.size === 0) return 0;
       const own = (config().getCustomProperty(POLICIES_KEY) as Policy[] | undefined) ?? [];
       const before = own.find((p) => p.id === POLICY_ID);
       const patterns = [...new Set([...(before?.resources ?? []).map((r) => r.pattern), ...categories])];
@@ -134,6 +136,7 @@ export function uneditablePagesCheck(engine: WikiEngine): UpgradeCheck {
       const refused = engine.getManager<PolicyValidator>('PolicyValidator')?.policyProblems(value) ?? [];
       if (refused.length > 0) throw new Error(`Policies not saved: ${refused.join('; ')}`);
       await config().setProperty(POLICIES_KEY, value, ctx);
+      return names.size;
     }
   };
 }

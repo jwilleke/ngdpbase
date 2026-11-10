@@ -38,7 +38,7 @@ describe('open write rules (#2313)', () => {
     ]);
     const [first] = await manager.openItems(admin);
     expect(first.link).toEqual({ label: 'Change this rule', href: RULES_URL });
-    expect(RULES_URL).toBe('/admin/configuration#configuration-management');
+    expect(RULES_URL).toBe('/admin/configuration#config-ngdpbase.access.policies');
   });
 
   test('no actions listed means everything', async () => {
@@ -58,6 +58,15 @@ describe('open write rules (#2313)', () => {
     expect(await texts()).toEqual([]);
     rules().pop();
     expect(await texts()).toEqual([]);
+  });
+
+  test('shipped non-page actions and vault / shared-folder types read in plain words', () => {
+    const say = (actions: string[], type: string, pattern = '*') => ruleSentence({ id: 'x', who: { kind: 'authenticated' }, actions, resources: [{ type, pattern }] });
+    expect(say(['asset-read', 'comment-create'], 'vault')).toBe("The rule 'x' lets every signed-in user see and comment on vaults.");
+    expect(say(['shared-folder-file'], 'shared-folder')).toBe("The rule 'x' lets every signed-in user add files to shared folders.");
+    expect(say(['vault-proxy'], 'vault', 'Mine')).toBe("The rule 'x' lets every signed-in user act for the owner of vaults named 'Mine'.");
+    expect(say(['made-up-action'], 'vault')).not.toMatch(/made-up|use '/);
+    for (const text of [say(['asset-upload', 'search-page'], 'shared-folder'), say(['vault-proxy'], 'vault')]) expect(text.replace('signed-in', '')).not.toMatch(/[a-z]+-[a-z]+|items/);
   });
 
   test('the sentence names no issue number, file or setting', () => {

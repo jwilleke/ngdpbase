@@ -59,6 +59,8 @@ export interface PageWritePolicyReport {
 export interface PolicyFinding {
   log: string;
   plain: string;
+  /** Set when the finding is an allow rule the upgrade notice already lists (`openWriteRules`); the needs-attention item leaves it out. */
+  coveredByUpgradeNotice?: boolean;
 }
 
 function isPageStar(policy: Policy): boolean {
@@ -125,14 +127,16 @@ export function pageWritePolicyFindings(policies: readonly Policy[]): PolicyFind
         const roles = rule.who.roles;
         out.push({
           log: `'${policy.id}' grants ${rule.actions.join(', ')} on pages by name to ${roles.join(', ')}, which reaches system, documentation and add-on pages; grant it on system categories instead (#2255)`,
-          plain: `The rule '${policy.id}' lets ${roles.length === 1 ? 'the role' : 'the roles'} ${roles.join(', ')} change pages by name, which reaches system, documentation and add-on pages. Change it to apply to page categories instead.`
+          plain: `The rule '${policy.id}' lets ${roles.length === 1 ? 'the role' : 'the roles'} ${roles.join(', ')} change pages by name, which reaches system, documentation and add-on pages. Change it to apply to page categories instead.`,
+          coveredByUpgradeNotice: true
         });
         continue;
       }
       const everyone = rule.who.kind === 'anyone' ? 'anyone, including signed-out visitors' : 'every signed-in user';
       out.push({
         log: `'${policy.id}' grants ${rule.actions.join(', ')} to ${everyone}, so ${everyone} can do that, beyond reading; grant it to named roles instead (#2261)`,
-        plain: `The rule '${policy.id}' lets ${everyone.replace(', including signed-out visitors', ' (including signed-out visitors)')} do more than read. Give those abilities to named roles instead.`
+        plain: `The rule '${policy.id}' lets ${everyone.replace(', including signed-out visitors', ' (including signed-out visitors)')} do more than read. Give those abilities to named roles instead.`,
+        coveredByUpgradeNotice: true
       });
     }
   }

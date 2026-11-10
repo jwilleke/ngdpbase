@@ -15397,7 +15397,7 @@ ${panes}
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page');
       }
       const version = this.upgradeVersion();
-      const result = upgradeResult(req.query.result);
+      const result = upgradeResult(req.query.result, req.query.count);
       const commonData = await this.getCommonTemplateData(req);
       return res.render('admin-upgrade', {
         ...commonData,
@@ -15447,14 +15447,14 @@ ${panes}
 
   /** POST /admin/upgrade/fix — the item's one button. A configuration change, so config-manage; the change is audited as any other (#2301). Redirects with a key, never text. */
   async adminUpgradeFix(req: Request, res: Response) {
-    const back = (result: UpgradeResultKey) => res.redirect(`/admin/upgrade?result=${result}`);
+    const back = (result: UpgradeResultKey, count = 0) => res.redirect(`/admin/upgrade?result=${result}${count > 0 ? `&count=${count}` : ''}`);
     try {
       const wikiContext = this.createWikiContext(req);
       if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return undefined;
       const currentUser = wikiContext.userContext;
       const id = typeof req.body?.id === 'string' ? req.body.id : '';
-      const done = currentUser ? await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.applyFix(id, currentUser) : false;
-      return back(done ? 'fixed' : 'already');
+      const changed = currentUser ? (await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.applyFix(id, currentUser)) ?? 0 : 0;
+      return back(changed > 0 ? 'fixed' : 'already', changed);
     } catch (err: unknown) {
       logger.error('[upgrade] The fix did not complete:', err);
       return back('failed');

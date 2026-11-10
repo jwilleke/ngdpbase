@@ -509,11 +509,16 @@ class PolicyEvaluator extends BaseManager {
     const migration = config as { pageWritePolicyMigration?: string[]; pageWritePolicyMigrationShown?: Record<string, string> };
     const lines: string[] = [...(migration.pageWritePolicyMigration ?? [])];
     const shown = new Map<string, string>(Object.entries(migration.pageWritePolicyMigrationShown ?? {}));
+    const logOnly: string[] = [];
     const add = (finding: { log: string; plain: string }): void => {
       lines.push(finding.log);
       shown.set(finding.log, finding.plain);
     };
-    pageWritePolicyFindings(this.policies()).forEach(add);
+    // An open allow rule is the upgrade notice's to-do (`upgradeChecks/openWriteRules.ts`), so the box leaves it out and the log keeps it.
+    for (const finding of pageWritePolicyFindings(this.policies())) {
+      if (finding.coveredByUpgradeNotice) logOnly.push(finding.log);
+      else add(finding);
+    }
     // #2330: `priority` is gone; a leftover one changes nothing.
     const withPriority = this.policies().filter((p) => p.priority !== undefined).map((p) => `'${p.id}'`);
     if (withPriority.length > 0) {
@@ -536,8 +541,8 @@ class PolicyEvaluator extends BaseManager {
     // #2261 slice 4: the environment declarations, and each schedule one names that is missing (the attribute is then missing and fails closed).
     environmentAttributesFindings(readDeclaredAsWritten(config, ENVIRONMENT_ATTRIBUTES_KEY)).forEach(add);
     this.scheduleProblems().forEach(add);
+    for (const line of [...lines, ...logOnly]) logger.warn(`[POLICY] ${line}`);
     if (lines.length === 0) return;
-    for (const line of lines) logger.warn(`[POLICY] ${line}`);
     // Each part is a full sentence, so they are joined with a space.
     // Several log lines can say one plain thing (a rule with two bad conditions), so it is said, and counted, once.
     const plain = [...new Set(lines.map((l) => `${(shown.get(l) ?? l).replace(/\.$/, '')}.`))];
