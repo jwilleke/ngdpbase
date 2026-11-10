@@ -281,9 +281,29 @@ describe('GET /diff/:page renders Compare Versions (#2319)', () => {
   test('L1/L2: diff lines keep a minimum height and dark mode has its own colours', async () => {
     await saveThree();
     const res = await request(appFor()).get(`/diff/${PAGE}?v1=1&v2=2`);
-    expect(res.text).toMatch(/\.diff-line-added[^{]*\{[^}]*min-height:\s*1\.5em/);
-    expect(res.text).toMatch(/\.diff-line-unchanged[^{]*\{[^}]*min-height:\s*1\.5em/);
+    expect(res.text).toMatch(/\.diff-line-added[^{]*\{[^}]*min-height:\s*calc\(1\.5em \+ 4px\)/);
+    expect(res.text).toMatch(/\.diff-line-unchanged[^{]*\{[^}]*min-height:\s*calc\(1\.5em \+ 4px\)/);
     expect(res.text).toMatch(/\[data-bs-theme="dark"\][^{]*\.diff-line-deleted/);
+  });
+
+  test('versions that differ only in line endings say there are no changes to the text', async () => {
+    await provider.savePage(PAGE, 'Line A\r\nLine B', fm, ctx as never);
+    await sleep(15);
+    await provider.savePage(PAGE, 'Line A\nLine B', fm, ctx as never);
+    const res = await request(appFor()).get(`/diff/${PAGE}?v1=1&v2=2`);
+    expect(res.status).toBe(200);
+    const doc = new JSDOM(res.text).window.document;
+    expect(doc.getElementById('diffNoChanges')?.textContent?.trim()).toBe('No changes to the text.');
+    expect(doc.getElementById('unifiedDiff')).toBeNull();
+    const summary = doc.querySelector('.alert-info')?.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(summary).toMatch(/Additions:\s*0\b/);
+    expect(summary).toMatch(/Deletions:\s*0\b/);
+  });
+
+  test('a compare with changes does not show the no-changes note', async () => {
+    await saveThree();
+    const res = await request(appFor()).get(`/diff/${PAGE}?v1=1&v2=2`);
+    expect(res.text).not.toContain('diffNoChanges');
   });
 
   test('L3: a rewrite too large to diff by line shows a note with both sizes', async () => {
