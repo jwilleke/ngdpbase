@@ -531,8 +531,8 @@ abstract class BaseManager {
    *   starts degraded and stays degraded must not re-emit on every boot, or
    *   the signal is buried in its own noise.
    */
-  protected markDegraded(reason: string, configKey?: string): boolean {
-    return this.transition({ state: 'degraded', reason, configKey, kind: 'outage' });
+  protected markDegraded(reason: string, configKey?: string, opts: AttentionOptions = {}): boolean {
+    return this.transition({ state: 'degraded', reason, configKey, kind: 'outage', ...opts });
   }
 
   /**

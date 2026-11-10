@@ -77,8 +77,9 @@ describe('#1946 the dashboard separates down from needs-attention', () => {
       { manager: 'Mystery', state: 'degraded', kind: 'attention', reason: 'Something to do' }
     ]);
     const [a, b] = [...doc.querySelectorAll('#subsystems-attention li')];
-    expect(a.querySelector('strong')).toBeNull();
-    expect(a.textContent).toContain('Access policies need review');
+    expect(a.querySelector('strong')?.textContent).toBe('Access policies');
+    expect(a.textContent?.trim()).toMatch(/^Access policies need review/);
+    expect(a.textContent).not.toContain('Access policies:');
     expect(b.querySelector('strong')).toBeNull();
     expect(b.textContent).not.toContain('Mystery');
   });
@@ -98,6 +99,23 @@ describe('#1946 the dashboard separates down from needs-attention', () => {
     expect(links[0].getAttribute('href')).toBe('/admin/backup');
     expect(links[0].textContent).toBe('Open Admin → Backup');
     expect(doc.body.textContent).not.toContain('Change this in Admin');
+  });
+
+  test('#2348 a fix link must be a path on this site: "//host" and "/\\host" are not drawn', async () => {
+    for (const fixUrl of ['//evil.example/x', '/\\evil.example/x', 'https://evil.example/', 'admin/backup']) {
+      const doc = await render([], [{ ...reminder, configKey: undefined, fixUrl }]);
+      expect(doc.querySelectorAll('#subsystems-attention a')).toHaveLength(0);
+    }
+    const doc = await render([], [{ ...reminder, fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup' }]);
+    expect(doc.querySelectorAll('#subsystems-attention a')).toHaveLength(1);
+  });
+
+  test('#2348 item text keeps the alert\'s own colour (no text-muted), and the link sits in its own block', async () => {
+    const doc = await render([down], [{ ...reminder, fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup' }]);
+    expect(doc.querySelector('.text-muted')).toBeNull();
+    expect(doc.querySelector('br')).toBeNull();
+    expect(doc.querySelector('#subsystems-attention li > div.mt-1 > a.alert-link')).not.toBeNull();
+    expect(doc.querySelector('#subsystems-attention li')?.classList.contains('mb-2')).toBe(true);
   });
 
   test('#2348 every link takes the alert\'s own link colour, which passes contrast', async () => {

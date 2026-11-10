@@ -11,28 +11,30 @@
     backup key, fix a value). Telling an operator backups are "silently doing
     nothing" while they run is a false alarm. Each shows only with entries. %>
 <%# #2348: an item leads with a plain feature name (`feature`, mapped from the manager in
-    utils/featureNames; omitted when the reason already starts with it or none is known),
+    utils/featureNames; when the reason already starts with it, that prefix is bold instead; none known, no lead),
     then its reason; data-manager carries the id for tests. The internal manager name ("PolicyEvaluator") and the
     configuration key mean nothing to an administrator, so neither is shown. The state word
     ("degraded") is not either: the section's headline already says down or needs attention.
     Where the item came from a setting changed in Admin → Configuration, a plain link goes there. %>
 <% function subsystemList(entries) { %>
-    <ul class="small text-muted mt-1 mb-0">
+    <ul class="small mt-1 mb-0">
         <% entries.forEach(function (m) { %>
-            <li data-manager="<%= m.manager %>">
+            <li class="mb-2" data-manager="<%= m.manager %>">
+                <%# Every item has a bold lead: the feature name before the reason, or the reason's own opening words when it already starts with it. %>
                 <% var reasonText = m.reason || 'No details were recorded.';
-                   var lead = m.feature && reasonText.toLowerCase().indexOf(String(m.feature).toLowerCase()) !== 0 ? m.feature : ''; %>
-                <% if (lead) { %><strong><%= lead %>:</strong> <% } %><%= reasonText %>
+                   var feature = m.feature ? String(m.feature) : '';
+                   var startsWithFeature = feature !== '' && reasonText.toLowerCase().indexOf(feature.toLowerCase()) === 0; %>
+                <% if (startsWithFeature) { %><strong><%= reasonText.slice(0, feature.length) %></strong><%= reasonText.slice(feature.length) %><% } else { %><% if (feature) { %><strong><%= feature %>:</strong> <% } %><%= reasonText %><% } %>
                 <% if (Array.isArray(m.details) && m.details.length > 0) { %>
                     <ul class="mb-0">
                         <% m.details.forEach(function (line) { %><li><%= line %></li><% }); %>
                     </ul>
                 <% } %>
                 <%# A caller names its own fix (a record the app writes is not a value to edit); a setting is the fallback. %>
-                <% if (m.fixUrl && String(m.fixUrl).charAt(0) === '/') { %>
-                    <br><a class="alert-link" href="<%= m.fixUrl %>"><%= m.fixLabel || 'Fix this' %></a>
+                <% if (m.fixUrl && /^\/(?![\/\\])/.test(String(m.fixUrl))) { %>
+                    <div class="mt-1"><a class="alert-link" href="<%= m.fixUrl %>"><%= m.fixLabel || 'Fix this' %></a></div>
                 <% } else if (m.configKey && String(m.configKey).indexOf('ngdpbase.') === 0) { %>
-                    <br><a class="alert-link" href="/admin/configuration#config-<%= m.configKey %>">Change this in Admin &rarr; Configuration</a>
+                    <div class="mt-1"><a class="alert-link" href="/admin/configuration#config-<%= m.configKey %>">Change this in Admin &rarr; Configuration</a></div>
                 <% } %>
             </li>
         <% }); %>

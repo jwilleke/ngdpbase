@@ -105,7 +105,7 @@ describe('backups never fail silently (#1563)', () => {
   describe('a site that has never made a backup', () => {
     test('is an outage at start, "never", with ONE notification across restarts', async () => {
       const bm = await start();
-      expect(bm.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'outage', reason: expect.stringMatching(/^No good backup since: never/) });
+      expect(bm.getManagerStatus()).toMatchObject({ state: 'degraded', kind: 'outage', fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup', reason: expect.stringMatching(/^No good backup since: never/) });
       expect(notWorking()).toHaveLength(1);
       expect(notWorking()[0]).toMatchObject({ level: 'error', message: expect.stringMatching(/never/) });
       const restarted = await start();

@@ -1483,7 +1483,7 @@ class BackupManager extends BaseManager {
       if (this.provider) {
         health = await this.getBackupHealth();
         if (health.fault) {
-          this.markDegraded(health.fault, health.failure ? undefined : 'ngdpbase.backup.auto-backup');
+          this.markDegraded(health.fault, health.failure ? undefined : 'ngdpbase.backup.auto-backup', BACKUP_PAGE_FIX);
           this.healthFault = health.fault;
           if (!health.failure) await this.notifyStaleOnce(health);
         } else if (this.healthFault) {
