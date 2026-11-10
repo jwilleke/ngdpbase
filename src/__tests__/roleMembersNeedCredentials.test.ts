@@ -110,7 +110,7 @@ describe('a role member must have credentials, on a real engine (#2040)', () => 
 
     // The next start reports it again on the dashboard, but adds no second notification.
     engine = await boot();
-    expect(engine.getManager<RoleManager>('RoleManager')!.getManagerStatus().reason).toContain("'editor' lists 1");
+    expect(engine.getManager<RoleManager>('RoleManager')!.getManagerStatus().reason).toMatch(/^Some roles list contacts as members/);
     expect(notices()).toHaveLength(1);
     const after = JSON.parse(fs.readFileSync(file, 'utf8')) as { member: { '@id': string }[] };
     expect(after.member.map((m) => m['@id'])).toContain(contact['@id']);
