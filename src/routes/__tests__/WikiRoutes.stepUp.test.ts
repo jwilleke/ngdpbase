@@ -27,9 +27,9 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
     reauthenticated: vi.fn(() => ({ provider: 'password', factors: [], amr: ['pwd'], aal: 1, acr: 'aal1', mfa: false, at: 'now' })),
     requiredAalFor: vi.fn(() => 1),
     passkeyRelyingParty: vi.fn((): unknown => null),
-    // #2345: the real answer, from this double's relying party.
-    passkeysAvailable(...a: Parameters<AuthManager['passkeysAvailable']>) { return AuthManager.prototype.passkeysAvailable.apply(this as never, a); },
     hasCredential: vi.fn(() => false),
+    // #2356: what this account can add or use; nothing by default.
+    strongerSignInWays: vi.fn(() => Promise.resolve({ addPasskey: false, addTotp: false, usePasskey: false, useTotp: false, password: true, outside: [] as string[] })),
     // #1758: step-up is AuthManager's — the real answer, record and completion, on this double.
     engine: null as unknown,
     askForFreshSignIn(...a: Parameters<AuthManager['askForFreshSignIn']>) { return AuthManager.prototype.askForFreshSignIn.apply(this as never, a); },
@@ -421,16 +421,22 @@ describe('a page waiting on its prompt asks whether that prompt is confirmed (#2
     expect(bad.render).toHaveBeenCalledWith('reauth', expect.objectContaining({ prompt: '' }));
   });
 
-  test('#2345: the page is told whether passkeys can work, from the relying party', async () => {
+  test('#2356: the page gets this account\'s ways; the passkey and the app only when this account can use them', async () => {
     const env = routes(false);
-    const flag = async () => {
+    const view = async () => {
       const out = res();
       await env.r.reauthPage(req(session(), { method: 'GET', originalUrl: '/auth/reauth', query: { next: '/profile' } }), out);
-      return (out.render.mock.calls[0][1] as { passkeysAvailable: boolean }).passkeysAvailable;
+      return out.render.mock.calls[0][1] as { ways: { addPasskey: boolean }; hasPasskey: boolean; hasTotp: boolean };
     };
-    expect(await flag()).toBe(false); // off, or an http address passkeys can't use: no relying party
+    const none = await view();
+    expect(env.authManager.strongerSignInWays).toHaveBeenCalledWith('molly');
+    expect(none).toMatchObject({ hasPasskey: false, hasTotp: false, ways: { addPasskey: false } });
+    // A passkey on the account that it is not allowed, or the site can't use, is not offered (usePasskey false).
+    env.authManager.hasCredential.mockReturnValue(true);
     env.authManager.passkeyRelyingParty.mockReturnValue({ rpID: 'wiki.example.com' });
-    expect(await flag()).toBe(true);
+    expect((await view()).hasPasskey).toBe(false);
+    env.authManager.strongerSignInWays.mockResolvedValue({ addPasskey: false, addTotp: false, usePasskey: true, useTotp: true, password: true, outside: [] });
+    expect(await view()).toMatchObject({ hasPasskey: true, hasTotp: true });
   });
 
   test('Cancel marks the prompt cancelled, saves the session, and goes back on this site', async () => {

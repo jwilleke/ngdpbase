@@ -14,11 +14,16 @@
             <div class="alert alert-danger" role="alert"><%= error %></div>
           <% } %>
           <p>This change protects your account, so it needs a fresh sign-in. You are then sent back to finish it.</p>
+          <%# #2356: what this account can add or use here (AuthManager.strongerSignInWays), never the site's whole list. %>
+          <% const _ways = typeof ways !== 'undefined' && ways ? ways : {};
+             const _totp = typeof hasTotp !== 'undefined' && hasTotp; %>
           <% if (needsPasskey) { %>
-            <% if (typeof passkeysAvailable !== 'undefined' && !passkeysAvailable) { %>
+            <% if (hasPasskey || _ways.addPasskey) { %>
+            <p class="small text-muted">Your role needs a passkey<%= _totp ? ', or your password with your authenticator app\'s code,' : '' %> for this; a password alone is not enough.</p>
+            <% } else if (_totp || (_ways.addTotp && hasPassword)) { %>
             <p class="small text-muted">Your role needs your password with your authenticator app's code for this; a password alone is not enough.</p>
             <% } else { %>
-            <p class="small text-muted">Your role needs a passkey<%= (typeof hasTotp !== 'undefined' && hasTotp) ? ', or your password with your authenticator app\'s code,' : '' %> for this; a password alone is not enough.</p>
+            <p class="small text-muted">Your role needs a stronger sign-in for this; a password alone is not enough.</p>
             <% } %>
           <% } %>
 
@@ -64,8 +69,12 @@
             </form>
           <% } %>
 
-          <% if (!hasPasskey && !(typeof hasTotp !== 'undefined' && hasTotp) && (needsPasskey || !hasPassword)) { %>
-            <p class="mb-0">This account has no way to confirm here<%= needsPasskey ? ' that reaches the level your role needs' : '' %>. Add <%= (typeof passkeysAvailable !== 'undefined' && !passkeysAvailable) ? 'an authenticator app' : 'a passkey' %> on your <a href="/profile">profile</a>, or ask an administrator.</p>
+          <% if (!hasPasskey && !_totp && (needsPasskey || !hasPassword)) { %>
+            <%# A passkey first, as before; the app only where it would confirm (at AAL2 it needs the password). %>
+            <% const _add = _ways.addPasskey ? 'a passkey' : (_ways.addTotp && (!needsPasskey || hasPassword)) ? 'an authenticator app' : '';
+               const _outside = Array.isArray(_ways.outside) ? _ways.outside : []; %>
+            <p class="mb-0">This account has no way to confirm here<%= needsPasskey ? ' that reaches the level your role needs' : '' %>.
+            <% if (_add) { %>Add <%= _add %> on your <a href="/profile">profile</a>, or ask an administrator.<% } else if (_outside.length > 0) { %>Sign out, then sign in with <%= _outside.join(' or ') %>, or ask an administrator.<% } else { %>Ask an administrator.<% } %></p>
           <% } %>
 
           <%# #2193: a script's prompt is cancelled on the server too, so the page

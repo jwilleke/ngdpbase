@@ -562,7 +562,7 @@ document.addEventListener('DOMContentLoaded', function() {
             row.innerHTML = `
                 <td><code>${escapeHtml(file.sourcePath)}</code></td>
                 <td><code>${(isDuplicate || willOverwrite) ? escapeHtml(file.existingPageUuid || '') : escapeHtml(file.targetPath)}</code></td>
-                <td><span class="badge bg-secondary">${file.format}</span></td>
+                <td><span class="badge bg-secondary">${escapeHtml(file.format)}</span></td>
                 <td>${warningsBadge}</td>
                 <td>${statusBadge}</td>
             `;
@@ -597,7 +597,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
-        return div.innerHTML;
+        // Quotes too: the result also goes into attribute values.
+        return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     // --- URL Import ---

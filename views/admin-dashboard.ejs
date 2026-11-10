@@ -1297,6 +1297,13 @@ async function pollJobStatus(runId, intervalMs = 1500, maxWaitMs = 600000) {
     throw new Error('Job timed out');
 }
 
+// An icon followed by a message shown as text.
+function setIconText(el, iconClass, text) {
+    const icon = document.createElement('i');
+    icon.className = 'fas ' + iconClass;
+    el.replaceChildren(icon, ' ' + text);
+}
+
 function showMessage(message, type) {
     let messageEl = document.querySelector('#admin-message');
     if (!messageEl) {
@@ -1314,8 +1321,9 @@ function showMessage(message, type) {
             <div class="card-header ${bgClass} text-white">
                 <h6 class="mb-0"><i class="fas ${icon}"></i> ${type === 'success' ? 'Success' : 'Error'}</h6>
             </div>
-            <div class="card-body">${message}</div>
+            <div class="card-body"></div>
         </div>`;
+    messageEl.querySelector('.card-body').textContent = message;
     messageEl.style.display = 'block';
     messageEl.style.opacity = '0';
     messageEl.style.transition = 'opacity 0.3s ease-in-out';
@@ -1344,13 +1352,12 @@ async function dashboardMediaRescan() {
         const run = await pollJobStatus(runId);
         updateLastRun('media.rescan', run);
         status.className = run.status === 'completed' ? 'alert alert-success' : 'alert alert-danger';
-        status.innerHTML = run.status === 'completed'
-            ? `<i class="fas fa-check-circle"></i> ${run.result?.summary || 'Reindex complete'}`
-            : `<i class="fas fa-exclamation-triangle"></i> ${run.result?.error || 'Scan failed'}`;
+        if (run.status === 'completed') setIconText(status, 'fa-check-circle', run.result?.summary || 'Reindex complete');
+        else setIconText(status, 'fa-exclamation-triangle', run.result?.error || 'Scan failed');
         status.style.display = 'block';
     } catch (e) {
         status.className = 'alert alert-danger';
-        status.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${e.message || 'Request failed'}`;
+        setIconText(status, 'fa-exclamation-triangle', e.message || 'Request failed');
         status.style.display = 'block';
     } finally {
         btn.disabled = false;
@@ -1377,13 +1384,12 @@ async function dashboardMediaRebuild() {
         const run = await pollJobStatus(runId, 1500, 3600000);
         updateLastRun('media.rebuild', run);
         status.className = run.status === 'completed' ? 'alert alert-success' : 'alert alert-danger';
-        status.innerHTML = run.status === 'completed'
-            ? `<i class="fas fa-check-circle"></i> ${run.result?.summary || 'Rebuild complete'}`
-            : `<i class="fas fa-exclamation-triangle"></i> ${run.result?.error || 'Rebuild failed'}`;
+        if (run.status === 'completed') setIconText(status, 'fa-check-circle', run.result?.summary || 'Rebuild complete');
+        else setIconText(status, 'fa-exclamation-triangle', run.result?.error || 'Rebuild failed');
         status.style.display = 'block';
     } catch (e) {
         status.className = 'alert alert-danger';
-        status.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${e.message || 'Request failed'}`;
+        setIconText(status, 'fa-exclamation-triangle', e.message || 'Request failed');
         status.style.display = 'block';
     } finally {
         btn.disabled = false;
