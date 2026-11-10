@@ -10,6 +10,7 @@
  * "datatype": "string" }`, or a literal, `{ "value": "sales", "datatype":
  * "string" }`. `datatype` is required on both.
  */
+import type { PolicyFinding } from './pageWritePolicies.js';
 
 /** The types an attribute can be declared with. */
 export const ATTRIBUTE_TYPES = ['string', 'integer', 'boolean', 'identity', 'list'] as const;
@@ -297,15 +298,28 @@ export function declaredSubjectAttributes(raw: unknown): Record<string, Declared
  * declaration `subjectDeclarationProblem` refuses. Used on save, on load and at boot.
  */
 export function subjectAttributesProblems(raw: unknown, sensitive: readonly string[]): string[] {
+  return subjectAttributesFindings(raw, sensitive).map((f) => f.log);
+}
+
+/** {@link subjectAttributesProblems}, each also in plain words for the needs-attention entry. */
+export function subjectAttributesFindings(raw: unknown, sensitive: readonly string[]): PolicyFinding[] {
   if (raw === null || raw === undefined) return [];
-  if (typeof raw !== 'object' || Array.isArray(raw)) return ['ngdpbase.access.subject-attributes must be an object of attribute name to { type, from }'];
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    return [{
+      log: 'ngdpbase.access.subject-attributes must be an object of attribute name to { type, from }',
+      plain: 'The list of user details that rules can check is not in a form the site can read, so none of them work. Fix or clear that list in Admin → Configuration.'
+    }];
+  }
   return Object.entries(raw as Record<string, DeclaredSubjectAttribute>).flatMap(([name, decl]) => {
     const pinned = Object.hasOwn(PINNED_SUBJECT_ATTRIBUTES, name) ? PINNED_SUBJECT_ATTRIBUTES[name] : undefined;
     if (pinned) {
       const same = !!decl && typeof decl === 'object' && decl.type === pinned.type && decl.from === pinned.from;
-      return same ? [] : [`subject attribute '${name}' in ngdpbase.access.subject-attributes cannot be redefined: it is built in (type ${pinned.type}, from ${pinned.from}) and keeps that meaning; remove it`];
+      return same ? [] : [{
+        log: `subject attribute '${name}' in ngdpbase.access.subject-attributes cannot be redefined: it is built in (type ${pinned.type}, from ${pinned.from}) and keeps that meaning; remove it`,
+        plain: `The user detail '${name}' is built into the site and cannot be redefined, so your version is ignored. Remove it from the list of user details in Admin → Configuration.`
+      }];
     }
-    const problem = subjectDeclarationProblem(name, decl, sensitive);
+    const problem = subjectDeclarationFinding(name, decl, sensitive);
     return problem ? [problem] : [];
   });
 }
@@ -317,16 +331,27 @@ export function subjectAttributesProblems(raw: unknown, sensitive: readonly stri
  * like). Said so a condition naming it is refused rather than silently unknown.
  */
 export function subjectDeclarationProblem(name: string, decl: DeclaredSubjectAttribute | undefined, sensitive: readonly string[]): string | null {
+  return subjectDeclarationFinding(name, decl, sensitive)?.log ?? null;
+}
+
+/** {@link subjectDeclarationProblem}, also in plain words. */
+function subjectDeclarationFinding(name: string, decl: DeclaredSubjectAttribute | undefined, sensitive: readonly string[]): PolicyFinding | null {
   const where = `subject attribute '${name}' in ngdpbase.access.subject-attributes`;
-  if (!decl || typeof decl !== 'object') return `${where} must be an object with a type and a from`;
-  if (!ATTRIBUTE_TYPES.includes(decl.type as AttributeType)) return `${where} has type ${JSON.stringify(decl.type)}; use one of ${ATTRIBUTE_TYPES.join(', ')}`;
+  const plain = `The user detail '${name}' is not set up correctly, so a rule that checks it will not work. Fix it, or remove it, in the list of user details in Admin → Configuration.`;
+  if (!decl || typeof decl !== 'object') return { log: `${where} must be an object with a type and a from`, plain };
+  if (!ATTRIBUTE_TYPES.includes(decl.type as AttributeType)) return { log: `${where} has type ${JSON.stringify(decl.type)}; use one of ${ATTRIBUTE_TYPES.join(', ')}`, plain };
   const from = decl.from;
   const source = typeof from === 'string' ? SUBJECT_SOURCES.find((s) => from === s || (s !== 'sign-in' && from.startsWith(s))) : undefined;
-  if (!source) return `${where} reads from ${JSON.stringify(from)}; start it with ${SUBJECT_SOURCES.join(', ')}`;
+  if (!source) return { log: `${where} reads from ${JSON.stringify(from)}; start it with ${SUBJECT_SOURCES.join(', ')}`, plain };
   if (source !== 'sign-in') {
     const field = (from as string).slice(source.length);
-    if (!field) return `${where} reads from '${source}' with no field; write ${source}<field>`;
-    if (sensitive.includes(field)) return `'${source}${field}' cannot be used in a condition`;
+    if (!field) return { log: `${where} reads from '${source}' with no field; write ${source}<field>`, plain };
+    if (sensitive.includes(field)) {
+      return {
+        log: `'${source}${field}' cannot be used in a condition`,
+        plain: `The user detail '${name}' reads private account data, which a rule may not check. Remove it from the list of user details in Admin → Configuration.`
+      };
+    }
   }
   return null;
 }
@@ -371,13 +396,19 @@ export function declaredEnvironmentAttributes(raw: unknown): Record<string, Decl
  * never written to a log, an audit record or a message.
  */
 export function environmentDeclarationProblem(name: string, decl: DeclaredEnvironmentAttribute | undefined): string | null {
+  return environmentDeclarationFinding(name, decl)?.log ?? null;
+}
+
+/** {@link environmentDeclarationProblem}, also in plain words. */
+function environmentDeclarationFinding(name: string, decl: DeclaredEnvironmentAttribute | undefined): PolicyFinding | null {
   const where = `environment attribute '${name}' in ngdpbase.access.environment-attributes`;
-  if (!decl || typeof decl !== 'object') return `${where} must be an object with a type and a from`;
-  if (decl.type !== 'boolean') return `${where} has type ${JSON.stringify(decl.type)}; schedule: and config: attributes are boolean only, so use "boolean"`;
+  const plain = `The check '${name}' (for rules that depend on a schedule or a setting) is not set up correctly, so a rule that uses it will not work. Fix it, or remove it, in the list of checks in Admin → Configuration.`;
+  if (!decl || typeof decl !== 'object') return { log: `${where} must be an object with a type and a from`, plain };
+  if (decl.type !== 'boolean') return { log: `${where} has type ${JSON.stringify(decl.type)}; schedule: and config: attributes are boolean only, so use "boolean"`, plain };
   const from = decl.from;
   const source = typeof from === 'string' ? ENVIRONMENT_SOURCES.find((s) => from.startsWith(s)) : undefined;
-  if (!source) return `${where} reads from ${JSON.stringify(from)}; start it with ${ENVIRONMENT_SOURCES.join(' or ')}`;
-  if (!(from as string).slice(source.length)) return `${where} reads from '${source}' with no ${source === 'schedule:' ? 'schedule name' : 'key'}; write ${source}<${source === 'schedule:' ? 'name' : 'key'}>`;
+  if (!source) return { log: `${where} reads from ${JSON.stringify(from)}; start it with ${ENVIRONMENT_SOURCES.join(' or ')}`, plain };
+  if (!(from as string).slice(source.length)) return { log: `${where} reads from '${source}' with no ${source === 'schedule:' ? 'schedule name' : 'key'}; write ${source}<${source === 'schedule:' ? 'name' : 'key'}>`, plain };
   return null;
 }
 
@@ -387,10 +418,20 @@ export function environmentDeclarationProblem(name: string, decl: DeclaredEnviro
  * {@link environmentDeclarationProblem} refuses. Used on save, on load and at boot.
  */
 export function environmentAttributesProblems(raw: unknown): string[] {
+  return environmentAttributesFindings(raw).map((f) => f.log);
+}
+
+/** {@link environmentAttributesProblems}, each also in plain words for the needs-attention entry. */
+export function environmentAttributesFindings(raw: unknown): PolicyFinding[] {
   if (raw === null || raw === undefined) return [];
-  if (typeof raw !== 'object' || Array.isArray(raw)) return ['ngdpbase.access.environment-attributes must be an object of attribute name to { type, from }'];
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    return [{
+      log: 'ngdpbase.access.environment-attributes must be an object of attribute name to { type, from }',
+      plain: 'The list of checks that depend on a schedule or a setting is not in a form the site can read, so none of them work. Fix or clear that list in Admin → Configuration.'
+    }];
+  }
   return Object.entries(raw as Record<string, DeclaredEnvironmentAttribute>).flatMap(([name, decl]) => {
-    const problem = environmentDeclarationProblem(name, decl);
+    const problem = environmentDeclarationFinding(name, decl);
     return problem ? [problem] : [];
   });
 }
@@ -421,7 +462,7 @@ export function unenforcedConditionsNotice(policies: unknown): string | null {
   const names = policiesWithOldConditions(policies);
   if (names.length === 0) return null;
   const one = names.length === 1;
-  return `${one ? 'This rule has' : 'These rules have'} an old 'conditions' list that the site ignores, so it doesn't limit anyone: ${names.join(', ')}. Move ${one ? 'it' : 'each one'} into the rule's condition, or remove it.`;
+  return `${one ? 'This rule has' : 'These rules have'} an old 'conditions' list that the site ignores, so it doesn't limit anyone: ${names.join(', ')}. Move ${one ? 'it' : 'each one'} into ${one ? 'the' : 'its'} rule's condition, or remove it.`;
 }
 
 /**

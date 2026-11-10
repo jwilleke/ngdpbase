@@ -1947,6 +1947,11 @@ class AuthManager extends BaseManager {
     return this.passkeyProvider()?.relyingParty() ?? null;
   }
 
+  /** Can a passkey be added or used here at all (#2345)? False when passkeys are off or the address can't host them. */
+  passkeysAvailable(): boolean {
+    return this.passkeyRelyingParty() !== null;
+  }
+
   /** Options for `username` to enrol a passkey (#448); the caller keeps `challenge` for verify. */
   /**
    * May this account sign in with `providerId`? Its `allowedAuthMethods`, when

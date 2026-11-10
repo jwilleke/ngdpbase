@@ -137,6 +137,12 @@ describe('passkeys end to end (#448)', () => {
     expect(await am.listCredentials(molly, 'molly')).toEqual([]);
   });
 
+  test('#2345: passkeysAvailable follows the relying party: off, http non-localhost, https', async () => {
+    expect((await started(ORIGIN, false)).passkeysAvailable()).toBe(false);
+    expect((await started('http://wiki.example.com')).passkeysAvailable()).toBe(false);
+    expect((await started(ORIGIN)).passkeysAvailable()).toBe(true);
+  });
+
   test('passkeys stay off without an explicit base-url, and on plain http other than localhost', async () => {
     expect((await started(ORIGIN, false)).passkeyRelyingParty()).toBeNull();
     expect((await started('http://wiki.example.com')).passkeyRelyingParty()).toBeNull();
