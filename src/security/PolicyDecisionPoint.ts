@@ -798,7 +798,7 @@ export class PolicyDecisionPoint extends BaseManager {
    * caller fails closed. This records nothing.
    */
   async decideOwnedRecord(input: DecisionInput, request: OwnedRecordAsk): Promise<Decision> {
-    // A policy glob cannot cover an id its own matcher rejects (empty, '.', '..', blank, a line
+    // A policy glob cannot cover an id its own matcher rejects (empty, '.', '..', a line
     // break), nor one with a path separator, so a deny on the type would not reach it. Test with
     // the matcher and options PolicyEvaluator.namesDeclaredType uses (PR #2324 review, M2).
     const id = request.resource.id;
