@@ -100,6 +100,13 @@
 
 <script nonce="<%= locals.cspNonce %>">
 /** Poll /api/admin/jobs/:runId/status until completed or failed. */
+// An icon followed by a message shown as text.
+function setIconText(el, iconClass, text) {
+    const icon = document.createElement('i');
+    icon.className = 'fas ' + iconClass;
+    el.replaceChildren(icon, ' ' + text);
+}
+
 async function pollJobStatus(runId, intervalMs = 1500, maxWaitMs = 600000, onProgress = null) {
     const deadline = Date.now() + maxWaitMs;
     while (Date.now() < deadline) {
@@ -125,15 +132,14 @@ document.getElementById('rescan-btn')?.addEventListener('click', async function 
         if (!runId) throw new Error('Failed to start rescan job');
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning…';
         const run = await pollJobStatus(runId, 1500, 600000, (progress) => {
-            btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${progress}`;
+            setIconText(btn, 'fa-spinner fa-spin', progress);
         });
         status.className = run.status === 'completed' ? 'alert alert-success' : 'alert alert-danger';
-        status.innerHTML = run.status === 'completed'
-            ? `<i class="fas fa-check-circle"></i> ${run.result?.summary || 'Reindex complete'}`
-            : `<i class="fas fa-exclamation-triangle"></i> ${run.result?.error || 'Scan failed'}`;
+        if (run.status === 'completed') setIconText(status, 'fa-check-circle', run.result?.summary || 'Reindex complete');
+        else setIconText(status, 'fa-exclamation-triangle', run.result?.error || 'Scan failed');
     } catch (e) {
         status.className = 'alert alert-danger';
-        status.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${e.message || 'Request failed'}`;
+        setIconText(status, 'fa-exclamation-triangle', e.message || 'Request failed');
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-sync-alt"></i> Reindex Media';
@@ -154,15 +160,14 @@ document.getElementById('rebuild-btn')?.addEventListener('click', async function
         if (!runId) throw new Error('Failed to start rebuild job');
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Rebuilding…';
         const run = await pollJobStatus(runId, 1500, 3600000, (progress) => {
-            btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${progress}`;
+            setIconText(btn, 'fa-spinner fa-spin', progress);
         }); // 1-hour timeout for full rebuild
         status.className = run.status === 'completed' ? 'alert alert-success' : 'alert alert-danger';
-        status.innerHTML = run.status === 'completed'
-            ? `<i class="fas fa-check-circle"></i> ${run.result?.summary || 'Rebuild complete'}`
-            : `<i class="fas fa-exclamation-triangle"></i> ${run.result?.error || 'Rebuild failed'}`;
+        if (run.status === 'completed') setIconText(status, 'fa-check-circle', run.result?.summary || 'Rebuild complete');
+        else setIconText(status, 'fa-exclamation-triangle', run.result?.error || 'Rebuild failed');
     } catch (e) {
         status.className = 'alert alert-danger';
-        status.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${e.message || 'Request failed'}`;
+        setIconText(status, 'fa-exclamation-triangle', e.message || 'Request failed');
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-database"></i> Rebuild Media Index';

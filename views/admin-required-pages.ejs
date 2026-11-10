@@ -621,16 +621,21 @@ async function showDiff(uuid, title, liveUuid = '') {
         });
         const result = await response.json();
         if (!result.success) {
-            document.getElementById('modalDiffContainer').innerHTML =
-                `<div class="alert alert-danger m-3">Error: ${result.error}</div>`;
+            showDiffError(`Error: ${result.error}`);
             return;
         }
         currentDiffString = result.diffString;
         renderModalDiff('line-by-line');
     } catch (err) {
-        document.getElementById('modalDiffContainer').innerHTML =
-            `<div class="alert alert-danger m-3">Network error: ${err.message}</div>`;
+        showDiffError(`Network error: ${err.message}`);
     }
+}
+
+function showDiffError(message) {
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-danger m-3';
+    alert.textContent = message;
+    document.getElementById('modalDiffContainer').replaceChildren(alert);
 }
 
 function renderModalDiff(format) {

@@ -191,7 +191,8 @@ const calAdmin = (function () {
     const el = document.createElement('div');
     el.className = `alert alert-${type} alert-dismissible fade show position-fixed bottom-0 end-0 m-3`;
     el.style.zIndex = 9999;
-    el.innerHTML = msg + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+    el.innerHTML = '<span></span><button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+    el.firstChild.textContent = msg;
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 4000);
   }
