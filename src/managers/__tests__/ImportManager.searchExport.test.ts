@@ -9,6 +9,9 @@
 import ImportManager, { IceExportRefused } from '../ImportManager';
 import BackgroundJobManager from '../BackgroundJobManager';
 import { readZip } from '../../utils/zipArchive';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import type { ActorContext } from '../../context/ActorContext';
 
 const ALICE = { username: 'alice', roles: ['reader'], isAuthenticated: true } as unknown as ActorContext;
@@ -25,6 +28,12 @@ interface Setup {
   files?: Record<string, Buffer>;
   /** Files alice may read. */
   readableFiles?: string[];
+  /** Pages (by name) that files are attached to: id → page. A file on a page alice may not read is one she may not read. */
+  attachedTo?: Record<string, string>;
+  /** Media-library files the search finds: id → bytes. */
+  media?: Record<string, Buffer>;
+  /** Media-library files alice may read. */
+  readableMedia?: string[];
   people?: number;
   config?: Record<string, unknown>;
   grants?: string[];
@@ -35,6 +44,13 @@ async function setup(opts: Setup = {}) {
   const readable = new Set(opts.readable ?? found);
   const files = opts.files ?? {};
   const readableFiles = new Set(opts.readableFiles ?? Object.keys(files));
+  const attachedTo = opts.attachedTo ?? {};
+  const mayReadFile = (id: string) => readableFiles.has(id) && !(attachedTo[id] && !readable.has(attachedTo[id]));
+  const media = opts.media ?? {};
+  const readableMedia = new Set(opts.readableMedia ?? Object.keys(media));
+  const mediaDir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-export-media-'));
+  const mediaPath = (id: string) => path.join(mediaDir, id);
+  for (const [id, bytes] of Object.entries(media)) fs.writeFileSync(mediaPath(id), bytes);
   const grants = new Set(opts.grants ?? ['page-export', 'search-page', 'asset-upload', 'search-user']);
   const config: Record<string, unknown> = { ...(opts.config ?? {}) };
   const audits: Array<Record<string, unknown>> = [];
@@ -44,11 +60,11 @@ async function setup(opts: Setup = {}) {
       getResolvedDataPath: (_key: string, fallback: string) => fallback
     },
     PolicyDecisionPoint: {
-      permits: async (ctx: ActorContext, p: string) => ctx.isAuthenticated === true && grants.has(p),
-      holds: async (ctx: ActorContext, p: string) => ctx.isAuthenticated === true && grants.has(p)
+      permits: async (_ctx: ActorContext, p: string) => grants.has(p),
+      holds: async (_ctx: ActorContext, p: string) => grants.has(p)
     },
     SearchManager: {
-      advancedSearchWithContext: async () => found.map(name => ({ name, title: name, metadata: {} }))
+      advancedSearchWithContext: async (_c: unknown, o: { maxResults?: number }) => found.slice(0, o.maxResults ?? found.length).map(name => ({ name, title: name, metadata: {} }))
     },
     PageManager: {
       mayShowPage: async (ref: string) => readable.has(ref),
@@ -59,14 +75,22 @@ async function setup(opts: Setup = {}) {
       }
     },
     AssetService: {
-      search: async () => ({
-        results: Object.keys(files).map(id => ({ id, providerId: 'local', filename: id, name: id, encodingFormat: 'image/jpeg' })),
-        total: Object.keys(files).length, hasMore: false
-      })
+      search: async (o: { types?: string[] }) => {
+        const asks = (provider: string) => !o.types || o.types.includes(provider);
+        const results = [
+          ...(asks('local') ? Object.keys(files).map(id => ({ id, providerId: 'local', filename: id, name: id, encodingFormat: 'image/jpeg' })) : []),
+          ...(asks('media-library') ? Object.keys(media).map(id => ({ id, providerId: 'media-library', filename: id, name: id, encodingFormat: 'image/jpeg' })) : [])
+        ];
+        return { results, total: results.length, hasMore: false };
+      }
+    },
+    MediaManager: {
+      getItem: async (id: string) => (readableMedia.has(id) && id in media
+        ? { id, filePath: mediaPath(id), mimeType: 'image/jpeg', filename: id } : null)
     },
     AttachmentManager: {
-      mayReadAttachment: async (id: string) => readableFiles.has(id),
-      readAttachmentFor: async (id: string) => (readableFiles.has(id) ? { buffer: files[id], metadata: { name: id, encodingFormat: 'image/jpeg' } } : null)
+      mayReadAttachment: async (id: string) => mayReadFile(id),
+      readAttachmentFor: async (id: string) => (mayReadFile(id) ? { buffer: files[id], metadata: { name: id, encodingFormat: 'image/jpeg' } } : null)
     },
     UserManager: {
       searchUsers: async () => Array.from({ length: opts.people ?? 0 }, (_, n) => ({ username: `person${n}` }))
@@ -104,7 +128,7 @@ describe('search export — what is offered', () => {
     expect((await im.exportFormatsFor('core.search', ref(), ALICE)).map(f => f.id)).toContain(NCM);
   });
 
-  test('a signed-out visitor is offered nothing and cannot start an export, even if the site lets visitors search and export', async () => {
+  test('a signed-out visitor is offered nothing and cannot start an export, even when the permission check itself grants a visitor everything', async () => {
     const { im } = await setup({ grants: ['page-export', 'search-page', 'asset-upload'] });
     expect(await im.exportFormatsFor('core.search', ref(), ANON)).toEqual([]);
     await expect(im.startExport({ source: 'core.search', ref: ref(), format: NCM }, ANON)).rejects.toBeInstanceOf(IceExportRefused);
@@ -163,6 +187,67 @@ describe('search export — what is in the zip', () => {
     await exportZip(im);
     await vi.waitFor(() => expect(audits.filter(a => a.eventType === 'page-export')).toHaveLength(1));
     expect(audits.find(a => a.eventType === 'page-export')).toMatchObject({ user: 'alice', result: 'success' });
+  });
+});
+
+describe('search export — pages in shared folders', () => {
+  test('a page in a shared folder the user may read but not export from is not in the zip, and is not counted', async () => {
+    const { im } = await setup({ found: ['Alpha', 'shared/docs/Notes', 'Beta'] });
+    const { run, names, entries } = await exportZip(im);
+    expect(names).toEqual(['Alpha.md', 'Beta.md']);
+    expect(entries.map(e => e.bytes.toString()).join('')).not.toContain('Notes');
+    expect(run.notes ?? []).toEqual([]);
+  });
+});
+
+describe('search export — media-library files', () => {
+  test('an All sources search puts a readable media-library file in the zip as its original', async () => {
+    const { im } = await setup({ found: ['Alpha'], media: { 'holiday.jpg': JPG } });
+    const { names, entries } = await exportZip(im);
+    expect(names).toEqual(['Alpha.md', 'holiday.jpg']);
+    expect(entries.find(e => e.path === 'holiday.jpg')!.bytes.equals(JPG)).toBe(true);
+  });
+
+  test('a media-library file the media library will not let the user read is not in the zip, and is not counted', async () => {
+    const { im } = await setup({ found: ['Alpha'], media: { 'holiday.jpg': JPG, 'private.jpg': JPG }, readableMedia: ['holiday.jpg'] });
+    const { run, names } = await exportZip(im);
+    expect(names).toEqual(['Alpha.md', 'holiday.jpg']);
+    expect(run.notes ?? []).toEqual([]);
+  });
+
+  test('a search for the site\'s own files only does not bring in the media library', async () => {
+    const { im } = await setup({ found: [], files: { 'photo.jpg': JPG }, media: { 'holiday.jpg': JPG } });
+    expect((await exportZip(im, ref({ types: 'local' }))).names).toEqual(['photo.jpg']);
+  });
+});
+
+describe('search export — files and their names', () => {
+  test('a file on a page the user may not read is not in the zip', async () => {
+    const { im } = await setup({
+      found: ['Alpha'], readable: ['Alpha'],
+      files: { 'plan.jpg': JPG, 'secret.jpg': JPG }, attachedTo: { 'plan.jpg': 'Alpha', 'secret.jpg': 'Hidden' }
+    });
+    expect((await exportZip(im)).names).toEqual(['Alpha.md', 'plan.jpg']);
+  });
+
+  test('a file named ".." or only dots goes in as "file"', async () => {
+    const { im } = await setup({ found: [], files: { '..': JPG, '....': Buffer.from('x') } });
+    expect((await exportZip(im, ref({ types: 'local' }))).names).toEqual(['file', 'file (2)']);
+  });
+});
+
+describe('search export — the 5000-match cap', () => {
+  const many = Array.from({ length: 5000 }, (_, n) => `P${n}`);
+
+  test('a search that reaches 5000 matches says only the first 5000 were looked at', async () => {
+    const { im } = await setup({ found: many, config: { 'ngdpbase.export.engine.max-items': 3 } });
+    const { run } = await exportZip(im);
+    expect(run.notes).toContain('More than 5000 matches; only the first 5000 were looked at.');
+  });
+
+  test('a search under the cap says nothing about it', async () => {
+    const { im } = await setup({ found: many.slice(0, 4999), config: { 'ngdpbase.export.engine.max-items': 3 } });
+    expect((await exportZip(im)).run.notes?.join(' ')).not.toContain('More than 5000');
   });
 });
 

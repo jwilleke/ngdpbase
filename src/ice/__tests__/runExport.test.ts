@@ -169,6 +169,13 @@ describe('runExportChain', () => {
       expect(entries.map(e => e.path).sort()).toEqual(['scan (2).pdf', 'scan.pdf']);
     });
 
+    test('names that differ only in case are kept apart, so neither overwrites the other on a Mac or Windows', async () => {
+      const a: IceItem = { kind: 'file', name: 'Scan.pdf', bytes: Buffer.from('one') };
+      const b: IceItem = { kind: 'file', name: 'scan.pdf', bytes: Buffer.from('two') };
+      const entries = unzip(await runExportChain([a, b], ncm(), tools(ALICE), settings, 'search-results'));
+      expect(entries.map(e => e.path).sort()).toEqual(['Scan.pdf', 'scan (2).pdf']);
+    });
+
     test('the whole zip is held to the byte limit', async () => {
       const big: IceItem = { kind: 'file', name: 'big.bin', bytes: Buffer.alloc(2048, 1) };
       await expect(runExportChain([big], ncm(), tools(ALICE), { ...settings, maxBytes: 1024 }, 'search-results')).rejects.toBeInstanceOf(IceExportFailed);
