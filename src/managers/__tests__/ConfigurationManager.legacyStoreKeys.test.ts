@@ -74,9 +74,9 @@ describe('ConfigurationManager: legacy store keys (#2246)', () => {
     const status = cm.getManagerStatus();
     expect(status.state).toBe('degraded');
     expect(status.kind).toBe('attention');
-    expect(status.reason).toContain('3 removed vault settings');
-    expect(status.reason).toContain('ngdpbase.stores.default.encrypt');
-    expect(status.reason).toContain('ngdpbase.stores.capture.encrypt');
+    // #2354: plain words on the dashboard; each key is named in the warnings above.
+    expect(status.reason).toContain('3 old vault settings');
+    expect(status.reason).not.toContain('ngdpbase.');
   });
 
   it('changes nothing: the keys stay in the file and no value is carried over', async () => {

@@ -53,8 +53,9 @@ describe('MediaManager folder state (#1167)', () => {
     const status = mgr.getManagerStatus();
     expect(status.state).toBe('degraded');
     expect(status.configKey).toBe('ngdpbase.media.folders');
-    expect(status.reason).toContain('1 of 2');
-    expect(status.reason).toContain(missing);
+    // #2354: plain words on the dashboard; the folder is named in the log.
+    expect(status.reason).toBe('1 of 2 media folders cannot be read, so its files are not shown. Check that the drive is connected to the server; this is done outside this page.');
+    expect(status.reason).not.toContain(missing);
     await mgr.shutdown();
   });
 

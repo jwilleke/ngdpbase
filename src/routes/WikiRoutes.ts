@@ -31,7 +31,7 @@ import { actorOf, type ActorAttribution, type ActorContext } from '../context/Ac
 import { systemContext } from '../context/bootActions.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { hideDeclaredPaths, keepHiddenValues, NO_SECRETS, secretKeys, valueLevels } from '../utils/sensitiveValues.js';
-import { createPatch } from 'diff';
+import { createPatch, diffLines } from 'diff';
 import { exec } from 'child_process';
 import { Request, Response, Application, NextFunction } from 'express';
 import SchemaGenerator from '../utils/SchemaGenerator.js';
@@ -44,7 +44,7 @@ import {
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
-import { readDeclaredAsWritten } from '../utils/policyAttributes.js';
+import { DENY_OVERRIDES_EXPLANATION, RULE_COMBINING_ALGORITHM_KEY, readDeclaredAsWritten, unenforcedConditionsNotice } from '../utils/policyAttributes.js';
 import { sessionCookieWithheld, SESSION_COOKIE_WITHHELD_MESSAGE } from '../utils/sessionSecurity.js';
 import { formatLeftMenuContent } from '../utils/leftMenuNav.js';
 import { reportMissingPageMetadata } from '../utils/pageMetadataMissing.js';
@@ -66,6 +66,10 @@ import { CONSENT_PATH, CORE_CONSENT_SCOPE, RECOVERY_WORDS_CONSENT_SCOPE, REMEMBE
 import { recoveryWordsPending, recoveryWordsState } from '../utils/recoveryWordsConsent.js';
 import { sharedFoldersWordsState } from '../utils/sharedFoldersWordsConsent.js';
 import type SharedFolderManager from '../managers/SharedFolderManager.js';
+import { PASSKEYS_ADDRESS_IN_SERVER_SETTINGS, PASSKEYS_CANNOT_WORK, PASSKEYS_OFF_BUTTON, PASSKEYS_OFF_HINT, PASSKEY_SETTING } from '../utils/passkeyAddressWording.js';
+import type UpgradeCheckManager from '../managers/UpgradeCheckManager.js';
+import type { OpenUpgradeItem } from '../managers/UpgradeCheckManager.js';
+import { UPGRADE_INTRO, UPGRADE_LIST_HEADING, UPGRADE_READ_ONLY, upgradeEmpty, upgradeHeading, upgradeListLead, upgradeNotice, upgradeResult, type UpgradeResultKey } from '../upgradeChecks/wording.js';
 import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
 import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
@@ -232,6 +236,7 @@ import { LoginThrottle } from '../utils/LoginThrottle.js';
 import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY, ADMIN_SWITCH_REASON } from '../utils/maintenanceState.js';
 import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
 import { untrustedFileHeaders, vaultFileDisposition } from '../utils/securityHeaders.js';
+import { featureNameFor } from '../utils/featureNames.js';
 import { PAGE_DATA_TOPIC } from '../cache/CacheDependencies.js';
 
 /**
@@ -350,8 +355,8 @@ interface IVersionEntry {
 }
 
 interface IComparisonResult {
-  version1?: unknown;
-  version2?: unknown;
+  fromMetadata?: unknown;
+  toMetadata?: unknown;
   diff?: unknown;
   stats?: unknown;
   [key: string]: unknown;
@@ -1146,11 +1151,14 @@ class WikiRoutes {
      * Presentation only — the server still refuses the request. A disabled
      * button is a courtesy, never a control.
      */
-    const lockedUnless = (permission: string): string =>
+    const lockedUnless = (permission: string, describedBy?: string): string =>
       can(permission)
         ? ''
-        : ` disabled aria-disabled="true" title="Requires the '${permission}' permission —`
-          + ' this account has read-only access"';
+        // `describedBy` names a line on the page that says why, in place of the tooltip that names the permission (#2301).
+        : describedBy
+          ? ` disabled aria-disabled="true" aria-describedby="${describedBy}"`
+          : ` disabled aria-disabled="true" title="Requires the '${permission}' permission —`
+            + ' this account has read-only access"';
     const registrationRedirectPage = (configManager?.getProperty(
       'ngdpbase.application.registration.redirect-page',
       'request-access'
@@ -1223,7 +1231,7 @@ class WikiRoutes {
       canViewAdmin: boolean;
       canCreatePage: boolean;
       can: (permission: string) => boolean;
-      lockedUnless: (permission: string) => string;
+      lockedUnless: (permission: string, describedBy?: string) => string;
       registrationRedirectPage: string;
       contactAvailable: boolean;
       contactFooterEnabled: boolean;
@@ -2796,6 +2804,47 @@ class WikiRoutes {
       }
       return shown as T;
     }));
+  }
+
+  /**
+   * #2319: one side of a compare, as page-diff.ejs reads it. The provider
+   * returns VersionMetadata (`timestamp`, `message`); the view reads
+   * `dateCreated` and `comment`.
+   */
+  private diffSide(meta: unknown): Record<string, unknown> {
+    const m = (meta ?? {}) as Record<string, unknown>;
+    return { ...m, dateCreated: m.dateCreated ?? m.timestamp, comment: m.comment ?? m.message };
+  }
+
+  /**
+   * #2326: the provider's diff is character level (fast-diff, also what the
+   * delta store keeps), which reads as noise on text. Rebuild the old and new
+   * text from it and diff by line for display, in the same [-1 | 0 | 1, text]
+   * shape the view already renders. Stats count those lines, so the summary
+   * matches what is shown. A rewrite too big to diff within the time limit
+   * comes back as `tooLarge`, with both versions' sizes, and no diff.
+   */
+  private lineDiffForDisplay(charDiff: Array<[number, string]>): {
+    diff: Array<[number, string]>;
+    stats: { additions: number; deletions: number; unchanged: number };
+    tooLarge?: { oldBytes: number; newBytes: number };
+  } {
+    const oldText = charDiff.filter(([op]) => op <= 0).map(([, t]) => t).join('');
+    const newText = charDiff.filter(([op]) => op >= 0).map(([, t]) => t).join('');
+    const stats = { additions: 0, deletions: 0, unchanged: 0 };
+    const changes = diffLines(oldText, newText, { ignoreNewlineAtEof: true, stripTrailingCr: true, timeout: 2000 });
+    if (!changes) {
+      return { diff: [], stats, tooLarge: { oldBytes: oldText.length, newBytes: newText.length } };
+    }
+    // One entry per line, so each line carries its own marker and colour.
+    const diff = changes.flatMap((c): Array<[number, string]> => {
+      const op = c.added ? 1 : c.removed ? -1 : 0;
+      return c.value.replace(/\r?\n$/, '').split('\n').map((line): [number, string] => {
+        if (op === 1) stats.additions++; else if (op === -1) stats.deletions++; else stats.unchanged++;
+        return [op, line.replace(/\r$/, '')];
+      });
+    });
+    return { diff, stats };
   }
 
   private _isPagePrivate(pageName: string): boolean {
@@ -7093,9 +7142,11 @@ ${panes}
     // #2193: a script's prompt, carried to the confirmation and to Cancel.
     const prompt = stepUpPromptId(req.query.prompt ?? (req.body as { prompt?: unknown } | undefined)?.prompt) ?? '';
     const needsPasskey = (authManager?.requiredAalFor(user.roles ?? [], user.aalCap) ?? 0) >= 2;
-    const hasPassword = await this.engine.getManager<IUserManager>('UserManager')?.hasPassword(user.username).catch(() => false) ?? false;
+    // #2356: what this account may add or use here; a method its allowed sign-in methods exclude is never offered.
+    const ways = await authManager?.strongerSignInWays(user.username);
+    const hasPassword = ways?.password ?? false;
     // #421 slice 2c: the app's code alone is AAL1; at AAL2 it goes with the password.
-    const hasTotp = Boolean(authManager?.stepUpTotpOffered?.(user.username)) && (!needsPasskey || hasPassword);
+    const hasTotp = Boolean(ways?.useTotp) && (!needsPasskey || hasPassword);
     const commonData = await this.getCommonTemplateData(req);
     res.set('Cache-Control', 'no-store');
     res.status(view.error ? 401 : 200).render('reauth', {
@@ -7104,7 +7155,8 @@ ${panes}
       next,
       prompt,
       needsPasskey,
-      hasPasskey: Boolean(authManager?.passkeyRelyingParty() && authManager.hasCredential(user.username, 'passkey')),
+      ways,
+      hasPasskey: Boolean(ways?.usePasskey),
       hasPassword,
       hasTotp,
       ...view
@@ -13162,9 +13214,9 @@ ${panes}
         logger.warn('[adminDashboard] Last job runs could not be read:', jobErr);
       }
 
-      const degraded = (this.engine as unknown as {
+      const degraded = ((this.engine as unknown as {
         getDegradedManagers?: () => Array<{ manager: string; state: string; reason?: string; configKey?: string; kind?: string }>;
-      }).getDegradedManagers?.() ?? [];
+      }).getDegradedManagers?.() ?? []).map((m) => ({ ...m, feature: featureNameFor(m.manager) }));
 
       const templateData = {
         ...commonData,
@@ -13217,7 +13269,11 @@ ${panes}
         jobLastRuns,
         // #1842: what the startup checks found outside its vault, each with
         // a "Move into vault" action where this admin may (unsealed vaults).
-        vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : []
+        vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : [],
+        // #2301: one notice linking to "After updating" while it has items.
+        upgradeItems: currentUser ? await this.upgradeItemsFor(currentUser) : [],
+        upgradeVersion: this.upgradeVersion(),
+        upgradeNotice
       };
 
       res.render('admin-dashboard', templateData);
@@ -14371,10 +14427,13 @@ ${panes}
         ?.subjectAttributeProblems(readDeclaredAsWritten(configManager, 'ngdpbase.access.subject-attributes')) ?? [];
       const environmentProblems = this.engine.getManager('PolicyValidator')
         ?.environmentAttributeProblems(readDeclaredAsWritten(configManager, 'ngdpbase.access.environment-attributes')) ?? [];
+      const algorithmProblems = this.engine.getManager('PolicyValidator')
+        ?.combiningAlgorithmProblems(configManager.getProperty(RULE_COMBINING_ALGORITHM_KEY, 'deny-overrides')) ?? [];
       const configProblems: Record<string, string[]> = {
         ...(policyProblems.length > 0 ? { 'ngdpbase.access.policies': policyProblems } : {}),
         ...(subjectProblems.length > 0 ? { 'ngdpbase.access.subject-attributes': subjectProblems } : {}),
-        ...(environmentProblems.length > 0 ? { 'ngdpbase.access.environment-attributes': environmentProblems } : {})
+        ...(environmentProblems.length > 0 ? { 'ngdpbase.access.environment-attributes': environmentProblems } : {}),
+        ...(algorithmProblems.length > 0 ? { [RULE_COMBINING_ALGORITHM_KEY]: algorithmProblems } : {})
       };
 
       const commonData = await this.getCommonTemplateData(req);
@@ -14383,6 +14442,11 @@ ${panes}
         ...commonData,
         title: 'Configuration Management',
         configProblems,
+        // #2317: passkeys are on in the setting but the site's address cannot support them.
+        passkeysCannotWork: this.engine.getManager<AuthManager>('AuthManager')?.passkeysCannotWork?.() ?? false,
+        passkeyWording: { cannotWork: PASSKEYS_CANNOT_WORK, addressInServerSettings: PASSKEYS_ADDRESS_IN_SERVER_SETTINGS, button: PASSKEYS_OFF_BUTTON, hint: PASSKEYS_OFF_HINT, setting: PASSKEY_SETTING },
+        // #2330: stated above the table, so the rule the policies are read under is visible.
+        ruleCombiningAlgorithm: { value: configManager.getProperty(RULE_COMBINING_ALGORITHM_KEY, 'deny-overrides'), explanation: DENY_OVERRIDES_EXPLANATION },
         message: req.query.success,
         error: req.query.error,
         defaultProperties,
@@ -14663,6 +14727,16 @@ ${panes}
           return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);
         }
       }
+      // #2330: only deny-overrides is implemented; any other value is refused here, and stops the site at start-up.
+      if (property === RULE_COMBINING_ALGORITHM_KEY) {
+        const refused = this.engine.getManager('PolicyValidator')?.combiningAlgorithmProblems(parsedValue) ?? [];
+        if (refused.length > 0) {
+          const error = `Rule-combining algorithm not saved: ${refused.join('; ')}`;
+          const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
+          if (wantsJson) return res.status(400).json({ error });
+          return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);
+        }
+      }
       // #2261: an environment attribute reads a boolean from a schedule or a configuration key.
       if (property === 'ngdpbase.access.environment-attributes') {
         const refused = this.engine.getManager('PolicyValidator')?.environmentAttributeProblems(parsedValue) ?? [];
@@ -14697,6 +14771,12 @@ ${panes}
       // next start, with /admin down until the file is edited by hand, so it
       // is refused here. The rule is AuthManager's, the one start-up uses.
       let warning = '';
+      // #2334: like a leftover `priority`, a `conditions` array is reported, not refused: the
+      // policy is otherwise valid, and refusing would block saving the rest of the list.
+      if (property === 'ngdpbase.access.policies') {
+        const unenforced = unenforcedConditionsNotice(parsedValue);
+        if (unenforced) warning = ` ${unenforced}`;
+      }
       if (property === 'ngdpbase.auth.factors') {
         const check = (this.engine.getManager('AuthManager') as { checkFactorEntries?(v: unknown): { refused: string[]; ignored: string[] } } | null)
           ?.checkFactorEntries?.(parsedValue);
@@ -15289,6 +15369,97 @@ ${panes}
         success: false,
         error: getErrorMessage(err) || 'Error starting reindex'
       });
+    }
+  }
+
+  /** The "After updating" items `ctx` has open (#2301). Best-effort: a failure leaves the notice out, not the page. */
+  private async upgradeItemsFor(ctx: NonNullable<Request['userContext']>): Promise<OpenUpgradeItem[]> {
+    try {
+      return await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.openItems(ctx) ?? [];
+    } catch (err) {
+      logger.warn('[upgrade] The open items could not be read:', err);
+      return [];
+    }
+  }
+
+  /** The site version for the "After updating" wording; empty when it is not known, which the wording handles. */
+  private upgradeVersion(): string {
+    try {
+      return this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.version() ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  /** GET /admin/upgrade — "After updating to X.Y.Z": what the last update left for an administrator to decide (#2301). */
+  async adminUpgradePage(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await this.hasAdminViewAccess(wikiContext))) {
+        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page');
+      }
+      const version = this.upgradeVersion();
+      const result = upgradeResult(req.query.result, req.query.count);
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('admin-upgrade', {
+        ...commonData,
+        title: upgradeHeading(version),
+        version,
+        heading: upgradeHeading(version),
+        intro: UPGRADE_INTRO,
+        empty: upgradeEmpty(version),
+        readOnly: UPGRADE_READ_ONLY,
+        items: await this.upgradeItemsFor(wikiContext.userContext),
+        // The address carries a key; the words are written here.
+        success: result?.ok ? result.text : null,
+        error: result && !result.ok ? result.text : null
+      });
+    } catch (err: unknown) {
+      logger.error('[upgrade] Error showing the After updating page:', err);
+      return this.renderError(req, res, 500, 'Error', 'This page could not be shown.');
+    }
+  }
+
+  /** GET /admin/upgrade/pages/:id — the pages an item is about, 50 to a page, and the item's one button (#2301). Worked out afresh each time. */
+  async adminUpgradePages(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await this.hasAdminViewAccess(wikiContext))) {
+        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page');
+      }
+      const id = typeof req.params.id === 'string' ? req.params.id : '';
+      const asked = Number.parseInt(typeof req.query.page === 'string' ? req.query.page : '', 10);
+      const list = await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.openList(id, wikiContext.userContext, Number.isFinite(asked) ? asked : 1);
+      if (!list) return res.redirect('/admin/upgrade');
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('admin-upgrade-pages', {
+        ...commonData,
+        title: UPGRADE_LIST_HEADING,
+        heading: UPGRADE_LIST_HEADING,
+        lead: upgradeListLead(list.total),
+        readOnly: UPGRADE_READ_ONLY,
+        id,
+        list
+      });
+    } catch (err: unknown) {
+      logger.error('[upgrade] Error showing the list of pages:', err);
+      return this.renderError(req, res, 500, 'Error', 'This page could not be shown.');
+    }
+  }
+
+  /** POST /admin/upgrade/fix — the item's one button. A configuration change, so config-manage; the change is audited as any other (#2301). Redirects with a key, never text. */
+  async adminUpgradeFix(req: Request, res: Response) {
+    const back = (result: UpgradeResultKey, count = 0) => res.redirect(`/admin/upgrade?result=${result}${count > 0 ? `&count=${count}` : ''}`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return undefined;
+      const currentUser = wikiContext.userContext;
+      const id = typeof req.body?.id === 'string' ? req.body.id : '';
+      const changed = currentUser ? (await this.engine.getManager<UpgradeCheckManager>('UpgradeCheckManager')?.applyFix(id, currentUser)) ?? 0 : 0;
+      return back(changed > 0 ? 'fixed' : 'already', changed);
+    } catch (err: unknown) {
+      logger.error('[upgrade] The fix did not complete:', err);
+      return back('failed');
     }
   }
 
@@ -18977,6 +19148,9 @@ ${panes}
     app.post('/admin/restart', (req: Request, res: Response) => this.adminRestart(req, res));
     app.post('/admin/reindex', (req: Request, res: Response) => this.adminReindex(req, res));
     // #1842: move a vault page's leftovers into its vault — the owner, or admin-system for an unsealed vault.
+    app.get('/admin/upgrade', (req: Request, res: Response) => void this.adminUpgradePage(req, res));
+    app.get('/admin/upgrade/pages/:id', (req: Request, res: Response) => void this.adminUpgradePages(req, res));
+    app.post('/admin/upgrade/fix', (req: Request, res: Response) => void this.adminUpgradeFix(req, res));
     app.post('/vault-repair', (req: Request, res: Response) => void this.vaultRepair(req, res, false));
     app.post('/vault-repair/all', (req: Request, res: Response) => void this.vaultRepair(req, res, true));
     app.get('/admin/events', (req: Request, res: Response) => this.adminEvents(req, res));
@@ -20899,7 +21073,8 @@ ${panes}
         pageName: pageName,
         pageUuid: pageMetadata?.uuid,
         // #2097: each version's editor as people see it, username and identity @id.
-        versions: await this.describeUsersIn(pagedVersions.items, ['editor', 'author']),
+        // #2326: the provider's `message` is the view's `comment` (as diffSide does for #2319).
+        versions: await this.describeUsersIn(pagedVersions.items.map((v: unknown) => this.diffSide(v)), ['editor', 'author']),
         versionCount: versions.length,
         paginationHtml: pagedVersions.paginationHtml
       });
@@ -20982,15 +21157,18 @@ ${panes}
       // Get left menu content
       const leftMenu = await this.getLeftMenu(req.userContext);
 
+      const lineDiff = this.lineDiffForDisplay(comparison.diff as Array<[number, string]>);
       res.render('page-diff', {
         ...templateData,
         leftMenu,
+        pageName,
         pageUuid: pageMetadata?.uuid,
         // #2097: each version's editor as people see it.
-        version1: (await this.describeUsersIn([comparison.version1 as object], ['author', 'editor']))[0],
-        version2: (await this.describeUsersIn([comparison.version2 as object], ['author', 'editor']))[0],
-        diff: comparison.diff,
-        stats: comparison.stats
+        version1: (await this.describeUsersIn([this.diffSide(comparison.fromMetadata)], ['author', 'editor']))[0],
+        version2: (await this.describeUsersIn([this.diffSide(comparison.toMetadata)], ['author', 'editor']))[0],
+        diff: lineDiff.diff,
+        stats: lineDiff.stats,
+        tooLarge: lineDiff.tooLarge ?? null
       });
 
     } catch (error: unknown) {

@@ -9,6 +9,8 @@ import PolicyEvaluator, { conditionHolds, conditionProblems } from '../PolicyEva
 import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import { compareLeaf, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS } from '../../utils/policyAttributes';
 import type { Policy, PolicyCondition } from '../../types/Policy';
+import type { ComparisonKind } from '../../utils/policyAttributes';
+import { attr, val } from './__fixtures__/conditions';
 
 const PAGE_ATTRIBUTES = {
   owner: { type: 'identity', from: 'frontmatter:author' },
@@ -17,40 +19,42 @@ const PAGE_ATTRIBUTES = {
   draft: { type: 'boolean', from: 'frontmatter:draft' },
   tags: { type: 'list', from: 'frontmatter:tags' }
 };
-const leaf = (attribute: string, operator: string, value: unknown) => ({ attribute, [operator]: value }) as PolicyCondition;
+const str = (id: string) => attr(id, 'string');
+const int = (id: string) => attr(id, 'integer');
+const notEqual = (left: unknown, right: unknown) => ({ not: [{ 'string-equal': [left, right] }] }) as PolicyCondition;
 
 describe('a value of the wrong type is unknown, not a definite answer', () => {
   test.each([
-    ['equals', '5', 5],
-    ['not-equals', '5', 5],
-    ['equals', ['a'], 'a'],
-    ['equals', 'true', true],
-    ['not-equals', 'true', true],
-    ['in', '5', [5]],
-    ['in', 5, ['5']],
-    ['greater-or-equal', NaN, 3],
-    ['less-or-equal', NaN, 3],
-    ['greater-or-equal', Infinity, 3],
-    ['less-or-equal', -Infinity, 3],
-    ['greater-or-equal', 2.5, 3],
-    ['less-or-equal', 3, 2.5]
-  ])('%s of %j with %j', (operator, left, right) => {
-    expect(compareLeaf(operator, left, right)).toBeUndefined();
+    ['equal', '5', 5],
+    ['equal', ['a'], 'a'],
+    ['equal', 'true', true],
+    ['is-in', '5', [5]],
+    ['is-in', 5, ['5']],
+    ['greater-than-or-equal', NaN, 3],
+    ['less-than-or-equal', NaN, 3],
+    ['greater-than-or-equal', Infinity, 3],
+    ['less-than-or-equal', -Infinity, 3],
+    ['greater-than-or-equal', 2.5, 3],
+    ['less-than-or-equal', 3, 2.5],
+    ['greater-than', 2.5, 3],
+    ['less-than', 3, 2.5]
+  ] as Array<[ComparisonKind, unknown, unknown]>)('%s of %j with %j', (kind, left, right) => {
+    expect(compareLeaf(kind, left, right)).toBeUndefined();
   });
 
   test('in over a list attribute whose entries are not the kind on the left is unknown', () => {
-    expect(compareLeaf('in', 'a', ['a', 5])).toBeUndefined();
-    expect(compareLeaf('in', 'a', ['a', 'b'])).toBe(true);
+    expect(compareLeaf('is-in', 'a', ['a', 5])).toBeUndefined();
+    expect(compareLeaf('is-in', 'a', ['a', 'b'])).toBe(true);
   });
 
-  test('a deny on not-equals does not fail open when frontmatter has the wrong type', async () => {
+  test('a deny on not of string-equal does not fail open when frontmatter has the wrong type', async () => {
     const read = (n: string) => ({ 'resource:level': '1' })[n];
-    expect(await conditionHolds(leaf('resource:level', 'not-equals', 1), read)).toBeUndefined();
+    expect(await conditionHolds({ not: [{ 'integer-equal': [int('resource:level'), val(1)] }] }, read)).toBeUndefined();
   });
 
   test('an empty string is a value, not a missing one', () => {
-    expect(compareLeaf('equals', '', '')).toBe(true);
-    expect(compareLeaf('not-equals', '', 'draft')).toBe(true);
+    expect(compareLeaf('equal', '', '')).toBe(true);
+    expect(compareLeaf('equal', '', 'draft')).toBe(false);
   });
 });
 
@@ -104,7 +108,7 @@ describe('through the evaluator', () => {
     return { ev: new PolicyEvaluator(engine), getProperty };
   }
   const policy = (id: string, effect: string, condition: PolicyCondition): Policy => ({
-    id, effect, priority: 50,
+    id, effect,
     subjects: [{ type: 'role', value: 'editor' }],
     resources: [{ type: 'page', pattern: '*' }],
     actions: ['page-edit'],
@@ -117,29 +121,56 @@ describe('through the evaluator', () => {
   };
 
   test('a deny on "Mallory" fires for mallory (identity literals are normalised)', async () => {
-    const d = policy('d', 'deny', leaf('subject:id', 'in', ['Mallory', ' Eve ']));
+    const d = policy('d', 'deny', { 'string-is-in': [str('subject:id'), val(['Mallory', ' Eve '])] } as PolicyCondition);
     expect(await decide([d], () => 'mallory')).toMatchObject({ allowed: false, policyIds: ['d'] });
     expect(await decide([d], () => 'eve')).toMatchObject({ allowed: false, policyIds: ['d'] });
-    expect(await decide([d, policy('a', 'allow', leaf('subject:id', 'equals', 'ERIN'))], () => 'erin')).toMatchObject({ allowed: true, policyIds: ['a'] });
+    expect(await decide([d, policy('a', 'allow', { 'string-equal': [str('subject:id'), val('ERIN')] } as PolicyCondition)], () => 'erin')).toMatchObject({ allowed: true, policyIds: ['a'] });
+  });
+
+  describe('an identity against a list (#2330)', () => {
+    const listBag = { 'string-is-in': [str('subject:id'), attr('resource:tags', 'string')] } as PolicyCondition;
+    const readWith = (tags: string[]) => (n: string) => (n === 'resource:tags' ? tags : 'alice');
+
+    test('an identity left meets a mixed-case list attribute', async () => {
+      const allow = policy('a', 'allow', listBag);
+      expect(await decide([allow], readWith(['Alice', 'bob']))).toMatchObject({ allowed: true, policyIds: ['a'] });
+      expect(await decide([allow], readWith(['carol', ' BOB ']))).toMatchObject({ hasDecision: false });
+    });
+
+    test('an identity left meets a literal bag', async () => {
+      const allow = policy('a', 'allow', { 'string-is-in': [str('subject:id'), val(['Alice'])] } as PolicyCondition);
+      expect(await decide([allow], () => 'alice')).toMatchObject({ allowed: true, policyIds: ['a'] });
+    });
+
+    test('a deny keyed on a list with mixed-case entries applies', async () => {
+      const d = policy('d', 'deny', listBag);
+      expect(await decide([d], readWith(['Alice', 'bob']))).toMatchObject({ allowed: false, policyIds: ['d'] });
+      expect(await decide([d], readWith(['bob']))).not.toMatchObject({ policyIds: ['d'] });
+    });
+
+    test('a string left is still compared exactly', async () => {
+      const exact = policy('a', 'allow', { 'string-is-in': [str('resource:status'), attr('resource:tags', 'string')] } as PolicyCondition);
+      expect(await decide([exact], (n) => (n === 'resource:tags' ? ['Open'] : 'open'))).toMatchObject({ hasDecision: false });
+    });
   });
 
   test('a not-equals on "Alice" is false for alice', async () => {
-    const a = policy('a', 'allow', leaf('subject:id', 'not-equals', 'Alice'));
+    const a = policy('a', 'allow', notEqual(str('subject:id'), val('Alice')));
     expect(await decide([a], () => 'alice')).toMatchObject({ hasDecision: false });
     expect(await decide([a], () => 'bob')).toMatchObject({ allowed: true });
   });
 
   test('a read that throws makes that leaf unknown and does not abort the decision', async () => {
     const throwing = (n: string) => { if (n === 'resource:status') throw new Error('boom'); return 'erin'; };
-    const any = { 'any-of': [leaf('resource:status', 'equals', 'x'), leaf('subject:id', 'equals', 'erin')] } as PolicyCondition;
+    const any = { or: [{ 'string-equal': [str('resource:status'), val('x')] }, { 'string-equal': [str('subject:id'), val('erin')] }] } as PolicyCondition;
     expect(await decide([policy('a', 'allow', any)], throwing)).toMatchObject({ allowed: true, policyIds: ['a'] });
     // unknown leaf alone: an allow does not apply, a deny does, as for a missing attribute
-    expect(await decide([policy('d', 'deny', leaf('resource:status', 'equals', 'x'))], throwing)).toMatchObject({ allowed: false, policyIds: ['d'] });
-    expect(await conditionHolds(leaf('resource:status', 'equals', 'x'), () => Promise.reject(new Error('boom')))).toBeUndefined();
+    expect(await decide([policy('d', 'deny', { 'string-equal': [str('resource:status'), val('x')] } as PolicyCondition)], throwing)).toMatchObject({ allowed: false, policyIds: ['d'] });
+    expect(await conditionHolds({ 'string-equal': [str('resource:status'), val('x')] } as PolicyCondition, () => Promise.reject(new Error('boom')))).toBeUndefined();
   });
 
   test('the condition is checked once per policy in compile(), not once per page', async () => {
-    const { ev, getProperty } = evaluatorWith([policy('a', 'allow', leaf('resource:level', 'in', [1, 2, 3]))]);
+    const { ev, getProperty } = evaluatorWith([policy('a', 'allow', { 'integer-is-in': [int('resource:level'), val([1, 2, 3])] } as PolicyCondition)]);
     await ev.initialize();
     const decide1 = ev.compile(editor, 'page-edit');
     getProperty.mockClear();
@@ -154,17 +185,17 @@ describe('through the evaluator', () => {
 });
 
 describe('width limits', () => {
-  const ok = leaf('resource:status', 'equals', 'x');
+  const ok = { 'string-equal': [str('resource:status'), val('x')] };
   const problems = (c: unknown) => conditionProblems(c, PAGE_ATTRIBUTES);
 
-  test(`an in list may have ${MAX_IN_ITEMS} values and not one more`, () => {
-    expect(problems(leaf('resource:status', 'in', Array.from({ length: MAX_IN_ITEMS }, (_, i) => `v${i}`)))).toEqual([]);
-    expect(problems(leaf('resource:status', 'in', Array.from({ length: MAX_IN_ITEMS + 1 }, (_, i) => `v${i}`)))).toEqual([
-      `'in' lists ${MAX_IN_ITEMS + 1} values; the limit is ${MAX_IN_ITEMS}; use a list attribute or split it into several policies`
+  test(`an is-in list may have ${MAX_IN_ITEMS} values and not one more`, () => {
+    expect(problems({ 'string-is-in': [str('resource:status'), val(Array.from({ length: MAX_IN_ITEMS }, (_, i) => `v${i}`))] })).toEqual([]);
+    expect(problems({ 'string-is-in': [str('resource:status'), val(Array.from({ length: MAX_IN_ITEMS + 1 }, (_, i) => `v${i}`))] })).toEqual([
+      `'string-is-in' lists ${MAX_IN_ITEMS + 1} values; the limit is ${MAX_IN_ITEMS}; use a list attribute or split it into several policies`
     ]);
   });
 
-  test.each(['any-of', 'all-of'])('%s lists at most the group limit of conditions', (op) => {
+  test.each(['or', 'and'])('%s lists at most the group limit of conditions', (op) => {
     expect(problems({ [op]: Array.from({ length: MAX_GROUP_CHILDREN }, () => ok) })).toEqual([]);
     expect(problems({ [op]: Array.from({ length: MAX_GROUP_CHILDREN + 1 }, () => ok) })).toEqual([
       `'${op}' lists ${MAX_GROUP_CHILDREN + 1} conditions; the limit is ${MAX_GROUP_CHILDREN}; split it into several policies`
@@ -172,12 +203,12 @@ describe('width limits', () => {
   });
 
   test(`a condition may have ${MAX_CONDITION_NODES} nodes in all, however it is split across levels`, () => {
-    const wide = { 'any-of': Array.from({ length: 32 }, () => ({ 'all-of': Array.from({ length: 32 }, () => ok) })) };
+    const wide = { or: Array.from({ length: 32 }, () => ({ and: Array.from({ length: 32 }, () => ok) })) };
     expect(problems(wide)).toEqual([`condition has more than ${MAX_CONDITION_NODES} nodes; split it into several policies`]);
   });
 
   test('a 100k-wide condition is refused quickly, and never holds', async () => {
-    const huge = { 'any-of': Array.from({ length: 100_000 }, () => ok) } as PolicyCondition;
+    const huge = { or: Array.from({ length: 100_000 }, () => ok) } as PolicyCondition;
     const started = Date.now();
     expect(problems(huge)).toHaveLength(1);
     expect(Date.now() - started).toBeLessThan(50);
@@ -185,7 +216,7 @@ describe('width limits', () => {
       const engine = {
         getManager: (name: string) => (name === 'ConfigurationManager'
           ? { getProperty: (k: string, d: unknown) => (k === 'ngdpbase.access.resource-types' ? { page: { attributes: PAGE_ATTRIBUTES } } : d) }
-          : name === 'PolicyDecisionPoint' ? { policies: () => [{ id: 'a', effect: 'allow', priority: 1, subjects: [], resources: [], actions: [], condition: huge }], categoriesGranting: () => [] } : null)
+          : name === 'PolicyDecisionPoint' ? { policies: () => [{ id: 'a', effect: 'allow', subjects: [], resources: [], actions: [], condition: huge }], categoriesGranting: () => [] } : null)
       } as never;
       return { ev: new PolicyEvaluator(engine) };
     })();

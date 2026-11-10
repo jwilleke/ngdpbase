@@ -145,7 +145,8 @@ export class PolicyDecisionPoint extends BaseManager {
   }
 
   /**
-   * The policies in force right now, highest priority first.
+   * The policies in force right now, in configuration order. Order carries no
+   * meaning: the rule-combining algorithm is `deny-overrides` (#2330).
    *
    * - `ngdpbase.access.policies.enabled` false — its default when unset —
    *   means none;
@@ -167,8 +168,7 @@ export class PolicyDecisionPoint extends BaseManager {
         if (!p.actions?.some((a) => RETIRED_PERMISSIONS.has(a))) return p;
         this.warnRetiredOnce(p);
         return { ...p, actions: withRetiredExpanded(p.actions) };
-      })
-      .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+      });
   }
 
   /**
@@ -186,8 +186,8 @@ export class PolicyDecisionPoint extends BaseManager {
    * What each role permits: role name → the actions its holders are granted.
    *
    * It mirrors the evaluator's ROLE matching — an allow policy naming a role
-   * grants its actions, a deny policy naming it takes them away, lower
-   * priority first so a higher-priority deny lands last and wins. It does not
+   * grants its actions, a deny policy naming it takes them away, whatever the
+   * order (deny-overrides, #2330). It does not
    * evaluate resource patterns or the ceilings, so it is a summary for a human
    * reading a table (the admin Security Policy Summary, a profile), never an
    * authorisation answer — that is {@link permits} with the caller's subject.

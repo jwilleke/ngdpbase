@@ -108,8 +108,8 @@ class ConsentManager extends BaseManager {
   private readonly addons = new Map<string, { documents: string[]; paths: string[] }>();
   /** Username → their records, read once and dropped on every write. */
   private readonly cache = new Map<string, ConsentRecord[]>();
-  /** Document id → why it cannot be asked for; the needs-attention reason is made from these. */
-  private readonly problems = new Map<string, string>();
+  /** Document id → why it cannot be asked for (the needs-attention reason is made from these), and whether it comes with an add-on (core's Required Pages Sync does not restore those). */
+  private readonly problems = new Map<string, { text: string; addon: boolean; core: boolean }>();
   private attentionReason: string | null = null;
 
   constructor(engine: WikiEngine) {
@@ -225,16 +225,27 @@ class ConsentManager extends BaseManager {
       logger.warn(`[ConsentManager] could not read the page '${id}': ${(err as Error).message}`);
     }
     const whose = scope === CORE_CONSENT_SCOPE ? '' : ` (${scope})`;
+    const core = scope === CORE_CONSENT_SCOPE;
+    const addon = !core && !SUBJECT_CONSENT_SCOPES.includes(scope);
     if (!meta) {
-      const fix = SUBJECT_CONSENT_SCOPES.includes(scope)
-        ? 'Restore it (Admin → Required Pages Sync)'
-        : `Restore it (Admin → Required Pages Sync for core's) or remove it from ${scope === CORE_CONSENT_SCOPE ? CONSENT_DOCUMENTS_KEY : 'the add-on\'s registration'}`;
-      this.problems.set(id, `No '${id}' page${whose}: nobody is asked to accept it. ${fix}.`);
+      const fix = addon
+        ? 'It comes with an add-on; update or reinstall that add-on.'
+        : core
+          ? 'Restore it with Required Pages Sync, or remove it from the consent documents setting.'
+          : 'Restore it with Required Pages Sync.';
+      logger.warn(`[ConsentManager] No '${id}' page${whose}: nobody is asked to accept it. ${addon ? "Restore it (Admin → Required Pages Sync restores core's pages only; update or reinstall the add-on) or remove it from the add-on's registration" : core ? `Restore it (Admin → Required Pages Sync) or remove it from ${CONSENT_DOCUMENTS_KEY}` : 'Restore it (Admin → Required Pages Sync)'}`);
+      this.problems.set(id, { text: `The '${id}' page is missing, so nobody is asked to accept it. ${fix}`, addon, core });
       return null;
     }
     const version = versionOf(meta['version']);
     if (!version) {
-      this.problems.set(id, `The '${id}' page${whose} has no version: in its front matter, so nobody is asked to accept it.`);
+      logger.warn(`[ConsentManager] The '${id}' page${whose} has no version in its front matter, so nobody is asked to accept it. Add a version: to its front matter`);
+      const fix = addon
+        ? 'It comes with an add-on; update or reinstall that add-on.'
+        : core
+          ? 'Add one to the page.'
+          : 'Restore it with Required Pages Sync.';
+      this.problems.set(id, { text: `The '${id}' page has no version number, so nobody is asked to accept it. ${fix}`, addon, core });
       return null;
     }
     this.problems.delete(id);
@@ -249,9 +260,12 @@ class ConsentManager extends BaseManager {
 
   /** Needs attention while any document cannot be asked for; ready again once none is (warn, never force). */
   private reportProblems(): void {
-    const reason = this.problems.size > 0 ? [...this.problems.values()].join(' ') : null;
+    const all = [...this.problems.values()];
+    const reason = all.length > 0 ? all.map((p) => p.text).join(' ') : null;
     if (reason === this.attentionReason) return;
-    if (reason) this.markNeedsAttention(reason, CONSENT_DOCUMENTS_KEY);
+    // Core's pages are restored by Required Pages Sync; an add-on's are not, so with only add-on problems there is no link.
+    // The setting is named only when a core page is at fault; the subject pages' documents are fixed, not configured.
+    if (reason) this.markNeedsAttention(reason, all.some((p) => p.core) ? CONSENT_DOCUMENTS_KEY : undefined, all.some((p) => !p.addon) ? { fixUrl: '/admin/required-pages', fixLabel: 'Open Admin → Required Pages Sync' } : {});
     else if (this.attentionReason) this.markReadyIfDegradedBy(this.attentionReason);
     this.attentionReason = reason;
   }

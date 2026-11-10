@@ -302,9 +302,6 @@
                                 <li><a class="dropdown-item" href="#" onclick="showPageStats(); return false;">
                                     <i class="fas fa-chart-bar"></i> Page Statistics
                                 </a></li>
-                                <li><a class="dropdown-item" href="/view/Recent%20Changes">
-                                    <i class="fas fa-clock"></i> Recent Changes
-                                </a></li>
                             </ul>
                         </div>
 
@@ -630,17 +627,44 @@
                 </div>
                 <% } %>
                 <% if (typeof aalStepDown !== 'undefined' && aalStepDown && aalStepDown.roles.length > 0) { %>
-                <%# #448: a role above this sign-in's level is off for this session; say so, and offer the way back. %>
-                <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2 mt-2" role="alert">
+                <%# #448: a role above this sign-in's level is off for this session; say so, and offer the way back.
+                    #2356: only a way this account can add or use here (AuthManager.strongerSignInWays). %>
+                <% const _sd = aalStepDown.ways || {};
+                   const _sdOne = aalStepDown.roles.length === 1;
+                   // A way usable now comes before one to add: the app with the password restores the role at once.
+                   const _sdWay = _sd.usePasskey ? 'use-passkey' : (_sd.useTotp && _sd.password) ? 'use-totp'
+                     : _sd.addPasskey ? 'add-passkey' : (_sd.addTotp && _sd.password) ? 'add-totp'
+                     : (_sd.outside && _sd.outside.length > 0) ? 'outside' : 'none'; %>
+                <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2 mt-2" role="alert" data-aal-step-down="<%= _sdWay %>">
                     <i class="fas fa-key"></i>
                     <span>
-                        Your <strong><%= aalStepDown.roles.join(', ') %></strong> role<%= aalStepDown.roles.length === 1 ? ' needs' : 's need' %> a passkey sign-in, so <%= aalStepDown.roles.length === 1 ? 'it is' : 'they are' %> off while you are signed in with a password.
+                        Your <strong><%= aalStepDown.roles.join(', ') %></strong> role<%= _sdOne ? ' needs' : 's need' %>
+                        <% if (_sdWay === 'use-passkey' || _sdWay === 'add-passkey') { %>
+                        a passkey sign-in, so <%= _sdOne ? 'it is' : 'they are' %> off while you are signed in with a password.
+                        <% } else if (_sdWay === 'use-totp') { %>
+                        a sign-in with your authenticator app's code, so <%= _sdOne ? 'it is' : 'they are' %> off while you are signed in with a password alone.
+                        <% } else if (_sdWay === 'add-totp') { %>
+                        a sign-in with an authenticator app's code, so <%= _sdOne ? 'it is' : 'they are' %> off while you are signed in with a password alone.
+                        <% } else if (_sdWay === 'outside') { %>
+                        a stronger sign-in, so <%= _sdOne ? 'it is' : 'they are' %> off for now. Sign out, then sign in with <%= _sd.outside.join(' or ') %>.
+                        <% } else { %>
+                        a stronger sign-in than this account can make here, so <%= _sdOne ? 'it is' : 'they are' %> off for now. Ask an administrator.
+                        <% } %>
                     </span>
-                    <% if (aalStepDown.hasPasskey) { %>
+                    <% if (_sdWay === 'use-passkey') { %>
                     <button type="button" class="btn btn-sm btn-warning d-none ms-auto" data-passkey-signin data-redirect="<%= typeof originalUrl !== 'undefined' && originalUrl ? originalUrl : '/' %>" data-error-target="aal-stepdown-error">Sign in with your passkey</button>
                     <script src="/js/passkey.js" defer></script>
-                    <% } else if (aalStepDown.passkeysAvailable) { %>
+                    <% } else if (_sdWay === 'add-passkey') { %>
                     <a class="btn btn-sm btn-warning ms-auto" href="/profile">Add a passkey</a>
+                    <% } else if (_sdWay === 'use-totp') { %>
+                    <span class="ms-auto d-inline-flex align-items-center gap-2">
+                        <a class="btn btn-sm btn-warning" href="/auth/reauth?next=<%= encodeURIComponent(typeof originalUrl !== 'undefined' && originalUrl ? originalUrl : '/') %>">Sign in again</a>
+                        <% if (_sd.addPasskey) { %>
+                        <a class="small text-nowrap" href="/profile" data-aal-step-down-secondary>or add a passkey</a>
+                        <% } %>
+                    </span>
+                    <% } else if (_sdWay === 'add-totp') { %>
+                    <a class="btn btn-sm btn-warning ms-auto" href="/profile#sign-in-methods">Add an authenticator app</a>
                     <% } %>
                     <div id="aal-stepdown-error" class="w-100 small text-danger d-none"></div>
                 </div>
@@ -658,9 +682,19 @@
                 <div class="alert alert-danger d-flex flex-wrap align-items-center gap-2 mt-2" role="alert" data-aal-enrol-nag>
                     <i class="fas fa-key"></i>
                     <span>
-                        Your <strong><%= aalEnrolNag.roles.join(', ') %></strong> role<%= aalEnrolNag.roles.length === 1 ? ' needs' : 's need' %> a passkey or an authenticator app, and you have not added one. You are using <%= aalEnrolNag.roles.length === 1 ? 'it' : 'them' %> with a password alone until you do.
+                        <%# #2356: only what this account can add here; nothing it can add, an administrator.
+                            The app's code reaches the level only with a password, so the app needs one too. %>
+                        <% const _nag = aalEnrolNag.ways || {};
+                           const _nagAdd = [_nag.addPasskey ? 'a passkey' : '', (_nag.addTotp && _nag.password) ? 'an authenticator app' : ''].filter(Boolean); %>
+                        <% if (_nagAdd.length > 0) { %>
+                        Your <strong><%= aalEnrolNag.roles.join(', ') %></strong> role<%= aalEnrolNag.roles.length === 1 ? ' needs' : 's need' %> <%= _nagAdd.join(' or ') %>, and you have not added one. You are using <%= aalEnrolNag.roles.length === 1 ? 'it' : 'them' %> with a password alone until you do.
+                        <% } else { %>
+                        Your <strong><%= aalEnrolNag.roles.join(', ') %></strong> role<%= aalEnrolNag.roles.length === 1 ? ' needs' : 's need' %> a stronger sign-in than this account can set up here. You are using <%= aalEnrolNag.roles.length === 1 ? 'it' : 'them' %> with a password alone. Ask an administrator.
+                        <% } %>
                     </span>
+                    <% if (_nagAdd.length > 0) { %>
                     <a class="btn btn-sm btn-danger ms-auto" href="/profile#sign-in-methods">Add one now</a>
+                    <% } %>
                 </div>
                 <% } %>
                 <% if (typeof consentNotice !== 'undefined' && consentNotice) { %>

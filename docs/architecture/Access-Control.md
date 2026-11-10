@@ -91,7 +91,7 @@ Honors:
 - Anonymous role expansion (`['anonymous', 'All']`)
 - Authenticated role expansion (`['Authenticated', 'All']` appended)
 - Inactive-user check (rejects users with `isActive: false`)
-- Policy priority order (deny policies win when they have higher priority)
+- Deny-overrides combining (any matching deny wins, whatever the order)
 - `'All'` role semantics (matches everyone, including anonymous)
 
 ```ts
@@ -111,7 +111,7 @@ The 3-tier evaluator runs in order; the first tier that decides wins:
 |---|---|---|
 | 0 | Page front matter `user-keywords: [private]` | Hard constraint — only the page creator and admins can pass. Non-overridable by other tiers. |
 | 1 | Page front matter `audience: [...]` / `access: ...` | Per-page allowlist of roles, usernames and `addon:<slug>` entries. `audience` covers every action: someone it leaves out is denied view and edit alike, except a holder of `admin-system`; `access.<action>` covers that action, with no exception. A matching `access` list allows; a matching audience allows view and passes any other action on to `access` and policy; a list that is declared and not matched denies. The entries are in [access-policies.md](../access-policies.md#how-a-decision-is-made). |
-| 2 | Global policies via `PolicyEvaluator` | Evaluates `{pageName, action, userContext}` against the policy file (priority-ordered, with `effect: allow|deny`). |
+| 2 | Global policies via `PolicyEvaluator` | Evaluates `{pageName, action, userContext}` against the policy file (combined by deny-overrides, with `effect: allow|deny`). |
 
 ```ts
 if (!(await wikiContext.canAccess('edit'))) return res.status(403)...;
@@ -154,7 +154,7 @@ Used by `wikiContext.canAccess()`, `parseContext.canAccess()`, and route handler
 
 ### `PolicyEvaluator.evaluateAccess({ pageName, action, userContext })` — bottom
 
-Iterates registered policies in priority order. Each policy has `subjects` (roles), `resources` (page-name globs), `actions`, and `effect: 'allow' | 'deny'`. The first policy whose `subjects` + `resources` + `actions` all match decides. If no policy matches, default deny.
+Checks every registered policy. Each policy has `subjects` (roles), `resources` (page-name globs), `actions`, and `effect: 'allow' | 'deny'`. Deny-overrides: if any matching policy (`subjects` + `resources` + `actions` all match) denies, access is denied; otherwise any matching allow permits. If no policy matches, default deny.
 
 You should __not__ call `PolicyEvaluator.evaluateAccess` directly from application code — go through a context — `hasPermission` (the PDP, global) or `canAccess` (the PIP, per-page) so the canonical role-expansion / 3-tier logic runs.
 

@@ -109,7 +109,7 @@
                                                 </td>
                                                 <td class="view-mode">
                                                     <button type="button" class="btn btn-sm btn-outline-primary me-1"
-                                                        onclick="startEdit('<%= encodeURIComponent(name) %>')" title="Edit">
+                                                        data-start-edit="<%= encodeURIComponent(name) %>" title="Edit">
                                                         <i class="fas fa-edit"></i>
                                                     </button>
                                                     <form method="POST" action="/admin/interwiki/sites/<%= encodeURIComponent(name) %>/delete"
@@ -166,7 +166,7 @@
                                                                     <i class="fas fa-save"></i>
                                                                 </button>
                                                                 <button type="button" class="btn btn-sm btn-secondary"
-                                                                    onclick="cancelEdit('<%= encodeURIComponent(name) %>')" title="Cancel">
+                                                                    data-cancel-edit="<%= encodeURIComponent(name) %>" title="Cancel">
                                                                     <i class="fas fa-times"></i>
                                                                 </button>
                                                             </div>
@@ -346,6 +346,14 @@ function cancelEdit(encodedName) {
     row.querySelectorAll('.view-mode').forEach(function(el) { el.style.display = ''; });
     row.querySelectorAll('.edit-mode').forEach(function(el) { el.style.display = 'none'; });
 }
+
+// Each site's Edit and Cancel buttons carry the site's encoded name.
+document.addEventListener('click', function(e) {
+    var start = e.target.closest('button[data-start-edit]');
+    if (start) { startEdit(start.dataset.startEdit); return; }
+    var cancel = e.target.closest('button[data-cancel-edit]');
+    if (cancel) cancelEdit(cancel.dataset.cancelEdit);
+});
 </script>
 
 <%- include('footer') %>

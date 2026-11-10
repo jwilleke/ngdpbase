@@ -54,5 +54,6 @@ export function legacyStoreKeys(customConfig: Record<string, unknown> | null | u
 
 /** The needs-attention reason for a non-empty list: every key, in one sentence. */
 export function legacyStoreKeysReason(found: LegacyStoreKey[]): string {
-  return `Custom config still has ${found.length === 1 ? 'a removed vault setting' : `${found.length} removed vault settings`} that ${found.length === 1 ? 'is' : 'are'} ignored: ${found.map((f) => f.key).join(', ')}. Vault encryption and ownership are set on the vault's system-category now; see the start-up log for each key's replacement and docs/system-category.md.`;
+  // #2354: plain words for the dashboard; each key and its replacement are in the start-up log.
+  return `Your settings still include ${found.length === 1 ? 'an old vault setting' : `${found.length} old vault settings`} that ${found.length === 1 ? 'is' : 'are'} ignored. Whether a vault is encrypted, and who owns it, is now set on the vault's page category. Remove ${found.length === 1 ? 'the old one' : 'the old ones'} from your settings.`;
 }

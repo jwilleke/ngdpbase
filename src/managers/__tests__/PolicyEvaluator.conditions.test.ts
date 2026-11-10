@@ -1,12 +1,13 @@
 /**
  * The seed of attribute-based access (#2255; the rest is #2261): a policy's
- * `condition` with `equals`, a missing attribute failing closed, deny
+ * `condition` with `string-equal`, a missing attribute failing closed, deny
  * overriding allow, and every decision naming the policies that decided it.
  */
 
 import PolicyEvaluator, { conditionHolds, conditionProblems } from '../PolicyEvaluator';
 import type { Policy } from '../../types/Policy';
 import logger from '../../utils/logger';
+import { attr, val } from './__fixtures__/conditions';
 
 const PAGE_ATTRIBUTES = { 'system-category': { type: 'string' }, owner: { type: 'identity' } };
 
@@ -26,22 +27,22 @@ function evaluatorWith(policies: Policy[]): PolicyEvaluator {
 
 const editor = { username: 'erin', roles: ['editor'], isAuthenticated: true };
 const allow = (id: string, extra: Partial<Policy> = {}): Policy => ({
-  id, effect: 'allow', priority: 50,
+  id, effect: 'allow',
   subjects: [{ type: 'role', value: 'editor' }],
   resources: [{ type: 'page', pattern: '*' }],
   actions: ['page-edit'],
   ...extra
 });
-const OWNER = { attribute: 'resource:owner', equals: 'subject:id' };
+const OWNER = { 'string-equal': [attr('resource:owner'), attr('subject:id')] };
 const reader = (owner: unknown) => (name: string) => (name === 'resource:owner' ? owner : name === 'subject:id' ? 'erin' : undefined);
 
 describe('conditions, deny-overrides and deciding policy ids (#2255)', () => {
-  test('a deny beats an allow, even one of higher priority', async () => {
-    const ev = evaluatorWith([allow('high-allow', { priority: 900 }), allow('low-deny', { effect: 'deny', priority: 1 })]);
+  test('a deny beats an allow, whichever is listed first', async () => {
+    const ev = evaluatorWith([allow('first-allow'), allow('last-deny', { effect: 'deny' })]);
     await ev.initialize();
     const r = await ev.evaluateAccess({ pageName: 'P', action: 'page-edit', userContext: editor });
     expect(r.allowed).toBe(false);
-    expect(r.policyIds).toEqual(['low-deny']);
+    expect(r.policyIds).toEqual(['last-deny']);
   });
 
   test('with no deny, the decision lists every allow that matched', async () => {
@@ -75,9 +76,9 @@ describe('conditions, deny-overrides and deciding policy ids (#2255)', () => {
   });
 
   test('a literal on the right-hand side is compared as is', async () => {
-    expect(await conditionHolds({ attribute: 'resource:system-category', equals: 'general' }, () => 'general')).toBe(true);
-    expect(await conditionHolds({ attribute: 'resource:system-category', equals: 'general' }, () => 'system')).toBe(false);
-    expect(await conditionHolds({ attribute: 'resource:system-category', equals: 'general' }, () => null)).toBeUndefined();
+    expect(await conditionHolds({ 'string-equal': [attr('resource:system-category'), val('general')] }, () => 'general')).toBe(true);
+    expect(await conditionHolds({ 'string-equal': [attr('resource:system-category'), val('general')] }, () => 'system')).toBe(false);
+    expect(await conditionHolds({ 'string-equal': [attr('resource:system-category'), val('general')] }, () => null)).toBeUndefined();
   });
 
   test('a policy granting the pushed-pages twin matches a page write (actions)', async () => {
@@ -96,11 +97,11 @@ describe('conditions, deny-overrides and deciding policy ids (#2255)', () => {
 
   describe('a condition with a problem never applies as an allow', () => {
     test.each([
-      [{ attribute: 'resource:owner', contains: 'subject:id' }, /uses 'contains'; use one of equals, not-equals/],
-      [{ attribute: 'owner', equals: 'subject:id' }, /must name an attribute/],
-      [{ attribute: 'resource:department', equals: 'subject:id' }, /'resource:department', which is not declared/],
-      [{ attribute: 'environment:is-business-hours', equals: true }, /not declared/],
-      [{ attribute: 'resource:system-category', equals: 'subject:id' }, /same type/]
+      [{ 'string-contains': [attr('resource:owner'), attr('subject:id')] }, /uses 'string-contains'; use one of string-equal, integer-equal/],
+      [{ 'string-equal': [attr('owner'), attr('subject:id')] }, /must name an attribute/],
+      [{ 'string-equal': [attr('resource:department'), attr('subject:id')] }, /'resource:department', which is not declared/],
+      [{ 'boolean-equal': [attr('environment:is-business-hours', 'boolean'), val(true)] }, /not declared/],
+      [{ 'string-equal': [attr('resource:system-category'), attr('subject:id')] }, /same type/]
     ])('%j', (condition, message) => {
       expect(conditionProblems(condition, PAGE_ATTRIBUTES).join(' ')).toMatch(message);
     });
@@ -110,7 +111,7 @@ describe('conditions, deny-overrides and deciding policy ids (#2255)', () => {
     });
 
     test('an allow whose condition reads an undeclared attribute does not apply', async () => {
-      const ev = evaluatorWith([allow('bad', { condition: { attribute: 'resource:department', equals: 'x' } })]);
+      const ev = evaluatorWith([allow('bad', { condition: { 'string-equal': [attr('resource:department'), val('x')] } })]);
       await ev.initialize();
       const r = await ev.evaluateAccess({ pageName: 'P', action: 'page-edit', userContext: editor, readAttribute: () => 'x' });
       expect(r.allowed).toBe(false);
@@ -119,7 +120,7 @@ describe('conditions, deny-overrides and deciding policy ids (#2255)', () => {
 });
 
 describe('the boot warning for a condition with a problem (#2278)', () => {
-  const bad = { 'any-of': [] } as never;
+  const bad = { or: [] } as never;
   const warned = async (policies: Policy[]): Promise<string[]> => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
     await evaluatorWith(policies).initialize();

@@ -4,7 +4,7 @@
  * category policies do not give on general pages only; other policies are
  * reported, never rewritten.
  */
-import { migrateStoredPageWritePolicies, pageWritePoliciesToReview } from '../pageWritePolicies';
+import { migrateStoredPageWritePolicies, pageWritePoliciesToReview, pageWritePolicyFindings } from '../pageWritePolicies';
 import type { Policy } from '../../types/Policy';
 
 const role = (value: string) => [{ type: 'role', value }];
@@ -20,11 +20,11 @@ describe('migrateStoredPageWritePolicies (#2255)', () => {
   });
 
   test('a write the category policies do not give that role is kept, on general pages only', () => {
-    const stored = [{ id: 'contributor-permissions', name: 'Contributors', effect: 'allow', priority: 70, subjects: role('contributor'), resources: everyPage, actions: ['page-edit', 'page-delete'] }];
+    const stored = [{ id: 'contributor-permissions', name: 'Contributors', effect: 'allow', subjects: role('contributor'), resources: everyPage, actions: ['page-edit', 'page-delete'] }];
     const { policies } = migrateStoredPageWritePolicies(stored);
     expect(policies).toEqual([
       { ...stored[0], actions: [] },
-      expect.objectContaining({ id: 'contributor-permissions-page-write', effect: 'allow', priority: 70, subjects: role('contributor'), resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-delete'] })
+      expect.objectContaining({ id: 'contributor-permissions-page-write', effect: 'allow', subjects: role('contributor'), resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-delete'] })
     ]);
   });
 
@@ -36,7 +36,7 @@ describe('migrateStoredPageWritePolicies (#2255)', () => {
     const { policies, report } = migrateStoredPageWritePolicies(stored);
     expect(policies).toEqual(stored);
     expect(report.rewritten).toEqual([]);
-    expect(migrateStoredPageWritePolicies(undefined)).toEqual({ policies: undefined, report: { rewritten: [], review: [] } });
+    expect(migrateStoredPageWritePolicies(undefined)).toEqual({ policies: undefined, report: { rewritten: [], review: [], shown: {} } });
   });
 });
 
@@ -89,5 +89,28 @@ describe('pageWritePoliciesToReview (#2255)', () => {
     expect(lines).toHaveLength(2);
     for (const l of lines) expect(l).toMatch(/is a deny/);
     expect(lines.join()).not.toMatch(/signed-out|every signed-in/);
+  });
+});
+
+describe('the log line keeps its issue number; the plain line has none (#2348)', () => {
+  test('the upgrade of a stored policy', () => {
+    const stored = [{ id: 'contributor-permissions', effect: 'allow', subjects: role('contributor'), resources: everyPage, actions: ['page-edit', 'page-delete'] }];
+    const { report } = migrateStoredPageWritePolicies(stored);
+    expect(report.rewritten[0]).toContain('(#2255)');
+    const plain = report.shown[report.rewritten[0]];
+    expect(plain).toContain("'contributor-permissions'");
+    expect(plain).toContain("'contributor-permissions-page-write'");
+    expect(plain).toContain('Save the policy list in Admin → Configuration');
+    expect(plain).not.toMatch(/#\d|page-(edit|delete|rename)|docs\/|ngdpbase\./);
+  });
+
+  test('every review finding', () => {
+    const findings = pageWritePolicyFindings([
+      { id: 'd', effect: 'deny', subjects: role('editor'), resources: everyPage, actions: ['page-edit'] },
+      { id: 'a', effect: 'allow', subjects: [{ type: 'anyone' }], resources: everyPage, actions: ['page-edit'] },
+      { id: 'n', effect: 'allow', subjects: role('editor'), resources: everyPage, actions: ['page-edit'] }
+    ] as Policy[]);
+    expect(findings.map((f) => f.log.match(/#\d+/)?.[0])).toEqual(['#2255', '#2261', '#2255']);
+    for (const f of findings) expect(f.plain).not.toMatch(/#\d|page-|system-category|docs\/|ngdpbase\./);
   });
 });

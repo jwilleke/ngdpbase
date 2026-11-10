@@ -495,6 +495,8 @@ class ConfigurationManager extends BaseManager {
 
   /** What the #2255 page-write migration rewrote in memory, one sentence each; PolicyDecisionPoint reports it. */
   pageWritePolicyMigration: string[] = [];
+  /** Each `pageWritePolicyMigration` line in plain words, for the needs-attention entry. */
+  pageWritePolicyMigrationShown: Record<string, string> = {};
 
   /**
    * #2255: before the merge, rewrite the custom layer's stored copies of the
@@ -509,6 +511,7 @@ class ConfigurationManager extends BaseManager {
     if (report.rewritten.length === 0) return;
     this.customConfig[key] = policies;
     this.pageWritePolicyMigration = report.rewritten;
+    this.pageWritePolicyMigrationShown = report.shown;
     for (const line of report.rewritten) logger.warn(`[config] ${line}. Save the policy list in Admin → Configuration to store the change`);
   }
 

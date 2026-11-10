@@ -23,6 +23,7 @@ import type { FormOption } from '../utils/pluginFormatters.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import type { ActorContext } from '../context/ActorContext.js';
+import { STAGED_RESTORE_FIX, stagedRestoreNotApplied, UNUSABLE_FOLDER_REASON } from '../utils/plainAttention.js';
 
 /**
  * Backup data structure returned by backup() method
@@ -300,7 +301,16 @@ export interface ManagerStatus {
   configKey?: string;
   /** Whether the feature is down or works but needs an admin (#1946). Present when degraded or failed. */
   kind?: DegradedKind;
+  /** Where the fix is, when it is not the setting `configKey` names (a record the app writes, not a value to edit). */
+  fixUrl?: string;
+  /** What the link to `fixUrl` says, e.g. "Open Admin → Backup". */
+  fixLabel?: string;
+  /** One line per problem, drawn as a list under `reason` (#2348). `reason` stays the headline and the audit text. */
+  details?: string[];
 }
+
+/** What a caller may add to a needs-attention status (#2348). */
+export type AttentionOptions = Pick<ManagerStatus, 'fixUrl' | 'fixLabel' | 'details'>;
 
 abstract class BaseManager {
   /** Reference to the wiki engine */
@@ -415,7 +425,9 @@ abstract class BaseManager {
     const { applyStagedPartsAtStart } = await import('./BackupManager.js');
     this.stagedRestore = applyStagedPartsAtStart(this.engine, this.registeredName(), declared);
     if (this.stagedRestore?.refused) {
-      this.markNeedsAttention(`A staged restore of ${declared.map((d) => d.part).join(', ')} was not applied: ${this.stagedRestore.refused}`);
+      // #2354: the dashboard says it in plain words; the parts and the cause stay in the log.
+      logger.warn(`[${this.constructor.name}] A staged restore of ${declared.map((d) => d.part).join(', ')} was not applied: ${this.stagedRestore.refused}`);
+      this.markNeedsAttention(stagedRestoreNotApplied('some of the site\'s data'), undefined, STAGED_RESTORE_FIX);
     }
   }
 
@@ -497,7 +509,8 @@ abstract class BaseManager {
       // degrading manager already goes through, so setting the state here is
       // what makes twelve invisible degradations visible without each caller
       // remembering to say so.
-      this.markDegraded(result.message ?? 'the configured path could not be used', configKey);
+      // #2354: the dashboard says it in plain words; the path and key are in the line above.
+      this.markDegraded(UNUSABLE_FOLDER_REASON, configKey);
     }
     return result;
   }
@@ -522,8 +535,8 @@ abstract class BaseManager {
    *   starts degraded and stays degraded must not re-emit on every boot, or
    *   the signal is buried in its own noise.
    */
-  protected markDegraded(reason: string, configKey?: string): boolean {
-    return this.transition({ state: 'degraded', reason, configKey, kind: 'outage' });
+  protected markDegraded(reason: string, configKey?: string, opts: AttentionOptions = {}): boolean {
+    return this.transition({ state: 'degraded', reason, configKey, kind: 'outage', ...opts });
   }
 
   /**
@@ -532,8 +545,8 @@ abstract class BaseManager {
    * clears with `markReadyIfDegradedBy` — but shown as needing attention, not
    * as down.
    */
-  protected markNeedsAttention(reason: string, configKey?: string): boolean {
-    return this.transition({ state: 'degraded', reason, configKey, kind: 'attention' });
+  protected markNeedsAttention(reason: string, configKey?: string, opts: AttentionOptions = {}): boolean {
+    return this.transition({ state: 'degraded', reason, configKey, kind: 'attention', ...opts });
   }
 
   /** Record that this manager is deliberately off. Not a problem (#1155). */
@@ -542,8 +555,8 @@ abstract class BaseManager {
   }
 
   /** Record that this manager could not initialise at all (#1155). */
-  protected markFailed(reason: string, configKey?: string): boolean {
-    return this.transition({ state: 'failed', reason, configKey, kind: 'outage' });
+  protected markFailed(reason: string, configKey?: string, opts: AttentionOptions = {}): boolean {
+    return this.transition({ state: 'failed', reason, configKey, kind: 'outage', ...opts });
   }
 
   /**
