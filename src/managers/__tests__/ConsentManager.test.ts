@@ -245,6 +245,12 @@ describe('ConsentManager (#1603)', () => {
       expect((await cm.pendingFor('ann')).map((d) => d.id)).toEqual(['terms-of-service']);
       expect(cm.getManagerStatus().reason).toMatch(/'privacy-policy' page has no version/);
     });
+
+    test('a recovery-words page with no version: is told to restore it, not to add a version', async () => {
+      pages['recovery-words'] = { title: 'Your Recovery Words' };
+      expect(await cm.pendingFor('ann', 'recovery-words', 'words-set-1')).toEqual([]);
+      expect(cm.getManagerStatus().reason).toBe("The 'recovery-words' page has no version number, so nobody is asked to accept it. Restore it with Required Pages Sync.");
+    });
   });
 
   describe('add-ons', () => {

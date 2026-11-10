@@ -240,7 +240,12 @@ class ConsentManager extends BaseManager {
     const version = versionOf(meta['version']);
     if (!version) {
       logger.warn(`[ConsentManager] The '${id}' page${whose} has no version in its front matter, so nobody is asked to accept it. Add a version: to its front matter`);
-      this.problems.set(id, { text: `The '${id}' page has no version number, so nobody is asked to accept it. ${addon ? 'It comes with an add-on; update or reinstall that add-on.' : 'Add one to the page.'}`, addon, core });
+      const fix = addon
+        ? 'It comes with an add-on; update or reinstall that add-on.'
+        : core
+          ? 'Add one to the page.'
+          : 'Restore it with Required Pages Sync.';
+      this.problems.set(id, { text: `The '${id}' page has no version number, so nobody is asked to accept it. ${fix}`, addon, core });
       return null;
     }
     this.problems.delete(id);
