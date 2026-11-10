@@ -388,7 +388,7 @@ describe('GET /diff/:page renders Compare Versions (#2319)', () => {
   test('#2352: below 768px the panes stack and the fillers are hidden', async () => {
     await saveThree();
     const res = await request(appFor()).get(`/diff/${PAGE}?v1=1&v2=2`);
-    expect(res.text).toMatch(/@media \(max-width: 767\.98px\) \{[^@]*\.diff-line-filler \{ display: none; \}/);
+    expect(res.text).toMatch(/@media \(max-width: 767\.98px\) \{[^@]*\.sbs \.diff-line-filler \{ display: none; \}/);
   });
 
   describe('pairSideBySide', () => {
