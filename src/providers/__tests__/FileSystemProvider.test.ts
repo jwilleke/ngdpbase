@@ -17,6 +17,7 @@ import { TEST_ACTOR } from '../../test-support/actors';
 import os from 'os';
 import fs from 'fs-extra';
 import FileSystemProvider from '../FileSystemProvider';
+import { PageTitleConflictError } from '../../utils/pageTitleConflict';
 
 // Force load the real implementation — vi.unmock is hoisted before the import resolves
 vi.unmock('../FileSystemProvider');
@@ -471,6 +472,19 @@ describe('FileSystemProvider', () => {
         await expect(
           provider.savePage('Page Two', '# Content', { title: 'Page One', uuid: 'uuid-2' })
         ).rejects.toThrow('is already in use');
+      });
+
+      test('the refusal carries the other page title and keeps its id in the message (#2371)', async () => {
+        await createTestPage(TEST_PAGES_DIR, 'uuid-1', 'Page One');
+        await createTestPage(TEST_PAGES_DIR, 'uuid-2', 'Page Two');
+
+        const provider = new FileSystemProvider(createMockEngine());
+        await provider.initialize();
+
+        const err = await provider.savePage('Page Two', '# Content', { title: 'page one', uuid: 'uuid-2' }).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(PageTitleConflictError);
+        expect((err as PageTitleConflictError).title).toBe('Page One');
+        expect((err as Error).message).toBe('Title "page one" is already in use by page uuid-1');
       });
 
       test('should allow saving with own title (normal save)', async () => {
