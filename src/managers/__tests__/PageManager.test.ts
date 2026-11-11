@@ -651,19 +651,49 @@ describe('PageManager', () => {
         expect(err).toBeInstanceOf(PageTitleConflictError);
         expect(pageTitleConflictLink(err as PageTitleConflictError).title).toBe('speed');
       });
+    });
 
-      test('a slug clash is still a plain Error', async () => {
+    describe('a slug clash is a PageTitleConflictError too (#2376)', () => {
+      const slugClash = async (holder: { title: string } | null, typed = 'R&D Plans v2') => {
         mockEngine.getManager.mockImplementation(withWriteDoorAllowing((name) => {
           if (name === 'ConfigurationManager') return mockConfigurationManager;
           if (name === 'ValidationManager') return {
-            checkConflicts: vi.fn().mockResolvedValue({ hasConflict: true, conflictType: 'uuid-mismatch', conflictingUuid: 'o', message: 'slug clash' }),
+            // The slug is checked before the title, so a title clash arrives as this too.
+            checkConflicts: vi.fn().mockResolvedValue({ hasConflict: true, conflictType: 'uuid-mismatch', conflictingUuid: 'other-uuid-1234', message: "A page with slug 'r-d-plans-v2' already exists under UUID other-uuid-1234" }),
             sanitizeMetadata: (m: unknown) => m
           };
           return null;
         }));
-        const err = await pageManager.savePage('Speed', '# Speed', { uuid: 'new-uuid' }, TEST_ACTOR).catch((e: unknown) => e);
-        expect(err).not.toBeInstanceOf(PageTitleConflictError);
-        expect((err as Error).message).toBe('slug clash');
+        pageManager.provider.getPageByUUID = vi.fn(async () => (holder ? { name: holder.title, uuid: 'other-uuid-1234', metadata: { title: holder.title } } : null));
+        return pageManager.savePage(typed, '# Plans', { uuid: 'new-uuid' }, TEST_ACTOR).catch((e: unknown) => e);
+      };
+
+      test('the same title, ignoring case: the title text, the other page by its own title', async () => {
+        const err = await slugClash({ title: 'Speed' }, 'speed');
+        expect(err).toBeInstanceOf(PageTitleConflictError);
+        expect(pageTitleConflictText(err as PageTitleConflictError)).toBe('A page called "Speed" already exists.');
+        expect(pageTitleConflictLink(err as PageTitleConflictError)).toEqual({ title: 'Speed', url: '/view/Speed' });
+      });
+
+      test('another title with the same slug: too close, still linking the other page', async () => {
+        const err = await slugClash({ title: 'R-D Plans v2' });
+        expect(err).toBeInstanceOf(PageTitleConflictError);
+        expect(pageTitleConflictText(err as PageTitleConflictError)).toBe('That name is too close to the name of an existing page, "R-D Plans v2".');
+        expect(pageTitleConflictLink(err as PageTitleConflictError)).toEqual({ title: 'R-D Plans v2', url: '/view/R-D%20Plans%20v2', tooClose: true });
+      });
+
+      test('the id is only in the message, for the log', async () => {
+        const err = await slugClash({ title: 'R-D Plans v2' }) as PageTitleConflictError;
+        expect(err).toBeInstanceOf(PageTitleConflictError);
+        expect(err.message).toContain('other-uuid-1234');
+        expect(pageTitleConflictText(err)).not.toContain('other-uuid');
+        expect(JSON.stringify(pageTitleConflictLink(err))).not.toContain('other-uuid');
+      });
+
+      test('falls back to the typed title when the holder cannot be read', async () => {
+        const err = await slugClash(null, 'Speed');
+        expect(err).toBeInstanceOf(PageTitleConflictError);
+        expect(pageTitleConflictText(err as PageTitleConflictError)).toBe('A page called "Speed" already exists.');
       });
     });
 
