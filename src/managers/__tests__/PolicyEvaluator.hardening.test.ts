@@ -92,6 +92,11 @@ describe('the PIP reads a value only as its declared type', () => {
     expect(await pip({ author: ' Alice ' })('owner')).toBe('alice');
     expect(await pip({ author: 'urn:uuid:3f6c' })('owner')).toBeUndefined();
   });
+
+  test('an upper-case URN: id is missing too, never compared as a username (#2279)', async () => {
+    expect(await pip({ author: 'URN:uuid:3f6c' })('owner')).toBeUndefined();
+    expect(await pip({ author: 'Urn:uuid:3f6c' })('owner')).toBeUndefined();
+  });
 });
 
 describe('through the evaluator', () => {
