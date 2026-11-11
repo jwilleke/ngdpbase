@@ -37,6 +37,10 @@ interface Setup {
   people?: number;
   config?: Record<string, unknown>;
   grants?: string[];
+  /** Vaults (by store id) whose own `page-export` decision permits. */
+  vaultExport?: string[];
+  /** Shared-folder permissions the policy decision permits for every folder. */
+  folderGrants?: string[];
 }
 
 async function setup(opts: Setup = {}) {
@@ -52,6 +56,8 @@ async function setup(opts: Setup = {}) {
   const mediaPath = (id: string) => path.join(mediaDir, id);
   for (const [id, bytes] of Object.entries(media)) fs.writeFileSync(mediaPath(id), bytes);
   const grants = new Set(opts.grants ?? ['page-export', 'search-page', 'asset-upload', 'search-user']);
+  const vaultExport = new Set(opts.vaultExport ?? []);
+  const folderGrants = new Set(opts.folderGrants ?? []);
   const config: Record<string, unknown> = { ...(opts.config ?? {}) };
   const audits: Array<Record<string, unknown>> = [];
   const managers: Record<string, unknown> = {
@@ -61,7 +67,11 @@ async function setup(opts: Setup = {}) {
     },
     PolicyDecisionPoint: {
       permits: async (_ctx: ActorContext, p: string) => grants.has(p),
-      holds: async (_ctx: ActorContext, p: string) => grants.has(p)
+      holds: async (_ctx: ActorContext, p: string) => grants.has(p),
+      // The vault's own decision, and a shared folder's permissions, as the real policy asks them.
+      decide: async (_ctx: unknown, req: { action: string; attributes: Record<string, unknown> }) => ({
+        permit: req.action === 'page-export' ? vaultExport.has(String(req.attributes.vault)) : folderGrants.has(req.action)
+      })
     },
     SearchManager: {
       advancedSearchWithContext: async (_c: unknown, o: { maxResults?: number }) => found.slice(0, o.maxResults ?? found.length).map(name => ({ name, title: name, metadata: {} }))
@@ -198,6 +208,37 @@ describe('search export — pages in shared folders', () => {
     expect(entries.map(e => e.bytes.toString()).join('')).not.toContain('Notes');
     expect(run.notes ?? []).toEqual([]);
   });
+
+  test('a shared-folder page is not in the zip even when the user holds every folder permission: a folder is never exported from', async () => {
+    const { im } = await setup({ found: ['Alpha', 'shared/docs/Notes'], folderGrants: ['shared-folder-read', 'shared-folder-file'] });
+    const { run, names } = await exportZip(im);
+    expect(names).toEqual(['Alpha.md']);
+    expect(run.notes ?? []).toEqual([]);
+  });
+});
+
+describe('search export — pages in private stores', () => {
+  const plan = 'vaults/alice/notes/Plan';
+
+  test('a private-store page whose own export permission fails is not in the zip, and is not counted', async () => {
+    const { im } = await setup({ found: ['Alpha', plan] });
+    const { run, names, entries } = await exportZip(im);
+    expect(names).toEqual(['Alpha.md']);
+    expect(entries.map(e => e.bytes.toString()).join('')).not.toContain('Plan');
+    expect(run.notes ?? []).toEqual([]);
+  });
+
+  test('a private-store page whose own export permission passes is in the zip', async () => {
+    const { im } = await setup({ found: ['Alpha', plan], vaultExport: ['notes'] });
+    const { names, entries } = await exportZip(im);
+    expect(names).toHaveLength(2);
+    expect(entries.map(e => e.bytes.toString())).toContain(`Body of ${plan}`);
+  });
+
+  test("a page in someone else's private store is not in the zip, even when that store's export permission passes", async () => {
+    const { im } = await setup({ found: ['Alpha', 'vaults/bob/notes/Plan'], vaultExport: ['notes'] });
+    expect((await exportZip(im)).names).toEqual(['Alpha.md']);
+  });
 });
 
 describe('search export — media-library files', () => {
@@ -242,12 +283,12 @@ describe('search export — the 5000-match cap', () => {
   test('a search that reaches 5000 matches says only the first 5000 were looked at', async () => {
     const { im } = await setup({ found: many, config: { 'ngdpbase.export.engine.max-items': 3 } });
     const { run } = await exportZip(im);
-    expect(run.notes).toContain('More than 5000 matches; only the first 5000 were looked at.');
+    expect(run.notes).toContain('5000 or more matches; only the first 5000 were looked at.');
   });
 
   test('a search under the cap says nothing about it', async () => {
     const { im } = await setup({ found: many.slice(0, 4999), config: { 'ngdpbase.export.engine.max-items': 3 } });
-    expect((await exportZip(im)).run.notes?.join(' ')).not.toContain('More than 5000');
+    expect((await exportZip(im)).run.notes?.join(' ')).not.toContain('5000 or more');
   });
 });
 
