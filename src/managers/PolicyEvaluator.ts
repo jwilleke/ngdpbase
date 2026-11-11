@@ -14,6 +14,7 @@ import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { CHECKED_DENIES_KEY, DENY_CHECKED_ACTION, pageWritePolicyFindings, policyFingerprint } from '../utils/pageWritePolicies.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
+import { systemContext } from '../context/bootActions.js';
 import { ownerDeclarationProblem } from '../security/ownedRecords.js';
 
 /**
@@ -533,6 +534,7 @@ class PolicyEvaluator extends BaseManager {
       }
     }
     this.reportPageWritePolicies();
+    await this.dropMarksOfGoneRules(systemContext(this.engine, 'drop checked-deny marks whose rule no longer exists (#2355)'));
     logger.info('📋 PolicyEvaluator initialized');
   }
 
@@ -608,6 +610,27 @@ class PolicyEvaluator extends BaseManager {
     this.markNeedsAttention(this.reportedReason, 'ngdpbase.access.policies', { details: plain, ...(buttons.length > 0 ? { buttons } : {}) });
   }
 
+  /** The stored marks whose rule is still a deny in force (#2355). A mark for a rule since removed is not kept: the same rule added later must be shown again. */
+  private marksOfExistingDenies(): Record<string, string> {
+    const stored = (this.configManager?.getProperty(CHECKED_DENIES_KEY, {}) ?? {}) as Record<string, string>;
+    const denies = new Set(this.policies().filter((p) => p.effect === 'deny').map((p) => p.id));
+    return Object.fromEntries(Object.entries(stored).filter(([id]) => denies.has(id)));
+  }
+
+  /** Save the marks without those of rules that are gone (#2355); nothing is written when none is. */
+  private async dropMarksOfGoneRules(ctx: ActorContext): Promise<void> {
+    const config = this.configManager;
+    if (!config) return;
+    const stored = (config.getProperty(CHECKED_DENIES_KEY, {}) ?? {}) as Record<string, string>;
+    const kept = this.marksOfExistingDenies();
+    if (Object.keys(kept).length === Object.keys(stored).length) return;
+    try {
+      await config.setProperty(CHECKED_DENIES_KEY, kept, ctx);
+    } catch (err: unknown) {
+      logger.warn(`[POLICY] Could not drop checked-deny marks of removed rules: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   /**
    * An administrator marks a deny as checked (#2355). Kept as the rule's id and a fingerprint of
    * its content in `ngdpbase.access.checked-denies`, written through ConfigurationManager with the
@@ -621,8 +644,7 @@ class PolicyEvaluator extends BaseManager {
     if (!config || !rule) return 'missing';
     const now = policyFingerprint(rule);
     if (now !== fingerprint) return 'changed';
-    const stored = (config.getProperty(CHECKED_DENIES_KEY, {}) ?? {}) as Record<string, string>;
-    await config.setProperty(CHECKED_DENIES_KEY, { ...stored, [id]: now }, ctx);
+    await config.setProperty(CHECKED_DENIES_KEY, { ...this.marksOfExistingDenies(), [id]: now }, ctx);
     this.reportPageWritePolicies(false);
     return 'checked';
   }

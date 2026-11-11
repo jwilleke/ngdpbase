@@ -731,11 +731,6 @@ if (!result.hasDecision) {
 - ✅ Pattern matching using micromatch
 - ✅ Deny-overrides evaluation logic
 
----
-
-__Maintained By:__ Development Team
-__Status:__ Active Development
-
 ## Marking a deny as checked
 
 The dashboard item "Access policies need review" reports every deny rule, because a deny beats every allow. For a deny that is meant, the administrator presses __Mark 'X' as checked__ on the item ([#2355](https://github.com/jwilleke/ngdpbase/issues/2355)).
@@ -745,4 +740,9 @@ The dashboard item "Access policies need review" reports every deny rule, becaus
 - The fingerprint (`policyFingerprint` in `src/utils/pageWritePolicies.ts`) is a SHA-256 of the whole rule, keys in order, id included. At each start a deny whose stored fingerprint equals its current one is left out of the item (the log notes it at info level); an edited rule, or a new deny, is shown again. A rule with the same content under another id is a different rule.
 - The mark hides the item and nothing else. Nothing that decides access reads `ngdpbase.access.checked-denies`; a marked deny still denies.
 
-Known gap: a mark for a rule that is later removed stays in the list; it is never read again.
+A mark for a rule that is no longer a deny in force is dropped: at start, and whenever another deny is marked. So a rule removed and later added back unchanged is shown again, not already cleared. (A rule removed and added back between two starts, with no mark pressed in between, is never seen gone and keeps its mark.)
+
+---
+
+__Maintained By:__ Development Team
+__Status:__ Active Development
