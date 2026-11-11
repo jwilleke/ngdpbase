@@ -11,6 +11,7 @@ import { TEST_ACTOR, actor } from '../../test-support/actors';
 import { ANONYMOUS_SUBJECT } from '../UserManager';
 import type { WikiEngine } from '../../types/WikiEngine';
 import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
+import { PageTitleConflictError, pageTitleConflictLink, pageTitleConflictText } from '../../utils/pageTitleConflict';
 
 // Mock ConfigurationManager
 const mockConfigurationManager = {
@@ -617,6 +618,53 @@ describe('PageManager', () => {
       ).rejects.toThrow("A page with title 'Speed' already exists");
 
       expect(mockCheckConflicts).toHaveBeenCalledWith('new-uuid', 'Speed', '', TEST_ACTOR);
+    });
+
+    describe('a title clash is a PageTitleConflictError, naming the page not its id (#2371)', () => {
+      const clash = async (holder: { title: string } | null) => {
+        const mockCheckConflicts = vi.fn().mockResolvedValue({
+          hasConflict: true,
+          conflictType: 'title-duplicate',
+          conflictingUuid: 'other-uuid-1234',
+          message: "A page with title 'speed' already exists under UUID other-uuid-1234"
+        });
+        mockEngine.getManager.mockImplementation(withWriteDoorAllowing((name) => {
+          if (name === 'ConfigurationManager') return mockConfigurationManager;
+          if (name === 'ValidationManager') return { checkConflicts: mockCheckConflicts, sanitizeMetadata: (m: unknown) => m };
+          return null;
+        }));
+        pageManager.provider.getPageByUUID = vi.fn(async () => (holder ? { name: holder.title, uuid: 'other-uuid-1234', metadata: { title: holder.title } } : null));
+        return pageManager.savePage('speed', '# Speed', { uuid: 'new-uuid' }, TEST_ACTOR).catch((e: unknown) => e);
+      };
+
+      test('names the other page by its own title; the id is only in the message for the log', async () => {
+        const err = await clash({ title: 'Speed' });
+        expect(err).toBeInstanceOf(PageTitleConflictError);
+        const conflict = err as PageTitleConflictError;
+        expect(pageTitleConflictText(conflict)).toBe('A page called "Speed" already exists.');
+        expect(pageTitleConflictLink(conflict)).toEqual({ title: 'Speed', url: '/view/Speed' });
+        expect(pageTitleConflictText(conflict)).not.toContain('other-uuid');
+      });
+
+      test('falls back to the requested title when the holder cannot be read', async () => {
+        const err = await clash(null);
+        expect(err).toBeInstanceOf(PageTitleConflictError);
+        expect(pageTitleConflictLink(err as PageTitleConflictError).title).toBe('speed');
+      });
+
+      test('a slug clash is still a plain Error', async () => {
+        mockEngine.getManager.mockImplementation(withWriteDoorAllowing((name) => {
+          if (name === 'ConfigurationManager') return mockConfigurationManager;
+          if (name === 'ValidationManager') return {
+            checkConflicts: vi.fn().mockResolvedValue({ hasConflict: true, conflictType: 'uuid-mismatch', conflictingUuid: 'o', message: 'slug clash' }),
+            sanitizeMetadata: (m: unknown) => m
+          };
+          return null;
+        }));
+        const err = await pageManager.savePage('Speed', '# Speed', { uuid: 'new-uuid' }, TEST_ACTOR).catch((e: unknown) => e);
+        expect(err).not.toBeInstanceOf(PageTitleConflictError);
+        expect((err as Error).message).toBe('slug clash');
+      });
     });
 
     test('should proceed normally when no conflict', async () => {
