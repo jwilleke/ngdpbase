@@ -1,4 +1,4 @@
-import BaseManager from './BaseManager.js';
+import BaseManager, { type ManagerStatus } from './BaseManager.js';
 // #1431: the one declaration of a policy. A local copy with `effect` required
 // sat here and drifted from it.
 import type { Policy, PolicySubject, PolicyResource, PolicyCondition } from '../types/Policy.js';
@@ -11,8 +11,10 @@ import micromatch from 'micromatch';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
-import { pageWritePolicyFindings } from '../utils/pageWritePolicies.js';
+import { CHECKED_DENIES_KEY, DENY_CHECKED_ACTION, pageWritePolicyFindings, policyFingerprint } from '../utils/pageWritePolicies.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
+import { systemContext } from '../context/bootActions.js';
 import { ownerDeclarationProblem } from '../security/ownedRecords.js';
 
 /**
@@ -454,6 +456,9 @@ const NO_POLICY: EvaluationResult = { hasDecision: false, allowed: false, reason
 class PolicyEvaluator extends BaseManager {
   private configManager: ConfigurationManager | null = null;
 
+  /** The headline of the access-policies item now up, so marking the last deny takes down this one and no other (#2355). */
+  private reportedReason: string | null = null;
+
   /**
    * Each condition checked and compiled, by the condition object configuration
    * holds (#2279), kept while `ConfigurationManager.getRevision()` is
@@ -529,6 +534,7 @@ class PolicyEvaluator extends BaseManager {
       }
     }
     this.reportPageWritePolicies();
+    await this.dropMarksOfGoneRules(systemContext(this.engine, 'drop checked-deny marks whose rule no longer exists (#2355)'));
     logger.info('📋 PolicyEvaluator initialized');
   }
 
@@ -539,7 +545,7 @@ class PolicyEvaluator extends BaseManager {
    * that never hold. These are log lines only; categories no policy lets anyone
    * change are an upgrade check (`upgradeChecks/uneditablePages.ts`).
    */
-  private reportPageWritePolicies(): void {
+  private reportPageWritePolicies(log = true): void {
     const config = this.configManager;
     if (!config) return;
     // The log keeps each line in full; `shown` is what the needs-attention item says, in plain words
@@ -548,14 +554,22 @@ class PolicyEvaluator extends BaseManager {
     const lines: string[] = [...(migration.pageWritePolicyMigration ?? [])];
     const shown = new Map<string, string>(Object.entries(migration.pageWritePolicyMigrationShown ?? {}));
     const logOnly: string[] = [];
+    const checkedLog: string[] = [];
     const add = (finding: { log: string; plain: string }): void => {
       lines.push(finding.log);
       shown.set(finding.log, finding.plain);
     };
     // An open allow rule is the upgrade notice's to-do (`upgradeChecks/openWriteRules.ts`), so the box leaves it out and the log keeps it.
-    for (const finding of pageWritePolicyFindings(this.policies())) {
+    // #2355: a deny an administrator marked as checked, with the content it has now, is left out of the box and logged quietly.
+    const checkedDenies = (config.getProperty(CHECKED_DENIES_KEY, {}) ?? {}) as Record<string, string>;
+    const buttons: NonNullable<ManagerStatus['buttons']> = [];
+    for (const finding of pageWritePolicyFindings(this.policies(), checkedDenies)) {
       if (finding.coveredByUpgradeNotice) logOnly.push(finding.log);
-      else add(finding);
+      else if (finding.deny?.checked) checkedLog.push(finding.log);
+      else {
+        add(finding);
+        if (finding.deny) buttons.push({ label: `Mark '${finding.deny.id}' as checked`, action: DENY_CHECKED_ACTION, fields: { id: finding.deny.id, fingerprint: finding.deny.fingerprint } });
+      }
     }
     // #2330: `priority` is gone; a leftover one changes nothing.
     const withPriority = this.policies().filter((p) => p.priority !== undefined).map((p) => `'${p.id}'`);
@@ -579,12 +593,60 @@ class PolicyEvaluator extends BaseManager {
     // #2261 slice 4: the environment declarations, and each schedule one names that is missing (the attribute is then missing and fails closed).
     environmentAttributesFindings(readDeclaredAsWritten(config, ENVIRONMENT_ATTRIBUTES_KEY)).forEach(add);
     this.scheduleProblems().forEach(add);
-    for (const line of [...lines, ...logOnly]) logger.warn(`[POLICY] ${line}`);
-    if (lines.length === 0) return;
+    if (log) {
+      for (const line of [...lines, ...logOnly]) logger.warn(`[POLICY] ${line}`);
+      for (const line of checkedLog) logger.info(`[POLICY] ${line}; an administrator marked it as checked`);
+    }
+    if (lines.length === 0) {
+      // Nothing left to say: take back the item this method put up, and only that one.
+      if (this.reportedReason) this.markReadyIfDegradedBy(this.reportedReason);
+      this.reportedReason = null;
+      return;
+    }
     // Each part is a full sentence, so they are joined with a space.
     // Several log lines can say one plain thing (a rule with two bad conditions), so it is said, and counted, once.
     const plain = [...new Set(lines.map((l) => `${(shown.get(l) ?? l).replace(/\.$/, '')}.`))];
-    this.markNeedsAttention(`Access policies need review (${plain.length} ${plain.length === 1 ? 'problem' : 'problems'}):`, 'ngdpbase.access.policies', { details: plain });
+    this.reportedReason = `Access policies need review (${plain.length} ${plain.length === 1 ? 'problem' : 'problems'}):`;
+    this.markNeedsAttention(this.reportedReason, 'ngdpbase.access.policies', { details: plain, ...(buttons.length > 0 ? { buttons } : {}) });
+  }
+
+  /** The stored marks whose rule is still a deny in force (#2355). A mark for a rule since removed is not kept: the same rule added later must be shown again. */
+  private marksOfExistingDenies(): Record<string, string> {
+    const stored = (this.configManager?.getProperty(CHECKED_DENIES_KEY, {}) ?? {}) as Record<string, string>;
+    const denies = new Set(this.policies().filter((p) => p.effect === 'deny').map((p) => p.id));
+    return Object.fromEntries(Object.entries(stored).filter(([id]) => denies.has(id)));
+  }
+
+  /** Save the marks without those of rules that are gone (#2355); nothing is written when none is. */
+  private async dropMarksOfGoneRules(ctx: ActorContext): Promise<void> {
+    const config = this.configManager;
+    if (!config) return;
+    const stored = (config.getProperty(CHECKED_DENIES_KEY, {}) ?? {}) as Record<string, string>;
+    const kept = this.marksOfExistingDenies();
+    if (Object.keys(kept).length === Object.keys(stored).length) return;
+    try {
+      await config.setProperty(CHECKED_DENIES_KEY, kept, ctx);
+    } catch (err: unknown) {
+      logger.warn(`[POLICY] Could not drop checked-deny marks of removed rules: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * An administrator marks a deny as checked (#2355). Kept as the rule's id and a fingerprint of
+   * its content in `ngdpbase.access.checked-denies`, written through ConfigurationManager with the
+   * person's context, which records the change. It hides the item and nothing else: no decision
+   * reads it. Answers `changed` when the rule is no longer what the page showed (nothing is
+   * saved) and `missing` when no deny has that id.
+   */
+  async markDenyChecked(ctx: ActorContext, id: string, fingerprint: string): Promise<'checked' | 'changed' | 'missing'> {
+    const config = this.configManager;
+    const rule = this.policies().find((p) => p.id === id && p.effect === 'deny');
+    if (!config || !rule) return 'missing';
+    const now = policyFingerprint(rule);
+    if (now !== fingerprint) return 'changed';
+    await config.setProperty(CHECKED_DENIES_KEY, { ...this.marksOfExistingDenies(), [id]: now }, ctx);
+    this.reportPageWritePolicies(false);
+    return 'checked';
   }
 
   /**

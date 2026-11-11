@@ -67,6 +67,8 @@ import { recoveryWordsPending, recoveryWordsState } from '../utils/recoveryWords
 import { sharedFoldersWordsState } from '../utils/sharedFoldersWordsConsent.js';
 import type SharedFolderManager from '../managers/SharedFolderManager.js';
 import { PASSKEYS_ADDRESS_IN_SERVER_SETTINGS, PASSKEYS_CANNOT_WORK, PASSKEYS_OFF_BUTTON, PASSKEYS_OFF_HINT, PASSKEY_SETTING } from '../utils/passkeyAddressWording.js';
+import type PolicyEvaluator from '../managers/PolicyEvaluator.js';
+import { DENY_CHECKED_ACTION } from '../utils/pageWritePolicies.js';
 import type UpgradeCheckManager from '../managers/UpgradeCheckManager.js';
 import type { OpenUpgradeItem } from '../managers/UpgradeCheckManager.js';
 import { UPGRADE_INTRO, UPGRADE_LIST_HEADING, UPGRADE_READ_ONLY, upgradeEmpty, upgradeHeading, upgradeListLead, upgradeNotice, upgradeResult, type UpgradeResultKey } from '../upgradeChecks/wording.js';
@@ -15498,6 +15500,31 @@ ${panes}
     }
   }
 
+  /**
+   * POST /admin/access-policies/deny-checked — "Mark as checked" on the dashboard's access-policies item (#2355).
+   * It asks what editing the policies asks: `config-manage`, with the fresh sign-in a configuration write needs
+   * (CSRF is the app-wide middleware's). The mark is saved through ConfigurationManager, which records the change.
+   * It only hides the item; nothing that decides access reads it.
+   */
+  async adminDenyChecked(req: Request, res: Response) {
+    const back = (key: 'success' | 'error', text: string) => res.redirect(`/admin?${key}=${encodeURIComponent(text)}`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'config-manage', req, res, 'page'))) return undefined;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const id = typeof body.id === 'string' ? body.id : '';
+      const fingerprint = typeof body.fingerprint === 'string' ? body.fingerprint : '';
+      if (!id || !fingerprint || !wikiContext.userContext) return back('error', 'Say which rule to mark as checked.');
+      const answer = await this.engine.getManager<PolicyEvaluator>('PolicyEvaluator')?.markDenyChecked(wikiContext.userContext, id, fingerprint);
+      if (answer === 'checked') return back('success', `The rule '${id}' is marked as checked. It shows again if the rule changes.`);
+      if (answer === 'changed') return back('error', `The rule '${id}' has changed since this page was shown. Check it again.`);
+      return back('error', `There is no rule '${id}' that denies access.`);
+    } catch (err: unknown) {
+      logger.error('[policy] Marking a deny as checked failed:', err);
+      return back('error', 'The rule could not be marked as checked.');
+    }
+  }
+
   /** POST /admin/upgrade/fix — the item's one button. A configuration change, so config-manage; the change is audited as any other (#2301). Redirects with a key, never text. */
   async adminUpgradeFix(req: Request, res: Response) {
     const back = (result: UpgradeResultKey, count = 0) => res.redirect(`/admin/upgrade?result=${result}${count > 0 ? `&count=${count}` : ''}`);
@@ -19203,6 +19230,7 @@ ${panes}
     // #1842: move a vault page's leftovers into its vault — the owner, or admin-system for an unsealed vault.
     app.get('/admin/upgrade', (req: Request, res: Response) => void this.adminUpgradePage(req, res));
     app.get('/admin/upgrade/pages/:id', (req: Request, res: Response) => void this.adminUpgradePages(req, res));
+    app.post(DENY_CHECKED_ACTION, (req: Request, res: Response) => void this.adminDenyChecked(req, res));
     app.post('/admin/upgrade/fix', (req: Request, res: Response) => void this.adminUpgradeFix(req, res));
     app.post('/vault-repair', (req: Request, res: Response) => void this.vaultRepair(req, res, false));
     app.post('/vault-repair/all', (req: Request, res: Response) => void this.vaultRepair(req, res, true));

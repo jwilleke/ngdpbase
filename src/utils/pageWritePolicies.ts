@@ -26,7 +26,32 @@
  * Pure: the caller logs and reports. The site's file is not rewritten; saving
  * the policy list from the configuration editor writes the migrated list.
  */
+import { createHash } from 'crypto';
 import type { Policy } from '../types/Policy.js';
+
+/**
+ * Where the denies an administrator marked as checked are kept (#2355): rule id to the fingerprint of
+ * the rule as it was then. A mark hides the dashboard item and is read by nothing that decides access.
+ */
+export const CHECKED_DENIES_KEY = 'ngdpbase.access.checked-denies';
+
+/** Where the "Mark as checked" button on the dashboard item posts (#2355). */
+export const DENY_CHECKED_ACTION = '/admin/access-policies/deny-checked';
+
+/** The rule's content in one string: keys in order, so the same rule always gives the same text. */
+function stableText(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableText).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().filter((k) => record[k] !== undefined).map((k) => `${JSON.stringify(k)}:${stableText(record[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/** A stable hash of a whole rule, its id included, so a changed rule (or the same content under another name) is a different one (#2355). */
+export function policyFingerprint(policy: Policy): string {
+  return createHash('sha256').update(stableText(policy)).digest('hex');
+}
 
 const PAGE_WRITES = ['page-edit', 'page-delete', 'page-rename'] as const;
 
@@ -61,6 +86,8 @@ export interface PolicyFinding {
   plain: string;
   /** Set when the finding is an allow rule the upgrade notice already lists (`openWriteRules`); the needs-attention item leaves it out. */
   coveredByUpgradeNotice?: boolean;
+  /** Set on a deny (#2355): the rule, its fingerprint now, and whether an administrator marked exactly this content as checked. */
+  deny?: { id: string; fingerprint: string; checked: boolean };
 }
 
 function isPageStar(policy: Policy): boolean {
@@ -110,15 +137,17 @@ export function migrateStoredPageWritePolicies(policies: unknown): { policies: u
  * allow that grants a page write on a `page` resource to a role other than
  * admin (it reaches pushed pages), an allow that grants anything but
  * page-read to `anyone` or `authenticated` (#2261, #2283), and every deny (a deny now overrides any
- * allow). Each is a log line in full and the same finding in plain words.
+ * allow; one an administrator marked as checked is still reported, with `deny.checked` set, #2355). Each is a log line in full and the same finding in plain words.
  */
-export function pageWritePolicyFindings(policies: readonly Policy[]): PolicyFinding[] {
+export function pageWritePolicyFindings(policies: readonly Policy[], checked: Readonly<Record<string, string>> = {}): PolicyFinding[] {
   const out: PolicyFinding[] = [];
   for (const policy of policies) {
     if (policy.effect === 'deny') {
+      const fingerprint = policyFingerprint(policy);
       out.push({
         log: `'${policy.id}' is a deny: since #2255 a deny overrides any allow`,
-        plain: `The rule '${policy.id}' denies access, and a deny beats every rule that allows it. Check that it denies only what you mean it to; if not, change or remove it.`
+        plain: `The rule '${policy.id}' denies access, and a deny beats every rule that allows it. Check that it denies only what you mean it to; if not, change or remove it.`,
+        deny: { id: policy.id, fingerprint, checked: checked[policy.id] === fingerprint }
       });
       continue;
     }

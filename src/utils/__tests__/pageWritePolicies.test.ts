@@ -4,7 +4,7 @@
  * category policies do not give on general pages only; other policies are
  * reported, never rewritten.
  */
-import { migrateStoredPageWritePolicies, pageWritePoliciesToReview, pageWritePolicyFindings } from '../pageWritePolicies';
+import { migrateStoredPageWritePolicies, pageWritePoliciesToReview, pageWritePolicyFindings, policyFingerprint } from '../pageWritePolicies';
 import type { Policy } from '../../types/Policy';
 
 const role = (value: string) => [{ type: 'role', value }];
@@ -112,5 +112,26 @@ describe('the log line keeps its issue number; the plain line has none (#2348)',
     ] as Policy[]);
     expect(findings.map((f) => f.log.match(/#\d+/)?.[0])).toEqual(['#2255', '#2261', '#2255']);
     for (const f of findings) expect(f.plain).not.toMatch(/#\d|page-|system-category|docs\/|ngdpbase\./);
+  });
+});
+
+describe('the fingerprint of a rule, and denies marked as checked (#2355)', () => {
+  const deny = { id: 'no-docs', effect: 'deny', subjects: [{ type: 'role', value: 'editor' }], actions: ['page-edit'] } as never;
+
+  test('it does not depend on the order of keys, and changes with any content', () => {
+    const reordered = { actions: ['page-edit'], subjects: [{ value: 'editor', type: 'role' }], effect: 'deny', id: 'no-docs' } as never;
+    expect(policyFingerprint(reordered)).toBe(policyFingerprint(deny));
+    expect(policyFingerprint(deny)).toMatch(/^[0-9a-f]{64}$/);
+    expect(policyFingerprint({ ...(deny as object), actions: ['page-delete'] })).not.toBe(policyFingerprint(deny));
+    expect(policyFingerprint({ ...(deny as object), id: 'other' })).not.toBe(policyFingerprint(deny));
+  });
+
+  test('a deny with a matching mark is reported as checked, anything else as open', () => {
+    const [open] = pageWritePolicyFindings([deny]);
+    expect(open.deny).toEqual({ id: 'no-docs', fingerprint: policyFingerprint(deny), checked: false });
+    const [done] = pageWritePolicyFindings([deny], { 'no-docs': policyFingerprint(deny) });
+    expect(done.deny?.checked).toBe(true);
+    const [changed] = pageWritePolicyFindings([deny], { 'no-docs': 'old' });
+    expect(changed.deny?.checked).toBe(false);
   });
 });
