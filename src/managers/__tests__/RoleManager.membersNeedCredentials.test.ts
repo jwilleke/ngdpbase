@@ -150,6 +150,10 @@ describe('a role member must have credentials (#2040)', () => {
       // #2354: plain words on the dashboard; the role and count stay in the log line below.
       expect(status.reason).toMatch(/^Some roles list contacts as members/);
       expect(status.reason).not.toContain("'editor'");
+      // #2367: the fix is on the Contacts page, and taking a contact out of a role is done on the server.
+      expect(status).toMatchObject({ fixUrl: '/admin/contacts' });
+      expect(status.fixLabel).toMatch(/Contacts/);
+      expect(status.reason).toContain('done on the server, outside this page');
       expect(errors.mock.calls.some(([line]) => String(line).includes("'editor' lists 1"))).toBe(true);
       expect(created).toHaveLength(1);
       expect(created[0]).toMatchObject({ level: 'error', title: CONTACT_MEMBERS_TITLE });

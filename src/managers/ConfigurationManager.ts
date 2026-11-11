@@ -76,6 +76,8 @@ class ConfigurationManager extends BaseManager {
   private defaultConfig: WikiConfig | null;
   private customConfig: Partial<WikiConfig> | null;
   private mergedConfig: WikiConfig | null;
+  /** #2279: counts every change to `mergedConfig`, so a reader may keep what it derived from a value until the next one. */
+  private revision = 0;
   /** #1638: shipped ⊕ enabled addons, before the operator's file — what the build declares. */
   private declaredConfig: WikiConfig | null;
   /** #1813: each enabled addon's own default-config.json, as folded into the merge. */
@@ -491,6 +493,19 @@ class ConfigurationManager extends BaseManager {
     if (this.environment === 'development' && !this.customConfig?.['ngdpbase.logging.level']) {
       this.mergedConfig['ngdpbase.logging.level'] = 'debug';
     }
+    this.revision++;
+  }
+
+  /**
+   * A number that changes whenever the configuration in force changes (#2279):
+   * a load or reload, a save, a reset, a restore, a runtime value an add-on
+   * sets. Equal numbers mean nothing was changed through this manager, so
+   * what a reader derived from `getProperty` then still holds. A value
+   * returned by `getProperty` must not be changed in place; that is the one
+   * change this cannot see.
+   */
+  getRevision(): number {
+    return this.revision;
   }
 
   /** What the #2255 page-write migration rewrote in memory, one sentence each; PolicyDecisionPoint reports it. */
@@ -926,6 +941,7 @@ class ConfigurationManager extends BaseManager {
       this.mergedConfig[key] = value === undefined
         ? declared
         : Array.isArray(declared) && Array.isArray(value) ? mergeArrays(declared, value) : value;
+      this.revision++;
     }
 
     // Save to custom config file
@@ -989,6 +1005,7 @@ class ConfigurationManager extends BaseManager {
   setRuntimeProperty(key: string, value: unknown): void {
     if (this.mergedConfig) {
       this.mergedConfig[key] = value;
+      this.revision++;
     }
   }
 
@@ -1538,6 +1555,7 @@ class ConfigurationManager extends BaseManager {
 
     this.customConfig = {};
     this.mergedConfig = { ...this.defaultConfig } as WikiConfig;
+    this.revision++;
     await this.saveCustomConfiguration();
   }
 

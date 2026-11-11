@@ -4,7 +4,8 @@
     Export starts from the thing: only the formats the engine can make from
     it are listed, and only to a user who may export it. Locals: exportName
     (what is exported), exportBack (where it is), exportAction (the POST
-    URL), formats [{ id, label }]. The start is posted with csrfFetch; the
+    URL), exportBody (optional: what else the POST carries, such as the
+    search being exported), formats [{ id, label }]. The start is posted with csrfFetch; the
     file is made in the background and offered for download when ready. %>
 <div class="container mt-4" id="exportScreen">
     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -12,7 +13,7 @@
         <a href="<%= exportBack %>" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back</a>
     </div>
 
-    <form id="exportForm" class="card mb-4" data-action="<%= exportAction %>">
+    <form id="exportForm" class="card mb-4" data-action="<%= exportAction %>" data-body="<%= JSON.stringify(locals.exportBody || {}) %>">
         <div class="card-body">
             <fieldset class="mb-3">
                 <legend class="form-label fs-6">Format</legend>
@@ -37,7 +38,7 @@
     // How long the page waits for a file: 400 checks, about ten minutes.
     var MAX_TRIES = 400;
 
-    function show(kind, text, link) {
+    function show(kind, text, link, notes) {
         status.className = 'mt-3 alert alert-' + kind;
         status.textContent = text;
         if (link) {
@@ -48,6 +49,13 @@
             a.textContent = 'Download';
             status.appendChild(a);
         }
+        // What the export left out, in the words the site gave.
+        (notes || []).forEach(function (note) {
+            var p = document.createElement('p');
+            p.className = 'mb-0 mt-2';
+            p.textContent = note;
+            status.appendChild(p);
+        });
     }
 
     // Check again later, or, after MAX_TRIES, stop and say so.
@@ -68,7 +76,7 @@
                 if (!run) { show('danger', (body && body.error) || 'The export is no longer here.'); start.disabled = false; return; }
                 if (run.state === 'done') {
                     var url = '/export/runs/' + encodeURIComponent(runId) + '/download';
-                    show('success', 'Ready: ' + run.file.name + '.', url);
+                    show('success', 'Ready: ' + run.file.name + '.', url, run.notes);
                     start.disabled = false;
                     window.location.href = url;
                 } else if (run.state === 'failed') {
@@ -90,7 +98,7 @@
         window.csrfFetch(form.getAttribute('data-action'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({ format: chosen.value })
+            body: JSON.stringify(Object.assign({}, JSON.parse(form.getAttribute('data-body') || '{}'), { format: chosen.value }))
         })
             .then(function (r) { return r.json(); })
             .then(function (body) {

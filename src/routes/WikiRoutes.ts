@@ -216,6 +216,7 @@ import { IceVetRefused } from '../ice/vet.js';
 import type FileManager from '../managers/FileManager.js';
 import { IceExportBusy, IceExportNeedsFreshSignIn, IceExportRefused, ImportUploadRefused, TakeoutImportRefused } from '../managers/ImportManager.js';
 import { IceExportFailed, PAGES_EXPORT_SOURCE } from '../ice/runExport.js';
+import { SEARCH_EXPORT_SOURCE, searchExportParams, searchExportRef } from '../ice/searchExportSource.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import type MediaManager from '../managers/MediaManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
@@ -5673,6 +5674,8 @@ ${panes}
         assetPickerInitSince:   initSince,
         assetPickerInitUntil:   initUntil,
         assetPickerInitFilters: initFilters,
+        // Export is for signed-in users only; a visitor is never shown it.
+        assetPickerCanExport:   gateContext.userContext?.isAuthenticated === true,
         assetPickerUserKeywords:   pickerKw.userKeywords,
         assetPickerSystemKeywords: pickerKw.systemKeywords,
         assetPickerCategories:     pickerKw.categories,
@@ -6705,6 +6708,54 @@ ${panes}
    * or too many exports being made, is a 429.
    */
   async exportPageStart(req: Request, res: Response) {
+    return this.startExportRun(req, res, PAGES_EXPORT_SOURCE, String(req.params.page ?? ''));
+  }
+
+  /**
+   * GET /export/search — the Export action on a search: the formats offered
+   * for the search in the query string (the same fields `/search` takes),
+   * and a screen that carries that search to the POST. Nothing to offer is a
+   * 404; a visitor who is not signed in is sent to sign in.
+   */
+  async exportSearchFormats(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'page-export', req, res, 'page'))) return;
+
+      const params = searchExportParams(req.query);
+      const importManager = this.engine.getManager<ImportManager>('ImportManager');
+      const formats = importManager ? await importManager.exportFormatsFor(SEARCH_EXPORT_SOURCE, searchExportRef(params as Record<string, unknown>), wikiContext.userContext) : [];
+      if (formats.length === 0) return await this.renderError(req, res, 404, 'Nothing to export', 'There is nothing you can export from this search.');
+
+      const commonData = await this.getCommonTemplateData(req);
+      const back = new URLSearchParams();
+      for (const [key, value] of Object.entries(params)) for (const one of [value].flat()) back.append(key, String(one));
+      return res.render('export-item', {
+        ...commonData,
+        title: 'Export search results',
+        exportName: 'search results',
+        exportBack: `/search?${back.toString()}`,
+        exportAction: '/export/search',
+        exportBody: params,
+        formats: formats.map(f => ({ id: f.id, label: f.label }))
+      });
+    } catch (err) {
+      logger.error('[export] the Export action on a search failed:', err);
+      return this.renderError(req, res, 500, 'Error', 'The export choices could not be shown.');
+    }
+  }
+
+  /**
+   * POST /export/search — start exporting a search. JSON `{ format, ...search }`:
+   * the format an Export screen offered, and the search's own fields. Answers
+   * as {@link exportPageStart} does.
+   */
+  async exportSearchStart(req: Request, res: Response) {
+    return this.startExportRun(req, res, SEARCH_EXPORT_SOURCE, searchExportRef(req.body as Record<string, unknown>));
+  }
+
+  /** Start an export of `ref` from `source` for the signed-in user who asked, and answer with the run id (202) or why not. */
+  private async startExportRun(req: Request, res: Response, source: string, ref: string) {
     const wikiContext = this.createWikiContext(req);
     const currentUser = wikiContext.userContext;
     if (!(await this.permitted(wikiContext, 'page-export', req, res, 'json'))) return;
@@ -6720,9 +6771,9 @@ ${panes}
     const format: unknown = req.body?.format;
     if (typeof format !== 'string' || !format) return res.status(400).json({ success: false, error: 'Choose a format.' });
     try {
-      const runId = await importManager.startExport({ source: PAGES_EXPORT_SOURCE, ref: String(req.params.page ?? ''), format }, currentUser);
+      const runId = await importManager.startExport({ source, ref, format }, currentUser);
       return res.status(202).json({ success: true, runId });
-    } catch (err) {
+    } catch (err: unknown) {
       if (err instanceof IceExportRefused) return res.status(404).json({ success: false, error: err.message });
       if (err instanceof IceExportNeedsFreshSignIn) return this.askForFreshSignIn(wikiContext, err.permission, req, res, 'json');
       if (err instanceof IceExportBusy) return res.status(429).json({ success: false, error: err.message });
@@ -19084,6 +19135,8 @@ ${panes}
     // #2120: the Export action on a page, through the ICE engine.
     app.get('/export/page/:page', (req: Request, res: Response) => void this.exportPageFormats(req, res));
     app.post('/export/page/:page', (req: Request, res: Response) => void this.exportPageStart(req, res));
+    app.get('/export/search', (req: Request, res: Response) => void this.exportSearchFormats(req, res));
+    app.post('/export/search', (req: Request, res: Response) => void this.exportSearchStart(req, res));
     app.get('/export/runs/:runId', (req: Request, res: Response) => void this.exportRunStatus(req, res));
     app.get('/export/runs/:runId/download', (req: Request, res: Response) => void this.exportRunDownload(req, res));
     app.get('/exports', (req: Request, res: Response) => this.listExports(req, res));

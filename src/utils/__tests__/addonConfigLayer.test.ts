@@ -262,3 +262,38 @@ describe('#1999 an add-on\'s policy names only its own jobs', () => {
     expect(mergeWithAddonLayer({}, [addon('accounting-dues', 'pages.reindex', false)], {}).refused.size).toBe(0);
   });
 });
+
+describe('#1823 an add-on\'s resource types start with its slug', () => {
+  const TYPES = 'ngdpbase.access.resource-types';
+  const addon = (slug: string, types: unknown, enabled = true) => ({
+    slug, dir: '', enabled,
+    defaults: { [TYPES]: types, [`ngdpbase.addons.${slug}.setting`]: 1 }
+  });
+  const phr = {
+    'phr-record': { attributes: { owner: { type: 'identity' }, category: { type: 'string' } } }
+  };
+
+  test('a type named for the add-on is merged', () => {
+    const { merged, refused } = mergeWithAddonLayer({ [TYPES]: { page: {} } }, [addon('phr', phr)], {});
+    expect(refused.size).toBe(0);
+    expect(merged[TYPES]).toMatchObject({ page: {}, ...phr });
+  });
+
+  test('a type that does not start with the slug, or an owner that is not an identity, refuses the add-on', () => {
+    for (const types of [
+      { 'ledger-entry': { attributes: { owner: { type: 'identity' } } } },
+      { phr: {} },
+      { 'phr-record': { attributes: { owner: { type: 'string' } } } },
+      { 'phr-record': { attributes: { owner: 'username' } } }
+    ]) {
+      const { merged, refused } = mergeWithAddonLayer({ [TYPES]: { page: {} } }, [addon('phr', types)], {});
+      expect(refused.get('phr')).toMatch(/resource type/);
+      expect(merged[TYPES]).toEqual({ page: {} });
+      expect(merged).not.toHaveProperty('ngdpbase.addons.phr.setting');
+    }
+  });
+
+  test('a turned-off add-on is not refused', () => {
+    expect(mergeWithAddonLayer({}, [addon('phr', { page: {} }, false)], {}).refused.size).toBe(0);
+  });
+});

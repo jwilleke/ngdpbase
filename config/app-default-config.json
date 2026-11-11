@@ -120,7 +120,9 @@
   "ngdpbase.import.engine.recent-imports": 25,
   "ngdpbase.import.engine.fetch-max-bytes": 8388608,
   "ngdpbase.import.engine.name-max-length": 200,
+  "_comment_export_search": "Exporting search results makes one zip of every page and file the person may read. It stops at max-items pages and files together (default 200) or at max-bytes in all (default 25 MB, 26214400), whichever comes first, and the export says how many matches were left out. People in the results are never exported; the export says how many were left out.",
   "ngdpbase.export.engine.max-bytes": 26214400,
+  "ngdpbase.export.engine.max-items": 200,
   "ngdpbase.export.engine.keep-minutes": 30,
   "ngdpbase.export.engine.max-held-bytes": 268435456,
   "ngdpbase.export.engine.max-kept-runs": 100,
@@ -2854,7 +2856,7 @@
   "ngdpbase.access.rule-combining-algorithm": "deny-overrides",
   "ngdpbase.access.policies.default-policy": "deny",
   "ngdpbase.access.policies.enabled": true,
-  "_comment_access_resource_types": "Policy resource types (#1504, docs/access-policies.md): the kinds of thing a policy's resources may name. Declared once here and read through ConfigurationManager; the policy evaluator holds one matcher per type, and a type with no matcher, or not declared, never matches.",
+  "_comment_access_resource_types": "Policy resource types (#1504, docs/access-policies.md): the kinds of thing a policy's resources may name. Declared once here and read through ConfigurationManager. The evaluator holds one matcher per core type (page, system-category, vault, shared-folder). A type an add-on declares is matched by id only when a record of that type is decided (#1823); a page decision does not use it. A type that is not declared never matches.",
   "ngdpbase.access.resource-types": {
     "page": {
       "description": "A page, matched by its name (glob pattern). Its attributes are what a policy's condition may read as resource:<name> (an attributeid in a condition), each read by the PIP from its source (#2255): owner is the page's author",

@@ -1585,6 +1585,34 @@ describe('ConfigurationManager', () => {
     });
   });
 
+  // #2279: PolicyEvaluator keeps compiled conditions while the revision is unchanged,
+  // so every path that changes what is in force must change it.
+  describe('getRevision changes on every change to the configuration in force (#2279)', () => {
+    const actor = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
+    const changes = async (cm: ConfigurationManager, change: () => unknown): Promise<boolean> => {
+      const before = cm.getRevision();
+      await change();
+      return cm.getRevision() !== before;
+    };
+
+    test('reading changes nothing', async () => {
+      await configManager.initialize();
+      expect(await changes(configManager, () => configManager.getProperty('ngdpbase.access.policies', []))).toBe(false);
+    });
+
+    test('a save, a runtime value, a reload, a reset and a restore each change it', async () => {
+      await fs.ensureDir(path.join(tempDir, 'data', 'config'));
+      await configManager.initialize();
+      expect(await changes(configManager, () => configManager.setProperty('ngdpbase.access.policies', [{ id: 'site-x' }], actor))).toBe(true);
+      expect(await changes(configManager, () => configManager.setProperty('ngdpbase.access.policies', undefined, actor))).toBe(true);
+      expect(await changes(configManager, () => configManager.setRuntimeProperty('ngdpbase.access.policies', [{ id: 'addon-x' }]))).toBe(true);
+      expect(await changes(configManager, () => configManager.reload())).toBe(true);
+      expect(await changes(configManager, () => configManager.resetToDefaults(actor))).toBe(true);
+      const backup = await configManager.backup();
+      expect(await changes(configManager, () => configManager.restore(backup))).toBe(true);
+    });
+  });
+
   // #1117 slice 2: the filter namespace said the wrong thing —
   // `ngdpbase.filters.security.block-on-save` is a write-path gate, not
   // a markup option. Keys move to `ngdpbase.filters.*`; legacy custom-config

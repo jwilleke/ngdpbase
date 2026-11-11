@@ -409,6 +409,29 @@ describe('#1431 ApiContext#enforceDeny() turns a deny decision into the refusal'
     expect(err.reauth).toBeUndefined();
   });
 
+  test('a record refusal is audited with the stored owner, and the actor under a proxy grant (#1823)', async () => {
+    const engine = engineWith();
+    const mom = { ...tess, username: 'mom', viaProxy: { kind: 'proxy', grantId: 'g1', actor: 'jim', scopes: ['phr-read'] } };
+    const ctx = ApiContext.from(reqFor(mom), engine);
+    const err = await ctx.enforceDeny('phr-read', { permit: false, applicable: true, reason: 'not-the-owner', policyIds: [] }, {
+      type: 'phr-record', id: 'm1', owner: 'urn:uuid:mom', ownerUser: 'mom'
+    }).catch((e: unknown) => e) as ApiError;
+    expect(err.status).toBe(403);
+    expect(engine.audit).toEqual([
+      expect.objectContaining({
+        eventType: 'authorization-deny',
+        user: 'mom',
+        actor: 'jim',
+        action: 'phr-read',
+        resource: 'm1',
+        resourceType: 'phr-record',
+        result: 'deny',
+        reason: 'not-the-owner',
+        metadata: expect.objectContaining({ owner: 'urn:uuid:mom', ownerUser: 'mom', delegated: 'proxy', proxyGrantId: 'g1' })
+      })
+    ]);
+  });
+
   test('an allow decision is a programming error, never a silent pass', async () => {
     const engine = engineWith();
     const ctx = ApiContext.from(reqFor(tess), engine);
