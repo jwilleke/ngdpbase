@@ -235,7 +235,7 @@ export class OidcManager extends BaseManager {
     }
 
     if (!configManager.isBaseUrlExplicit()) {
-      this.refuse('the issuer is ngdpbase.application.base-url + /oidc, and that key is not set explicitly (#642)', "the site's web address has not been set. Set it in the settings.", 'ngdpbase.application.base-url');
+      this.refuse('the issuer is ngdpbase.application.base-url + /oidc, and that key is not set explicitly (#642)', "the site's web address has not been set. This is set in the server's settings, outside this page.");
       return;
     }
     this.issuer = issuerFor(configManager.getBaseURL());
@@ -243,7 +243,7 @@ export class OidcManager extends BaseManager {
 
     const { config: operatorConfig, problems } = operatorOidcConfig(configManager.getCustomProperties());
     if (problems.length > 0) {
-      this.refuse(problems.join('; '), 'one of its settings is not valid. Correct it in the settings.', DERIVED.find((k) => problems.some((p) => p.startsWith(k))));
+      this.refuse(problems.join('; '), "one of its settings is not valid. Correct it in the server's settings, outside this page.");
       return;
     }
 
@@ -287,7 +287,7 @@ export class OidcManager extends BaseManager {
       // Throws on unsafe options now, at boot, rather than at the first request.
       this.pkg.assertSafeOptions(this.options);
     } catch (err) {
-      this.refuse((err as Error).message, 'its settings were refused as unsafe. Review the single sign-on settings.');
+      this.refuse((err as Error).message, "its settings were refused as unsafe. Review them in the server's settings, outside this page.");
       return;
     }
     logger.info(`[OidcManager] configured: issuer ${this.issuer}; starts once trust proxy is resolved`);

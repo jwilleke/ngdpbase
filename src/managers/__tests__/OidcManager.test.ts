@@ -78,12 +78,13 @@ describe('OidcManager (#1570)', () => {
     expect(fs.existsSync(path.join(dir, 'oidc'))).toBe(false);
   });
 
-  test('on without an explicit base-url: degraded, naming the key, nothing mounted', async () => {
+  test('on without an explicit base-url: degraded, saying it is set on the server, nothing mounted', async () => {
     explicit = false;
     const manager = await started();
     const status = manager.getManagerStatus();
     expect(status.state).toBe('degraded');
-    expect(status.configKey).toBe('ngdpbase.application.base-url');
+    // #2367: the address is set in the server's settings, so no link to a row.
+    expect(status.configKey).toBeUndefined();
     expect(manager.getIssuer()).toBe('');
     expect(manager.start({ trustProxy: false })).toBeNull();
   });
@@ -94,7 +95,7 @@ describe('OidcManager (#1570)', () => {
     const manager = await started();
     expect(manager.getManagerStatus().state).toBe('degraded');
     // #2354: plain words on the dashboard; the developer reason is in the log.
-    expect(manager.getManagerStatus().reason).toBe('Single sign-on is turned on but has not started: one of its settings is not valid. Correct it in the settings.');
+    expect(manager.getManagerStatus().reason).toBe('Single sign-on is turned on but has not started: one of its settings is not valid. Correct it in the server\'s settings, outside this page.');
     expect(errors.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(/oidc-auth-server\.trust-proxy is set by ngdpbase/);
     errors.mockRestore();
   });
