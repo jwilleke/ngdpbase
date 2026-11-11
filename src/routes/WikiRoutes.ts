@@ -4002,7 +4002,9 @@ ${panes}
     const wantsJson = (req.headers.accept ?? '').includes('application/json');
     const fail = (status: number, title: string, message: string, conflictingPage?: { title: string; url: string }) => (wantsJson
       ? res.status(status).json({ ok: false, error: message, ...(conflictingPage && { conflictingPage }) })
-      : this.renderError(req, res, status, title, message, conflictingPage ? { conflictingPage } : {}));
+      : (conflictingPage
+        ? this.renderError(req, res, status, title, message, { conflictingPage })
+        : this.renderError(req, res, status, title, message)));
     try {
       const pageName = req.params.page;
       logger.debug(`💾 Save request received for page: ${pageName}`);
