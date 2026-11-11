@@ -44,6 +44,7 @@ import {
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
+import { PageTitleConflictError, pageTitleConflictLink, pageTitleConflictText } from '../utils/pageTitleConflict.js';
 import { DENY_OVERRIDES_EXPLANATION, RULE_COMBINING_ALGORITHM_KEY, readDeclaredAsWritten, unenforcedConditionsNotice } from '../utils/policyAttributes.js';
 import { sessionCookieWithheld, SESSION_COOKIE_WITHHELD_MESSAGE } from '../utils/sessionSecurity.js';
 import { formatLeftMenuContent } from '../utils/leftMenuNav.js';
@@ -2532,7 +2533,7 @@ class WikiRoutes {
   }
 
 
-  async renderError(req: Request, res: Response, status: number, title: string, message: string) {
+  async renderError(req: Request, res: Response, status: number, title: string, message: string, extra: Record<string, unknown> = {}) {
     try {
       // Pass the request object to get all common data
       const commonData = await this.getCommonTemplateData(req);
@@ -2541,6 +2542,7 @@ class WikiRoutes {
         ...commonData,
         title: title,
         message: message,
+        ...extra,
         error: { status: status },
         originalUrl: req.originalUrl || '/'
       });
@@ -4002,9 +4004,11 @@ ${panes}
     // text in place and show the outcome in the page. A plain form POST still
     // gets the redirect and the error pages.
     const wantsJson = (req.headers.accept ?? '').includes('application/json');
-    const fail = (status: number, title: string, message: string) => (wantsJson
-      ? res.status(status).json({ ok: false, error: message })
-      : this.renderError(req, res, status, title, message));
+    const fail = (status: number, title: string, message: string, conflictingPage?: { title: string; url: string }) => (wantsJson
+      ? res.status(status).json({ ok: false, error: message, ...(conflictingPage && { conflictingPage }) })
+      : (conflictingPage
+        ? this.renderError(req, res, status, title, message, { conflictingPage })
+        : this.renderError(req, res, status, title, message)));
     try {
       const pageName = req.params.page;
       logger.debug(`💾 Save request received for page: ${pageName}`);
@@ -4453,6 +4457,11 @@ ${panes}
       this.engine.getManager('MetricsManager')?.recordPageSave?.(Date.now() - _metricsStart);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       logger.error('Error saving page:', err);
+
+      // #2371: name the page that has the title, and link to it; the id stays in the log.
+      if (err instanceof PageTitleConflictError) {
+        return await fail(409, 'Page Conflict', pageTitleConflictText(err), pageTitleConflictLink(err));
+      }
 
       // Return 409 for duplicate title/UUID conflicts
       if (errorMessage.includes('is already in use') || errorMessage.includes('is already assigned')) {
