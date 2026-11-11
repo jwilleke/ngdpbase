@@ -33,23 +33,28 @@ describe('an old /export link', () => {
     expect(res.headers.location).toBe('/search?from=export');
   });
 
-  test('the search page gets the note for that link, and none otherwise', async () => {
+  const searchNotice = async (query: Record<string, string>, isAuthenticated: boolean) => {
     const routes = new WikiRoutes({ getManager: () => null });
     vi.spyOn(routes, 'createWikiContext').mockReturnValue({
-      userContext: { username: 'alice', isAuthenticated: true },
+      userContext: isAuthenticated ? { username: 'alice', isAuthenticated } : { username: 'anonymous', isAuthenticated },
       hasPermission: async () => true
     });
     vi.spyOn(routes, 'getCommonTemplateData').mockResolvedValue({});
     vi.spyOn(routes as never, 'getPickerKeywordCatalogs').mockResolvedValue({ userKeywords: [], systemKeywords: [], categories: [] });
     vi.spyOn(routes as never, 'getPickerYears').mockResolvedValue([] as never);
-    const render = async (query: Record<string, string>) => {
-      const res = { render: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() };
-      await routes.searchPages({ query }, res);
-      return res.render.mock.calls[0][1] as { assetPickerNotice?: string };
-    };
-    expect((await render({ from: 'export' })).assetPickerNotice).toBe('Exports now start from search results. Search, then choose Export these results.');
-    expect((await render({})).assetPickerNotice).toBeFalsy();
-    expect((await render({ from: 'something else' })).assetPickerNotice).toBeFalsy();
+    const res = { render: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() };
+    await routes.searchPages({ query }, res);
+    return (res.render.mock.calls[0][1] as { assetPickerNotice?: string }).assetPickerNotice;
+  };
+
+  test('the search page gets the note for that link, and none otherwise', async () => {
+    expect(await searchNotice({ from: 'export' }, true)).toBe('Exports now start from search results. Search, then choose Export these results.');
+    expect(await searchNotice({}, true)).toBeFalsy();
+    expect(await searchNotice({ from: 'something else' }, true)).toBeFalsy();
+  });
+
+  test('a signed-out visitor gets no note, since they are not shown the Export button', async () => {
+    expect(await searchNotice({ from: 'export' }, false)).toBeFalsy();
   });
 
   test('the search view shows the note', () => {
