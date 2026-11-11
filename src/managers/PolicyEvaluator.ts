@@ -434,6 +434,16 @@ class PolicyEvaluator extends BaseManager {
   private configManager: ConfigurationManager | null = null;
 
   /**
+   * Each condition checked and compiled, by the condition object configuration
+   * holds (#2279), kept while `ConfigurationManager.getRevision()` is
+   * `revision`. Any change to the configuration (a save, a reload, a reset, a
+   * restore, an add-on's runtime value) changes the revision, and the next
+   * decision starts again from nothing. The policies themselves are still read
+   * live for every decision; only a condition's compiled form is reused.
+   */
+  private preparedConditions: { revision: number; byCondition: WeakMap<PolicyCondition, Omit<PreparedPolicy, 'policy'>> } | null = null;
+
+  /**
    * The policies in force NOW. Only the PDP interprets them (#1431 step 14b);
    * this evaluator is the PDP's matching engine and asks it for the list, read
    * live — PolicyManager used to hand back a copy taken at boot, so a policy
@@ -582,14 +592,37 @@ class PolicyEvaluator extends BaseManager {
     }
 
     const matching = this.policies().filter((policy) => this.matches(policy, context));
-    const result = await this.combine(this.prepare(matching), context.readAttribute);
+    const result = await this.combine(this.prepared(matching), context.readAttribute);
     logger.info(`[POLICY] ${result.hasDecision ? `${result.allowed ? 'allow' : 'deny'} by ${result.policyIds.join(',')}` : 'No matching policy'}`);
     return result;
   }
 
   /**
-   * Checks and compiles each policy's condition (#2261). `compile()` does it
-   * once for a whole listing; a single decision does it for its few matches.
+   * The policies with their conditions checked and compiled (#2279): a
+   * condition already compiled under the configuration in force is reused,
+   * and `prepare` runs only for the rest. With no configuration revision to
+   * key on, everything is prepared again.
+   */
+  private prepared(policies: readonly Policy[]): PreparedPolicy[] {
+    const revision = typeof this.configManager?.getRevision === 'function' ? this.configManager.getRevision() : undefined;
+    if (revision === undefined) return this.prepare(policies);
+    if (this.preparedConditions?.revision !== revision) this.preparedConditions = { revision, byCondition: new WeakMap() };
+    const cache = this.preparedConditions.byCondition;
+    // A condition that is not an object (a hand-written mistake) cannot be a key; it is prepared each time, and has a problem.
+    const kept = (c: unknown): c is PolicyCondition => typeof c === 'object' && c !== null && cache.has(c as PolicyCondition);
+    const missing = policies.filter((p) => p.condition !== undefined && !kept(p.condition));
+    const fresh = new Map(missing.length > 0 ? this.prepare(missing).map(({ policy, ...rest }) => [policy, rest]) : []);
+    for (const [policy, rest] of fresh) {
+      if (typeof policy.condition === 'object' && policy.condition !== null) cache.set(policy.condition, rest);
+    }
+    return policies.map((policy) => (policy.condition === undefined
+      ? { policy, invalid: false }
+      : { policy, ...(fresh.get(policy) ?? cache.get(policy.condition)!) }));
+  }
+
+  /**
+   * Checks and compiles each policy's condition (#2261). `prepared()` keeps
+   * the result until the configuration changes (#2279).
    */
   private prepare(policies: readonly Policy[]): PreparedPolicy[] {
     const conditional = policies.some((p) => p.condition !== undefined);
@@ -734,7 +767,7 @@ class PolicyEvaluator extends BaseManager {
     if (!this.configManager) {
       return () => Promise.resolve({ ...NO_POLICY, reason: 'PolicyEvaluator not initialized' });
     }
-    const applicable = this.prepare(this.policies()
+    const applicable = this.prepared(this.policies()
       .filter((policy) => this.matchesSubject(policy.subjects, userContext) && actions.some((a) => this.matchesAction(policy.actions, a))));
     logger.debug(`[POLICY] Compiled ${applicable.length} policies for user=${userContext?.username} action=${action}`);
     return (pageName, attributes, readAttribute) =>
