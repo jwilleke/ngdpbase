@@ -3690,6 +3690,8 @@
   "ngdpbase.backup.env-keys-saved": null,
   "_comment_backup_shared_folders_key_saved": "#2124: the fingerprint of the shared-folders key (NGDPBASE_SHARED_FOLDERS_KEY) an admin confirmed is saved off the server, recorded when they confirm a downloaded .env that holds it ('I have saved .env off the server' on Admin -> Backup). Empty: the dashboard asks for .env to be saved. A different key (a rotated one, later) asks again. The fingerprint never reveals the key.",
   "ngdpbase.backup.shared-folders-key-saved-fingerprint": "",
+  "_comment_access_checked_denies": "#2355: the deny rules an administrator marked as checked on the dashboard, each as rule id -> a fingerprint of the rule's content at that time. A deny listed here with the same content is not reported under 'Access policies need review'; change the rule and it is reported again. Nothing that decides access reads this.",
+  "ngdpbase.access.checked-denies": {},
   "_comment_media": "MediaManager configuration (Issue #273). Media scanning/indexing of external photo/video libraries.",
   "ngdpbase.media.enabled": false,
   "ngdpbase.media.folders": [],

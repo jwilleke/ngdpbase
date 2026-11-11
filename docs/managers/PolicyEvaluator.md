@@ -735,3 +735,14 @@ if (!result.hasDecision) {
 
 __Maintained By:__ Development Team
 __Status:__ Active Development
+
+## Marking a deny as checked
+
+The dashboard item "Access policies need review" reports every deny rule, because a deny beats every allow. For a deny that is meant, the administrator presses __Mark 'X' as checked__ on the item ([#2355](https://github.com/jwilleke/ngdpbase/issues/2355)).
+
+- The button posts to `POST /admin/access-policies/deny-checked` with the rule's id and its fingerprint as the page showed it. The route asks `config-manage`, the permission that edits the policies, with the fresh sign-in a configuration write asks; the CSRF token is the app-wide check.
+- `PolicyEvaluator.markDenyChecked` refuses a rule that is not a deny (`missing`) or whose content is no longer the one shown (`changed`). Otherwise it saves the id and the fingerprint in `ngdpbase.access.checked-denies` through `ConfigurationManager.setProperty` with the person's context, which records the `config-change` audit event, and works the item out again, so it goes without a restart.
+- The fingerprint (`policyFingerprint` in `src/utils/pageWritePolicies.ts`) is a SHA-256 of the whole rule, keys in order, id included. At each start a deny whose stored fingerprint equals its current one is left out of the item (the log notes it at info level); an edited rule, or a new deny, is shown again. A rule with the same content under another id is a different rule.
+- The mark hides the item and nothing else. Nothing that decides access reads `ngdpbase.access.checked-denies`; a marked deny still denies.
+
+Known gap: a mark for a rule that is later removed stays in the list; it is never read again.

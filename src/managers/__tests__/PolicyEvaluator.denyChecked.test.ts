@@ -105,7 +105,7 @@ describe('marking a deny as checked (#2355)', () => {
 
   test('other problems stay when the deny is checked', async () => {
     const stored = { [CHECKED_DENIES_KEY]: { 'no-docs': policyFingerprint(deny('no-docs')) } };
-    const { ev } = build([deny('no-docs'), deny('old', { priority: 3 })], stored);
+    const { ev } = build([deny('no-docs'), { ...deny('old', { priority: 3 }), effect: 'allow' } as Policy], stored);
     await ev.initialize();
     expect(itemOf(ev)).toContain("'old'");
     expect(itemOf(ev)).not.toContain('denies access');
