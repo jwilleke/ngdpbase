@@ -759,7 +759,7 @@ class RoleManager extends BaseManager {
       'They were left as they are: give each contact an account (it then holds the role as a user, and can be taken out of it like any user), or remove it from the role\'s file in the roles folder';
     logger.error(`🔑 ${reason} (#2040)`);
     // #2354: the dashboard says it in plain words; the roles and counts are in the log line above.
-    this.markNeedsAttention('Some roles list contacts as members. Contacts have no sign-in, so those memberships do nothing. Give each contact an account, or remove it from the role.');
+    this.markNeedsAttention('Some roles list contacts as members. Contacts have no sign-in, so those memberships do nothing. Give each contact an account in Contacts, or remove it from the role. Taking a contact out of a role is done on the server, outside this page.', undefined, { fixUrl: '/admin/contacts', fixLabel: 'Open Admin → Contacts' });
     await this.notifyAdminsOnce(CONTACT_MEMBERS_TITLE, `${reason}.`);
     return found;
   }

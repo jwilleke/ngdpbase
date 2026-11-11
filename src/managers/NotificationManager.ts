@@ -150,7 +150,7 @@ class NotificationManager extends BaseManager {
     // Ensure data directory exists
     const dataDirPath = path.dirname(this.storagePath);
     const preflight = this.preflightConfiguredPath(
-      'ngdpbase.notifications.directory',
+      'ngdpbase.notifications.dir',
       dataDirPath
     );
     if (preflight.ok) {

@@ -306,7 +306,7 @@ class ExportManager extends BaseManager {
       || './exports';
 
     const preflight = this.preflightConfiguredPath(
-      'exportDirectory',
+      'ngdpbase.directories.exports',
       this.exportDirectory
     );
     if (!preflight.ok) {
