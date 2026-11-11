@@ -74,6 +74,7 @@ import { boundScope, convertChain, isConfidentialReceiver, keepOriginalsAtUpload
 import { fingerprint, mediaTypeByExtension } from '../ice/fileHandling.js';
 import { givenNameProblem, type IceNameForm } from '../ice/givenName.js';
 import { FileIceLedger } from '../ice/ledger.js';
+import { searchExportSource, pageItem } from '../ice/searchExportSource.js';
 import { IceExportFailed, checkExportSize, exportChains, exportSize, runExportChain, type IceExportSettings } from '../ice/runExport.js';
 import { exportShims } from '../ice/shims/export.js';
 import { PdfUnavailableError } from '../export/pdfEngine.js';
@@ -408,6 +409,7 @@ interface StoreRestoring {
 }
 
 interface ExportRunSettings extends IceExportSettings {
+  maxItems: number;
   keepMinutes: number;
   maxHeldBytes: number;
   maxKeptRuns: number;
@@ -537,6 +539,7 @@ class ImportManager extends BaseManager {
     // #2120: export starts from the thing being exported. Pages first; core's
     // out shims make NCM, HTML, Markdown and PDF (#1974) from them.
     this.registerExportSource('core', this.pagesExportSource());
+    this.registerExportSource('core', this.searchExportSource());
     for (const shim of exportShims({
       renderDocument: (item) => this.exportManager().renderPageDocument(typeof item.metadata?.['title'] === 'string' ? item.metadata['title'] : item.name, {
         content: item.text ?? '',
@@ -983,13 +986,14 @@ class ImportManager extends BaseManager {
     if (!chain) throw new IceExportRefused('That format is not offered here.');
     const settings = this.exportSettings();
     this.makeRoomForExport(ctx.username, settings);
-    const items = await source.read(request.ref, ctx, { format: request.format });
+    const notes: string[] = [];
+    const items = await source.read(request.ref, ctx, { format: request.format, note: (text) => notes.push(text) });
     if (!items || items.length === 0) throw new IceExportRefused();
 
     const jobCtx = jobContextFromRequest(ctx);
     const report: IceExportReport = {
       runId: uuidv4(), source: source.id, ref: request.ref, format: request.format, chain: chain.map(s => s.id),
-      username: ctx.username, state: 'queued'
+      username: ctx.username, state: 'queued', ...(notes.length ? { notes } : {})
     };
     try {
       checkExportSize(items, settings.maxBytes);
@@ -1029,7 +1033,7 @@ class ImportManager extends BaseManager {
     report.startedAt = new Date().toISOString();
     let failure: unknown = null;
     try {
-      const file = await runExportChain(items, chain, (shim) => ({ ...this.shimTools(shim), ctx }), settings);
+      const file = await runExportChain(items, chain, (shim) => ({ ...this.shimTools(shim), ctx }), settings, source.zipAs);
       const bytes = file.bytes ?? Buffer.alloc(0);
       report.file = { name: path.basename(file.name), mediaType: file.mediaType ?? 'application/octet-stream', size: bytes.length };
       report.expiresAt = new Date(Date.now() + settings.keepMinutes * 60_000).toISOString();
@@ -1155,6 +1159,7 @@ class ImportManager extends BaseManager {
   private exportSettings(): ExportRunSettings {
     return {
       maxBytes: this.numberSetting('ngdpbase.export.engine.max-bytes', 26_214_400),
+      maxItems: this.numberSetting('ngdpbase.export.engine.max-items', 200),
       maxChainDepth: this.numberSetting('ngdpbase.import.engine.max-chain-depth', 5),
       keepMinutes: this.numberSetting('ngdpbase.export.engine.keep-minutes', 30),
       maxHeldBytes: this.numberSetting('ngdpbase.export.engine.max-held-bytes', 268_435_456),
@@ -1465,6 +1470,44 @@ class ImportManager extends BaseManager {
   }
 
   /**
+   * `core.search` as an export source: a search's pages and files as one zip
+   * ({@link searchExportSource}). Like a page, a search is offered to a user
+   * who holds `page-export`, and read as the user who asked, each page and
+   * file by its own read check. Recorded as one `page-export` of the search.
+   */
+  private searchExportSource(): IceExportSource {
+    const source = searchExportSource({
+      engine: this.engine,
+      limits: () => this.exportSettings(),
+      offered: (ctx) => this.mayExportPage(ctx, '', true),
+      mayExportPage: async (ctx, pageName) => (await this.mayExportPage(ctx, pageName, false)) === 'permit',
+      allowed: async (ctx) => {
+        const may = await this.mayExportPage(ctx, '', false);
+        if (may === 'step-up') throw new IceExportNeedsFreshSignIn('page-export');
+        return may === 'permit';
+      },
+      permits: (ctx, permission) => this.permits(ctx, permission)
+    });
+    return {
+      ...source,
+      recordExport: async (_ref: string, ctx: ActorContext, outcome): Promise<void> => {
+        const who = actorOf(ctx);
+        await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
+          eventType: AUDIT_EVENT.PAGE_EXPORT,
+          ...who,
+          action: 'page-export',
+          result: outcome.result,
+          severity: ctx.viaToken ? 'medium' : 'low',
+          resource: 'search',
+          resourceType: 'search',
+          ...(outcome.reason ? { reason: outcome.reason } : {}),
+          metadata: { ...who.metadata, items: outcome.items, format: outcome.format, runId: outcome.runId }
+        }, (err) => logger.warn('[ImportManager] the search-export audit record failed:', err));
+      }
+    };
+  }
+
+  /**
    * `core.pages` as an export source (#2120, D5: pages export checks
    * `page-export`). A page is offered for export when its reader may see it
    * and holds `page-export` (affordances, recording nothing). Reading it
@@ -1492,18 +1535,7 @@ class ImportManager extends BaseManager {
         if (typeof pageManager?.readPage !== 'function') return null;
         const read = await pageManager.readPage(ref, ctx);
         if (!read.ok) return null;
-        const metadata = read.metadata;
-        return [{
-          kind: 'ncm',
-          name: read.name,
-          text: read.value.content,
-          metadata: {
-            title: read.name,
-            ...(metadata.lastModified ? { lastModified: String(metadata.lastModified) } : {}),
-            ...(metadata['system-category'] ? { 'system-category': String(metadata['system-category']) } : {}),
-            ...(Array.isArray(metadata['user-keywords']) ? { 'user-keywords': metadata['user-keywords'] } : {})
-          }
-        }];
+        return [pageItem(read.name, read.value.content, read.metadata)];
       },
       recordExport: async (ref: string, ctx: ActorContext, outcome): Promise<void> => {
         const who = actorOf(ctx);
