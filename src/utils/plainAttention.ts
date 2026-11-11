@@ -15,6 +15,9 @@ export function stagedRestoreNotApplied(what: string): string {
   return `A saved copy of ${what} was not put back when the site started, so what was there before is still in use. Open the Backup page to see what to do next.`;
 }
 
+/** Said where the fix is a setting only the server can change: the app refuses to save it. */
+export const IN_SERVER_SETTINGS = "This is set in the server's settings, outside this page.";
+
 /** A configured folder on a drive that is not connected (`preflightConfiguredPath`). */
 export const UNUSABLE_FOLDER_REASON =
   'The drive or folder this feature keeps its files on is not connected, so it is switched off. Connect the drive again, or choose another folder, then restart the site.';

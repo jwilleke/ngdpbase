@@ -14,7 +14,7 @@ Embeds [oidc-auth-server](https://github.com/jwilleke/oidc-auth-server) — a ha
 
 `oidc-auth-server.enabled` (default `false`). Off, the package is never imported and `/oidc` does not exist. The manager is still registered and reports `disabled`, so "off" is visible rather than absent (#1155).
 
-On, it needs `ngdpbase.application.base-url` set explicitly — https, or http on localhost. Otherwise it reports `degraded`, names the key, and mounts nothing. The same holds for any configuration the package refuses.
+On, it needs `ngdpbase.application.base-url` set explicitly — https, or http on localhost. Otherwise it reports `degraded`, says the address is set in the server's settings, and mounts nothing. The same holds for any configuration the package refuses.
 
 ## What ngdpbase decides
 
