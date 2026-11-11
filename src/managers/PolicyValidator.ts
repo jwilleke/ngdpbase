@@ -6,7 +6,7 @@ import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import { combiningAlgorithmProblem, readDeclaredAsWritten, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, subjectAttributesProblems } from '../utils/policyAttributes.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
-import { conditionProblems, declaredResourceTypes, SUBJECT_MATCHERS, VALUELESS_SUBJECT_TYPES } from './PolicyEvaluator.js';
+import { conditionAttributeSource, conditionProblems, declaredResourceTypes, SUBJECT_MATCHERS, VALUELESS_SUBJECT_TYPES } from './PolicyEvaluator.js';
 
 // CJS/ESM interop: Ajv lacks "exports" field; NodeNext treats default import as module namespace.
 // Cast to a constructable/callable type to work around NodeNext namespace typing restrictions.
@@ -440,7 +440,10 @@ class PolicyValidator extends BaseManager {
       const schema = this.schemaValidatorCompiled && !this.schemaValidatorCompiled(policy)
         ? this.formatSchemaErrors(this.schemaValidatorCompiled.errors || []).map((e) => `${e.field} ${e.message}`.trim())
         : [];
-      const condition = policy && typeof policy === 'object' ? conditionProblems((policy as { condition?: unknown }).condition, resourceTypes?.page?.attributes ?? {}, subjectAttributes, environmentAttributes) : [];
+      const source = policy && typeof policy === 'object'
+        ? conditionAttributeSource((policy as { resources?: { type?: string }[] }).resources, resourceTypes)
+        : { attributes: resourceTypes?.page?.attributes ?? {}, label: 'page' };
+      const condition = policy && typeof policy === 'object' ? conditionProblems((policy as { condition?: unknown }).condition, source.attributes, subjectAttributes, environmentAttributes, source.label) : [];
       const actions = Array.isArray((policy as { actions?: unknown } | null)?.actions) ? (policy as { actions: unknown[] }).actions : [];
       const unknown = actions.filter((a) => typeof a === 'string' && a !== '*' && !Object.prototype.hasOwnProperty.call(definitions, a))
         .map((a) => `action '${String(a)}' is not a defined permission; use a name from ngdpbase.permissions.definitions (add-on permissions included), or '*'`);
@@ -576,7 +579,8 @@ class PolicyValidator extends BaseManager {
     const resourceTypes = this.configManager?.getProperty('ngdpbase.access.resource-types', null) as Record<string, { attributes?: Record<string, { type?: string }> }> | null;
     const subjectAttributes = declaredSubjectAttributes(readDeclaredAsWritten(this.configManager, 'ngdpbase.access.subject-attributes'));
     const environmentAttributes = declaredEnvironmentAttributes(readDeclaredAsWritten(this.configManager, 'ngdpbase.access.environment-attributes'));
-    for (const message of conditionProblems((policy as { condition?: unknown }).condition, resourceTypes?.page?.attributes ?? {}, subjectAttributes, environmentAttributes)) {
+    const source = conditionAttributeSource(policy.resources, resourceTypes);
+    for (const message of conditionProblems((policy as { condition?: unknown }).condition, source.attributes, subjectAttributes, environmentAttributes, source.label)) {
       errors.push({ type: 'semantic', field: 'condition', message });
     }
 

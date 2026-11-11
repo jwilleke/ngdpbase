@@ -53,6 +53,8 @@ import type { IceReceiver, IceShim } from '../ice/types.js';
 import type { AddonReviews, ReviewHandler } from '../types/Review.js';
 import { declareAddonSignedOutWrite, type SignedOutWriteRoute } from '../security/signedOutWrites.js';
 import type { AddonManifest } from '../managers/AddonsManager.js';
+import type { Decision } from '../types/Policy.js';
+import type { OwnedListAsk, OwnedListDecision, OwnedRecordAsk } from '../security/ownedRecords.js';
 
 /** The values core offers an add-on, under the names they were imported as. */
 export interface AddonHost {
@@ -133,6 +135,17 @@ export interface AddonHost {
    * own permission through `ApiContext.requirePermission`.
    */
   readonly allowSignedOutWrite: (route: SignedOutWriteRoute) => void;
+  /**
+   * #1823: decisions for this add-on's own records. `decide` is one stored
+   * row; `list` is the filter for a list. The resource type must start with
+   * this add-on's slug. The manager reads `owner` from the row it stored and
+   * passes that, then hands a deny to `ApiContext.enforceDeny` with the
+   * resource so the refusal is audited. This records nothing itself.
+   */
+  readonly access: {
+    decide(subject: ActorContext, request: OwnedRecordAsk): Promise<Decision>;
+    list(subject: ActorContext, request: OwnedListAsk): Promise<OwnedListDecision>;
+  };
   /**
    * #1979 (ICE, D6): register an import shim, as `<slug>.<shim.name>`. Call it
    * in `register`. Refused when the manifest's `shims` does not name it.
@@ -252,6 +265,41 @@ export function buildAddonHost(
   };
   Object.freeze(reviews);
 
+  const recordDoor = (): {
+    decideOwnedRecord(subject: ActorContext, request: OwnedRecordAsk): Promise<Decision>;
+    decideOwnedList(subject: ActorContext, request: OwnedListAsk): Promise<OwnedListDecision>;
+  } => {
+    const door = engine?.getManager('PolicyDecisionPoint') as {
+      decideOwnedRecord?: (subject: ActorContext, request: OwnedRecordAsk) => Promise<Decision>;
+      decideOwnedList?: (subject: ActorContext, request: OwnedListAsk) => Promise<OwnedListDecision>;
+    } | null | undefined;
+    if (typeof door?.decideOwnedRecord !== 'function' || typeof door.decideOwnedList !== 'function') {
+      throw new Error('record access is not available: this host was built without a site\'s PolicyDecisionPoint');
+    }
+    return door as {
+      decideOwnedRecord(subject: ActorContext, request: OwnedRecordAsk): Promise<Decision>;
+      decideOwnedList(subject: ActorContext, request: OwnedListAsk): Promise<OwnedListDecision>;
+    };
+  };
+  const ownType = (type: unknown): void => {
+    if (typeof type !== 'string' || !type.startsWith(`${slug}-`)) {
+      const message = `Add-on '${slug}' may decide only its own resource types: a type starts '${slug}-'; '${String(type)}' does not`;
+      logger.error(`[addons] ${message}`);
+      throw new Error(message);
+    }
+  };
+  const access: AddonHost['access'] = {
+    decide: async (subject, request) => {
+      ownType(request?.resource?.type);
+      return recordDoor().decideOwnedRecord(subject, request);
+    },
+    list: async (subject, request) => {
+      ownType(request?.resource?.type);
+      return recordDoor().decideOwnedList(subject, request);
+    }
+  };
+  Object.freeze(access);
+
   const hostAddonAuditEventName: typeof addonAuditEventName = (name) => {
     const checked = addonAuditEventName(name);
     refuseUndeclared(slug, name, declared);
@@ -287,6 +335,7 @@ export function buildAddonHost(
     keyedSerial: () => new KeyedSerial(),
     reviews,
     registerReviewHandler: (handlerId: string, handler: ReviewHandler) => reviewDoor().registerHandler(slug, handlerId, handler),
-    allowSignedOutWrite: (route: SignedOutWriteRoute) => declareAddonSignedOutWrite(slug, route)
+    allowSignedOutWrite: (route: SignedOutWriteRoute) => declareAddonSignedOutWrite(slug, route),
+    access
   });
 }

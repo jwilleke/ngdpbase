@@ -346,6 +346,61 @@ export interface AddonJobPolicyLayer {
  * `<slug>.`, the prefix its job ids carry. Only an enabled addon's policies
  * reach the merge, so only an enabled addon is checked.
  */
+const RESOURCE_TYPES_KEY = 'ngdpbase.access.resource-types';
+const ATTRIBUTE_TYPES = new Set(['string', 'integer', 'boolean', 'identity', 'list']);
+
+/**
+ * An add-on's resource types (#1823). Each name starts with `<slug>-`, the
+ * same fence as its jobs and its ledger tables. `owner`, when declared, is
+ * an identity @id. A bad declaration refuses the add-on, so none of its keys
+ * merge. A turned-off add-on is not checked: its file is not merged.
+ */
+export function addonResourceTypeProblems(slug: string, defaults: Record<string, unknown>): string[] {
+  const types = defaults[RESOURCE_TYPES_KEY];
+  if (types === undefined) return [];
+  if (!isPlainObject(types)) return [`${RESOURCE_TYPES_KEY} must be an object of resource types`];
+  const problems: string[] = [];
+  const prefix = `${slug}-`;
+  for (const [name, entry] of Object.entries(types)) {
+    if (!name.startsWith(prefix) || name.length === prefix.length) {
+      problems.push(`resource type '${name}' must start with '${prefix}'`);
+      continue;
+    }
+    if (!isPlainObject(entry)) {
+      problems.push(`resource type '${name}' must be an object`);
+      continue;
+    }
+    if (entry.attributes === undefined) continue;
+    if (!isPlainObject(entry.attributes)) {
+      problems.push(`resource type '${name}' attributes must be an object`);
+      continue;
+    }
+    for (const [attr, decl] of Object.entries(entry.attributes)) {
+      if (!isPlainObject(decl) || typeof decl.type !== 'string' || !ATTRIBUTE_TYPES.has(decl.type)) {
+        problems.push(`resource type '${name}' attribute '${attr}' needs a type of string, integer, boolean, identity or list`);
+        continue;
+      }
+      if (attr === 'owner' && decl.type !== 'identity') {
+        problems.push(`resource type '${name}' attribute owner must be { "type": "identity" }, the owner's identity @id`);
+      }
+    }
+  }
+  return problems;
+}
+
+export function addonResourceTypeLayer(addons: readonly AddonDefaults[]): AddonJobPolicyLayer {
+  const layer: AddonJobPolicyLayer = { refused: new Map(), problems: [] };
+  for (const addon of addons) {
+    if (!addon.enabled) continue;
+    const found = addonResourceTypeProblems(addon.slug, addon.defaults);
+    if (found.length === 0) continue;
+    const reason = `its resource types were refused: ${found.join('; ')}`;
+    layer.refused.set(addon.slug, reason);
+    layer.problems.push(`${addonProblemSubject(addon.slug, addon.enabled)}: ${reason}; the add-on is not loaded`);
+  }
+  return layer;
+}
+
 export function addonJobPolicyLayer(addons: readonly AddonDefaults[]): AddonJobPolicyLayer {
   const layer: AddonJobPolicyLayer = { refused: new Map(), problems: [] };
   for (const addon of addons) {
@@ -465,9 +520,10 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
   const criticalLayer = addonSiteCriticalLayer(addons, custom);
   const sensitiveLayer = addonSensitiveValuesLayer(addons);
   const jobPolicyLayer = addonJobPolicyLayer(addons);
+  const resourceTypeLayer = addonResourceTypeLayer(addons);
   const siteCritical = criticalLayer.siteCritical;
   const refused = new Map(layer.refused);
-  for (const [slug, reason] of [...databaseLayer.refused, ...criticalLayer.refused, ...sensitiveLayer.refused, ...jobPolicyLayer.refused]) refused.set(slug, refused.has(slug) ? `${refused.get(slug)}; ${reason}` : reason);
+  for (const [slug, reason] of [...databaseLayer.refused, ...criticalLayer.refused, ...sensitiveLayer.refused, ...jobPolicyLayer.refused, ...resourceTypeLayer.refused]) refused.set(slug, refused.has(slug) ? `${refused.get(slug)}; ${reason}` : reason);
   const databases = databaseLayer.declarations.map((d) => ({ ...d, enabled: d.enabled && !refused.has(d.declaredBy) }));
   const withAddons = addons
     .filter((a) => a.enabled && !refused.has(a.slug))
@@ -478,14 +534,14 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
       return deepMergeObjects(acc, rest);
     }, shipped);
   if (Object.keys(layer.entries).length === 0) {
-    return { merged: deepMergeConfigs(withAddons as T, custom), problems: [...layer.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems, ...jobPolicyLayer.problems], refused, databases, siteCritical };
+    return { merged: deepMergeConfigs(withAddons as T, custom), problems: [...layer.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems, ...jobPolicyLayer.problems, ...resourceTypeLayer.problems], refused, databases, siteCritical };
   }
   const shippedCategories = isPlainObject(withAddons[SYSTEM_CATEGORY_KEY]) ? withAddons[SYSTEM_CATEGORY_KEY] : {};
   const layered = { ...withAddons, [SYSTEM_CATEGORY_KEY]: deepMergeObjects(shippedCategories, layer.entries) };
   const merged = deepMergeObjects(layered, custom);
   const stood = ownerDeclarationsStand(merged[SYSTEM_CATEGORY_KEY], layer, customCategories);
   merged[SYSTEM_CATEGORY_KEY] = stood.categories;
-  return { merged: merged as T, problems: [...layer.problems, ...stood.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems, ...jobPolicyLayer.problems], refused, databases, siteCritical };
+  return { merged: merged as T, problems: [...layer.problems, ...stood.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems, ...jobPolicyLayer.problems, ...resourceTypeLayer.problems], refused, databases, siteCritical };
 }
 
 /**

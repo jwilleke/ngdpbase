@@ -2856,7 +2856,7 @@
   "ngdpbase.access.rule-combining-algorithm": "deny-overrides",
   "ngdpbase.access.policies.default-policy": "deny",
   "ngdpbase.access.policies.enabled": true,
-  "_comment_access_resource_types": "Policy resource types (#1504, docs/access-policies.md): the kinds of thing a policy's resources may name. Declared once here and read through ConfigurationManager; the policy evaluator holds one matcher per type, and a type with no matcher, or not declared, never matches.",
+  "_comment_access_resource_types": "Policy resource types (#1504, docs/access-policies.md): the kinds of thing a policy's resources may name. Declared once here and read through ConfigurationManager. The evaluator holds one matcher per core type (page, system-category, vault, shared-folder). A type an add-on declares is matched by id only when a record of that type is decided (#1823); a page decision does not use it. A type that is not declared never matches.",
   "ngdpbase.access.resource-types": {
     "page": {
       "description": "A page, matched by its name (glob pattern). Its attributes are what a policy's condition may read as resource:<name> (an attributeid in a condition), each read by the PIP from its source (#2255): owner is the page's author",

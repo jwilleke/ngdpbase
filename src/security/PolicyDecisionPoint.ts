@@ -47,6 +47,9 @@ import { formatPrivatePageName, parsePrivatePageName } from '../utils/privateSto
 import { RETIRED_PERMISSIONS, withRetiredExpanded } from '../utils/permissionCatalog.js';
 import { mixesProxyWithDelegation } from '../utils/proxyClaim.js';
 import { actorOf, decisionSubject, isJobContext, type ActorContext } from '../context/ActorContext.js';
+import { systemContext } from '../context/bootActions.js';
+import { RESOURCE_MATCHERS } from '../managers/PolicyEvaluator.js';
+import { OwnedRecordError, ownerDeclarationProblem, type OwnedListAsk, type OwnedListDecision, type OwnedRecordAsk, type OwnedRecordFilter } from './ownedRecords.js';
 import { pageWriteAlternatives } from '../utils/permissionCatalog.js';
 import type { PageAttributes, SubjectFacts } from './PolicyInformationPoint.js';
 import { aalFactsOf } from '../utils/policyAttributes.js';
@@ -90,6 +93,18 @@ interface PolicyEvaluatorLike {
     attributes?: Record<string, unknown>;
     readAttribute?: (name: string) => unknown;
   }): Promise<EvaluationLike>;
+  evaluateDeclaredResource?(request: {
+    resourceType: string;
+    id: string;
+    action: string;
+    userContext?: { username: string; roles: string[]; isAuthenticated: boolean; job?: string };
+    readAttribute?: (name: string) => unknown;
+  }): Promise<EvaluationLike>;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
 }
 
 export class PolicyDecisionPoint extends BaseManager {
@@ -771,6 +786,237 @@ export class PolicyDecisionPoint extends BaseManager {
    * with `pushed-pages-edit` to leave pushed pages out. A summary of the
    * policies, never an answer to "may this subject".
    */
+  /**
+   * May this subject act on one stored add-on record (#1823)?
+   *
+   * The manager passes attributes it read from the row. `owner` is the
+   * identity @id. A type that declares `owner` is allowed only when that @id
+   * is the subject's (the person a proxy grant represents, not the actor),
+   * and policy also allows the action. A role does not bypass the owner. A
+   * type with no `owner` is policy alone. A core type (`page`, `vault`, …)
+   * is not decided here. Missing data throws {@link OwnedRecordError}; the
+   * caller fails closed. This records nothing.
+   */
+  async decideOwnedRecord(input: DecisionInput, request: OwnedRecordAsk): Promise<Decision> {
+    // A policy glob cannot cover an id its own matcher rejects (empty, '.', '..', a line
+    // break), nor one with a path separator, so a deny on the type would not reach it. Test with
+    // the matcher and options PolicyEvaluator.namesDeclaredType uses (PR #2324 review, M2).
+    const id = request.resource.id;
+    if (typeof id !== 'string' || id.includes('/') || !micromatch.isMatch(id, '*', { dot: true }) || !micromatch.isMatch(id, '**', { dot: true })) throw new OwnedRecordError(`record id '${String(id)}' cannot be decided: it must be non-empty, contain no '/', no line break, and not be '.' or '..'`);
+    const prepared = await this.prepareOwned(input, request.action, request.resource.type);
+    if ('decision' in prepared) return prepared.decision;
+    const { subject, userContext } = prepared;
+    const entry = prepared.entry;
+    if (this.typeDeclaresOwner(entry)) {
+      const owner = this.storedOwner(request.resource.type, request.resource.attributes);
+      const mismatch = await this.ownerMismatch(userContext, owner);
+      if (mismatch) return mismatch;
+    }
+    const typeResult = await this.ownedTypeResult(request.resource.type, id, request.action, userContext, subject, request.resource.attributes ?? {});
+    if (typeResult.hasDecision && !typeResult.allowed) return this.decisionFrom(typeResult, false);
+    // Deny overrides allow across both forms: a deny written on `page *` or
+    // with no resources refuses a type allow too (PR #2324 review, M1).
+    const capability = await this.decide(input, { action: request.action });
+    if (!capability.permit && capability.applicable) return capability;
+    if (typeResult.hasDecision && typeResult.allowed) {
+      if (this.stepUpRefuses(subject, request.action)) return { permit: false, applicable: true, reason: STEP_UP_REASON, policyIds: [] };
+      return this.decisionFrom(typeResult, true);
+    }
+    return capability;
+  }
+
+  /**
+   * May this subject list a type, and which rows (#1823)?
+   *
+   * An allow for a type that declares `owner` carries one filter, `owner`
+   * equals the subject's identity @id. The manager binds that value; it is
+   * not SQL. An allow for a type with no owner carries an empty filter: policy
+   * alone, no row constraint. A refusal is `{ decision: 'deny' }`, never an
+   * empty filter and never an empty row set from this method. Missing data
+   * throws {@link OwnedRecordError}. This records nothing: the list is logged
+   * once by the manager that applies it.
+   */
+  async decideOwnedList(input: DecisionInput, request: OwnedListAsk): Promise<OwnedListDecision> {
+    const prepared = await this.prepareOwned(input, request.action, request.resource.type);
+    if ('decision' in prepared) return { decision: 'deny', reason: prepared.decision.reason, policyIds: prepared.decision.policyIds };
+    const { subject, userContext, entry } = prepared;
+    let ownerFilter: readonly OwnedRecordFilter[] = [];
+    if (this.typeDeclaresOwner(entry)) {
+      const who = await this.subjectOwnerId(userContext);
+      if (who.deny) return { decision: 'deny', reason: who.deny.reason, policyIds: who.deny.policyIds };
+      ownerFilter = [{ attribute: 'owner', operator: 'equals', values: [who.id] }];
+    }
+    const typeResult = await this.ownedTypeResult(request.resource.type, '*', request.action, userContext, subject, {});
+    if (typeResult.hasDecision && !typeResult.allowed) {
+      return { decision: 'deny', reason: typeResult.policyName ?? typeResult.reason ?? 'policy_deny', policyIds: typeResult.policyIds ?? [] };
+    }
+    // Deny overrides allow across both forms (PR #2324 review, M1).
+    const typeAllows = typeResult.hasDecision && typeResult.allowed;
+    const capability = await this.decide(input, { action: request.action });
+    if (!capability.permit && (capability.applicable || !typeAllows)) {
+      return { decision: 'deny', reason: capability.reason, policyIds: capability.policyIds };
+    }
+    if (typeAllows && this.stepUpRefuses(subject, request.action)) {
+      return { decision: 'deny', reason: STEP_UP_REASON, policyIds: [] };
+    }
+    return { decision: 'allow', filter: ownerFilter };
+  }
+
+  /**
+   * The ceilings, the declared type, and a reader for conditions. A ceiling
+   * denial is the whole answer. Anything that cannot be decided throws.
+   */
+  private async prepareOwned(
+    input: DecisionInput,
+    action: string,
+    type: string
+  ): Promise<{ subject: PermissionSubject | JobSubject | null; userContext: { username: string; roles: string[]; isAuthenticated: boolean; job?: string }; entry: { attributes?: Record<string, { type?: string }> } } | { decision: Decision }> {
+    if (typeof type !== 'string' || type === '') throw new OwnedRecordError('a record decision needs a resource type');
+    if (Object.hasOwn(RESOURCE_MATCHERS, type)) throw new OwnedRecordError(`resource type '${type}' is decided by its own door`);
+    const entry = this.ownedTypeEntry(type);
+    const subject = decisionSubject(input) ?? null;
+    // A share delegates pages and assets, never an add-on's records, and its
+    // resources say nothing about them (PR #2324 review, M4).
+    if (subject?.viaShare) return { decision: { permit: false, applicable: true, reason: 'share_resource_deny', policyIds: [] } };
+    const ceiling = await this.ceiling(subject, { action, resource: { type, id: '*' } });
+    if (ceiling && !ceiling.permit) return { decision: ceiling };
+    const userContext = await this.ownedUserContext(subject);
+    if ('decision' in userContext) return userContext;
+    return { subject, userContext: userContext.userContext, entry };
+  }
+
+  private ownedTypeEntry(type: string): { attributes?: Record<string, { type?: string }> } {
+    const types = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.access.resource-types', null);
+    const map = asRecord(types);
+    const entry = map ? asRecord(map[type]) : null;
+    if (!map || !Object.hasOwn(map, type) || !entry) {
+      throw new OwnedRecordError(`resource type '${type}' is not declared in ngdpbase.access.resource-types`);
+    }
+    if (entry.attributes === undefined) return {};
+    // A malformed owner declaration must not make an owner type policy-alone (PR #2324 review, M3).
+    const ownerProblem = ownerDeclarationProblem(type, entry);
+    if (ownerProblem) throw new OwnedRecordError(ownerProblem);
+    const declared = asRecord(entry.attributes);
+    if (!declared) throw new OwnedRecordError(`resource type '${type}' has attributes that cannot be read`);
+    const attributes: Record<string, { type?: string }> = {};
+    for (const name of Object.keys(declared)) {
+      const decl = asRecord(declared[name]);
+      if (decl && typeof decl.type === 'string') attributes[name] = { type: decl.type };
+    }
+    return { attributes };
+  }
+
+  private typeDeclaresOwner(entry: { attributes?: Record<string, { type?: string }> }): boolean {
+    const owner = entry.attributes?.owner;
+    if (!owner) return false;
+    if (owner.type !== 'identity') throw new OwnedRecordError('owner is declared but not as an identity @id');
+    return true;
+  }
+
+  /** The owner the manager read. Missing on an owner-typed record cannot be decided. */
+  private storedOwner(type: string, attributes: Record<string, unknown> | undefined): string {
+    const owner = attributes?.owner;
+    if (typeof owner !== 'string' || owner === '') {
+      throw new OwnedRecordError(`resource type '${type}' declares owner, and the stored row has none`);
+    }
+    return owner;
+  }
+
+  private async ownerMismatch(
+    userContext: { username: string; roles: string[]; isAuthenticated: boolean; job?: string },
+    owner: string
+  ): Promise<Decision | null> {
+    const who = await this.subjectOwnerId(userContext);
+    if (who.deny) return who.deny;
+    if (who.id === owner) return null;
+    return { permit: false, applicable: true, reason: 'not-the-owner', policyIds: [] };
+  }
+
+  /** The subject's identity @id, or a denial when nobody is signed in. A signed-in subject with no identity cannot be decided. */
+  private async subjectOwnerId(
+    userContext: { username: string; roles: string[]; isAuthenticated: boolean; job?: string }
+  ): Promise<{ id: string; deny?: undefined } | { id?: undefined; deny: Decision }> {
+    if (userContext.isAuthenticated !== true || typeof userContext.job === 'string' || userContext.username === '' || userContext.username === 'anonymous') {
+      return { deny: { permit: false, applicable: true, reason: 'not-the-owner', policyIds: [] } };
+    }
+    const identities = this.engine.getManager<{ identityIdOf?(ctx: ActorContext, username: string): Promise<string | null> }>('IdentityManager');
+    if (typeof identities?.identityIdOf !== 'function') {
+      throw new OwnedRecordError('IdentityManager is not available, so the owner cannot be decided');
+    }
+    const id = await identities.identityIdOf(systemContext(this.engine, 'decide an add-on record: the subject identity @id (#1823)'), userContext.username);
+    if (typeof id !== 'string' || id === '') {
+      throw new OwnedRecordError(`no identity @id for '${userContext.username}', so the owner cannot be decided`);
+    }
+    return { id };
+  }
+
+  private async ownedUserContext(
+    subject: PermissionSubject | JobSubject | null
+  ): Promise<{ userContext: { username: string; roles: string[]; isAuthenticated: boolean; job?: string } } | { decision: Decision }> {
+    if (typeof subject === 'object' && subject !== null && 'resolveRolesNow' in subject) {
+      const pip = this.informationPoint();
+      if (!pip) return { decision: { permit: false, applicable: false, reason: 'no_information_point', policyIds: [] } };
+      const resolved = await (subject.job ? pip.resolveSubjectNow(subject.username, subject.job) : pip.resolveSubjectNow(subject.username));
+      return { userContext: resolved };
+    }
+    if (subject) return { userContext: { username: subject.username, roles: subject.roles, isAuthenticated: subject.isAuthenticated } };
+    return { userContext: { ...ANONYMOUS_SUBJECT } };
+  }
+
+  /**
+   * Condition values (#1823). A `resource:` attribute is the value the manager
+   * read from the stored row, never a request field. Subject and environment
+   * attributes come from the PIP.
+   */
+  private ownedReader(
+    subject: PermissionSubject | JobSubject | null,
+    userContext: { username: string; roles: string[]; isAuthenticated: boolean },
+    stored: Record<string, unknown>
+  ): (name: string) => unknown {
+    const pip = this.informationPoint();
+    const facts = { ...aalFactsOf(subject), username: userContext.username, isAuthenticated: userContext.isAuthenticated };
+    const reads = new Map<string, unknown>();
+    const environment = pip?.environmentReader?.();
+    return (name: string): unknown => {
+      if (name.startsWith('resource:')) {
+        const key = name.slice('resource:'.length);
+        return Object.hasOwn(stored, key) ? stored[key] : undefined;
+      }
+      if (name.startsWith('environment:')) return environment?.(name);
+      if (!reads.has(name)) reads.set(name, pip?.subjectAttribute?.(facts, name));
+      return reads.get(name);
+    };
+  }
+
+  private async ownedTypeResult(
+    type: string,
+    id: string,
+    action: string,
+    userContext: { username: string; roles: string[]; isAuthenticated: boolean; job?: string },
+    subject: PermissionSubject | JobSubject | null,
+    stored: Record<string, unknown>
+  ): Promise<EvaluationLike> {
+    const evaluator = this.engine.getManager<PolicyEvaluatorLike>('PolicyEvaluator');
+    if (!evaluator?.evaluateDeclaredResource) throw new OwnedRecordError('PolicyEvaluator is not available, so the record cannot be decided');
+    return evaluator.evaluateDeclaredResource({
+      resourceType: type,
+      id,
+      action,
+      userContext,
+      readAttribute: this.ownedReader(subject, userContext, stored)
+    });
+  }
+
+  private decisionFrom(result: EvaluationLike, allowed: boolean): Decision {
+    return {
+      permit: allowed,
+      applicable: result.hasDecision !== false,
+      reason: result.policyName ?? result.reason ?? (allowed ? 'policy_allow' : 'policy_deny'),
+      policyIds: result.policyIds ?? [],
+      ...(result.conditionNotMet?.length ? { conditionNotMet: result.conditionNotMet } : {})
+    };
+  }
+
   categoriesGranting(action: string): string[] {
     const policies = this.policies().filter((p) => p.effect !== 'deny' && (p.actions ?? []).some((a) => a === action || a === '*'));
     return this.declaredCategories().filter((category) => policies.some((p) =>

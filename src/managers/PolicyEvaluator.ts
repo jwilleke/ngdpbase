@@ -13,6 +13,7 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { pageWritePolicyFindings } from '../utils/pageWritePolicies.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
+import { ownerDeclarationProblem } from '../security/ownedRecords.js';
 
 /**
  * User context for policy evaluation
@@ -92,13 +93,14 @@ function attributeIds(args: unknown[]): Array<string | null> {
  * `datatype`); `datatype` is required, must be the type the attribute is declared with
  * and the type the function takes. Each attribute must be declared: a
  * `subject:<name>` in `ngdpbase.access.subject-attributes` (`id` always, `aal`
- * as shipped), or a `resource:<name>` declared on the `page` resource type, or
- * an `environment:<name>` in `ngdpbase.access.environment-attributes`. The old
+ * as shipped), or a `resource:<name>` declared on the resource type the policy names (the
+ * `page` type when it names a page, or that add-on's type when it names only
+ * that type, #1823), or an `environment:<name>` in `ngdpbase.access.environment-attributes`. The old
  * shape (`attribute` with `equals` and the like) is a problem that shows the
  * new one. A condition with a problem never holds: an allow with it does not
  * apply and a deny with it does, as for a missing attribute.
  */
-export function conditionProblems(condition: unknown, pageAttributes: Record<string, { type?: string }>, subjectAttributes: Record<string, DeclaredSubjectAttribute> = declaredSubjectAttributes(null), environmentAttributes: Record<string, DeclaredEnvironmentAttribute> = {}): string[] {
+export function conditionProblems(condition: unknown, pageAttributes: Record<string, { type?: string }>, subjectAttributes: Record<string, DeclaredSubjectAttribute> = declaredSubjectAttributes(null), environmentAttributes: Record<string, DeclaredEnvironmentAttribute> = {}, resourceTypeLabel = 'page'): string[] {
   if (condition === undefined) return [];
   const typeOf = (name: string): string | null => attributeTypeOf(name, pageAttributes, subjectAttributes, environmentAttributes);
   // A subject attribute that is declared but cannot be read (a bad `from`, a field that is never readable) is a problem in its own right.
@@ -110,7 +112,7 @@ export function conditionProblems(condition: unknown, pageAttributes: Record<str
   };
   const undeclared = (name: string): string => {
     const where = name.startsWith('resource:')
-      ? 'declare it on the page resource type in ngdpbase.access.resource-types'
+      ? `declare it on the ${resourceTypeLabel} resource type in ngdpbase.access.resource-types`
       : name.startsWith('subject:')
         ? 'add it to ngdpbase.access.subject-attributes'
         : 'add it to ngdpbase.access.environment-attributes';
@@ -376,6 +378,26 @@ export const VALUELESS_SUBJECT_TYPES: readonly string[] = ['authenticated', 'any
 const RESOURCE_TYPES_KEY = 'ngdpbase.access.resource-types';
 
 /**
+ * Which resource attributes a policy's condition may read (#1823).
+ *
+ * A policy that names exactly one add-on type (no page matcher) uses that
+ * type's attributes. A policy on a core type, including `system-category`,
+ * still reads the `page` attributes: those conditions are about the page.
+ */
+export function conditionAttributeSource(
+  resources: readonly { type?: string }[] | undefined,
+  types: Record<string, { attributes?: Record<string, { type?: string }> }> | null
+): { attributes: Record<string, { type?: string }>; label: string } {
+  const named = [...new Set((resources ?? []).map((r) => r?.type).filter((t): t is string => typeof t === 'string' && t.length > 0))];
+  if (named.length === 1 && !Object.hasOwn(RESOURCE_MATCHERS, named[0]) && types && Object.hasOwn(types, named[0])) {
+    const attributes = types[named[0]]?.attributes;
+    return { attributes: attributes && typeof attributes === 'object' ? attributes : {}, label: named[0] };
+  }
+  const page = types?.page?.attributes;
+  return { attributes: page && typeof page === 'object' ? page : {}, label: 'page' };
+}
+
+/**
  * The resource types configuration declares (#1504), for the evaluator and the
  * validator alike. When the key is not set at all — a configuration older than
  * it — the matchers' own types apply, so an older site keeps deciding as it
@@ -493,8 +515,14 @@ class PolicyEvaluator extends BaseManager {
     if (!declared || typeof declared !== 'object') {
       logger.warn(`[POLICY] ${RESOURCE_TYPES_KEY} is not set; policies use the evaluator's own resource types (${Object.keys(RESOURCE_MATCHERS).join(', ')})`);
     } else {
+      // #1823 (PR #2324 review, M3): the merged declaration, app-custom-config.json
+      // included. A malformed owner would make an owner type policy-alone, so the site does not start.
+      const ownerProblems = Object.entries(declared).map(([type, entry]) => ownerDeclarationProblem(type, entry)).filter((p): p is string => p !== null);
+      if (ownerProblems.length > 0) throw new Error(`${RESOURCE_TYPES_KEY}: ${ownerProblems.join('; ')}`);
       for (const type of Object.keys(declared)) {
-        if (!RESOURCE_MATCHERS[type]) logger.warn(`[POLICY] resource type '${type}' is declared but nothing matches it; a policy naming it never matches`);
+        // #1823: an add-on's type has no page matcher. It matches by id only
+        // when a record of that type is decided, so a page decision never sees it.
+        if (!RESOURCE_MATCHERS[type]) logger.info(`[POLICY] resource type '${type}' matches by id on an add-on record decision (#1823); a page decision does not use it`);
       }
       for (const type of Object.keys(RESOURCE_MATCHERS)) {
         if (!(type in declared)) logger.warn(`[POLICY] resource type '${type}' is not declared in ${RESOURCE_TYPES_KEY}; a policy naming it never matches`);
@@ -610,16 +638,57 @@ class PolicyEvaluator extends BaseManager {
    * Checks and compiles each policy's condition (#2261). `prepared()` keeps
    * the result until the configuration changes (#2279).
    */
-  private prepare(policies: readonly Policy[]): PreparedPolicy[] {
+  private prepare(policies: readonly Policy[], attributes?: Record<string, { type?: string }>, label = 'page'): PreparedPolicy[] {
     const conditional = policies.some((p) => p.condition !== undefined);
-    const declared = conditional ? this.declaredPageAttributes() : {};
+    const declared = attributes ?? (conditional ? this.declaredPageAttributes() : {});
     const subjects = conditional ? this.declaredSubjectAttributes() : {};
     const environment = conditional ? this.declaredEnvironmentAttributes() : {};
     return policies.map((policy) => {
       if (policy.condition === undefined) return { policy, invalid: false };
-      if (conditionProblems(policy.condition, declared, subjects, environment).length > 0) return { policy, invalid: true };
+      if (conditionProblems(policy.condition, declared, subjects, environment, label).length > 0) return { policy, invalid: true };
       return { policy, invalid: false, condition: compileCondition(policy.condition, (name) => attributeTypeOf(name, declared, subjects, environment)) };
     });
+  }
+
+  /**
+   * Decide one add-on record type by id (#1823).
+   *
+   * Only policies that name this type are considered, and a policy with no
+   * resources does not match: a page grant cannot cover the type, and a
+   * blanket policy cannot either. The id is matched with the same globs as a
+   * page name, a leading dot included. A core type (`page`, `system-category`, `vault`,
+   * `shared-folder`) is not decided here.
+   */
+  async evaluateDeclaredResource(context: {
+    resourceType: string;
+    id: string;
+    action: string;
+    actions?: readonly string[];
+    userContext?: UserContext;
+    readAttribute?: AttributeReader;
+  }): Promise<EvaluationResult> {
+    if (!this.configManager) return { ...NO_POLICY, reason: 'PolicyEvaluator not initialized' };
+    if (Object.hasOwn(RESOURCE_MATCHERS, context.resourceType)) return { ...NO_POLICY, reason: `resource type '${context.resourceType}' is decided by its own door` };
+    const declared = declaredResourceTypes((key, def) => this.configManager!.getProperty(key, def));
+    if (!declared.has(context.resourceType)) return { ...NO_POLICY, reason: `resource type '${context.resourceType}' is not declared` };
+    const actions = context.actions ?? [context.action];
+    const matching = this.policies().filter((policy) =>
+      this.matchesSubject(policy.subjects, context.userContext)
+      && actions.some((a) => this.matchesAction(policy.actions, a))
+      && this.namesDeclaredType(policy.resources, context.resourceType, context.id));
+    const forType = conditionAttributeSource([{ type: context.resourceType }], this.resourceTypeMap());
+    return this.combine(this.prepare(matching, forType.attributes, forType.label), context.readAttribute);
+  }
+
+  /** True when a policy resource names this type and its pattern covers the id. No resources is not a match. */
+  private namesDeclaredType(resources: PolicyResource[] | undefined, type: string, id: string): boolean {
+    if (!resources || resources.length === 0) return false;
+    return resources.some((r) => r.type === type && typeof r.pattern === 'string' && micromatch.isMatch(id, r.pattern, { dot: true }));
+  }
+
+  private resourceTypeMap(): Record<string, { attributes?: Record<string, { type?: string }> }> | null {
+    const types = this.configManager?.getProperty(RESOURCE_TYPES_KEY, null);
+    return types && typeof types === 'object' ? types as Record<string, { attributes?: Record<string, { type?: string }> }> : null;
   }
 
   /**
@@ -832,11 +901,14 @@ class PolicyEvaluator extends BaseManager {
 
   /** Each policy in force whose condition has a problem, with the problems (#2255): for the boot warning. */
   conditionProblemsInForce(): Array<{ id: string; effect: Policy['effect']; problems: string[] }> {
-    const declared = this.declaredPageAttributes();
+    const types = this.resourceTypeMap();
     const subjects = this.declaredSubjectAttributes();
     const environment = this.declaredEnvironmentAttributes();
     return this.policies()
-      .map((p) => ({ id: p.id, effect: p.effect, problems: conditionProblems(p.condition, declared, subjects, environment) }))
+      .map((p) => {
+        const source = conditionAttributeSource(p.resources, types);
+        return { id: p.id, effect: p.effect, problems: conditionProblems(p.condition, source.attributes, subjects, environment, source.label) };
+      })
       .filter((r) => r.problems.length > 0);
   }
 
