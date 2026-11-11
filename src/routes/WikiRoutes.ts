@@ -305,9 +305,10 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
-/** Said when an email is saved that another account uses too (#2073, operator 2026-10-25): sharing is allowed, and sign-in by email asks which account. */
-/** Shown on /search to someone who followed an old link to the retired Export screen. */
+/** Shown on /search to a signed-in user who followed an old link to the retired Export screen. */
 const EXPORT_MOVED_NOTICE = 'Exports now start from search results. Search, then choose Export these results.';
+
+/** Said when an email is saved that another account uses too (#2073, operator 2026-10-25): sharing is allowed, and sign-in by email asks which account. */
 const SHARED_EMAIL_NOTE = 'Another account uses this email too. Emailed sign-in links will ask which account.';
 
 /** Said when a user asks to change their email too often (#2073): no link is sent. */
@@ -5676,6 +5677,7 @@ ${panes}
       const pickerKw = await this.getPickerKeywordCatalogs();
       const pickerYears = await this.getPickerYears();
 
+      const canExport = gateContext.userContext?.isAuthenticated === true;
       return res.render('browse-attachments', {
         ...commonData,
         title: 'Search',
@@ -5686,9 +5688,10 @@ ${panes}
         assetPickerInitUntil:   initUntil,
         assetPickerInitFilters: initFilters,
         // Export is for signed-in users only; a visitor is never shown it.
-        assetPickerCanExport:   gateContext.userContext?.isAuthenticated === true,
+        assetPickerCanExport:   canExport,
         // An old /export link lands here with `from=export`; the note is fixed text, never taken from the URL.
-        assetPickerNotice:      firstString(req.query.from) === 'export' ? EXPORT_MOVED_NOTICE : '',
+        // Only a signed-in user is shown it: a visitor has no Export button to be pointed at.
+        assetPickerNotice:      canExport && firstString(req.query.from) === 'export' ? EXPORT_MOVED_NOTICE : '',
         assetPickerUserKeywords:   pickerKw.userKeywords,
         assetPickerSystemKeywords: pickerKw.systemKeywords,
         assetPickerCategories:     pickerKw.categories,

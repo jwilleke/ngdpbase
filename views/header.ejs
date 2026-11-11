@@ -315,6 +315,22 @@
                         <% } %>
 
                         <!-- More Dropdown -->
+                        <%
+                            // #2174: leave the group out when it would have no items (as the mobile menu does with _showPageActions).
+                            const _moreAuthed = typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated;
+                            const _moreJournal = typeof listKind !== 'undefined' && listKind === 'journal' && typeof journalEnabled !== 'undefined' && journalEnabled && _moreAuthed;
+                            const _moreShare = typeof shareEnabled !== 'undefined' && shareEnabled && _moreAuthed && (typeof can === 'function' && can('share-create'))
+                                && typeof metadata !== 'undefined' && metadata && Array.isArray(metadata['user-keywords'])
+                                && metadata['user-keywords'].some(function(k) { return k && k !== 'owner-only'; });
+                            const _morePinUrl = (typeof pageName !== 'undefined' && pageName)
+                                || (typeof currentUrl !== 'undefined' && currentUrl)
+                                || (typeof req !== 'undefined' && req && req.originalUrl);
+                            const _showMore = (typeof pageName !== 'undefined' && pageName)
+                                || (typeof canCreatePage !== 'undefined' && canCreatePage)
+                                || (typeof can === 'function' && can('page-create'))
+                                || _moreJournal || _moreShare || (_moreAuthed && _morePinUrl);
+                        %>
+                        <% if (_showMore) { %>
                         <div class="btn-group" role="group">
                             <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="fas fa-ellipsis-h"></i> More
@@ -426,6 +442,7 @@
                                 <% } %>
                             </ul>
                         </div>
+                        <% } %>
                     </div>
                 </div>
             </div>
