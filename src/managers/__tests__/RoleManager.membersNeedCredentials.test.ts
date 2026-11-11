@@ -147,8 +147,9 @@ describe('a role member must have credentials (#2040)', () => {
 
       const status = manager.getManagerStatus();
       expect(status).toMatchObject({ state: 'degraded', kind: 'attention' });
-      expect(status.reason).toContain("'editor' lists 1");
-      expect(status.reason).not.toContain('reader');
+      // #2354: plain words on the dashboard; the role and count stay in the log line below.
+      expect(status.reason).toMatch(/^Some roles list contacts as members/);
+      expect(status.reason).not.toContain("'editor'");
       expect(errors.mock.calls.some(([line]) => String(line).includes("'editor' lists 1"))).toBe(true);
       expect(created).toHaveLength(1);
       expect(created[0]).toMatchObject({ level: 'error', title: CONTACT_MEMBERS_TITLE });

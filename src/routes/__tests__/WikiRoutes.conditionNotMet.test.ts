@@ -19,7 +19,7 @@ const core = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../config/ap
 
 const AAL2_ID = 'editor-general-edit-aal2';
 const policies = [
-  { id: AAL2_ID, effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-edit'], condition: { attribute: 'subject:aal', 'greater-or-equal': 2 } },
+  { id: AAL2_ID, effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-edit'], condition: { 'integer-greater-than-or-equal': [{ attributeid: 'subject:aal', datatype: 'integer' }, { value: 2, datatype: 'integer' }] } },
   { id: 'editor-general-read', effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-read'] }
 ];
 const meta = { title: 'TestPage', uuid: 'u1', lastModified: '', 'system-category': 'general', author: 'system' };

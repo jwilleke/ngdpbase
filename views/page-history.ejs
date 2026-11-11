@@ -76,20 +76,20 @@
                   <td>
                     <div class="btn-group btn-group-sm" role="group">
                       <button type="button" class="btn btn-outline-primary"
-                              onclick="viewVersion('<%= pageName %>', <%= v.version %>)"
+                              data-history-action="view" data-page-name="<%= pageName %>" data-version="<%= v.version %>"
                               title="View this version">
                         <i class="fas fa-eye"></i>
                       </button>
                       <% if (index < versions.length - 1) { %>
                         <button type="button" class="btn btn-outline-info"
-                                onclick="compareVersions('<%= pageName %>', <%= v.version %>, <%= versions[index + 1].version %>)"
+                                data-history-action="compare" data-page-name="<%= pageName %>" data-version="<%= v.version %>" data-compare-to="<%= versions[index + 1].version %>"
                                 title="Compare with previous version">
                           <i class="fas fa-exchange-alt"></i>
                         </button>
                       <% } %>
                       <% if (v.version !== versions[0].version && userContext.isAuthenticated) { %>
                         <button type="button" class="btn btn-outline-warning"
-                                onclick="restoreVersion('<%= pageName %>', <%= v.version %>)"
+                                data-history-action="restore" data-page-name="<%= pageName %>" data-version="<%= v.version %>"
                                 title="Restore to this version">
                           <i class="fas fa-undo"></i>
                         </button>
@@ -116,11 +116,11 @@
             <h5><i class="fas fa-exchange-alt"></i> Compare Versions</h5>
           </div>
           <div class="card-body">
-            <form id="compareForm" class="form-inline">
+            <form id="compareForm" class="form-inline" data-page-name="<%= pageName %>">
               <label class="mr-2">From:</label>
               <select id="version1" class="form-control mr-3">
-                <% versions.forEach(v => { %>
-                  <option value="<%= v.version %>">v<%= v.version %> (<%= new Date(v.timestamp).toLocaleDateString() %>)</option>
+                <% versions.forEach((v, i) => { %>
+                  <option value="<%= v.version %>" <%= i === (versions.length > 1 ? 1 : 0) ? 'selected' : '' %>>v<%= v.version %> (<%= new Date(v.timestamp).toLocaleDateString() %>)</option>
                 <% }); %>
               </select>
 
@@ -234,12 +234,25 @@ function restoreVersion(pageName, version) {
     });
 }
 
+// Row buttons carry the page name and versions as data attributes.
+document.addEventListener('click', function(e) {
+  const button = e.target.closest('button[data-history-action]');
+  if (!button) return;
+  const { historyAction, pageName, version, compareTo } = button.dataset;
+  if (historyAction === 'view') viewVersion(pageName, version);
+  else if (historyAction === 'compare') compareVersions(pageName, version, compareTo);
+  else if (historyAction === 'restore') restoreVersion(pageName, version);
+});
+
 // Compare form submission
 document.getElementById('compareForm').addEventListener('submit', function(e) {
   e.preventDefault();
   const v1 = document.getElementById('version1').value;
   const v2 = document.getElementById('version2').value;
-  compareVersions('<%= pageName %>', v1, v2);
+  // #2326: compareVersions(page, a, b) opens v1=b&v2=a (right for a row's
+  // Compare button: this version, then the previous). The form's From is the
+  // left side, so pass To first to get v1=From&v2=To.
+  compareVersions(this.dataset.pageName, v2, v1);
 });
 
 // Load marked.js for markdown rendering if not already loaded

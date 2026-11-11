@@ -16,6 +16,7 @@ import PolicyValidator from '../../managers/PolicyValidator';
 import logger from '../../utils/logger';
 import { scheduleProblem } from '../../utils/availability';
 import { readDeclaredAsWritten } from '../../utils/policyAttributes';
+import { attr, val } from '../../managers/__tests__/__fixtures__/conditions';
 
 const core = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
 
@@ -26,8 +27,8 @@ const MONDAY_AFTER_DST_0930 = new Date('2026-03-09T13:30:00Z'); // 09:30 EDT (08
 const MONDAY_AFTER_DST_1730 = new Date('2026-03-09T21:30:00Z'); // 17:30 EDT (16:30 if EST were wrongly used)
 const MONDAY_BEFORE_DST_0930 = new Date('2026-03-02T14:30:00Z'); // 09:30 EST
 
-const OUTSIDE = { attribute: 'environment:is-business-hours', equals: false };
-const INSIDE = { attribute: 'environment:is-business-hours', equals: true };
+const OUTSIDE = { 'boolean-equal': [attr('environment:is-business-hours', 'boolean'), val(false, 'boolean')] };
+const INSIDE = { 'boolean-equal': [attr('environment:is-business-hours', 'boolean'), val(true, 'boolean')] };
 const policy = (id: string, effect: 'allow' | 'deny', actions: string[], condition?: unknown, subjects: unknown[] = [{ type: 'anyone' }]) =>
   ({ id, name: id, effect, subjects, resources: [{ type: 'system-category', pattern: 'general' }], actions, ...(condition ? { condition } : {}) });
 const editor = { username: 'quinn', roles: ['qa'], isAuthenticated: true };
@@ -217,7 +218,7 @@ describe('environment attributes (#2261 slice 4, shipped configuration)', () => 
 
     test('a deny on it applies when the key is absent, an allow on it does not', async () => {
       declare('x.flag');
-      await boot([policy('qa-edit', 'allow', ['page-edit'], { attribute: 'environment:flag', equals: true }, [{ type: 'role', value: 'qa' }])]);
+      await boot([policy('qa-edit', 'allow', ['page-edit'], { 'boolean-equal': [attr('environment:flag', 'boolean'), val(true, 'boolean')] }, [{ type: 'role', value: 'qa' }])]);
       declare('x.flag');
       expect((await decide()).permit).toBe(false);
       config['x.flag'] = true;
@@ -236,13 +237,13 @@ describe('environment attributes (#2261 slice 4, shipped configuration)', () => 
     beforeEach(() => boot([]));
 
     test('a condition on an undeclared environment attribute says where to declare it', () => {
-      const problems = validator.policyProblems([policy('p', 'deny', ['page-edit'], { attribute: 'environment:nope', equals: true })]);
+      const problems = validator.policyProblems([policy('p', 'deny', ['page-edit'], { 'boolean-equal': [attr('environment:nope', 'boolean'), val(true, 'boolean')] })]);
       expect(problems).toEqual(["'p': condition reads 'environment:nope', which is not declared; add it to ngdpbase.access.environment-attributes"]);
     });
 
     test('a condition on the shipped attribute passes policyProblems, and a type mismatch does not', () => {
       expect(validator.policyProblems([policy('p', 'deny', ['page-edit'], OUTSIDE)])).toEqual([]);
-      expect(validator.policyProblems([policy('p', 'deny', ['page-edit'], { attribute: 'environment:is-business-hours', equals: 'no' })])[0]).toMatch(/both sides must have the same type/);
+      expect(validator.policyProblems([policy('p', 'deny', ['page-edit'], { 'boolean-equal': [attr('environment:is-business-hours', 'boolean'), val('no', 'boolean')] })])[0]).toMatch(/is a string, not the datatype "boolean"/);
     });
 
     test('a non-boolean type, an unknown source and a missing name are refused', () => {
@@ -267,8 +268,8 @@ describe('environment attributes (#2261 slice 4, shipped configuration)', () => 
       try {
         await boot([
           policy('qa-edit', 'allow', ['page-edit'], undefined, [{ type: 'role', value: 'qa' }]),
-          policy('deny-secret', 'deny', ['page-edit'], { attribute: 'environment:probe', equals: true }),
-          policy('deny-secret-not', 'deny', ['page-read'], { attribute: 'environment:probe', 'not-equals': true })
+          policy('deny-secret', 'deny', ['page-edit'], { 'boolean-equal': [attr('environment:probe', 'boolean'), val(true, 'boolean')] }),
+          policy('deny-secret-not', 'deny', ['page-read'], { not: [{ 'boolean-equal': [attr('environment:probe', 'boolean'), val(true, 'boolean')] }] })
         ]);
         const declaration = { probe: { type: 'boolean', from: 'config:ngdpbase.session.secret' } };
         config['ngdpbase.access.environment-attributes'] = declaration;
@@ -292,7 +293,7 @@ describe('environment attributes (#2261 slice 4, shipped configuration)', () => 
         const logged = spies.flatMap((s) => s.mock.calls.map((c) => JSON.stringify(c))).join('\n');
         expect(logged).not.toContain(SECRET);
         expect(JSON.stringify(audit)).not.toContain(SECRET);
-        expect(JSON.stringify([messages, validator.policyProblems([policy('p', 'deny', ['page-edit'], { attribute: 'environment:probe', equals: 'x' })])])).not.toContain(SECRET);
+        expect(JSON.stringify([messages, validator.policyProblems([policy('p', 'deny', ['page-edit'], { 'boolean-equal': [attr('environment:probe', 'boolean'), val('x', 'boolean')] })])])).not.toContain(SECRET);
         // Both the missing read and a mismatched condition keep the value out of the evaluator's own messages.
         expect(JSON.stringify(evaluator.conditionProblemsInForce())).not.toContain(SECRET);
       } finally {
@@ -315,7 +316,7 @@ describe('environment attributes (#2261 slice 4, shipped configuration)', () => 
       const spies = logSpies();
       process.env.PROBE_ENV_SECRET = SECRET;
       try {
-        await boot([policy('qa-edit', 'allow', ['page-edit'], undefined, [{ type: 'role', value: 'qa' }]), policy('p', 'deny', ['page-edit'], { attribute: 'environment:a', equals: true })]);
+        await boot([policy('qa-edit', 'allow', ['page-edit'], undefined, [{ type: 'role', value: 'qa' }]), policy('p', 'deny', ['page-edit'], { 'boolean-equal': [attr('environment:a', 'boolean'), val(true, 'boolean')] })]);
         config['ngdpbase.access.environment-attributes'] = { a: { type: '$PROBE_ENV_SECRET', from: '$PROBE_ENV_SECRET' }, b: { type: 'boolean', from: '$PROBE_ENV_SECRET' } };
         const messages = [...validator.environmentAttributeProblems(config['ngdpbase.access.environment-attributes']), ...validator.policyProblems(config['ngdpbase.access.policies'])];
         expect(messages.join('\n')).toContain('$PROBE_ENV_SECRET');
@@ -339,7 +340,7 @@ describe('environment attributes (#2261 slice 4, shipped configuration)', () => 
       const warn = vi.spyOn(logger, 'warn');
       try {
         delete process.env.PROBE_UNSET_VAR;
-        await boot([policy('qa-edit', 'allow', ['page-edit'], undefined, [{ type: 'role', value: 'qa' }]), policy('p', 'allow', ['page-edit'], { attribute: 'environment:a', equals: true }, [{ type: 'role', value: 'qa' }])]);
+        await boot([policy('qa-edit', 'allow', ['page-edit'], undefined, [{ type: 'role', value: 'qa' }]), policy('p', 'allow', ['page-edit'], { 'boolean-equal': [attr('environment:a', 'boolean'), val(true, 'boolean')] }, [{ type: 'role', value: 'qa' }])]);
         config['ngdpbase.access.environment-attributes'] = { a: { type: 'boolean', from: '$PROBE_UNSET_VAR' } };
         await expect(evaluator.initialize()).resolves.not.toThrow();
         expect(() => pip.environmentAttribute('environment:a', TUESDAY_10)).not.toThrow();

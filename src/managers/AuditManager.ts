@@ -113,7 +113,6 @@ interface AccessContext {
 interface PolicyInfo {
   id: string;
   name: string;
-  priority?: number;
 }
 
 /**
@@ -673,7 +672,7 @@ class AuditManager extends BaseManager {
       reason: `Evaluated ${policies.length} policies`,
       context: {
         policyCount: policies.length,
-        policies: policies.map((p) => ({ id: p.id, name: p.name, priority: p.priority })),
+        policies: policies.map((p) => ({ id: p.id, name: p.name })),
         evaluationTime: duration
       },
       duration: duration,

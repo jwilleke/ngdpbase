@@ -28,7 +28,6 @@ describe('Policy System Integration', () => {
       id: 'test-policy-allow-editors',
       name: 'Test Policy - Allow Editors',
       description: 'Allows editor role to edit pages',
-      priority: 100,
       effect: 'allow',
       subjects: [
         { type: 'role', value: 'editor' }
@@ -48,7 +47,6 @@ describe('Policy System Integration', () => {
       id: 'test-policy-deny-system-pages',
       name: 'Test Policy - Deny System Pages',
       description: 'Denies access to system pages',
-      priority: 200, // Higher priority than allow-editors
       effect: 'deny',
       subjects: [
         { type: 'role', value: 'editor' }
@@ -134,10 +132,9 @@ describe('Policy System Integration', () => {
       expect(policy).toBeDefined();
       expect(policy.id).toBe('test-policy-allow-editors');
       expect(policy.effect).toBe('allow');
-      expect(policy.priority).toBe(100);
     });
 
-    test('should sort policies by priority (descending)', () => {
+    test('should list policies in configuration order, with no priority (#2330)', () => {
       const allPolicies = policies();
 
       // Find our test policies in the sorted list
@@ -150,8 +147,9 @@ describe('Policy System Integration', () => {
       const allowIndex = allPolicies.indexOf(allowPolicy);
       const denyIndex = allPolicies.indexOf(denyPolicy);
 
-      // Deny policy (priority 200) should come before allow policy (priority 100)
-      expect(denyIndex).toBeLessThan(allowIndex);
+      // The allow is configured first and stays first: order carries no meaning under deny-overrides.
+      expect(allowIndex).toBeLessThan(denyIndex);
+      expect(allowPolicy.priority).toBeUndefined();
     });
   });
 
@@ -226,7 +224,7 @@ describe('Policy System Integration', () => {
       expect(result.reason).toBeDefined();
     });
 
-    test('should deny editor access to system pages due to higher priority deny policy', async () => {
+    test('should deny editor access to system pages due to the deny policy', async () => {
       const systemPageContext = {
         pageName: 'SystemConfiguration',  // Matches "System*" pattern
         action: 'edit',

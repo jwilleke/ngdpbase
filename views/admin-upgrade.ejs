@@ -1,0 +1,65 @@
+<%- include('header', { pageName: title }) %>
+
+<div class="container mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h1><i class="fas fa-circle-up"></i> <%= heading %></h1>
+        <a href="/admin" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+    <p class="text-muted mb-4"><%= intro %></p>
+
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+    <% if (error) { %><div class="alert alert-danger"><%= error %></div><% } %>
+
+    <% if ((!items || items.length === 0) && !success) { %>
+        <div class="alert alert-info"><%= empty %> <a href="/admin" class="alert-link">Back to Dashboard</a></div>
+    <% } %>
+
+    <% (items || []).forEach(function(item) { %>
+    <div class="card mb-3">
+        <div class="card-body">
+            <p class="mb-0"><%= item.text %><% if (item.link) { %> <a href="<%= item.link.href %>"><%= item.link.label %></a><% } %></p>
+            <% if (item.action) { %>
+            <form method="POST" action="/admin/configuration" class="mt-2 upgrade-setting-action">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="property" value="<%= item.action.property %>">
+                <input type="hidden" name="value" value="<%= item.action.value %>">
+                <button type="submit" class="btn btn-sm btn-warning"<%- lockedUnless('config-manage') %>><%= item.action.label %></button>
+                <div class="text-muted small mt-1"><%= item.action.note %></div>
+            </form>
+            <% } %>
+        </div>
+    </div>
+    <% }); %>
+
+</div>
+
+<% if ((items || []).some(function(i) { return i.action; })) { %>
+<script nonce="<%= locals.cspNonce %>">
+    // The same save Admin → Configuration makes, with its fresh sign-in prompt; the list is shown again once it is saved.
+    document.querySelectorAll('form.upgrade-setting-action').forEach(function(form) {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var btn = form.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            csrfFetch('/admin/configuration', {
+                method: 'POST',
+                headers: { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+                body: new URLSearchParams(new FormData(form)).toString()
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (window.followReauth(data)) return;
+                if (data.success) { window.location.href = '/admin/upgrade'; return; }
+                btn.disabled = false;
+                alert(data.error || 'Nothing was changed. Try again.');
+            })
+            .catch(function() { btn.disabled = false; alert('Nothing was changed. Try again.'); });
+        });
+    });
+</script>
+<% } %>
+
+<%- include('footer') %>

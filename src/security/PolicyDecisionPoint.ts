@@ -49,7 +49,7 @@ import { mixesProxyWithDelegation } from '../utils/proxyClaim.js';
 import { actorOf, decisionSubject, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
 import { RESOURCE_MATCHERS } from '../managers/PolicyEvaluator.js';
-import { OwnedRecordError, type OwnedListAsk, type OwnedListDecision, type OwnedRecordAsk, type OwnedRecordFilter } from './ownedRecords.js';
+import { OwnedRecordError, ownerDeclarationProblem, type OwnedListAsk, type OwnedListDecision, type OwnedRecordAsk, type OwnedRecordFilter } from './ownedRecords.js';
 import { pageWriteAlternatives } from '../utils/permissionCatalog.js';
 import type { PageAttributes, SubjectFacts } from './PolicyInformationPoint.js';
 import { aalFactsOf } from '../utils/policyAttributes.js';
@@ -145,7 +145,8 @@ export class PolicyDecisionPoint extends BaseManager {
   }
 
   /**
-   * The policies in force right now, highest priority first.
+   * The policies in force right now, in configuration order. Order carries no
+   * meaning: the rule-combining algorithm is `deny-overrides` (#2330).
    *
    * - `ngdpbase.access.policies.enabled` false — its default when unset —
    *   means none;
@@ -167,8 +168,7 @@ export class PolicyDecisionPoint extends BaseManager {
         if (!p.actions?.some((a) => RETIRED_PERMISSIONS.has(a))) return p;
         this.warnRetiredOnce(p);
         return { ...p, actions: withRetiredExpanded(p.actions) };
-      })
-      .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+      });
   }
 
   /**
@@ -186,8 +186,8 @@ export class PolicyDecisionPoint extends BaseManager {
    * What each role permits: role name → the actions its holders are granted.
    *
    * It mirrors the evaluator's ROLE matching — an allow policy naming a role
-   * grants its actions, a deny policy naming it takes them away, lower
-   * priority first so a higher-priority deny lands last and wins. It does not
+   * grants its actions, a deny policy naming it takes them away, whatever the
+   * order (deny-overrides, #2330). It does not
    * evaluate resource patterns or the ceilings, so it is a summary for a human
    * reading a table (the admin Security Policy Summary, a profile), never an
    * authorisation answer — that is {@link permits} with the caller's subject.
@@ -798,6 +798,11 @@ export class PolicyDecisionPoint extends BaseManager {
    * caller fails closed. This records nothing.
    */
   async decideOwnedRecord(input: DecisionInput, request: OwnedRecordAsk): Promise<Decision> {
+    // A policy glob cannot cover an id its own matcher rejects (empty, '.', '..', a line
+    // break), nor one with a path separator, so a deny on the type would not reach it. Test with
+    // the matcher and options PolicyEvaluator.namesDeclaredType uses (PR #2324 review, M2).
+    const id = request.resource.id;
+    if (typeof id !== 'string' || id.includes('/') || !micromatch.isMatch(id, '*', { dot: true }) || !micromatch.isMatch(id, '**', { dot: true })) throw new OwnedRecordError(`record id '${String(id)}' cannot be decided: it must be non-empty, contain no '/', no line break, and not be '.' or '..'`);
     const prepared = await this.prepareOwned(input, request.action, request.resource.type);
     if ('decision' in prepared) return prepared.decision;
     const { subject, userContext } = prepared;
@@ -807,13 +812,17 @@ export class PolicyDecisionPoint extends BaseManager {
       const mismatch = await this.ownerMismatch(userContext, owner);
       if (mismatch) return mismatch;
     }
-    const typeResult = await this.ownedTypeResult(request.resource.type, request.resource.id, request.action, userContext, subject, request.resource.attributes ?? {});
+    const typeResult = await this.ownedTypeResult(request.resource.type, id, request.action, userContext, subject, request.resource.attributes ?? {});
     if (typeResult.hasDecision && !typeResult.allowed) return this.decisionFrom(typeResult, false);
+    // Deny overrides allow across both forms: a deny written on `page *` or
+    // with no resources refuses a type allow too (PR #2324 review, M1).
+    const capability = await this.decide(input, { action: request.action });
+    if (!capability.permit && capability.applicable) return capability;
     if (typeResult.hasDecision && typeResult.allowed) {
       if (this.stepUpRefuses(subject, request.action)) return { permit: false, applicable: true, reason: STEP_UP_REASON, policyIds: [] };
       return this.decisionFrom(typeResult, true);
     }
-    return this.decide(input, { action: request.action });
+    return capability;
   }
 
   /**
@@ -841,10 +850,13 @@ export class PolicyDecisionPoint extends BaseManager {
     if (typeResult.hasDecision && !typeResult.allowed) {
       return { decision: 'deny', reason: typeResult.policyName ?? typeResult.reason ?? 'policy_deny', policyIds: typeResult.policyIds ?? [] };
     }
-    if (!(typeResult.hasDecision && typeResult.allowed)) {
-      const capability = await this.decide(input, { action: request.action });
-      if (!capability.permit) return { decision: 'deny', reason: capability.reason, policyIds: capability.policyIds };
-    } else if (this.stepUpRefuses(subject, request.action)) {
+    // Deny overrides allow across both forms (PR #2324 review, M1).
+    const typeAllows = typeResult.hasDecision && typeResult.allowed;
+    const capability = await this.decide(input, { action: request.action });
+    if (!capability.permit && (capability.applicable || !typeAllows)) {
+      return { decision: 'deny', reason: capability.reason, policyIds: capability.policyIds };
+    }
+    if (typeAllows && this.stepUpRefuses(subject, request.action)) {
       return { decision: 'deny', reason: STEP_UP_REASON, policyIds: [] };
     }
     return { decision: 'allow', filter: ownerFilter };
@@ -863,6 +875,9 @@ export class PolicyDecisionPoint extends BaseManager {
     if (Object.hasOwn(RESOURCE_MATCHERS, type)) throw new OwnedRecordError(`resource type '${type}' is decided by its own door`);
     const entry = this.ownedTypeEntry(type);
     const subject = decisionSubject(input) ?? null;
+    // A share delegates pages and assets, never an add-on's records, and its
+    // resources say nothing about them (PR #2324 review, M4).
+    if (subject?.viaShare) return { decision: { permit: false, applicable: true, reason: 'share_resource_deny', policyIds: [] } };
     const ceiling = await this.ceiling(subject, { action, resource: { type, id: '*' } });
     if (ceiling && !ceiling.permit) return { decision: ceiling };
     const userContext = await this.ownedUserContext(subject);
@@ -878,6 +893,9 @@ export class PolicyDecisionPoint extends BaseManager {
       throw new OwnedRecordError(`resource type '${type}' is not declared in ngdpbase.access.resource-types`);
     }
     if (entry.attributes === undefined) return {};
+    // A malformed owner declaration must not make an owner type policy-alone (PR #2324 review, M3).
+    const ownerProblem = ownerDeclarationProblem(type, entry);
+    if (ownerProblem) throw new OwnedRecordError(ownerProblem);
     const declared = asRecord(entry.attributes);
     if (!declared) throw new OwnedRecordError(`resource type '${type}' has attributes that cannot be read`);
     const attributes: Record<string, { type?: string }> = {};

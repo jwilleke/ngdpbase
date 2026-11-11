@@ -129,8 +129,9 @@ class CalendarDataManager {
     this.attention = null;
     if (!identities) return;
     const postponed = 'Calendar references were not converted to identity @ids: identity store unavailable, conversion postponed to the next start (#2041)';
+    const plain = 'Some calendar entries still name people the old way, because the contacts were not available when the site started. Restart the site to try again.';
     if (!identities.canAnswer()) {
-      this.attention = postponed;
+      this.attention = plain;
       console.warn(`[CalendarDataManager] ${postponed}`);
       return;
     }
@@ -153,7 +154,7 @@ class CalendarDataManager {
         else await convert(priv, 'requester');
       }
     } catch (error) {
-      this.attention = postponed;
+      this.attention = plain;
       console.warn(`[CalendarDataManager] ${postponed}: ${(error as Error).message}`);
       return;
     }

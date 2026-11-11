@@ -179,6 +179,18 @@
                             <small class="text-muted">Shows merged configuration (defaults + custom overrides)</small>
                         </div>
                         <div class="card-body">
+                            <% if (typeof ruleCombiningAlgorithm !== 'undefined' && ruleCombiningAlgorithm) { %>
+                                <%# #2330: the rule the access policies are read under, stated above them. %>
+                                <div class="alert alert-info py-2 rule-combining-algorithm">
+                                    <i class="fas fa-shield-alt"></i>
+                                    <code>ngdpbase.access.rule-combining-algorithm</code>: <strong><%= ruleCombiningAlgorithm.value %></strong>.
+                                    <%= ruleCombiningAlgorithm.explanation %>
+                                </div>
+                            <% } %>
+                            <%# #2317: where the site address can actually be changed, for the passkey note. %>
+                            <% const baseUrlKey = 'ngdpbase.application.base-url';
+                               const baseUrlWhere = (typeof envControlled !== 'undefined' && envControlled && envControlled[baseUrlKey]) ? 'env'
+                                   : (customProperties && Object.prototype.hasOwnProperty.call(customProperties, baseUrlKey)) ? 'custom' : 'add'; %>
                             <div class="table-responsive">
                                 <table class="table table-sm">
                                     <thead>
@@ -190,12 +202,16 @@
                                     </thead>
                                     <tbody>
                                         <% Object.entries(mergedProperties).sort().forEach(([key, value]) => { %>
-                                            <tr>
+                                            <tr id="config-<%= key %>">
                                                 <td>
                                                     <code><%= key %></code>
                                                     <% ((typeof configProblems !== 'undefined' && configProblems[key]) || []).forEach(function (problem) { %>
                                                         <div class="text-danger small config-problem"><i class="fas fa-exclamation-triangle"></i> <%= problem %></div>
                                                     <% }); %>
+                                                    <%# #2317: below lg the value column is off to the side of the scrolling table, so the note sits under the name there. %>
+                                                    <% if (key === 'ngdpbase.auth.passkey.enabled' && typeof passkeysCannotWork !== 'undefined' && passkeysCannotWork) { %>
+                                                        <div class="d-lg-none"><%- include('_passkeys-cannot-work', { csrfToken, lockedUnless, baseUrlWhere }) %></div>
+                                                    <% } %>
                                                 </td>
                                                 <td>
                                                     <%# Secrets are stripped server-side, so there is no value here to hide —
@@ -232,6 +248,9 @@
                                                         <% } else { %>
                                                             <code><%= shown %></code>
                                                         <% } %>
+                                                    <% } %>
+                                                    <% if (key === 'ngdpbase.auth.passkey.enabled' && typeof passkeysCannotWork !== 'undefined' && passkeysCannotWork) { %>
+                                                        <div class="d-none d-lg-block"><%- include('_passkeys-cannot-work', { csrfToken, lockedUnless, baseUrlWhere }) %></div>
                                                     <% } %>
                                                 </td>
                                                 <td>
@@ -297,12 +316,15 @@
                                                 effect. Nothing in ngdpbase writes .env, by design. %>
                                             <% Object.entries(customProperties).sort().forEach(([key, value]) => { %>
                                                 <% const envInfo = (typeof envControlled !== 'undefined' && envControlled) ? envControlled[key] : null; %>
-                                                <tr>
+                                                <tr<% if (key === baseUrlKey) { %> id="custom-row-base-url"<% } %>>
                                                     <td>
                                                         <code><%= key %></code>
                                                         <% ((typeof configProblems !== 'undefined' && configProblems[key]) || []).forEach(function (problem) { %>
                                                             <div class="text-danger small config-problem"><i class="fas fa-exclamation-triangle"></i> <%= problem %></div>
                                                         <% }); %>
+                                                        <% if (key === 'ngdpbase.auth.passkey.enabled' && typeof passkeysCannotWork !== 'undefined' && passkeysCannotWork) { %>
+                                                            <%- include('_passkeys-cannot-work', { csrfToken, lockedUnless, baseUrlWhere }) %>
+                                                        <% } %>
                                                         <% if (envInfo) { %>
                                                             <span class="badge bg-secondary ms-1" title="Owned by the environment">
                                                                 <i class="fas fa-lock"></i> env
@@ -470,8 +492,22 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(function(response) { return response.json(); })
             .then(function(data) {
                 if (window.followReauth(data)) return;
-                if (data.success) {
+                if (data.success && data.warning) {
+                    // Saved, with something the admin must read: stays until dismissed
+                    showConfigAlert('warning', data.message || data.warning);
+                } else if (data.success) {
                     showConfigAlert('success', data.message || 'Configuration updated successfully');
+                    // #2317: saved, so the note no longer applies and the row shows the new value, without a reload
+                    // Only when this very form turned passkeys off; any other save leaves the note and the value alone.
+                    if (formData.get('property') === 'ngdpbase.auth.passkey.enabled' && formData.get('value') === 'false') document.querySelectorAll('.passkeys-cannot-work').forEach(function(note) {
+                        var tr = note.closest('tr');
+                        note.remove();
+                        if (!tr) return;
+                        var shown = tr.querySelector('td:nth-child(2) > code');
+                        if (shown) shown.textContent = 'false';
+                        var field = tr.querySelector('td:nth-child(2) input.form-control');
+                        if (field) field.value = 'false';
+                    });
                 } else {
                     showConfigAlert('danger', data.error || 'Failed to update configuration');
                 }
@@ -488,6 +524,20 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // "Set the site address" in the passkey note: open the tab where the address can be edited.
+    document.querySelectorAll('a[data-config-jump]').forEach(function(a) {
+        a.addEventListener('click', function(e) {
+            e.preventDefault();
+            var tab = document.getElementById(a.getAttribute('data-config-jump'));
+            if (tab && window.bootstrap) window.bootstrap.Tab.getOrCreateInstance(tab).show();
+            var prefill = a.getAttribute('data-prefill');
+            var field = prefill ? document.getElementById('newProperty') : null;
+            if (field) { field.value = prefill; var v = document.getElementById('newValue'); if (v) v.focus(); }
+            var row = a.getAttribute('data-row') && document.getElementById(a.getAttribute('data-row'));
+            if (row) row.scrollIntoView({ block: 'center' });
+        });
+    });
+
     function showConfigAlert(type, message) {
         // Remove any existing config alerts
         document.querySelectorAll('.config-alert').forEach(function(el) { el.remove(); });
@@ -500,6 +550,9 @@ document.addEventListener('DOMContentLoaded', function() {
             '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
 
         alertDiv.querySelector('.config-alert-text').textContent = message; // #2278: messages carry admin-typed text
+        // Sit just below the navbar (or at the top once it has scrolled away), so the menu button stays reachable.
+        var nav = document.querySelector('.jspwiki-header');
+        alertDiv.style.top = (Math.max(0, nav ? nav.getBoundingClientRect().bottom : 0) + 8) + 'px';
         var container = document.querySelector('.container.mt-4');
         container.insertBefore(alertDiv, container.firstChild);
 

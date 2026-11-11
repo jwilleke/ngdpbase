@@ -8,8 +8,8 @@ ngdpbase's Policy-Based Access Control (PBAC) system provides flexible, JSON-bas
 
 - __JSON Schema Validation__: Ensures policy integrity and prevents configuration errors
 - __Flexible Subject Matching__: Support for users, roles, groups, attributes, and authentication status
-- __Advanced Conditions__: Time ranges, IP restrictions, user attributes, and custom conditions
-- __Priority System__: Higher-priority policies override lower ones
+- __Conditions__: one XACML `condition` per policy (the plural `conditions` array is not enforced; see below)
+- __Deny Overrides__: Any matching deny wins, whatever the order
 - __Performance Caching__: Optimized for repeated evaluations
 - __Audit Integration__: Full logging of policy decisions
 
@@ -47,7 +47,6 @@ Every policy consists of the following components:
   "id": "unique-policy-identifier",
   "name": "Human-readable policy name",
   "description": "Detailed description of the policy",
-  "priority": 50,
   "effect": "allow|deny",
   "subjects": [...],
   "resources": [...],
@@ -94,7 +93,9 @@ Actions define what operations are allowed/denied:
 
 ### Conditions (When)
 
-Conditions add additional constraints. Supported types:
+> __The plural `conditions` array is not enforced__ ([#2334](https://github.com/jwilleke/ngdpbase/issues/2334)): nothing reads it, so a rule written there limits no access. It is reported at start-up and on save, not refused. Use the single `condition` ([Access policies](../access-policies.md#conditions)). The types listed here and the examples with a `conditions` array show that older shape only; `time-range`, `ip-range` and `session-attribute` have no equivalent yet.
+
+The older `conditions` entry types were:
 
 - __time-range__: Time-based restrictions
 - __ip-range__: IP address restrictions
@@ -110,7 +111,6 @@ Conditions add additional constraints. Supported types:
 1. Click "Create Policy" button
 2. Fill in basic information:
    - __Policy Name__: Descriptive name
-   - __Priority__: Number (higher = more important)
    - __Effect__: Allow or Deny
    - __Description__: Optional details
 
@@ -143,7 +143,6 @@ For complex policies, you can edit the JSON directly:
   "id": "business-hours-edit",
   "name": "Business Hours Edit Access",
   "description": "Allow editing only during business hours",
-  "priority": 100,
   "effect": "allow",
   "subjects": [
     {
@@ -178,7 +177,6 @@ __Allow editors to edit all pages:__
 {
   "id": "editor-full-edit",
   "name": "Editor Full Edit Access",
-  "priority": 50,
   "effect": "allow",
   "subjects": [{"type": "role", "value": "editor"}],
   "resources": [{"type": "page", "pattern": "*"}],
@@ -194,7 +192,6 @@ __Restrict admin access to business hours:__
 {
   "id": "admin-business-hours",
   "name": "Admin Business Hours Only",
-  "priority": 200,
   "effect": "deny",
   "subjects": [{"type": "role", "value": "admin"}],
   "resources": [{"type": "page", "pattern": "*"}],
@@ -217,7 +214,6 @@ __Restrict sensitive content to internal network:__
 {
   "id": "internal-network-only",
   "name": "Internal Network Only",
-  "priority": 150,
   "effect": "deny",
   "subjects": [{"type": "anonymous"}],
   "resources": [{"type": "category", "value": "Confidential"}],
@@ -239,7 +235,6 @@ __Allow IT department full access to system pages:__
 {
   "id": "it-system-access",
   "name": "IT System Access",
-  "priority": 100,
   "effect": "allow",
   "subjects": [
     {
@@ -255,13 +250,12 @@ __Allow IT department full access to system pages:__
 
 ### 5. Emergency Access Override
 
-__Allow emergency access during critical situations:__
+__Allow emergency access during critical situations (this only applies while no deny policy matches):__
 
 ```json
 {
   "id": "emergency-access",
   "name": "Emergency Access Override",
-  "priority": 1000,
   "effect": "allow",
   "subjects": [{"type": "role", "value": "emergency"}],
   "resources": [{"type": "page", "pattern": "*"}],
@@ -276,32 +270,20 @@ __Allow emergency access during critical situations:__
 }
 ```
 
-## Policy Priority and Conflicts
+## Deny Overrides
 
-### Understanding Priority
+### How Policies Combine
 
-- __Higher numbers = Higher priority__
-- Policies are evaluated in priority order (highest first)
-- Conflicting policies are resolved by priority
-- Default priority is 50
+Policies are combined with the XACML `deny-overrides` rule:
 
-### Conflict Resolution
+- Any matching deny wins
+- With no matching deny, any matching allow permits
+- If nothing matches, access is refused
+- Order does not matter, and there is no priority. A leftover `priority` in a site's configuration is ignored and reported once at start-up
 
-When multiple policies apply to the same request:
+### Letting Someone Through a Deny
 
-1. __Same Effect__: All matching policies are considered
-2. __Different Effects__: Highest priority policy wins
-3. __Equal Priority__: First matching policy wins (deterministic but not recommended)
-
-### Best Practices
-
-- Use priority ranges:
-  - 1-99: General policies
-  - 100-499: Department/role specific
-  - 500-899: Security policies
-  - 900-999: Emergency/override policies
-- Avoid equal priorities for conflicting policies
-- Document priority schemes in your organization
+An allow cannot override a deny. To let someone through, narrow the deny's subjects, resources, actions or condition so it no longer matches them.
 
 ## Managing Existing Policies
 
@@ -341,7 +323,6 @@ The dashboard shows:
 
 - Total number of policies
 - Allow vs Deny policy counts
-- Average priority
 - Cache performance metrics
 
 ### Audit Logs
@@ -373,7 +354,7 @@ __Symptoms__: Expected access behavior not occurring
 
 __Solutions__:
 
-1. Check policy priority vs conflicting policies
+1. Look for a matching deny policy (a deny wins whatever the order)
 2. Verify subject/resource/action matching
 3. Review condition requirements
 4. Check for syntax errors in JSON
@@ -384,7 +365,7 @@ __Symptoms__: Users can't access resources they should
 
 __Solutions__:
 
-1. Look for higher-priority deny policies
+1. Look for a matching deny policy
 2. Check condition evaluation
 3. Verify user attributes/roles
 4. Review audit logs for decision details

@@ -23,7 +23,7 @@
  *   [{ConfigAccessor type='userKeywords' enabled='true'}]                       - Display enabled keywords
  *   [{ConfigAccessor type='userKeywords' category='access'}]                    - Display keywords by category
  *   [{ConfigAccessor type='userKeywords' enabled='true' valueonly='true'}]      - Return enabled keyword labels only
- *   [{ConfigAccessor type='policies'}]                                         - Display ACL policies table (sorted by priority)
+ *   [{ConfigAccessor type='policies'}]                                         - Display ACL policies table (in configuration order)
  *   [{ConfigAccessor type='authMethods'}]                                      - Auth providers; sensitive fields masked for non-admins
  *   [{ConfigAccessor type='features'}]                                         - Feature flags grouped by feature name
  *   [{ConfigAccessor type='permissionsList'}]                                  - All permissions grouped by target with name/icon/description
@@ -43,6 +43,7 @@ import { grantablePermissions, permissionLabel } from '../utils/permissionCatalo
 import { pageUrl } from '../utils/pageUrl.js';
 import type { AddonListing } from '../managers/AddonsManager.js';
 import type { ActorContext } from '../context/ActorContext.js';
+import { DENY_OVERRIDES_EXPLANATION } from '../utils/policyAttributes.js';
 
 // ============================================================================
 // Type Definitions
@@ -112,7 +113,6 @@ interface AccessPolicy {
   id?: string;
   name?: string;
   description?: string;
-  priority?: number;
   effect?: string;
   subjects?: Array<{ type?: string; value?: string }>;
   resources?: Array<{ type?: string; pattern?: string }>;
@@ -1141,22 +1141,19 @@ function displayPolicies(f: PluginFormatters, configManager: ConfigurationManage
     return '<p class="text-muted">No access policies configured.</p>';
   }
 
-  const sorted = [...policies].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
-
   let html = '<div class="config-accessor-plugin">\n';
   html += '  <div class="card">\n';
   html += '    <div class="card-header"><h6 class="mb-0"><i class="fas fa-shield-alt me-1"></i>Access Policies</h6>\n';
-  html += '      <small class="text-muted">Sorted by priority (highest first)</small></div>\n';
+  html += `      <small class="text-muted">${escapeHtml(DENY_OVERRIDES_EXPLANATION)}</small></div>\n`;
   html += '    <div class="table-responsive"><table class="table table-sm table-hover mb-0">\n';
   html += '      <thead class="table-light"><tr>\n';
-  html += '        <th>Name</th><th>Priority</th><th>Effect</th><th>Subjects</th><th>Resources</th><th>Actions</th>\n';
+  html += '        <th>Name</th><th>Effect</th><th>Subjects</th><th>Resources</th><th>Actions</th>\n';
   html += '      </tr></thead><tbody>\n';
 
-  for (const p of sorted) {
+  for (const p of policies) {
     const effectBadge = p.effect === 'allow'
       ? '<span class="badge bg-success">allow</span>'
       : '<span class="badge bg-danger">deny</span>';
-    const priorityBadge = `<span class="badge bg-secondary">${escapeHtml(String(p.priority ?? 0))}</span>`;
     const subjects = (p.subjects ?? []).map(s => escapeHtml(s.value ?? s.type ?? '')).join(', ') || '—';
     const resources = (p.resources ?? []).map(r => `<code>${escapeHtml(r.pattern ?? r.type ?? '*')}</code>`).join(' ') || '—';
     const actions = p.actions ?? [];
@@ -1168,7 +1165,6 @@ function displayPolicies(f: PluginFormatters, configManager: ConfigurationManage
     html += `          <td><strong>${escapeHtml(p.name ?? p.id ?? '')}</strong>`;
     if (p.description) html += `<br><small class="text-muted">${escapeHtml(p.description)}</small>`;
     html += '</td>\n';
-    html += `          <td>${priorityBadge}</td>\n`;
     html += `          <td>${effectBadge}</td>\n`;
     html += `          <td><small>${subjects}</small></td>\n`;
     html += `          <td><small>${resources}</small></td>\n`;

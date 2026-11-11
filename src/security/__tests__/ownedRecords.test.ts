@@ -105,7 +105,7 @@ async function build(policies: unknown[], grants: Map<string, { owner: string; p
   const pdp = new PolicyDecisionPoint(engine);
   managers.PolicyDecisionPoint = pdp;
   await evaluator.initialize();
-  return { pdp, engine };
+  return { pdp, engine, settings };
 }
 
 /** The fixture door: owner comes from the row, never from `claimedOwner`. */
@@ -266,6 +266,84 @@ describe('proxy grants on an owned record (#1823, #1762)', () => {
     const notMom = await records.read(within, 'a1');
     expect(notMom.status).toBe('deny');
     if (notMom.status === 'deny') expect(notMom.decision.reason).toBe('not-the-owner');
+  });
+});
+
+describe('PR #2324 review findings M1 to M4 (#1823)', () => {
+  const ledgerCapability = {
+    id: 'ledger-cap', effect: 'allow', priority: 90,
+    subjects: [{ type: 'role', value: 'treasurer' }],
+    resources: [{ type: 'page', pattern: '*' }],
+    actions: ['ledger-read']
+  };
+  const trea = person('trea', ['treasurer']);
+  const ledgerRecord = (id: string) => ({ action: 'ledger-read', resource: { type: 'ledger-entry', id, attributes: { fund: 'general' } } });
+
+  test.each([
+    ['a site-wide deny on page *', { id: 'ledger-frozen-page', effect: 'deny', priority: 200, subjects: [{ type: 'anyone' }], resources: [{ type: 'page', pattern: '*' }], actions: ['ledger-read'] }],
+    ['a deny with no resources', { id: 'no-ledger', effect: 'deny', priority: 200, subjects: [{ type: 'anyone' }], actions: ['ledger-read'] }]
+  ])('M1: %s refuses a record and a list that a type policy allows', async (_name, deny) => {
+    const { pdp } = await build([ledgerPolicy, deny]);
+    const one = await pdp.decideOwnedRecord(trea, ledgerRecord('l1'));
+    expect(one).toMatchObject({ permit: false, policyIds: [deny.id] });
+    const list = await pdp.decideOwnedList(trea, { action: 'ledger-read', resource: { type: 'ledger-entry' } });
+    expect(list).toMatchObject({ decision: 'deny', policyIds: [deny.id] });
+  });
+
+  test('M1: a deny with no resources refuses the owner whose type policy allows', async () => {
+    const ownerOnRecords = { ...adminOnRecords, id: 'owner-phr', subjects: [{ type: 'role', value: 'vault-owner' }] };
+    const deny = { id: 'no-phr', effect: 'deny', priority: 200, subjects: [{ type: 'anyone' }], actions: ['phr-read'] };
+    const { pdp } = await build([ownerOnRecords, deny]);
+    const read = await door(pdp).read(person('alice', ['vault-owner']), 'a1');
+    expect(read.status).toBe('deny');
+    if (read.status === 'deny') expect(read.decision.policyIds).toEqual(['no-phr']);
+    expect((await door(pdp).list(person('alice', ['vault-owner']), 'phr-record', 'phr-read')).status).toBe('deny');
+  });
+
+  test('M2: a type deny on * covers an id starting with a dot; an id with / or no id is not decided', async () => {
+    const frozen = { id: 'ledger-frozen', effect: 'deny', priority: 200, subjects: [{ type: 'anyone' }], resources: [{ type: 'ledger-entry', pattern: '*' }], actions: ['ledger-read'] };
+    const { pdp } = await build([ledgerCapability, frozen]);
+    expect(await pdp.decideOwnedRecord(trea, ledgerRecord('l1'))).toMatchObject({ permit: false, policyIds: ['ledger-frozen'] });
+    expect(await pdp.decideOwnedRecord(trea, ledgerRecord('.hidden'))).toMatchObject({ permit: false, policyIds: ['ledger-frozen'] });
+    await expect(pdp.decideOwnedRecord(trea, ledgerRecord('a/b'))).rejects.toBeInstanceOf(OwnedRecordError);
+    await expect(pdp.decideOwnedRecord(trea, ledgerRecord(''))).rejects.toBeInstanceOf(OwnedRecordError);
+  });
+
+  test.each([['.'], ['..'], ['\n'], ['\r'], ['a\nb']])('M2: the id %j is refused, not decided', async (id) => {
+    const { pdp } = await build([ledgerCapability]);
+    await expect(pdp.decideOwnedRecord(trea, ledgerRecord(id))).rejects.toBeInstanceOf(OwnedRecordError);
+  });
+
+  test.each([['...'], ['a.b'], ['.a'], ['a..b'], [' '], ['a b']])('M2: the id %s is still accepted', async (id) => {
+    const { pdp } = await build([ledgerCapability]);
+    await expect(pdp.decideOwnedRecord(trea, ledgerRecord(id))).resolves.toBeDefined();
+  });
+
+  test.each([
+    ['"identity"', 'identity'],
+    ['{}', {}],
+    ['{ type: 1 }', { type: 1 }],
+    ['null', null],
+    ['{ kind: "identity" }', { kind: 'identity' }]
+  ])('M3: owner declared as %s is refused at decision time and at start-up', async (_name, owner) => {
+    const { pdp, engine, settings } = await build([phrCapability, adminOnRecords]);
+    settings['ngdpbase.access.resource-types'] = { ...resourceTypes, 'phr-record': { attributes: { owner, category: { type: 'string' } } } };
+    const bob = person('bob', ['admin', 'vault-owner']);
+    await expect(pdp.decideOwnedRecord(bob, { action: 'phr-read', resource: { type: 'phr-record', id: 'a1', attributes: { owner: ALICE } } })).rejects.toBeInstanceOf(OwnedRecordError);
+    await expect(pdp.decideOwnedList(bob, { action: 'phr-read', resource: { type: 'phr-record' } })).rejects.toBeInstanceOf(OwnedRecordError);
+    await expect(new PolicyEvaluator(engine).initialize()).rejects.toThrow(/phr-record.*owner/);
+  });
+
+  test('M4: an anonymous share carrying the capability is refused a record, and its list matches nothing', async () => {
+    const { pdp } = await build([ledgerPolicy, ledgerCapability]);
+    const visitor: PermissionSubject = {
+      username: 'anonymous', roles: ['anonymous'], isAuthenticated: false,
+      viaShare: { id: 's1', issuer: 'trea', actions: ['ledger-read'], resources: [{ type: 'page', pattern: '*' }], expiresAt: null }
+    };
+    expect((await pdp.decideOwnedRecord(visitor, ledgerRecord('l1'))).permit).toBe(false);
+    const list = await pdp.decideOwnedList(visitor, { action: 'ledger-read', resource: { type: 'ledger-entry' } });
+    expect(list).toMatchObject({ decision: 'deny' });
+    expect(list).not.toHaveProperty('filter');
   });
 });
 

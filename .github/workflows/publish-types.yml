@@ -62,7 +62,8 @@ jobs:
           '
 
       - name: Install
-        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
+        # #1450 retried; #2318 ffmpeg-static binary cached, so a warm cache never asks GitHub's release CDN
+        uses: ./.github/actions/npm-ci-ffmpeg-cache
 
       # Builds packages/ngdpbase-types/dist and checks it: no JavaScript in the
       # main entry, the test kit loads in Node, an add-on typechecks against it.

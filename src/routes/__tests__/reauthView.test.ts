@@ -47,4 +47,39 @@ describe('reauth view (#2193)', () => {
     expect(aal1).not.toContain('id="reauthTotpPassword"');
     expect(render('')).not.toContain('/auth/reauth/totp');
   });
+
+  test('#2345: where passkeys cannot work, the note names the app and password, not a passkey', () => {
+    const at = (passkeysAvailable: boolean) => ejs.render(TEMPLATE, { next: '/profile', prompt: '', needsPasskey: true, ways: { addPasskey: passkeysAvailable }, hasPasskey: false, hasPassword: true, hasTotp: true, csrfToken: 'tok' });
+    const off = at(false);
+    expect(off).toContain('Your role needs your password with your authenticator app');
+    expect(off).not.toMatch(/passkey/i);
+    expect(at(true)).toContain('Your role needs a passkey, or your password with your authenticator app');
+  });
+
+  test('#2345: the no-way-to-confirm fallback names a passkey only where one can be added', () => {
+    const at = (passkeysAvailable: boolean, needsPasskey: boolean) => ejs.render(TEMPLATE, { next: '/profile', prompt: '', needsPasskey, ways: { addPasskey: passkeysAvailable, addTotp: true }, hasPasskey: false, hasPassword: needsPasskey, hasTotp: false, csrfToken: 'tok' });
+    for (const needsPasskey of [false, true]) {
+      const off = at(false, needsPasskey);
+      expect(off).toContain('Add an authenticator app on your <a href="/profile">profile</a>, or ask an administrator.');
+      expect(off).not.toMatch(/passkey/i);
+      expect(at(true, needsPasskey)).toContain('Add a passkey on your');
+    }
+  });
+
+  test('#2356: the fallback names only what this account can add, else an administrator', () => {
+    const at = (ways: Record<string, unknown>, needsPasskey = true, hasPassword = true) =>
+      ejs.render(TEMPLATE, { next: '/profile', prompt: '', needsPasskey, ways, hasPasskey: false, hasPassword, hasTotp: false, csrfToken: 'tok' });
+    // Allowed methods exclude passkeys and the app: nothing to add, no passkey, no app.
+    const none = at({ addPasskey: false, addTotp: false, outside: [] });
+    expect(none).toContain('This account has no way to confirm here that reaches the level your role needs.');
+    expect(none).toMatch(/Ask an administrator\.<\/p>/);
+    expect(none).not.toMatch(/passkey|authenticator/i);
+    expect(none).not.toContain('on your <a href="/profile">profile</a>');
+    // The app at AAL2 needs a password: an account with none is not told to add one.
+    expect(at({ addTotp: true }, true, false)).not.toMatch(/authenticator/i);
+    // An outside provider that gives the level: named, never the app.
+    const outside = at({ addTotp: false, outside: ['Example ID'] });
+    expect(outside).toContain('Sign out, then sign in with Example ID, or ask an administrator.');
+    expect(outside).not.toMatch(/authenticator|passkey/i);
+  });
 });

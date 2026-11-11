@@ -85,7 +85,8 @@ jobs:
 
       - name: Install dependencies
         if: needs.filter.outputs.docs_only != 'true'
-        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
+        # #1450 retried; #2318 ffmpeg-static binary cached, so a warm cache never asks GitHub's release CDN
+        uses: ./.github/actions/npm-ci-ffmpeg-cache
 
       - name: Build TypeScript
         if: needs.filter.outputs.docs_only != 'true'
@@ -311,7 +312,8 @@ jobs:
 
       - name: Install dependencies
         if: needs.filter.outputs.docs_only != 'true'
-        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
+        # #1450 retried; #2318 ffmpeg-static binary cached, so a warm cache never asks GitHub's release CDN
+        uses: ./.github/actions/npm-ci-ffmpeg-cache
 
       # #1278: the whole lint chain, not markdown alone. The guards (page door,
       # CSRF, permissions, context, audit docs, addon boundary, …) ran only in
@@ -380,7 +382,8 @@ jobs:
 
       - name: Install dependencies
         if: needs.filter.outputs.docs_only != 'true'
-        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
+        # #1450 retried; #2318 ffmpeg-static binary cached, so a warm cache never asks GitHub's release CDN
+        uses: ./.github/actions/npm-ci-ffmpeg-cache
 
       - name: Build TypeScript
         if: needs.filter.outputs.docs_only != 'true'
@@ -492,7 +495,8 @@ jobs:
 
       - name: Install dependencies
         if: needs.filter.outputs.docs_only != 'true'
-        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
+        # #1450 retried; #2318 ffmpeg-static binary cached, so a warm cache never asks GitHub's release CDN
+        uses: ./.github/actions/npm-ci-ffmpeg-cache
 
       - name: Build TypeScript
         if: needs.filter.outputs.docs_only != 'true'

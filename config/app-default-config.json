@@ -322,7 +322,7 @@
   "_comment_auth": "Sign-in methods offered (#1523; docs/planning/authentication.md). One entry per provider: authproviderid; primary (can start a sign-in); amr (RFC 8176 values), aal (1-3) and acr (phr | phrh) — what the provider gives, which config may LOWER but never raise (an overstated value is lowered with a warning); enabled; preference (#1523), where it comes among the second factors offered after a password, lower first, none last — those that reach the person's required level come first, then by preference; shipped passkey 1, magic-link 2, totp 3 (an authenticator app, #421; Web Push 4 and SMS 5 when they exist). magic-link is also the email link as a second factor, and email-link is read as magic-link; enabled false, or not listed, offers neither, and accounts that enrolled the email second factor then sign in with one step (warned at startup). amr [\"trust\"] is ignored with a startup warning (#1633): an outside provider's own second factor is trusted by its entry's trust-mfa in ngdpbase.auth.oidc.providers. A listed provider that is not registered or not fully configured is never offered. What a sign-in must REACH is per role (required-aal), not here. Replaces ngdpbase.auth.required-factors, which is still read from custom config and converted.",
   "_comment_auth_credentials": "#1524 — the credentials store: passkeys, TOTP, verified email/phone and known devices, many per account. Passwords are NOT here; they stay on the user record. Written owner-only (0600) beside the user store. Every row is signed with NGDPBASE_CREDENTIALS_KEY (instance .env, generated on first boot); a row that does not verify is ignored and raised as a security alert. Back up .env separately from the data: without the key every row is rejected.",
   "ngdpbase.auth.credentials.file": "${FAST_STORAGE}/users/credentials.json",
-  "_comment_auth_passkey": "#448 — passkeys (WebAuthn): a passkey alone signs a person in, at AAL2, phishing-resistant. Registered only when ngdpbase.application.base-url is set explicitly and is https (or localhost): a passkey is tied to that host, so it works only on that hostname — a site answering on several hostnames should redirect the others to it. Stored in the credentials store. false turns passkeys off.",
+  "_comment_auth_passkey": "#448 — passkeys (WebAuthn): a passkey alone signs a person in, at AAL2, phishing-resistant. Registered only when ngdpbase.application.base-url is set explicitly and is https (or localhost): a passkey is tied to that host, so it works only on that hostname — a site answering on several hostnames should redirect the others to it. Stored in the credentials store. false turns passkeys off. #2317 — while this is true and the address cannot support passkeys (base-url not set explicitly, or not https and not localhost), none are offered anywhere, and Admin > Configuration says on this row \"Passkeys can't work on this site's address. They need an https address.\" with a Turn passkeys off button that saves false. Nothing rewrites the setting by itself.",
   "ngdpbase.auth.passkey.enabled": true,
   "_comment_auth_known_device": "#1523 slice 1c — \"Remember this browser\": an opt-in box at the second step of a sign-in, recorded as a consent record (scope remember-browser, bound to the device). The browser makes a non-extractable ECDSA P-256 key (WebCrypto) and keeps it; the credentials store keeps only the public half as a device row, with the browser and system it was issued to. At a later sign-in the browser signs a one-time challenge; when the signature verifies and the browser and system still match, the second-factor prompt is skipped. It is not a factor: the sign-in reports only the factors entered (amr, aal) with a knownDevice flag, and step-up still asks. It applies only when the factors entered already reach the highest required-aal among the person's roles, so a person whose roles need AAL2 is always asked. remember-days is how long a remembered browser counts (default 30); 0 turns remembering off. The profile lists each remembered browser under sign-in methods, with Remove.",
   "ngdpbase.auth.known-device.remember-days": 30,
@@ -2849,13 +2849,15 @@
       "color": "#adb5bd"
     }
   },
-  "_comment_access_policies": "Access control policies - Role-based with specific action permissions",
+  "_comment_access_policies": "Access control policies - Role-based with specific action permissions. A policy has no priority (#2330): the rule-combining algorithm below is deny-overrides, so any matching deny wins and the order of the policies does not matter. A leftover priority is ignored and reported once at start-up. A condition follows XACML 3.0 in lowercase (docs/access-policies.md): one function named for its XACML function (string-equal, integer-equal, boolean-equal, string-is-in, integer-is-in, integer-greater-than, integer-greater-than-or-equal, integer-less-than, integer-less-than-or-equal, and, or, not) whose value is the array of its arguments, each { attributeid, datatype } or { value, datatype }. datatype is required. The old { attribute, equals } shape is refused on save and reported at start-up. The older plural conditions array is not enforced (#2334): nothing reads it, so it limits no access; it is reported at start-up and on save, not refused. Use condition.",
+  "_comment_access_rule_combining_algorithm": "How the matching policies are combined (#2330, XACML 3.0 rule-combining algorithm). Only deny-overrides is accepted: any matching deny wins, and with no deny any matching allow permits; with neither the request is refused. Any other value is refused on save, and at start-up it is reported and the site does not start. The start-up log states it, and Admin → Configuration shows it above the policies.",
+  "ngdpbase.access.rule-combining-algorithm": "deny-overrides",
   "ngdpbase.access.policies.default-policy": "deny",
   "ngdpbase.access.policies.enabled": true,
   "_comment_access_resource_types": "Policy resource types (#1504, docs/access-policies.md): the kinds of thing a policy's resources may name. Declared once here and read through ConfigurationManager. The evaluator holds one matcher per core type (page, system-category, vault, shared-folder). A type an add-on declares is matched by id only when a record of that type is decided (#1823); a page decision does not use it. A type that is not declared never matches.",
   "ngdpbase.access.resource-types": {
     "page": {
-      "description": "A page, matched by its name (glob pattern). Its attributes are what a policy's condition may read as resource:<name>, each read by the PIP from its source (#2255): owner is the page's author",
+      "description": "A page, matched by its name (glob pattern). Its attributes are what a policy's condition may read as resource:<name> (an attributeid in a condition), each read by the PIP from its source (#2255): owner is the page's author",
       "attributes": {
         "system-category": {
           "type": "string",
@@ -2877,7 +2879,7 @@
       "description": "A shared folder, its pages and files, matched by the folder as shared/<name> (glob pattern; shared/* is every folder). Only shared-folder-read and shared-folder-file are asked with it (#2125)"
     }
   },
-  "_comment_access_subject_attributes": "Subject attributes (#2261, docs/access-policies.md): what a policy's condition may read about whoever asks, as subject:<name>. Each has a type (string, integer, boolean, identity, list) and a from, the source the PIP reads it from: account:<field> or profile:<field> (a field of the person's account record; the password, email, roles and the like are never readable), or sign-in (the assurance level, 1 to 3, the session's sign-in reached; an agent token or a background job has the level stored when it was made, and a visitor who is not signed in, or a token made before it was stored, has none, so a condition on it fails closed). id and aal are built in and cannot be redefined here (a declaration of either with another meaning is refused on save and reported at start-up; the built-in is kept). A site adds its own, for example department-id with type string and from profile:department; a condition naming one that is not declared here is refused on save and reported at start-up.",
+  "_comment_access_subject_attributes": "Subject attributes (#2261, docs/access-policies.md): what a policy's condition may read about whoever asks, as subject:<name> (the attributeid of an argument, whose datatype must be the attribute's type: string for a string or an identity, integer, boolean). Each has a type (string, integer, boolean, identity, list) and a from, the source the PIP reads it from: account:<field> or profile:<field> (a field of the person's account record; the password, email, roles and the like are never readable), or sign-in (the assurance level, 1 to 3, the session's sign-in reached; an agent token or a background job has the level stored when it was made, and a visitor who is not signed in, or a token made before it was stored, has none, so a condition on it fails closed). id and aal are built in and cannot be redefined here (a declaration of either with another meaning is refused on save and reported at start-up; the built-in is kept). A site adds its own, for example department-id with type string and from profile:department; a condition naming one that is not declared here is refused on save and reported at start-up.",
   "ngdpbase.access.subject-attributes": {
     "id": {
       "type": "identity",
@@ -2888,7 +2890,7 @@
       "from": "sign-in"
     }
   },
-  "_comment_access_environment_attributes": "Environment attributes (#2261, docs/access-policies.md): what a policy's condition may read about the moment or the site, as environment:<name>. Each is a boolean (type boolean) with a from: schedule:<name> (whether that schedule in ngdpbase.schedules is open now, in its own time zone) or config:<key> (the boolean stored at that configuration key; any key may be read, secrets included, and its value is never written to a log, an audit record or a message). A schedule that is not in ngdpbase.schedules, or a key that does not hold a boolean, makes the attribute missing, so an allow with the condition does not apply and a deny does; the start-up log names a missing schedule. The time is read once per decision or listing.",
+  "_comment_access_environment_attributes": "Environment attributes (#2261, docs/access-policies.md): what a policy's condition may read about the moment or the site, as environment:<name> (the attributeid of an argument, with datatype boolean). Each is a boolean (type boolean) with a from: schedule:<name> (whether that schedule in ngdpbase.schedules is open now, in its own time zone) or config:<key> (the boolean stored at that configuration key; any key may be read, secrets included, and its value is never written to a log, an audit record or a message). A schedule that is not in ngdpbase.schedules, or a key that does not hold a boolean, makes the attribute missing, so an allow with the condition does not apply and a deny does; the start-up log names a missing schedule. The time is read once per decision or listing.",
   "ngdpbase.access.environment-attributes": {
     "is-business-hours": {
       "type": "boolean",
@@ -2904,7 +2906,6 @@
       "id": "admin-full-access",
       "name": "Administrator Full Access",
       "description": "Full system access for administrators - all page and admin permissions",
-      "priority": 100,
       "effect": "allow",
       "subjects": [
         {
@@ -2958,7 +2959,6 @@
       "id": "demo-admin-access",
       "name": "Demo Administrator (read-only)",
       "description": "Demo visitors may view admin screens and edit pages, but change nothing administrative",
-      "priority": 90,
       "effect": "allow",
       "subjects": [
         {
@@ -2992,7 +2992,6 @@
       "id": "contact-read-access",
       "name": "Administrators and demo administrators find and view identity records",
       "description": "List, search and view identity records and organizations (#1930). Changing them is identity-manage, admins only. An add-on that needs them grants identity-read to its own roles in its own policy. The id keeps its name from before #2038, so an operator's override of it still merges",
-      "priority": 100,
       "effect": "allow",
       "subjects": [
         {
@@ -3018,7 +3017,6 @@
       "id": "contact-manage-admin",
       "name": "Administrators change identity records",
       "description": "Admins create, edit, delete and link identity records and organizations (#1930). An add-on that needs to change them grants identity-manage to its own roles in its own policy. The id keeps its name from before #2038, so an operator's override of it still merges",
-      "priority": 100,
       "effect": "allow",
       "subjects": [
         {
@@ -3040,7 +3038,6 @@
       "id": "user-admin-permissions",
       "name": "User Administrator Permissions",
       "description": "Can manage users — create, edit, deactivate, delete",
-      "priority": 95,
       "effect": "allow",
       "subjects": [
         {
@@ -3074,7 +3071,6 @@
       "id": "editor-permissions",
       "name": "Editor Permissions",
       "description": "Can create, edit, delete, and rename pages plus manage assets",
-      "priority": 80,
       "effect": "allow",
       "subjects": [
         {
@@ -3114,7 +3110,6 @@
       "id": "contributor-permissions",
       "name": "Contributor Permissions",
       "description": "Can create and edit pages, upload assets (no delete/rename)",
-      "priority": 70,
       "effect": "allow",
       "subjects": [
         {
@@ -3150,7 +3145,6 @@
       "id": "reader-permissions",
       "name": "Reader Permissions",
       "description": "Read-only access - can view pages and assets, search, and export",
-      "priority": 60,
       "effect": "allow",
       "subjects": [
         {
@@ -3184,7 +3178,6 @@
       "id": "executive-permissions",
       "name": "Executive (read-only)",
       "description": "The executive role reads the organization's pages, files, accounts and identity records and opens the Executive Hub (#2093). It writes nothing; add-ons grant it their own read and board-decide permissions in their own policies",
-      "priority": 75,
       "effect": "allow",
       "subjects": [
         {
@@ -3214,7 +3207,6 @@
       "id": "signed-in-self-service",
       "name": "Signed-in Self-Service",
       "description": "Every account manages its own profile and sign-in methods (#448). Granted to vault-owner, the role every account is given (ngdpbase.user.account-roles), so a session whose site role has stepped down for its required-aal can still reach its profile to enrol a passkey. profile-manage, account-security (#1525), and search-user: every user may search for other users (operator, 2026-10-24, #2018), so the people pickers work for every account. Nothing else.",
-      "priority": 60,
       "effect": "allow",
       "subjects": [
         {
@@ -3238,7 +3230,6 @@
       "id": "shared-folder-default",
       "name": "Shared Folder: default",
       "description": "/shared/default is open to every signed-in user (#1775, #2125): every account may open it and add, edit and delete its pages and files. Granted to vault-owner, the role every account is given (ngdpbase.user.account-roles); never anonymous. Every other folder opens only through a policy naming it: administrators open and file in every folder (shared-folder-admin), executives read every folder (shared-folder-executive-read) and file in /shared/executive (shared-folder-executive-file)",
-      "priority": 60,
       "effect": "allow",
       "subjects": [
         {
@@ -3261,7 +3252,6 @@
       "id": "shared-folder-admin",
       "name": "Shared Folders: administrators",
       "description": "Administrators may open every shared folder and add, edit and delete in it (#2125, #2095, operator 2026-10-30): its pages, their history and its files, the folder list on /shared and the folder's search",
-      "priority": 60,
       "effect": "allow",
       "subjects": [
         {
@@ -3284,7 +3274,6 @@
       "id": "shared-folder-executive-read",
       "name": "Shared Folders: executives read",
       "description": "Executives may open every shared folder (#2095, operator 2026-10-30): its pages, their history and its files, the folder list on /shared and the folder's search. Read only: adding, editing and deleting is shared-folder-executive-file, in /shared/executive alone. Users' own vaults are not shared folders and stay closed",
-      "priority": 60,
       "effect": "allow",
       "subjects": [
         {
@@ -3306,7 +3295,6 @@
       "id": "shared-folder-executive-file",
       "name": "Shared Folders: executives file in /shared/executive",
       "description": "Executives may add, edit and delete pages and files in /shared/executive (#2095, operator 2026-10-30), and in no other folder but /shared/default. A site may give shared-folder-file on shared/executive to others (e.g. a secretary) by its own policy",
-      "priority": 60,
       "effect": "allow",
       "subjects": [
         {
@@ -3328,7 +3316,6 @@
       "id": "vault-owner-permissions",
       "name": "Vault Owner Permissions",
       "description": "Everything inside the subject's own vaults — pages and files. The private-container check admits only the owner, so `vault: *` means their own vaults (#1539)",
-      "priority": 65,
       "effect": "allow",
       "subjects": [
         {
@@ -3363,7 +3350,6 @@
       "id": "anonymous-read-only",
       "name": "Anonymous Read Access",
       "description": "Anonymous users can read pages and attachments, and search pages",
-      "priority": 50,
       "effect": "allow",
       "subjects": [
         {
@@ -3387,7 +3373,6 @@
       "id": "page-public-access",
       "name": "Make pages public",
       "description": "Move one's own general and capture pages out of their vault (#1504): the roles that can have private pages today. The journal add-on grants the same for journal pages in its own policy, journal-page-public (#1507)",
-      "priority": 60,
       "effect": "allow",
       "subjects": [
         {
@@ -3433,7 +3418,6 @@
       "id": "general-page-write",
       "name": "Change general pages",
       "description": "Edit, delete and rename pages in the general category (#2255). Admin and editor hold all three, as they did on every page before",
-      "priority": 80,
       "effect": "allow",
       "subjects": [
         {
@@ -3461,7 +3445,6 @@
       "id": "general-page-edit",
       "name": "Edit general pages",
       "description": "Edit pages in the general category (#2255). Contributor and demo-admin hold edit only, as they did on every page before",
-      "priority": 70,
       "effect": "allow",
       "subjects": [
         {
@@ -3487,7 +3470,6 @@
       "id": "self-managed-author-write",
       "name": "Authors change their own self-managed pages",
       "description": "Edit, delete and rename a capture or user-profile page you are the author of (#2255). The journal add-on adds journal. Changing a user-profile page also needs profile-manage, which editor holds",
-      "priority": 80,
       "effect": "allow",
       "subjects": [
         {
@@ -3511,15 +3493,22 @@
         "page-rename"
       ],
       "condition": {
-        "attribute": "resource:owner",
-        "equals": "subject:id"
+        "string-equal": [
+          {
+            "attributeid": "resource:owner",
+            "datatype": "string"
+          },
+          {
+            "attributeid": "subject:id",
+            "datatype": "string"
+          }
+        ]
       }
     },
     {
       "id": "self-managed-author-edit",
       "name": "Authors edit their own self-managed pages",
       "description": "Edit a capture or user-profile page you are the author of (#2255). Changing a user-profile page also needs profile-manage, which contributor and demo-admin hold",
-      "priority": 70,
       "effect": "allow",
       "subjects": [
         {
@@ -3545,15 +3534,22 @@
         "page-edit"
       ],
       "condition": {
-        "attribute": "resource:owner",
-        "equals": "subject:id"
+        "string-equal": [
+          {
+            "attributeid": "resource:owner",
+            "datatype": "string"
+          },
+          {
+            "attributeid": "subject:id",
+            "datatype": "string"
+          }
+        ]
       }
     },
     {
       "id": "self-managed-admin",
       "name": "Administrators change self-managed pages",
       "description": "The administrator exception for capture and user-profile pages: edit, delete and rename whoever the author is (#2255)",
-      "priority": 100,
       "effect": "allow",
       "subjects": [
         {
@@ -3581,7 +3577,6 @@
       "id": "pushed-pages-admin",
       "name": "Administrators change pushed pages",
       "description": "Pages shipped by the system or an add-on (system, documentation, addon) are changed by holders of pushed-pages-edit, -delete and -rename; shipped only to admin (#2255)",
-      "priority": 100,
       "effect": "allow",
       "subjects": [
         {
@@ -3613,7 +3608,6 @@
       "id": "shared-page-write",
       "name": "Change pages in shared folders",
       "description": "The shared category's own permission (#2255): edit, delete and rename a page in a shared folder. Which folders is shared-folder-file's to say (shared-folder-default and the policies beside it); an author-lock narrows it to the author. Admin is named for the system principal, which holds no vault-owner",
-      "priority": 60,
       "effect": "allow",
       "subjects": [
         {
@@ -3641,7 +3635,6 @@
       "id": "page-categorize-admin",
       "name": "Administrators set a page's system-category",
       "description": "Set or change any page's system-category (#2255). A page created in a shared folder gets shared without it",
-      "priority": 100,
       "effect": "allow",
       "subjects": [
         {
