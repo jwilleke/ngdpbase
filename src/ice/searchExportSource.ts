@@ -282,7 +282,7 @@ export function searchExportSource(deps: SearchExportDeps): IceExportSource {
         items.push(item);
       }
       if (leftOut > 0) info.note(`${leftOut} matching ${plural(leftOut, 'item was', 'items were')} left out: ${reason}`);
-      if (found.capped) info.note(`More than ${LOOK_AHEAD} matches; only the first ${LOOK_AHEAD} were looked at.`);
+      if (found.capped) info.note(`${LOOK_AHEAD} or more matches; only the first ${LOOK_AHEAD} were looked at.`);
       if (found.people > 0) info.note(`${found.people} ${plural(found.people, 'person was', 'people were')} left out.`);
       return items;
     }
