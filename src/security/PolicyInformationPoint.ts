@@ -24,7 +24,7 @@ import { ANONYMOUS_SUBJECT, SYSTEM_PRINCIPAL_KEY, SYSTEM_ROLES_KEY } from '../ma
 import type UserManager from '../managers/UserManager.js';
 import type RoleManager from '../managers/RoleManager.js';
 import type IdentityManager from '../managers/IdentityManager.js';
-import { isReservedUsername, normalizeUsername } from '../utils/username.js';
+import { IDENTITY_ID_PREFIX, isReservedUsername, normalizeUsername } from '../utils/username.js';
 import { pageWriteAlternatives } from '../utils/permissionCatalog.js';
 import type { Request } from 'express';
 import type PolicyEvaluator from '../managers/PolicyEvaluator.js';
@@ -1437,7 +1437,8 @@ class PolicyInformationPoint extends BaseManager {
     const identities = this.engine.getManager<IdentityManager>('IdentityManager');
     const username = identities
       ? await identities.usernameOf(systemContext(this.engine, 'policy condition: the account a page owner names (#2255)'), stored)
-      : stored.startsWith('urn:') ? undefined : stored; // without IdentityManager a urn: id names no username, so it is unknown
+      // Without IdentityManager a urn: id names no username, so it is unknown; `URN:` too (#2279), so it is never taken for a username.
+      : stored.toLowerCase().startsWith(IDENTITY_ID_PREFIX) ? undefined : stored;
     return username ? normalizeUsername(username) : undefined;
   }
 
