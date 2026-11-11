@@ -645,10 +645,10 @@ export class OidcManager extends BaseManager {
   }
 
   /** Enabled but unusable: say why, loudly, and mount nothing. */
-  private refuse(reason: string, plain: string, configKey?: string): void {
+  private refuse(reason: string, plain: string): void {
     this.options = null;
     // #2354: the dashboard shows the plain words; the log keeps the developer reason.
-    this.markDegraded(`Single sign-on is turned on but has not started: ${plain}`, configKey);
+    this.markDegraded(`Single sign-on is turned on but has not started: ${plain}`);
     logger.error(`[OidcManager] ${OIDC_ENABLED_KEY} is true but the provider is not started: ${reason}`);
   }
 }
