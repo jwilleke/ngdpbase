@@ -59,16 +59,6 @@ const SURFACES: Surface[] = [
     mustNotContain: ['fetch(`/admin/users/${username}`']
   },
   {
-    file: 'views/export.ejs',
-    mustContain: '(window.csrfFetch || fetch)(url, {',
-    mustNotContain: ['fetch(url, {']
-  },
-  {
-    file: 'views/exports.ejs',
-    mustContain: "(window.csrfFetch || fetch)(url, { method: 'DELETE' })",
-    mustNotContain: ["fetch(url, { method: 'DELETE' })"]
-  },
-  {
     file: 'src/plugins/CommentsPlugin.ts',
     mustContain: "(window.csrfFetch || fetch)('/api/comments/' + pageUuid + ngdpCommentQuery(),",
     mustNotContain: ["fetch('/api/comments/' + pageUuid + ngdpCommentQuery(),"]

@@ -966,14 +966,6 @@ describe('WikiRoutes — coverage batch 14', () => {
     });
   });
 
-  // ── Export ────────────────────────────────────────────────────────────────────
-
-  describe('GET /export (exportPage)', () => {
-    test('renders export page with list of pages', async () => {
-      const res = await request(app).get('/export');
-      expect(res.status).toBe(200);
-    });
-  });
 
   describe('POST /export/html/:page (exportPageHtml)', () => {
     test('returns 500 when export fails', async () => {

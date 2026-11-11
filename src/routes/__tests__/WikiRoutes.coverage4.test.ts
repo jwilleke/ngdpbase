@@ -8,10 +8,6 @@
  *   GET  /profile
  *   GET  /kiosk
  *   GET  /search
- *   GET  /export
- *   GET  /exports
- *   GET  /download/:filename
- *   DELETE /deleteExport/:filename
  *   GET  /history/:page
  *   GET  /diff/:page
  *   GET  /admin
@@ -584,56 +580,9 @@ describe('WikiRoutes — coverage batch 4', () => {
     });
   });
 
-  // ── GET /export ──────────────────────────────────────────────────────────────
 
-  describe('GET /export', () => {
-    test('renders export page with list of pages', async () => {
-      const res = await request(app).get('/export');
-      expect(res.status).toBe(200);
-    });
-  });
 
-  // ── GET /exports ─────────────────────────────────────────────────────────────
 
-  describe('GET /exports', () => {
-    test('renders exports list page', async () => {
-      mockExportManager.getExports.mockResolvedValue([
-        { filename: 'export-2025.html', path: '/tmp/export.html' }
-      ]);
-      const res = await request(app).get('/exports');
-      expect(res.status).toBe(200);
-    });
-  });
-
-  // ── GET /download/:filename ──────────────────────────────────────────────────
-
-  describe('GET /download/:filename', () => {
-    test('returns 404 when export file not found', async () => {
-      mockExportManager.getExports.mockResolvedValue([]);
-      const res = await request(app).get('/download/nonexistent.html');
-      expect(res.status).toBe(404);
-    });
-  });
-
-  // ── DELETE /deleteExport/:filename ───────────────────────────────────────────
-
-  describe('DELETE /deleteExport/:filename', () => {
-    test('returns 204 on successful delete', async () => {
-      const res = await request(app)
-        .delete('/deleteExport/export-2025.html')
-        .set('x-csrf-token', 'test-csrf-token');
-      expect(res.status).toBe(204);
-      expect(mockExportManager.deleteExport).toHaveBeenCalledWith('export-2025.html');
-    });
-
-    test('returns 500 when deleteExport throws', async () => {
-      mockExportManager.deleteExport.mockRejectedValue(new Error('disk error'));
-      const res = await request(app)
-        .delete('/deleteExport/export-2025.html')
-        .set('x-csrf-token', 'test-csrf-token');
-      expect(res.status).toBe(500);
-    });
-  });
 
   // ── GET /history/:page ───────────────────────────────────────────────────────
 

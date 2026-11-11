@@ -305,6 +305,8 @@ function getErrorMessage(error: unknown): string {
 }
 
 /** Said when an email is saved that another account uses too (#2073, operator 2026-10-25): sharing is allowed, and sign-in by email asks which account. */
+/** Shown on /search to someone who followed an old link to the retired Export screen. */
+const EXPORT_MOVED_NOTICE = 'Exports now start from search results. Search, then choose Export these results.';
 const SHARED_EMAIL_NOTE = 'Another account uses this email too. Emailed sign-in links will ask which account.';
 
 /** Said when a user asks to change their email too often (#2073): no link is sent. */
@@ -5676,6 +5678,8 @@ ${panes}
         assetPickerInitFilters: initFilters,
         // Export is for signed-in users only; a visitor is never shown it.
         assetPickerCanExport:   gateContext.userContext?.isAuthenticated === true,
+        // An old /export link lands here with `from=export`; the note is fixed text, never taken from the URL.
+        assetPickerNotice:      firstString(req.query.from) === 'export' ? EXPORT_MOVED_NOTICE : '',
         assetPickerUserKeywords:   pickerKw.userKeywords,
         assetPickerSystemKeywords: pickerKw.systemKeywords,
         assetPickerCategories:     pickerKw.categories,
@@ -6517,33 +6521,6 @@ ${panes}
   }
 
   /**
-   * Export page selection form
-   */
-  async exportPage(req: Request, res: Response) {
-    try {
-      const commonData = await this.getCommonTemplateData(req);
-      const pageManager = this.engine.getManager('PageManager');
-      // The picker is open, like the pages it lists. `denyExport` is what
-      // stops an unreadable page being extracted from here (#1060).
-      //
-      // #1219: the list is the evaluator's answer for this caller. It used to
-      // be the whole index — a title is content, and a private page named for
-      // what it holds disclosed by appearing here. The filter runs over the
-      // in-memory index, not per-page ACL evaluation.
-      const pageNames = await pageManager.listPagesFor(req.userContext, 'view');
-
-      return res.render('export', {
-        ...commonData,
-        title: 'Export Pages',
-        pageNames: pageNames
-      });
-    } catch (err: unknown) {
-      logger.error('Error loading export page:', err);
-      return res.status(500).send('Error loading export page');
-    }
-  }
-
-  /**
    * Export page to HTML
    */
   /**
@@ -6816,87 +6793,6 @@ ${panes}
     res.attachment(file.name);
     res.type(file.mediaType);
     return res.send(file.bytes);
-  }
-
-  /**
-   * List available exports
-   */
-  async listExports(req: Request, res: Response) {
-    try {
-      // #1060: this lists the export directory, which holds files saved by
-      // every user who has ever exported anything — content the caller may
-      // have no right to read. Admin-only until exports are either per-caller
-      // or not persisted at all.
-      const wikiContext = this.createWikiContext(req);
-      if (!(await wikiContext.hasPermission('admin-system'))) {
-        return await this.renderError(
-          req,
-          res,
-          403,
-          'Access Denied',
-          'You do not have permission to view saved exports.'
-        );
-      }
-      const commonData = await this.getCommonTemplateData(req);
-      const exportManager = this.engine.getManager('ExportManager');
-      const exports = await exportManager.getExports();
-
-      res.render('exports', {
-        ...commonData,
-        title: 'Exports',
-        exports: exports
-      });
-    } catch (err: unknown) {
-      logger.error('Error listing exports:', err);
-      res.status(500).send('Error listing exports');
-    }
-  }
-
-  /**
-   * Download export file
-   */
-  async downloadExport(req: Request, res: Response) {
-    try {
-      // #1060: the export folder holds every user's exports; admin-only, like /exports.
-      if (!(await this.createWikiContext(req).hasPermission('admin-system'))) {
-        return res.status(403).send('Access Denied');
-      }
-      const { filename } = req.params;
-      const exportManager = this.engine.getManager('ExportManager');
-      const exports = await exportManager.getExports();
-
-      const exportFile = exports.find((e: { filename?: string; path?: string }) => e.filename === filename);
-      if (!exportFile) {
-        return res.status(404).send('Export not found');
-      }
-
-      return res.download(exportFile.path, filename);
-    } catch (err: unknown) {
-      logger.error('Error downloading export:', err);
-      return res.status(500).send('Error downloading export');
-    }
-  }
-
-  /**
-   * Delete export file
-   */
-  async deleteExport(req: Request, res: Response) {
-    try {
-      // #1060: admin-only, like /exports.
-      if (!(await this.createWikiContext(req).hasPermission('admin-system'))) {
-        res.status(403).json({ message: 'Access Denied' });
-        return;
-      }
-      const { filename } = req.params;
-      const exportManager = this.engine.getManager('ExportManager');
-      
-      await exportManager.deleteExport(filename);
-      res.sendStatus(204);
-    }
-    catch (err) {
-      logger.error('Error deleting export:', err);
-      res.status(500).json({ message:'Error deleting export' });
-    }
   }
 
   /**
@@ -19129,7 +19025,8 @@ ${panes}
     app.put('/api/user/pinned-pages/order', (req: Request, res: Response) => void this.reorderPinnedPages(req, res));
     app.get('/api/users/search', (req: Request, res: Response) => void this.apiUsersSearch(req, res));
     app.get('/user-info', (req: Request, res: Response) => this.userInfo(req, res));
-    app.get('/export', (req: Request, res: Response) => this.exportPage(req, res));
+    // #2174: the general Export screen is retired. An old link lands on search, with a note.
+    app.get('/export', (_req: Request, res: Response) => res.redirect(302, '/search?from=export'));
     app.post('/export/html/:page', (req: Request, res: Response) => this.exportPageHtml(req, res));
     app.post('/export/markdown/:page', (req: Request, res: Response) => this.exportPageMarkdown(req, res));
     // #2120: the Export action on a page, through the ICE engine.
@@ -19139,9 +19036,6 @@ ${panes}
     app.post('/export/search', (req: Request, res: Response) => void this.exportSearchStart(req, res));
     app.get('/export/runs/:runId', (req: Request, res: Response) => void this.exportRunStatus(req, res));
     app.get('/export/runs/:runId/download', (req: Request, res: Response) => void this.exportRunDownload(req, res));
-    app.get('/exports', (req: Request, res: Response) => this.listExports(req, res));
-    app.get('/download/:filename', (req: Request, res: Response) => this.downloadExport(req, res));
-    app.delete('/deleteExport/:filename', (req: Request, res: Response) => this.deleteExport(req, res));
 
     // Version management view routes (Phase 6)
     app.get('/history/:page', (req: Request, res: Response) => this.publicPageRoute(req, res, 'history', () => this.pageHistory(req, res)));
