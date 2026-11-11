@@ -16,7 +16,11 @@
         </div>
         <div class="card-body">
           <h5 class="card-title"><%= title || error %></h5>
-          <p class="card-text"><%= message %></p>
+          <% if (typeof conflictingPage !== 'undefined' && conflictingPage) { %>
+            <p class="card-text">A page called "<a href="<%= conflictingPage.url %>"><%= conflictingPage.title %></a>" already exists.</p>
+          <% } else { %>
+            <p class="card-text"><%= message %></p>
+          <% } %>
 
           <% if (typeof details !== 'undefined' && details) { %>
             <p class="text-muted"><%= details %></p>
