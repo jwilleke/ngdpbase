@@ -92,8 +92,31 @@ describe('#1946 the dashboard separates down from needs-attention', () => {
     expect(links[0].textContent).toBe('Change this in Admin → Configuration');
   });
 
-  test('#2348 a caller that names its own fix gets that link and label, not the Configuration link', async () => {
-    const doc = await render([], [{ ...reminder, fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup' }]);
+  test('#2354 when a caller names a fix and a setting, both links show', async () => {
+    const doc = await render([], [{ manager: 'ConsentManager', state: 'degraded', kind: 'attention', reason: 'A consent document needs review', configKey: 'ngdpbase.consent.documents', fixUrl: '/admin/required-pages', fixLabel: 'Open Admin → Required Pages Sync' }]);
+    const links = [...doc.querySelectorAll('#subsystems-attention a')];
+    expect(links.map((a) => [a.getAttribute('href'), a.textContent])).toEqual([
+      ['/admin/required-pages', 'Open Admin → Required Pages Sync'],
+      ['/admin/configuration#config-ngdpbase.consent.documents', 'Change this in Admin → Configuration']
+    ]);
+  });
+
+  test('#2354 a backup-key reminder shows only the Backup page link, never a link to the saved-key record', async () => {
+    // The shape BackupManager declares (asserted against the real manager in BackupManager.envKeys.test.ts).
+    const doc = await render([], [{ ...reminder, configKey: undefined, fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup' }]);
+    const links = [...doc.querySelectorAll('#subsystems-attention a')];
+    expect(links.map((a) => [a.getAttribute('href'), a.textContent])).toEqual([['/admin/backup', 'Open Admin → Backup']]);
+    expect(doc.body.textContent).not.toContain('Change this in Admin');
+  });
+
+  test('#2354 when only a setting is named, only the Configuration link shows', async () => {
+    const doc = await render([], [reminder]);
+    const links = [...doc.querySelectorAll('#subsystems-attention a')];
+    expect(links.map((a) => a.textContent)).toEqual(['Change this in Admin → Configuration']);
+  });
+
+  test('#2348 a caller that names its own fix gets that link and label', async () => {
+    const doc = await render([], [{ ...reminder, configKey: undefined, fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup' }]);
     const links = [...doc.querySelectorAll('#subsystems-attention a')];
     expect(links).toHaveLength(1);
     expect(links[0].getAttribute('href')).toBe('/admin/backup');
@@ -106,7 +129,7 @@ describe('#1946 the dashboard separates down from needs-attention', () => {
       const doc = await render([], [{ ...reminder, configKey: undefined, fixUrl }]);
       expect(doc.querySelectorAll('#subsystems-attention a')).toHaveLength(0);
     }
-    const doc = await render([], [{ ...reminder, fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup' }]);
+    const doc = await render([], [{ ...reminder, configKey: undefined, fixUrl: '/admin/backup', fixLabel: 'Open Admin → Backup' }]);
     expect(doc.querySelectorAll('#subsystems-attention a')).toHaveLength(1);
   });
 

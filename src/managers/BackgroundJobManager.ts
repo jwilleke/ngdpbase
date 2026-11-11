@@ -388,7 +388,8 @@ class BackgroundJobManager extends BaseManager {
     if (unavailable) {
       this.held = 'The application database is not available, so no scheduled or hand-started job runs until a restart opens it — the critical notification about it says why and how to fix it (#1892)';
       logger.error(`[BackgroundJobManager] ${this.held}`);
-      this.markDegraded(this.held);
+      // #2354: the dashboard says it in plain words; the cause is the Database item.
+      this.markDegraded('No scheduled jobs are running, because the database is not available. Fix the database problem shown here, then restart the site.');
       return;
     }
     if (!this.stateProvider && configManager) {

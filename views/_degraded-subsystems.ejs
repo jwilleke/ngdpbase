@@ -30,10 +30,11 @@
                         <% m.details.forEach(function (line) { %><li><%= line %></li><% }); %>
                     </ul>
                 <% } %>
-                <%# A caller names its own fix (a record the app writes is not a value to edit); a setting is the fallback. %>
+                <%# A caller names its own fix (a record the app writes is not a value to edit); a setting's row in Configuration is shown too, when there is one. %>
                 <% if (m.fixUrl && /^\/(?![\/\\])/.test(String(m.fixUrl))) { %>
                     <div class="mt-1"><a class="alert-link" href="<%= m.fixUrl %>"><%= m.fixLabel || 'Fix this' %></a></div>
-                <% } else if (m.configKey && String(m.configKey).indexOf('ngdpbase.') === 0) { %>
+                <% } %>
+                <% if (m.configKey && String(m.configKey).indexOf('ngdpbase.') === 0) { %>
                     <div class="mt-1"><a class="alert-link" href="/admin/configuration#config-<%= m.configKey %>">Change this in Admin &rarr; Configuration</a></div>
                 <% } %>
             </li>

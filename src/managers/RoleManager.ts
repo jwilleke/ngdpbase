@@ -758,7 +758,8 @@ class RoleManager extends BaseManager {
     const reason = `Some roles list contacts as members (${detail}). A contact is an identity record with no credentials, and only users hold roles, so these memberships give nothing. ` +
       'They were left as they are: give each contact an account (it then holds the role as a user, and can be taken out of it like any user), or remove it from the role\'s file in the roles folder';
     logger.error(`🔑 ${reason} (#2040)`);
-    this.markNeedsAttention(reason);
+    // #2354: the dashboard says it in plain words; the roles and counts are in the log line above.
+    this.markNeedsAttention('Some roles list contacts as members. Contacts have no sign-in, so those memberships do nothing. Give each contact an account, or remove it from the role.');
     await this.notifyAdminsOnce(CONTACT_MEMBERS_TITLE, `${reason}.`);
     return found;
   }

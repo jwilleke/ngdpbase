@@ -60,6 +60,7 @@ import { BACKUP_KEY_ENV, backupKeyFingerprint, currentBackupKey, LEFT_OUT_FOR_NO
 // The environment variable holding the SQLCipher key: one declaration, `src/utils/databaseKey.ts`.
 import { DATABASE_KEY_ENV } from '../utils/databaseKey.js';
 import type NotificationManager from './NotificationManager.js';
+import { STAGED_RESTORE_FIX } from '../utils/plainAttention.js';
 export { DATABASE_KEY_ENV };
 
 // #1723, #1876: the backup key has one declaration (`src/utils/backupKey.ts`); re-exported for the callers that import it from here.
@@ -180,7 +181,7 @@ class DatabaseManager extends BaseManager {
   /** When the restored backup was taken, and where the replaced application database is kept, when a restore was applied at this start (#1876). */
   private replaced: { backup: string; applicationKept: string | null } | null = null;
   /** Why this manager is degraded, one entry per cause, so one cause clearing leaves the others. */
-  private readonly faults = new Map<Fault, { reason: string; kind: DegradedKind }>();
+  private readonly faults = new Map<Fault, { reason: string; plain: string; kind: DegradedKind }>();
   /** Why the configured application database could not be opened safely (#1892); null otherwise. */
   private unavailable: string | null = null;
 
@@ -218,7 +219,8 @@ class DatabaseManager extends BaseManager {
     } catch (err) {
       this.markUnavailable(`A staged database restore could not be put in place: ${(err as Error).message}. ` +
         'No database was opened. Some databases may already be restored: each one moved is kept beside it as *.pre-restore, and the rest are still *.staged beside ' +
-        `${path.basename(manifestPath(file))}. Stop the server, put the files back as they should be, and restart (#1892)`);
+        `${path.basename(manifestPath(file))}. Stop the server, put the files back as they should be, and restart (#1892)`,
+      'A saved copy of the databases was being put back and it did not finish, so the site is in maintenance mode and no database is open. Some may already have been replaced. Ask whoever runs the server to check the database files and restart the site; this is done on the server, outside this page.');
       return;
     }
     // #1892: a database that cannot be opened safely (no key or the wrong key
@@ -230,7 +232,9 @@ class DatabaseManager extends BaseManager {
     try {
       provider = new SqliteDatabaseProvider(file, key, DATABASE_MIGRATIONS, 'schema_migrations', { busyTimeoutMs: this.busyTimeoutMs });
     } catch (err) {
-      this.markUnavailable(DatabaseManager.openFailure(file, (err as Error).message, key));
+      this.markUnavailable(DatabaseManager.openFailure(file, (err as Error).message, key),
+        'The database could not be opened safely, so the site is in maintenance mode. If its key is missing or wrong, fix it in the server\'s settings (outside this page) and restart the site. If the file is damaged, restore the databases from a backup.',
+        STAGED_RESTORE_FIX);
       return;
     }
     this.provider = provider;
@@ -279,11 +283,12 @@ class DatabaseManager extends BaseManager {
    * administrators can sign in and reach /admin, and `reportAtBoot()` sends
    * them the reason as a critical notification once notifications exist.
    */
-  private markUnavailable(reason: string): void {
+  private markUnavailable(reason: string, plain: string, fix?: { fixUrl: string; fixLabel: string }): void {
     this.unavailable = reason;
     this.provider = null;
     logger.error(`[DatabaseManager] ${reason}`);
-    this.markFailed(reason, 'ngdpbase.database.file');
+    // #2354: the dashboard says it in plain words; the developer text is the log line above.
+    this.markFailed(plain, 'ngdpbase.database.file', fix);
     // #1906: no message of its own, so visitors see the site's maintenance message.
     this.engine.maintenance.enter(reason);
   }
@@ -777,7 +782,13 @@ class DatabaseManager extends BaseManager {
 
   /** Degrade for one cause; the dashboard shows every cause still standing. */
   private fault(cause: Fault, reason: string, kind: DegradedKind): void {
-    this.faults.set(cause, { reason, kind });
+    // #2354: the dashboard shows the plain words; `reason` is the developer text, already logged by the caller.
+    const plain = cause === 'restore'
+      ? 'A saved copy of the databases was not put back when the site started, so the databases that were there before are still in use. Open the Backup page to see what to do next.'
+      : this.backupKey()
+        ? "The backup key is the same as the database key, so one stolen secret would open both. Give the backups a key of their own, in the server's settings, outside this page."
+        : "Databases are not being backed up, because the backup key is not set. This is set in the server's settings, outside this page.";
+    this.faults.set(cause, { reason, plain, kind });
     this.markFaults();
   }
 
@@ -790,9 +801,10 @@ class DatabaseManager extends BaseManager {
   /** Every cause still standing; down when any one of them is (#1946). */
   private markFaults(): void {
     const faults = [...this.faults.values()];
-    const reason = faults.map((f) => f.reason).join('; ');
-    if (faults.some((f) => f.kind === 'outage')) this.markDegraded(reason);
-    else this.markNeedsAttention(reason);
+    const reason = faults.map((f) => f.plain).join(' ');
+    const fix = this.faults.has('restore') ? STAGED_RESTORE_FIX : {};
+    if (faults.some((f) => f.kind === 'outage')) this.markDegraded(reason, undefined, fix);
+    else this.markNeedsAttention(reason, undefined, fix);
   }
 
   private async notify(level: 'success' | 'warning' | 'error', title: string, message: string): Promise<void> {

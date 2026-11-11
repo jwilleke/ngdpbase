@@ -184,6 +184,16 @@ function passkeyRelyingPartyOf(configManager: ConfigurationManager): PasskeyRely
  */
 const ENROLLED_FACTORS: Readonly<Record<string, CredentialKind>> = { passkey: 'passkey', totp: 'totp' };
 
+/** What an account can add or use toward a stronger sign-in (#2356); see `strongerSignInWays`. */
+export interface StrongerSignInWays {
+  addPasskey: boolean;
+  addTotp: boolean;
+  usePasskey: boolean;
+  useTotp: boolean;
+  password: boolean;
+  outside: string[];
+}
+
 export interface Factor {
   provider: string;
   primary: boolean;
@@ -1818,14 +1828,16 @@ class AuthManager extends BaseManager {
     if (!file) return;
     this.credentialsFile = file;
     if (!key) {
-      this.markDegraded(`${CREDENTIALS_KEY_ENV} is not set, so the credentials store is closed`, CREDENTIALS_KEY_ENV);
+      logger.error(`[AuthManager] ${CREDENTIALS_KEY_ENV} is not set, so the credentials store is closed`);
+      this.markDegraded("Nobody can sign in with a password, because the key that protects the saved passwords is not set. This is set in the server's settings, outside this page.", CREDENTIALS_KEY_ENV);
       return;
     }
     const store = new FileCredentialsProvider(file, key);
     try {
       await store.initialize((rejected) => this.raiseRejectedCredentials(store.location(), rejected));
     } catch (err) {
-      this.markDegraded(`The credentials store ${file} could not be read: ${(err as Error).message}`, 'ngdpbase.auth.credentials.file');
+      logger.error(`[AuthManager] The credentials store ${file} could not be read: ${(err as Error).message}`);
+      this.markDegraded('Nobody can sign in with a password, because the saved passwords could not be read. Ask whoever runs the server to check them; this is outside this page.', 'ngdpbase.auth.credentials.file');
       return;
     }
     this.credentials = store;
@@ -2025,7 +2037,8 @@ class AuthManager extends BaseManager {
       title: 'Security alert: credential rows rejected',
       message
     }).catch(() => { /* the audit record and the degraded state still stand */ });
-    this.markDegraded(message, 'ngdpbase.auth.credentials.file');
+    // #2354: the dashboard says it in plain words; the rows and the way to re-sign them are in the log line above.
+    this.markDegraded(`${rejected.length === 1 ? 'A saved sign-in record' : `${rejected.length} saved sign-in records`} failed a security check and ${rejected.length === 1 ? 'was' : 'were'} ignored. Treat this as a possible attempt to get into an account, and ask whoever runs the server to look into it.`, 'ngdpbase.auth.credentials.file');
   }
 
   /**
@@ -3021,15 +3034,55 @@ class AuthManager extends BaseManager {
    * is told, on every page, to close.
    */
   async aalReachFor(username: string): Promise<{ now: Aal; ifEnrolled: Aal }> {
+    const { offered, usable } = await this.accountFactors(username);
+    const reach = (factors: Factor[]): Aal => Math.max(factors.some(f => f.primary) ? this.assess(factors).aal : 0, 1) as Aal;
+    return { now: reach(usable), ifEnrolled: reach(offered) };
+  }
+
+  /**
+   * The site's factors this account may use (`offered`: narrowed to its
+   * `allowedAuthMethods`), and of those the ones it can use now (`usable`: a
+   * factor that must be enrolled counts only once it is). One reading for
+   * the level the account can reach and for what it is told to add (#2356).
+   */
+  private async accountFactors(username: string): Promise<{ offered: Factor[]; usable: Factor[] }> {
     const user = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
     const allowed = user?.allowedAuthMethods;
     const offered = this.getFactors().filter(f => allowsProvider(allowed, f.provider));
-    const reach = (factors: Factor[]): Aal => Math.max(factors.some(f => f.primary) ? this.assess(factors).aal : 0, 1) as Aal;
     const usable = offered.filter(f => {
       const kind = ENROLLED_FACTORS[f.provider];
       return kind === undefined || this.hasCredential(username, kind);
     });
-    return { now: reach(usable), ifEnrolled: reach(offered) };
+    return { offered, usable };
+  }
+
+  /**
+   * What this account can add or use here toward a stronger sign-in (#2356),
+   * for the sign-in banners and the confirm page's wording. Never a decision:
+   * who steps down and what step-up needs stay with `rolesAtSignIn` and
+   * `stepUpNeeded`. "Add" is a passkey or an authenticator app the site
+   * offers, the account is allowed and has not set up; "use" is one it has,
+   * is allowed, and the site offers (the app's code as step-up offers it).
+   * `password` is a password it has and is allowed, which the app's code
+   * needs to reach AAL2. `outside` names any other allowed sign-in method
+   * that reaches AAL2 by itself, such as an outside provider's.
+   * Computed per call; never cached across accounts.
+   */
+  async strongerSignInWays(username: string): Promise<StrongerSignInWays> {
+    const { offered, usable } = await this.accountFactors(username);
+    const has = (list: Factor[], id: string): boolean => list.some(f => f.provider === id);
+    const password = has(usable, 'password')
+      && (await this.engine.getManager<UserManager>('UserManager')?.hasPassword(username).catch(() => false) ?? false);
+    return {
+      addPasskey: has(offered, 'passkey') && !has(usable, 'passkey'),
+      addTotp: has(offered, 'totp') && !has(usable, 'totp'),
+      usePasskey: has(usable, 'passkey'),
+      useTotp: has(usable, 'totp') && this.stepUpTotpOffered(username),
+      password,
+      outside: usable
+        .filter(f => f.primary && f.aal >= 2 && f.provider !== 'passkey')
+        .map(f => this.providers.get(f.provider)?.displayName ?? f.provider)
+    };
   }
 
   /**
@@ -3147,7 +3200,8 @@ class AuthManager extends BaseManager {
     const shipped = unreachable.filter(u => !u.operatorSet);
     if (shipped.length > 0) {
       const roles = shipped.map(u => `${u.role} (AAL${u.aal})`).join(', ');
-      this.markNeedsAttention(`${roles} require a stronger sign-in than this site offers, so they act at AAL${Math.max(reachable, 1)} for now. Set ngdpbase.application.base-url (https) so passkeys can be enabled.`, 'ngdpbase.auth.factors');
+      logger.warn(`[AuthManager] ${roles} require a stronger sign-in than this site offers, so they act at AAL${Math.max(reachable, 1)} for now. Set ngdpbase.application.base-url (https) so passkeys can be enabled.`);
+      this.markNeedsAttention(`${shipped.length === 1 ? 'One role needs' : 'Some roles need'} a stronger sign-in than this site offers, so ${shipped.length === 1 ? 'it uses' : 'they use'} a simpler one for now. Set the site's web address to a secure (https) one so passkeys can be turned on.`, 'ngdpbase.application.base-url');
     }
     const descriptions = this.unreachableRequiredAal();
     return unreachable.flatMap((u, i) => (u.operatorSet ? [descriptions[i]] : []));

@@ -547,7 +547,8 @@ class UserManager extends BaseManager {
     if (this.sessionCookieWithheldReported) return;
     this.sessionCookieWithheldReported = true;
     logger.error(`🔐 ${SESSION_COOKIE_WITHHELD_MESSAGE}`);
-    if (this.markNeedsAttention(SESSION_COOKIE_WITHHELD_MESSAGE, 'ngdpbase.session.secure')) {
+    // #2354: the dashboard says it in plain words; the developer message stays in the log and the notification.
+    if (this.markNeedsAttention('Nobody can sign in over a plain http connection. Serve the site over https, or turn off secure cookies in the settings.', 'ngdpbase.session.secure')) {
       void this.engine.getManager<NotificationManager>('NotificationManager')?.notifyAdmins({
         level: 'error', title: 'Nobody can sign in over plain http', message: SESSION_COOKIE_WITHHELD_MESSAGE
       }).catch((err: unknown) => logger.warn('🔐 Could not post the session-cookie notification:', err));

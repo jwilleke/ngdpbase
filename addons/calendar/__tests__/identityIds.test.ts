@@ -91,7 +91,9 @@ test.each([{ down: true }, { failLookups: true }])('the identity store down (%o)
   await write([{ ...base, id: 'e1', createdBy: 'ann', _private: { requester: 'ann' } }]);
   const { m } = await started(IDS, opts);
   expect((await saved()).e1.createdBy).toBe('ann');
-  expect(m.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringContaining('identity store unavailable, conversion postponed') });
+  expect(m.getManagerStatus()).toMatchObject({ state: 'degraded', reason: expect.stringContaining('Some calendar entries still name people the old way') });
+  const shown = (m.getManagerStatus() as { reason?: string }).reason ?? '';
+  expect(shown).not.toMatch(/#\d|@ids/);
 });
 
 test('delete bob, convert, create a new bob, restart: the new bob sees and cancels nothing of old bob\'s', async () => {

@@ -191,13 +191,15 @@ describe('a sealed kind\'s vault is never written in the clear (#1834)', () => {
 
     const status = fresh.getManagerStatus();
     expect(status.state).toBe('degraded');
-    expect(status.reason).toContain('molly/phr (files but no store.json)');
-    expect(status.reason).toContain('bob/phr (store.json not sealed)');
-    expect(status.reason).not.toContain('carol');
-    expect(status.reason).not.toContain('dave');
+    // #2354: plain words on the dashboard; the owners and vaults are in the notice and the log.
+    expect(status.reason).toMatch(/^2 private vaults are marked as encrypted but hold files that are not/);
+    expect(status.reason).not.toContain('molly');
     expect(notifications).toHaveLength(1);
     expect(notifications[0]).toMatchObject({ level: 'error' });
-    expect(String(notifications[0].message)).toContain('molly/phr');
+    expect(String(notifications[0].message)).toContain('molly/phr (files but no store.json)');
+    expect(String(notifications[0].message)).toContain('bob/phr (store.json not sealed)');
+    expect(String(notifications[0].message)).not.toContain('carol');
+    expect(String(notifications[0].message)).not.toContain('dave');
 
     // Read only: no file moved, sealed, indexed or deleted.
     expect((await fs.readdir(leaked)).sort()).toEqual(before);
@@ -226,9 +228,11 @@ describe('a sealed kind\'s vault is never written in the clear (#1834)', () => {
 
     const status = fresh.getManagerStatus();
     expect(status.state).toBe('degraded');
-    expect(status.reason).toContain('molly/phr (2 file(s) in attachments, versions)');
-    expect(status.reason).not.toContain('notes');
+    expect(status.reason).toMatch(/^An encrypted private vault holds files that are not encrypted/);
+    expect(status.reason).not.toContain('molly');
     expect(notifications).toHaveLength(1);
+    expect(String(notifications[0].message)).toContain('molly/phr (2 file(s) in attachments, versions)');
+    expect(String(notifications[0].message)).not.toContain('notes');
     expect(String(notifications[0].message)).toContain('#1836');
     expect(await fs.readFile(path.join(history, 'content.md'), 'utf8')).toBe(before);
     expect(await fs.pathExists(path.join(root, 'attachments', 'scan.pdf'))).toBe(true);
