@@ -37,6 +37,7 @@ import BaseManager from './BaseManager.js';
 import type { BackupData, BackupFolder } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import { IN_SERVER_SETTINGS } from '../utils/plainAttention.js';
 import type UserManager from './UserManager.js';
 import type { PermissionSubject } from './UserManager.js';
 import type { JobContext } from '../context/JobContext.js';
@@ -3201,7 +3202,10 @@ class AuthManager extends BaseManager {
     if (shipped.length > 0) {
       const roles = shipped.map(u => `${u.role} (AAL${u.aal})`).join(', ');
       logger.warn(`[AuthManager] ${roles} require a stronger sign-in than this site offers, so they act at AAL${Math.max(reachable, 1)} for now. Set ngdpbase.application.base-url (https) so passkeys can be enabled.`);
-      this.markNeedsAttention(`${shipped.length === 1 ? 'One role needs' : 'Some roles need'} a stronger sign-in than this site offers, so ${shipped.length === 1 ? 'it uses' : 'they use'} a simpler one for now. Set the site's web address to a secure (https) one so passkeys can be turned on.`, 'ngdpbase.application.base-url');
+      // From the server's settings the address row is locked: say where to change it instead of linking to it.
+      const fromServer = !!this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getEnvControlledKeys?.()['ngdpbase.application.base-url'];
+      const needs = `${shipped.length === 1 ? 'One role needs' : 'Some roles need'} a stronger sign-in than this site offers, so ${shipped.length === 1 ? 'it uses' : 'they use'} a simpler one for now. Set the site's web address to a secure (https) one so passkeys can be turned on.`;
+      this.markNeedsAttention(fromServer ? `${needs} ${IN_SERVER_SETTINGS}` : needs, fromServer ? undefined : 'ngdpbase.application.base-url');
     }
     const descriptions = this.unreachableRequiredAal();
     return unreachable.flatMap((u, i) => (u.operatorSet ? [descriptions[i]] : []));

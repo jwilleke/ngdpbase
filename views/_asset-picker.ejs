@@ -217,6 +217,11 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
                 <button type="button" class="btn btn-outline-secondary" id="ap-view-grid" title="Grid view"><i class="fas fa-th"></i></button>
             </div>
         </div>
+        <% if (typeof assetPickerCanExport !== 'undefined' && assetPickerCanExport) { %>
+        <div class="mb-2" id="ap-export" style="display:none;">
+            <a class="btn btn-sm btn-outline-secondary" id="ap-export-link" href="/export/search"><i class="fas fa-file-export"></i> Export these results</a>
+        </div>
+        <% } %>
         <div id="ap-related-kw" class="small mb-2" style="display:none;"></div>
         <div id="ap-results" class="row g-2<% if (_apMode === 'modal') { %> ap-modal-scroll<% } %>">
             <div class="col-12 text-center text-muted py-5" id="ap-placeholder">
@@ -393,6 +398,16 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
 
     // ------------------------------------------------------------------ search
 
+    // The Export link carries the search just run (not its paging or sort); shown only when there are results.
+    function _apShowExport(params, show) {
+        var box = document.getElementById('ap-export');
+        if (!box) return;
+        var keep = new URLSearchParams();
+        params.forEach(function (v, k) { if (k !== 'pageSize' && k !== 'offset' && k !== 'sort' && k !== 'order') keep.append(k, v); });
+        document.getElementById('ap-export-link').href = '/export/search?' + keep.toString();
+        box.style.display = show ? '' : 'none';
+    }
+
     async function _apSearch(page) {
         _apPage = page;
         var q       = qEl.value.trim();
@@ -468,6 +483,7 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
             var data = await resp.json();
 
             if (!data.success || !data.results || !data.results.length) {
+                _apShowExport(params, false);
                 _apItems = [];
                 _apTotal = 0;
                 resEl.innerHTML = '<div class="col-12 text-center text-muted py-5">No assets found.</div>';
@@ -486,6 +502,8 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
 
             _apRenderResults();
             _apLoadRelatedKeywords(src);
+            // Only sources an export can hold: pages and the site's own files (people and other file stores are not).
+            _apShowExport(params, ['', 'page', 'local', 'attachment'].indexOf(src) !== -1);
 
             if (totalPages > 1) {
                 WikiPagination.renderNav(pagEl, page + 1, totalPages, function (oneBased) {
@@ -495,6 +513,8 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
             }
 
         } catch (err) {
+            var _apExportBox = document.getElementById('ap-export');
+            if (_apExportBox) _apExportBox.style.display = 'none';
             _apItems = [];
             resEl.innerHTML = '<div class="col-12 text-center text-danger py-4"><i class="fas fa-exclamation-triangle"></i> ' + _esc(err.message) + '</div>';
         }

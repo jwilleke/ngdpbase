@@ -81,7 +81,9 @@ const PLAIN_SLOT = new RegExp(String.raw`^(?:[\w.]+\.length|[\w.]*\b(?:total|cou
 const FIXED_WORDS: Array<[string, string]> = [
   ['pageNotes.ts', 'roots.kind'], // 'footnotes' or 'comments'
   ['ConsentManager.ts', 'id'], // the page's own name
-  ['ConsentManager.ts', 'fix'] // a sentence written just above
+  ['ConsentManager.ts', 'fix'], // a sentence written just above
+  ['AuthManager.ts', 'needs'], // the sentence written just above (#2367)
+  ['AuthManager.ts', 'IN_SERVER_SETTINGS'] // the shared server-side wording
 ];
 
 function badSlots(src: string, where: string): string[] {
