@@ -57,6 +57,8 @@ await attachmentManager.deleteAttachment(attachment.identifier, wikiContext);
 | `uploadAttachment(buffer, fileInfo, ctx, options)` | `Promise<Object>` | Upload onto a page, for today's callers: FileManager decides the place (`placeForPageUpload`) and writes through its door, `put` ([#2148](https://github.com/jwilleke/ngdpbase/issues/2148), [FileManager](FileManager.md#writing-a-file-2148)). Recorded under `ctx`'s username ([below](#who-uploaded-it-1926)) |
 | `storeInPlace(ctx, place, file, options)` | `Promise<StoredInPlace>` | The storage underneath `FileManager.put`: stores and seals as the place requires, and returns the metadata and what the upload's audit record says (`record`). Decides neither the place nor the permission, and records nothing: FileManager records it (#2148, #2149); only `put` calls it |
 | `getAttachment(id)` | `Promise<{buffer, metadata}>` | Get attachment data and metadata |
+| `mayReadAttachment(id, ctx)` | `Promise<boolean>` | May this user read the file, by the rules `GET /attachments/:id` serves it under: their own private store, else `asset-read`, and a private file only to its owner or their delegate. Reads no bytes |
+| `readAttachmentFor(id, ctx)` | `Promise<{buffer, metadata} \| null>` | The file's original bytes when `mayReadAttachment` allows, else null. Used by the search export |
 | `getAttachmentMetadata(id)` | `Promise<Object>` | Get metadata only |
 | `getAttachmentsForPage(pageName)` | `Promise<Array>` | List page attachments |
 | `getAllAttachments()` | `Promise<Array>` | List all attachments |
