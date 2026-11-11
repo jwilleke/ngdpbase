@@ -1,4 +1,5 @@
 import BasePageProvider, { WikiEngine, ProviderInfo } from './BasePageProvider.js';
+import { PageTitleConflictError } from '../utils/pageTitleConflict.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import {
   isPrivateStoreAttachmentsRel,
@@ -850,7 +851,7 @@ class FileSystemProvider extends BasePageProvider {
     } else if (this.titleExistsForDifferentPage(finalTitle, uuid)) {
       const conflictKey = this.titleIndex.get(finalTitle.toLowerCase());
       const conflictInfo = conflictKey ? this.pageCache.get(conflictKey) : null;
-      throw new Error(`Title "${finalTitle}" is already in use by page ${conflictInfo?.uuid || 'unknown'}`);
+      throw new PageTitleConflictError(conflictInfo?.title || finalTitle, conflictInfo?.uuid || 'unknown', finalTitle);
     }
 
     // Check for duplicate UUID (different page already has this UUID)

@@ -357,6 +357,7 @@ import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { isVaultPageUuid } from '../utils/pageNotes.js';
 import { isSafePathSegment } from '../utils/privateStorePath.js';
 import { pageUrl, type PageAction } from '../utils/pageUrl.js';
+import { PageTitleConflictError } from '../utils/pageTitleConflict.js';
 import { readVaultSealState, type VaultSealState } from '../utils/privateStoreMeta.js';
 import { permitsInVault, type VaultDecider } from '../utils/privateStoreAccess.js';
 import { permitsInSharedFolder, SHARED_FOLDER_FILE } from '../utils/sharedFolderAccess.js';
@@ -2816,6 +2817,12 @@ class PageManager extends BaseManager implements CatalogSource {
       const slug = (enrichedMetadata as Record<string, unknown>).slug as string | undefined ?? '';
       const conflict = await validationManager.checkConflicts(uuid, pageName, slug, ctx);
       if (conflict.hasConflict) {
+        // #2371: a title clash names the other page, never its id (the message keeps it for the log).
+        if (conflict.conflictType === 'title-duplicate' && conflict.conflictingUuid) {
+          const holder = await this.getPageByUUID(conflict.conflictingUuid, ctx).catch(() => null);
+          const holderTitle = typeof holder?.metadata?.title === 'string' ? holder.metadata.title : pageName;
+          throw new PageTitleConflictError(holderTitle, conflict.conflictingUuid, pageName);
+        }
         throw new Error(conflict.message ?? `Page conflict: ${conflict.conflictType}`);
       }
     }
