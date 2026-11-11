@@ -128,6 +128,34 @@ describe('marking a deny as checked (#2355)', () => {
     expect(setProperty).not.toHaveBeenCalled();
   });
 
+  test('a mark for a rule that is gone is dropped at start, so the same rule added later is not already cleared', async () => {
+    const stored = { [CHECKED_DENIES_KEY]: { 'no-docs': policyFingerprint(deny('no-docs')), 'other': policyFingerprint(deny('other')) } };
+    const first = build([deny('other')], stored);
+    await first.ev.initialize();
+    expect(first.setProperty).toHaveBeenCalledWith(CHECKED_DENIES_KEY, { other: policyFingerprint(deny('other')) }, expect.anything());
+    // The site adds the identical rule back; the configuration is what the first run left.
+    const again = build([deny('other'), deny('no-docs')], { [CHECKED_DENIES_KEY]: first.config[CHECKED_DENIES_KEY] });
+    await again.ev.initialize();
+    expect(itemOf(again.ev)).toContain("The rule 'no-docs' denies access");
+  });
+
+  test('marks that all still have their rule are not rewritten', async () => {
+    const { ev, setProperty } = build([deny('no-docs')], { [CHECKED_DENIES_KEY]: { 'no-docs': policyFingerprint(deny('no-docs')) } });
+    await ev.initialize();
+    expect(setProperty).not.toHaveBeenCalled();
+  });
+
+  test('marking a deny also drops a mark whose rule is gone', async () => {
+    const { ev, setProperty } = build([deny('no-docs'), deny('no-news', { resources: [{ type: 'system-category', pattern: 'news' }] })], {});
+    await ev.initialize();
+    // A mark appears for a rule removed since (left by an earlier version of the list).
+    const config = ev as unknown as { configManager: { getProperty: (k: string, d: unknown) => unknown } };
+    const real = config.configManager.getProperty;
+    config.configManager.getProperty = (k, d) => (k === CHECKED_DENIES_KEY ? { gone: 'x' } : real(k, d));
+    await ev.markDenyChecked(admin, 'no-docs', policyFingerprint(deny('no-docs')));
+    expect(setProperty).toHaveBeenCalledWith(CHECKED_DENIES_KEY, { 'no-docs': policyFingerprint(deny('no-docs')) }, admin);
+  });
+
   test('a stored mark never changes an access decision', async () => {
     const policies = [deny('no-docs')];
     const ask = async (ev: PolicyEvaluator) => ev.evaluateAccess({ pageName: 'P', action: 'page-edit', resourceType: 'system-category', userContext: editor });
