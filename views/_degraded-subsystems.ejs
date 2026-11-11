@@ -31,6 +31,14 @@
                     </ul>
                 <% } %>
                 <%# A caller names its own fix (a record the app writes is not a value to edit); a setting's row in Configuration is shown too, when there is one. %>
+                <%# #2355: a button the manager asked for; a plain form, names and values are text. Locked for someone who cannot change policies. %>
+                <% if (Array.isArray(m.buttons)) { m.buttons.forEach(function (b) { %>
+                    <form method="POST" action="<%= b.action %>" class="mt-1">
+                        <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+                        <% Object.keys(b.fields || {}).forEach(function (name) { %><input type="hidden" name="<%= name %>" value="<%= b.fields[name] %>"><% }); %>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary"<%- typeof lockedUnless === 'function' ? lockedUnless('config-manage') : '' %>><%= b.label %></button>
+                    </form>
+                <% }); } %>
                 <% if (m.fixUrl && /^\/(?![\/\\])/.test(String(m.fixUrl))) { %>
                     <div class="mt-1"><a class="alert-link" href="<%= m.fixUrl %>"><%= m.fixLabel || 'Fix this' %></a></div>
                 <% } %>
