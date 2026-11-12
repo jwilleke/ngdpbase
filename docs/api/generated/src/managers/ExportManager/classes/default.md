@@ -23,7 +23,7 @@ to HTML, PDF, markdown, and other formats.
 
 ```ts
 const exportManager = engine.getManager('ExportManager');
-const html = await exportManager.exportPageToHtml('Main');
+const csv = exportManager.toCsv(['name'], [['Main']]);
 ```
 
 ## Extends
@@ -194,66 +194,6 @@ Combined HTML content
 
 ***
 
-### exportPageToHtml()
-
-> __exportPageToHtml__(`pageName`, `user`): `Promise`\<`string`\>
-
-Defined in: [src/managers/ExportManager.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L110)
-
-Export a single page to HTML
-
-#### Parameters
-
-##### pageName
-
-`string`
-
-Page name to export
-
-##### user
-
-User object for locale-aware formatting
-
-[`ExportUser`](../interfaces/ExportUser.md) | `null`
-
-#### Returns
-
-`Promise`\<`string`\>
-
-HTML content
-
-***
-
-### exportToMarkdown()
-
-> __exportToMarkdown__(`pageNames`, `user`): `Promise`\<`string`\>
-
-Defined in: [src/managers/ExportManager.ts:346](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L346)
-
-Export page(s) to markdown
-
-#### Parameters
-
-##### pageNames
-
-Single page name or array of page names
-
-`string` | `string`[]
-
-##### user
-
-User object for locale-aware formatting
-
-[`ExportUser`](../interfaces/ExportUser.md) | `null`
-
-#### Returns
-
-`Promise`\<`string`\>
-
-Markdown content
-
-***
-
 ### getEngine()
 
 > __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
@@ -418,42 +358,6 @@ async restore(backupData: BackupData): Promise<void> {
 #### Inherited from
 
 [`default`](../../BaseManager/classes/default.md).[`restore`](../../BaseManager/classes/default.md#restore)
-
-***
-
-### saveExport()
-
-> __saveExport__(`content`, `filename`, `format`): `Promise`\<`string`\>
-
-Defined in: [src/managers/ExportManager.ts:389](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L389)
-
-Save export to file
-
-#### Parameters
-
-##### content
-
-`string`
-
-Content to save
-
-##### filename
-
-`string`
-
-Filename
-
-##### format
-
-`string`
-
-File format
-
-#### Returns
-
-`Promise`\<`string`\>
-
-File path
 
 ***
 

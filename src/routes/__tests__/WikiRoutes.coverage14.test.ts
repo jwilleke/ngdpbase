@@ -1,6 +1,6 @@
 /**
  * WikiRoutes coverage batch 14 — login/auth, register/profile, page versions,
- *   page history/diff, preview, export.
+ *   page history/diff, preview.
  */
 import express from 'express';
 import { policyShaped } from './__fixtures__/policyShaped';
@@ -144,10 +144,7 @@ const mockCacheManager = {
 
 const mockExportManager = {
   getExports: vi.fn().mockResolvedValue([{ filename: 'export-1.zip', path: '/tmp/export-1.zip' }]),
-  deleteExport: vi.fn().mockResolvedValue(undefined),
-  exportPageToHtml: vi.fn().mockRejectedValue(new Error('Export failed')),
-  exportToMarkdown: vi.fn().mockRejectedValue(new Error('Export failed')),
-  saveExport: vi.fn().mockResolvedValue('/tmp/export.html')
+  deleteExport: vi.fn().mockResolvedValue(undefined)
 };
 
 // #1049: the four provider-specific methods collapsed into three dispatchers
@@ -322,9 +319,6 @@ function resetMocks() {
 
   mockExportManager.getExports.mockResolvedValue([{ filename: 'export-1.zip', path: '/tmp/export-1.zip' }]);
   mockExportManager.deleteExport.mockResolvedValue(undefined);
-  mockExportManager.exportPageToHtml.mockRejectedValue(new Error('Export failed'));
-  mockExportManager.exportToMarkdown.mockRejectedValue(new Error('Export failed'));
-  mockExportManager.saveExport.mockResolvedValue('/tmp/export.html');
 
   mockAuthManager.isEnabled.mockReturnValue(false);
   mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser' });
@@ -966,24 +960,6 @@ describe('WikiRoutes — coverage batch 14', () => {
     });
   });
 
-
-  describe('POST /export/html/:page (exportPageHtml)', () => {
-    test('returns 500 when export fails', async () => {
-      const res = await request(app)
-        .post('/export/html/TestPage')
-        .set('x-csrf-token', 'test-csrf-token');
-      expect(res.status).toBe(500);
-    });
-  });
-
-  describe('POST /export/markdown/:page (exportPageMarkdown)', () => {
-    test('returns 500 when export fails', async () => {
-      const res = await request(app)
-        .post('/export/markdown/TestPage')
-        .set('x-csrf-token', 'test-csrf-token');
-      expect(res.status).toBe(500);
-    });
-  });
 
   // ── Page versions API ─────────────────────────────────────────────────────────
 

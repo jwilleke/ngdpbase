@@ -71,15 +71,8 @@ describe('ExportManager', () => {
     });
   });
 
-  // Tests for exporting a single page to HTML
-  describe('exportPageToHtml', () => {
-    it('should throw error if page not found', async () => {
-      mockPageManager.getPage.mockResolvedValue(null);
-      await expect(
-        exportManager.exportPageToHtml('NonExistentPage')
-      ).rejects.toThrow("Page 'NonExistentPage' not found");
-    });
-
+  // Tests for rendering one page as an HTML document
+  describe('renderPageDocument', () => {
     it('should return HTML content for a page', async () => {
       const page = {
         content: '# Hello World',
@@ -87,12 +80,11 @@ describe('ExportManager', () => {
         'system-category': 'Test',
         'user-keywords': ['keyword1']
       };
-      mockPageManager.getPage.mockResolvedValue(page);
       mockRenderingManager.renderMarkdown.mockResolvedValue(
         '<h1>Hello World</h1>'
       );
 
-      const html = await exportManager.exportPageToHtml('TestPage');
+      const html = await exportManager.renderPageDocument('TestPage', page);
 
       // Verify that HTML contains expected content and metadata
       expect(html).toContain('<h1>TestPage</h1>');
@@ -103,10 +95,9 @@ describe('ExportManager', () => {
 
     it('should handle pages with no system-category or keywords', async () => {
       const page = { content: 'Hello', lastModified: '2025-01-01' };
-      mockPageManager.getPage.mockResolvedValue(page);
       mockRenderingManager.renderMarkdown.mockResolvedValue('<p>Hello</p>');
 
-      const html = await exportManager.exportPageToHtml('PageX');
+      const html = await exportManager.renderPageDocument('PageX', page);
       expect(html).toContain('<p>Hello</p>');
       expect(html).not.toContain('System Category');
       expect(html).not.toContain('User Keywords');
@@ -114,82 +105,11 @@ describe('ExportManager', () => {
 
     it("should show 'Unknown' if lastModified is missing", async () => {
       const page = { content: 'Hello' };
-      mockPageManager.getPage.mockResolvedValue(page);
       mockRenderingManager.renderMarkdown.mockResolvedValue('<p>Hello</p>');
 
-      const html = await exportManager.exportPageToHtml('PageUnknown');
+      const html = await exportManager.renderPageDocument('PageUnknown', page);
 
       expect(html).toContain('Last modified: Unknown');
-    });
-  });
-
-  // Tests for exporting pages to Markdown format
-  describe('exportToMarkdown', () => {
-    it('should export single page to markdown', async () => {
-      const page = { content: '# Markdown Content' };
-      mockPageManager.getPage.mockResolvedValue(page);
-
-      const markdown = await exportManager.exportToMarkdown('SinglePage');
-
-      expect(markdown).toContain('# Markdown Content');
-      expect(markdown).not.toContain('Table of Contents');
-    });
-  });
-
-  // Tests for saving exported content to file
-  describe('saveExport', () => {
-    it('should sanitize filename and call writeFile', async () => {
-      const content = 'Some content';
-      const filename = 'My Page';
-      const format = 'html';
-
-      fs.writeFile.mockResolvedValue();
-
-      const filePath = await exportManager.saveExport(
-        content,
-        filename,
-        format
-      );
-
-      expect(filePath).toContain('My-Page_'); // Check filename sanitization
-      expect(filePath.endsWith('.html')).toBe(true);
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        filePath,
-        content,
-        'utf8'
-      );
-    });
-
-    it('should sanitize filenames with invalid characters', async () => {
-      const content = 'Some content';
-      const filename = 'My/Strange*File?Name';
-      const format = 'md';
-
-      fs.writeFile.mockResolvedValue();
-
-      const filePath = await exportManager.saveExport(content, filename, format);
-
-      expect(filePath).toContain('My-Strange-File-Name_');
-      expect(filePath.endsWith('.md')).toBe(true);
-      expect(fs.writeFile).toHaveBeenCalledWith(filePath, content, 'utf8');
-    });
-
-    it('should include timestamp in filename', async () => {
-      const content = 'Test content';
-      const filename = 'FileTest';
-      const format = 'html';
-
-      fs.writeFile.mockResolvedValue();
-
-      const filePath = await exportManager.saveExport(content, filename, format);
-      const timestampRegex = /\d{4}-\d{2}-\d{2}/;
-      expect(filePath).toMatch(new RegExp(`FileTest_${timestampRegex.source}\\.html`));
-    });
-
-    it('should throw error if writeFile fails', async () => {
-      fs.writeFile.mockRejectedValue(new Error('disk full'));
-      await expect(exportManager.saveExport('data', 'file', 'html'))
-        .rejects.toThrow('disk full');
     });
   });
 

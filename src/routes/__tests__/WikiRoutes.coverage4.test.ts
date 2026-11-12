@@ -159,10 +159,7 @@ const mockSearchManager = {
 
 const mockExportManager = {
   getExports: vi.fn(),
-  deleteExport: vi.fn(),
-  exportPageToHtml: vi.fn(),
-  saveExport: vi.fn(),
-  exportToMarkdown: vi.fn()
+  deleteExport: vi.fn()
 };
 
 const mockConfigManager = {
@@ -314,9 +311,6 @@ function resetMocks() {
 
   mockExportManager.getExports.mockResolvedValue([]);
   mockExportManager.deleteExport.mockResolvedValue(undefined);
-  mockExportManager.exportPageToHtml.mockResolvedValue('<html>exported</html>');
-  mockExportManager.saveExport.mockResolvedValue('/tmp/export.html');
-  mockExportManager.exportToMarkdown.mockResolvedValue('# markdown');
 
   mockPolicyInformationPoint.currentSubject.mockResolvedValue(adminUser);
   mockPolicyDecisionPoint.permits.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
