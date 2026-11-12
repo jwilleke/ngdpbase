@@ -2817,11 +2817,17 @@ class PageManager extends BaseManager implements CatalogSource {
       const slug = (enrichedMetadata as Record<string, unknown>).slug as string | undefined ?? '';
       const conflict = await validationManager.checkConflicts(uuid, pageName, slug, ctx);
       if (conflict.hasConflict) {
-        // #2371: a title clash names the other page, never its id (the message keeps it for the log).
-        if (conflict.conflictType === 'title-duplicate' && conflict.conflictingUuid) {
+        // #2371: a clash names the other page, never its id (the message keeps it for the log).
+        // The slug is checked before the title (#2376), so a title clash usually arrives as a slug
+        // clash: the same title always gives the same slug. Titles that differ only share a slug.
+        const slugClash = conflict.conflictType === 'uuid-mismatch';
+        if ((slugClash || conflict.conflictType === 'title-duplicate') && conflict.conflictingUuid) {
           const holder = await this.getPageByUUID(conflict.conflictingUuid, ctx).catch(() => null);
-          const holderTitle = typeof holder?.metadata?.title === 'string' ? holder.metadata.title : pageName;
-          throw new PageTitleConflictError(holderTitle, conflict.conflictingUuid, pageName);
+          // The title typed is the metadata's; the name the save was addressed by only when there is none.
+          const typed = typeof enrichedMetadata.title === 'string' && enrichedMetadata.title.trim() ? enrichedMetadata.title : pageName;
+          const holderTitle = typeof holder?.metadata?.title === 'string' ? holder.metadata.title : typed;
+          const tooClose = slugClash && holderTitle.trim().toLowerCase() !== typed.trim().toLowerCase();
+          throw new PageTitleConflictError(holderTitle, conflict.conflictingUuid, typed, tooClose);
         }
         throw new Error(conflict.message ?? `Page conflict: ${conflict.conflictType}`);
       }

@@ -35,6 +35,27 @@ describe('error view: title conflict (#2371)', () => {
     expect(html).toContain('href="/view/%3Cb%3EBold%3C%2Fb%3E%20%22Q%22%20%26%20co"');
   });
 
+  test('a name too close to another page’s says so, with that page as the link (#2376)', () => {
+    const html = render({
+      title: 'Page Conflict',
+      message: 'That name is too close to the name of an existing page, "R-D Plans v2".',
+      conflictingPage: { title: 'R-D Plans v2', url: '/view/R-D%20Plans%20v2', tooClose: true }
+    });
+    expect(html).toContain('That name is too close to the name of an existing page, "<a href="/view/R-D%20Plans%20v2">R-D Plans v2</a>".');
+    expect(html).not.toContain('already exists');
+  });
+
+  test('the other page’s title in the too-close text renders as text (#2376)', () => {
+    const title = '<b>Bold</b> "Q" & co';
+    const html = render({
+      title: 'Page Conflict',
+      message: 'unused',
+      conflictingPage: { title, url: '/view/' + encodeURIComponent(title), tooClose: true }
+    });
+    expect(html).not.toContain('<b>Bold</b>');
+    expect(html).toContain('&lt;b&gt;Bold&lt;/b&gt; &#34;Q&#34; &amp; co</a>');
+  });
+
   test('an error with no conflicting page shows its message as before', () => {
     const html = render({ title: 'Error', message: 'A page with this title is already in use in this store' });
     expect(html).toContain('A page with this title is already in use in this store');
