@@ -1,4 +1,4 @@
-[__ngdpbase API v1.5.0__](../README.md)
+[__ngdpbase API v5.43.0__](../README.md)
 
 ***
 
@@ -14,353 +14,425 @@ the ngdpbase application. Import types from this module to ensure consistency.
 ## Example
 
 ```ts
-import { WikiPage, PageFrontmatter, User } from '../types';
+import { WikiPage, PageFrontmatter, User } from '../types/index.js';
 ```
 
 ## References
 
+### ApplicationOrganizationConfig
+
+Re-exports [ApplicationOrganizationConfig](Config/interfaces/ApplicationOrganizationConfig.md)
+
+***
+
 ### assertPageFrontmatter
 
-Re-exports [assertPageFrontmatter](../src/types/guards/functions/assertPageFrontmatter.md)
+Re-exports [assertPageFrontmatter](guards/functions/assertPageFrontmatter.md)
 
 ***
 
 ### assertUser
 
-Re-exports [assertUser](../src/types/guards/functions/assertUser.md)
+Re-exports [assertUser](guards/functions/assertUser.md)
 
 ***
 
 ### assertVersionMetadata
 
-Re-exports [assertVersionMetadata](../src/types/guards/functions/assertVersionMetadata.md)
+Re-exports [assertVersionMetadata](guards/functions/assertVersionMetadata.md)
 
 ***
 
 ### assertWikiPage
 
-Re-exports [assertWikiPage](../src/types/guards/functions/assertWikiPage.md)
+Re-exports [assertWikiPage](guards/functions/assertWikiPage.md)
+
+***
+
+### AssetCamera
+
+Re-exports [AssetCamera](Asset/interfaces/AssetCamera.md)
+
+***
+
+### AssetDimensions
+
+Re-exports [AssetDimensions](Asset/interfaces/AssetDimensions.md)
+
+***
+
+### AssetGPS
+
+Re-exports [AssetGPS](Asset/interfaces/AssetGPS.md)
+
+***
+
+### AssetInput
+
+Re-exports [AssetInput](Asset/interfaces/AssetInput.md)
+
+***
+
+### AssetMetadata
+
+Re-exports [AssetMetadata](Asset/interfaces/AssetMetadata.md)
+
+***
+
+### AssetPage
+
+Re-exports [AssetPage](Asset/interfaces/AssetPage.md)
+
+***
+
+### AssetProvider
+
+Re-exports [AssetProvider](Asset/interfaces/AssetProvider.md)
+
+***
+
+### AssetQuery
+
+Re-exports [AssetQuery](Asset/interfaces/AssetQuery.md)
+
+***
+
+### AssetRecord
+
+Re-exports [AssetRecord](Asset/interfaces/AssetRecord.md)
+
+***
+
+### AssetUsageRights
+
+Re-exports [AssetUsageRights](Asset/interfaces/AssetUsageRights.md)
+
+***
+
+### AssetUsageStats
+
+Re-exports [AssetUsageStats](Asset/interfaces/AssetUsageStats.md)
 
 ***
 
 ### AttachmentMetadata
 
-Re-exports [AttachmentMetadata](../src/types/Provider/interfaces/AttachmentMetadata.md)
+Re-exports [AttachmentMetadata](Provider/interfaces/AttachmentMetadata.md)
 
 ***
 
 ### AttachmentProvider
 
-Re-exports [AttachmentProvider](../src/types/Provider/interfaces/AttachmentProvider.md)
+Re-exports [AttachmentProvider](Provider/interfaces/AttachmentProvider.md)
 
 ***
 
 ### AuditEvent
 
-Re-exports [AuditEvent](../src/types/Provider/interfaces/AuditEvent.md)
+Re-exports [AuditEvent](Provider/interfaces/AuditEvent.md)
 
 ***
 
 ### AuditProvider
 
-Re-exports [AuditProvider](../src/types/Provider/interfaces/AuditProvider.md)
+Re-exports [AuditProvider](Provider/interfaces/AuditProvider.md)
 
 ***
 
 ### AuthResult
 
-Re-exports [AuthResult](../src/types/User/interfaces/AuthResult.md)
+Re-exports [AuthResult](User/interfaces/AuthResult.md)
 
 ***
 
 ### BaseProvider
 
-Re-exports [BaseProvider](../src/types/Provider/interfaces/BaseProvider.md)
+Re-exports [BaseProvider](Provider/interfaces/BaseProvider.md)
 
 ***
 
 ### CacheProvider
 
-Re-exports [CacheProvider](../src/types/Provider/interfaces/CacheProvider.md)
+Re-exports [CacheProvider](Provider/interfaces/CacheProvider.md)
 
 ***
 
 ### ConfigChangeEvent
 
-Re-exports [ConfigChangeEvent](../src/types/Config/interfaces/ConfigChangeEvent.md)
+Re-exports [ConfigChangeEvent](Config/interfaces/ConfigChangeEvent.md)
 
 ***
 
 ### ConfigPropertyDescriptor
 
-Re-exports [ConfigPropertyDescriptor](../src/types/Config/interfaces/ConfigPropertyDescriptor.md)
+Re-exports [ConfigPropertyDescriptor](Config/interfaces/ConfigPropertyDescriptor.md)
 
 ***
 
 ### ConfigValidationResult
 
-Re-exports [ConfigValidationResult](../src/types/Config/interfaces/ConfigValidationResult.md)
-
-***
-
-### InstallConfig
-
-Re-exports [InstallConfig](../src/types/Config/interfaces/InstallConfig.md)
+Re-exports [ConfigValidationResult](Config/interfaces/ConfigValidationResult.md)
 
 ***
 
 ### isAttachmentMetadata
 
-Re-exports [isAttachmentMetadata](../src/types/guards/functions/isAttachmentMetadata.md)
+Re-exports [isAttachmentMetadata](guards/functions/isAttachmentMetadata.md)
 
 ***
 
 ### isAuditEvent
 
-Re-exports [isAuditEvent](../src/types/guards/functions/isAuditEvent.md)
+Re-exports [isAuditEvent](guards/functions/isAuditEvent.md)
 
 ***
 
 ### isEmail
 
-Re-exports [isEmail](../src/types/guards/functions/isEmail.md)
+Re-exports [isEmail](guards/functions/isEmail.md)
 
 ***
 
 ### isIsoTimestamp
 
-Re-exports [isIsoTimestamp](../src/types/guards/functions/isIsoTimestamp.md)
+Re-exports [isIsoTimestamp](guards/functions/isIsoTimestamp.md)
 
 ***
 
 ### isPageFrontmatter
 
-Re-exports [isPageFrontmatter](../src/types/guards/functions/isPageFrontmatter.md)
+Re-exports [isPageFrontmatter](guards/functions/isPageFrontmatter.md)
 
 ***
 
 ### isPageInfo
 
-Re-exports [isPageInfo](../src/types/guards/functions/isPageInfo.md)
+Re-exports [isPageInfo](guards/functions/isPageInfo.md)
 
 ***
 
 ### isUser
 
-Re-exports [isUser](../src/types/guards/functions/isUser.md)
+Re-exports [isUser](guards/functions/isUser.md)
 
 ***
 
 ### isUserSession
 
-Re-exports [isUserSession](../src/types/guards/functions/isUserSession.md)
+Re-exports [isUserSession](guards/functions/isUserSession.md)
 
 ***
 
 ### isUuid
 
-Re-exports [isUuid](../src/types/guards/functions/isUuid.md)
+Re-exports [isUuid](guards/functions/isUuid.md)
 
 ***
 
 ### isVersionManifest
 
-Re-exports [isVersionManifest](../src/types/guards/functions/isVersionManifest.md)
+Re-exports [isVersionManifest](guards/functions/isVersionManifest.md)
 
 ***
 
 ### isVersionMetadata
 
-Re-exports [isVersionMetadata](../src/types/guards/functions/isVersionMetadata.md)
+Re-exports [isVersionMetadata](guards/functions/isVersionMetadata.md)
 
 ***
 
 ### isWikiPage
 
-Re-exports [isWikiPage](../src/types/guards/functions/isWikiPage.md)
+Re-exports [isWikiPage](guards/functions/isWikiPage.md)
 
 ***
 
 ### ManagerRegistry
 
-Re-exports [ManagerRegistry](../src/types/WikiEngine/interfaces/ManagerRegistry.md)
+Re-exports [ManagerRegistry](WikiEngine/interfaces/ManagerRegistry.md)
 
 ***
 
 ### PageFrontmatter
 
-Re-exports [PageFrontmatter](../src/types/Page/interfaces/PageFrontmatter.md)
+Re-exports [PageFrontmatter](Page/interfaces/PageFrontmatter.md)
 
 ***
 
 ### PageInfo
 
-Re-exports [PageInfo](../src/types/Page/interfaces/PageInfo.md)
+Re-exports [PageInfo](Page/interfaces/PageInfo.md)
 
 ***
 
 ### PageListOptions
 
-Re-exports [PageListOptions](../src/types/Page/interfaces/PageListOptions.md)
+Re-exports [PageListOptions](Page/interfaces/PageListOptions.md)
 
 ***
 
 ### PageProvider
 
-Re-exports [PageProvider](../src/types/Provider/interfaces/PageProvider.md)
+Re-exports [PageProvider](Provider/interfaces/PageProvider.md)
 
 ***
 
 ### PageSaveOptions
 
-Re-exports [PageSaveOptions](../src/types/Page/interfaces/PageSaveOptions.md)
+Re-exports [PageSaveOptions](Page/interfaces/PageSaveOptions.md)
 
 ***
 
 ### PageSearchResult
 
-Re-exports [PageSearchResult](../src/types/Page/interfaces/PageSearchResult.md)
+Re-exports [PageSearchResult](Page/interfaces/PageSearchResult.md)
 
 ***
 
 ### Permission
 
-Re-exports [Permission](../src/types/User/interfaces/Permission.md)
+Re-exports [Permission](User/interfaces/Permission.md)
+
+***
+
+### ProviderCapability
+
+Re-exports [ProviderCapability](Asset/type-aliases/ProviderCapability.md)
 
 ***
 
 ### Role
 
-Re-exports [Role](../src/types/User/interfaces/Role.md)
+Re-exports [Role](User/interfaces/Role.md)
 
 ***
 
 ### SearchProvider
 
-Re-exports [SearchProvider](../src/types/Provider/interfaces/SearchProvider.md)
+Re-exports [SearchProvider](Provider/interfaces/SearchProvider.md)
 
 ***
 
 ### SearchProviderConfig
 
-Re-exports [SearchProviderConfig](../src/types/Config/interfaces/SearchProviderConfig.md)
+Re-exports [SearchProviderConfig](Config/interfaces/SearchProviderConfig.md)
 
 ***
 
 ### User
 
-Re-exports [User](../src/types/User/interfaces/User.md)
+Re-exports [User](User/interfaces/User.md)
 
 ***
 
 ### UserCreateData
 
-Re-exports [UserCreateData](../src/types/User/interfaces/UserCreateData.md)
+Re-exports [UserCreateData](User/interfaces/UserCreateData.md)
 
 ***
 
 ### UserPreferences
 
-Re-exports [UserPreferences](../src/types/User/interfaces/UserPreferences.md)
+Re-exports [UserPreferences](User/interfaces/UserPreferences.md)
 
 ***
 
 ### UserProfile
 
-Re-exports [UserProfile](../src/types/User/interfaces/UserProfile.md)
+Re-exports [UserProfile](User/interfaces/UserProfile.md)
 
 ***
 
 ### UserProvider
 
-Re-exports [UserProvider](../src/types/Provider/interfaces/UserProvider.md)
+Re-exports [UserProvider](Provider/interfaces/UserProvider.md)
 
 ***
 
 ### UserSession
 
-Re-exports [UserSession](../src/types/User/interfaces/UserSession.md)
+Re-exports [UserSession](User/interfaces/UserSession.md)
 
 ***
 
 ### UserUpdateData
 
-Re-exports [UserUpdateData](../src/types/User/interfaces/UserUpdateData.md)
+Re-exports [UserUpdateData](User/interfaces/UserUpdateData.md)
 
 ***
 
 ### VersionCleanupResult
 
-Re-exports [VersionCleanupResult](../src/types/Version/interfaces/VersionCleanupResult.md)
+Re-exports [VersionCleanupResult](Version/interfaces/VersionCleanupResult.md)
 
 ***
 
 ### VersionContent
 
-Re-exports [VersionContent](../src/types/Version/interfaces/VersionContent.md)
+Re-exports [VersionContent](Version/interfaces/VersionContent.md)
 
 ***
 
 ### VersionDiff
 
-Re-exports [VersionDiff](../src/types/Version/interfaces/VersionDiff.md)
+Re-exports [VersionDiff](Version/interfaces/VersionDiff.md)
 
 ***
 
 ### VersionHistoryEntry
 
-Re-exports [VersionHistoryEntry](../src/types/Version/interfaces/VersionHistoryEntry.md)
+Re-exports [VersionHistoryEntry](Version/interfaces/VersionHistoryEntry.md)
 
 ***
 
 ### VersioningConfig
 
-Re-exports [VersioningConfig](../src/types/Config/interfaces/VersioningConfig.md)
+Re-exports [VersioningConfig](Config/interfaces/VersioningConfig.md)
 
 ***
 
 ### VersioningPageProvider
 
-Re-exports [VersioningPageProvider](../src/types/Provider/interfaces/VersioningPageProvider.md)
+Re-exports [VersioningPageProvider](Provider/interfaces/VersioningPageProvider.md)
 
 ***
 
 ### VersionManifest
 
-Re-exports [VersionManifest](../src/types/Version/interfaces/VersionManifest.md)
+Re-exports [VersionManifest](Version/interfaces/VersionManifest.md)
 
 ***
 
 ### VersionMetadata
 
-Re-exports [VersionMetadata](../src/types/Version/interfaces/VersionMetadata.md)
+Re-exports [VersionMetadata](Version/interfaces/VersionMetadata.md)
 
 ***
 
 ### VersionRetentionPolicy
 
-Re-exports [VersionRetentionPolicy](../src/types/Version/interfaces/VersionRetentionPolicy.md)
+Re-exports [VersionRetentionPolicy](Version/interfaces/VersionRetentionPolicy.md)
 
 ***
 
 ### VersionStorageInfo
 
-Re-exports [VersionStorageInfo](../src/types/Version/interfaces/VersionStorageInfo.md)
+Re-exports [VersionStorageInfo](Version/interfaces/VersionStorageInfo.md)
 
 ***
 
 ### WikiConfig
 
-Re-exports [WikiConfig](../src/types/Config/interfaces/WikiConfig.md)
+Re-exports [WikiConfig](Config/interfaces/WikiConfig.md)
 
 ***
 
 ### WikiEngine
 
-Re-exports [WikiEngine](../src/types/WikiEngine/interfaces/WikiEngine.md)
+Re-exports [WikiEngine](WikiEngine/interfaces/WikiEngine.md)
 
 ***
 
 ### WikiPage
 
-Re-exports [WikiPage](../src/types/Page/interfaces/WikiPage.md)
+Re-exports [WikiPage](Page/interfaces/WikiPage.md)

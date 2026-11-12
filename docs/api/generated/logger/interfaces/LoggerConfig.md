@@ -1,4 +1,4 @@
-[__ngdpbase API v1.5.0__](../../README.md)
+[__ngdpbase API v5.43.0__](../../README.md)
 
 ***
 
@@ -6,7 +6,7 @@
 
 # Interface: LoggerConfig
 
-Defined in: [src/utils/logger.ts:21](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/logger.ts#L21)
+Defined in: src/utils/logger.ts:30
 
 Logger configuration options
 
@@ -14,9 +14,9 @@ Logger configuration options
 
 ### dir?
 
-> `optional` __dir__: `string`
+> `optional` __dir?__: `string`
 
-Defined in: [src/utils/logger.ts:25](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/logger.ts#L25)
+Defined in: src/utils/logger.ts:34
 
 Log directory path
 
@@ -24,9 +24,9 @@ Log directory path
 
 ### level?
 
-> `optional` __level__: `string`
+> `optional` __level?__: `string`
 
-Defined in: [src/utils/logger.ts:23](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/logger.ts#L23)
+Defined in: src/utils/logger.ts:32
 
 Log level (error, warn, info, debug)
 
@@ -34,9 +34,9 @@ Log level (error, warn, info, debug)
 
 ### maxFiles?
 
-> `optional` __maxFiles__: `number`
+> `optional` __maxFiles?__: `number`
 
-Defined in: [src/utils/logger.ts:29](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/logger.ts#L29)
+Defined in: src/utils/logger.ts:38
 
 Max number of rotated log files
 
@@ -44,8 +44,8 @@ Max number of rotated log files
 
 ### maxSize?
 
-> `optional` __maxSize__: `string` \| `number`
+> `optional` __maxSize?__: `string` \| `number`
 
-Defined in: [src/utils/logger.ts:27](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/logger.ts#L27)
+Defined in: src/utils/logger.ts:36
 
 Max log file size in bytes or string format (e.g., '1MB')
