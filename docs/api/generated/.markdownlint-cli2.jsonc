@@ -15,9 +15,14 @@
 // violations; naming the rules left 0.
 {
   "config": {
+    "MD001": false, // TSDoc lines starting "#NNNN" (issue numbers) render as headings in generated output
+    "MD022": false, // same "#NNNN" lines: no blank line around the heading they become
     "MD024": false, // TypeDoc repeats "Throws" across overloads
+    "MD026": false, // same "#NNNN" lines: the heading text ends in punctuation
     "MD033": false, // it emits inline HTML such as <void>
     "MD036": false, // the index page titles itself with emphasis
+    "MD038": false, // the same lines can leave a code span with edge spaces
+    "MD045": false, // generated images carry no alt text
     "MD059": false  // generated link text is "Link", not prose
   }
 }

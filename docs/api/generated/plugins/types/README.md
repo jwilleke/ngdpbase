@@ -1,4 +1,4 @@
-[__ngdpbase API v1.5.0__](../../README.md)
+[__ngdpbase API v5.43.0__](../../README.md)
 
 ***
 
@@ -16,3 +16,9 @@
 ## Type Aliases
 
 - [CallablePlugin](type-aliases/CallablePlugin.md)
+
+## References
+
+### PluginFormatters
+
+Re-exports [PluginFormatters](../../managers/PluginManager/type-aliases/PluginFormatters.md)

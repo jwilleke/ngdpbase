@@ -1,4 +1,4 @@
-[__ngdpbase API v1.5.0__](../../README.md)
+[__ngdpbase API v5.43.0__](../../README.md)
 
 ***
 
@@ -6,15 +6,16 @@
 
 # Function: createLoggerWithConfig()
 
-> __createLoggerWithConfig__(`config`): `Logger`
+> __createLoggerWithConfig__(`config?`): `Logger`
 
-Defined in: [src/utils/logger.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/logger.ts#L46)
+Defined in: src/utils/logger.ts:94
 
-Creates a winston logger instance with the specified configuration
+Creates a winston logger instance with the specified configuration.
+Transports and format are produced by the active logging provider.
 
 ## Parameters
 
-### config
+### config?
 
 [`LoggerConfig`](../interfaces/LoggerConfig.md) = `{}`
 

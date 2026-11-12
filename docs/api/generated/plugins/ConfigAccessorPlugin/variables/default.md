@@ -1,4 +1,4 @@
-[__ngdpbase API v1.5.0__](../../../README.md)
+[__ngdpbase API v5.43.0__](../../../README.md)
 
 ***
 
@@ -8,6 +8,6 @@
 
 > `const` __default__: [`SimplePlugin`](../../types/interfaces/SimplePlugin.md)
 
-Defined in: [plugins/ConfigAccessorPlugin.ts:1289](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/ConfigAccessorPlugin.ts#L1289)
+Defined in: src/plugins/ConfigAccessorPlugin.ts:1788
 
 ConfigAccessorPlugin implementation

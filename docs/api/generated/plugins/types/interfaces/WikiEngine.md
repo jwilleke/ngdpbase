@@ -1,4 +1,4 @@
-[__ngdpbase API v1.5.0__](../../../README.md)
+[__ngdpbase API v5.43.0__](../../../README.md)
 
 ***
 
@@ -6,7 +6,7 @@
 
 # Interface: WikiEngine
 
-Defined in: [plugins/types.ts:11](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L11)
+Defined in: src/plugins/types.ts:15
 
 Wiki engine interface for plugins
 
@@ -14,11 +14,11 @@ Wiki engine interface for plugins
 
 ### logger?
 
-> `optional` __logger__: `object`
+> `optional` __logger?__: `object`
 
-Defined in: [plugins/types.ts:14](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L14)
+Defined in: src/plugins/types.ts:18
 
-#### error()
+#### error
 
 > __error__: (...`args`) => `void`
 
@@ -36,9 +36,9 @@ Defined in: [plugins/types.ts:14](https://github.com/jwilleke/ngdpbase/blob/b6a8
 
 ### startTime?
 
-> `optional` __startTime__: `number`
+> `optional` __startTime?__: `number`
 
-Defined in: [plugins/types.ts:13](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L13)
+Defined in: src/plugins/types.ts:17
 
 ## Methods
 
@@ -46,15 +46,15 @@ Defined in: [plugins/types.ts:13](https://github.com/jwilleke/ngdpbase/blob/b6a8
 
 > `optional` __getConfig__(): `object`
 
-Defined in: [plugins/types.ts:17](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L17)
+Defined in: src/plugins/types.ts:21
 
 #### Returns
 
 `object`
 
-##### get()?
+##### get?
 
-> `optional` __get__: (`key`, `defaultValue`) => `unknown`
+> `optional` __get?__: (`key`, `defaultValue`) => `unknown`
 
 ###### Parameters
 
@@ -76,7 +76,7 @@ Defined in: [plugins/types.ts:17](https://github.com/jwilleke/ngdpbase/blob/b6a8
 
 > __getManager__(`name`): `unknown`
 
-Defined in: [plugins/types.ts:12](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L12)
+Defined in: src/plugins/types.ts:16
 
 #### Parameters
 

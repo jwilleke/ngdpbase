@@ -1,4 +1,4 @@
-[__ngdpbase API v1.5.0__](../../../README.md)
+[__ngdpbase API v5.43.0__](../../../README.md)
 
 ***
 
@@ -6,10 +6,10 @@
 
 # Interface: PluginParams
 
-Defined in: [plugins/types.ts:33](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L33)
+Defined in: src/plugins/types.ts:49
 
 Plugin parameters (parsed from plugin syntax)
 
 ## Indexable
 
-\[`key`: `string`\]: `string` \| `number` \| `boolean` \| `undefined`
+> \[`key`: `string`\]: `string` \| `number` \| `boolean` \| `undefined`

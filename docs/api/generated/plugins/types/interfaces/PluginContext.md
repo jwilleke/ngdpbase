@@ -1,4 +1,4 @@
-[__ngdpbase API v1.5.0__](../../../README.md)
+[__ngdpbase API v5.43.0__](../../../README.md)
 
 ***
 
@@ -6,21 +6,53 @@
 
 # Interface: PluginContext
 
-Defined in: [plugins/types.ts:23](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L23)
+Defined in: src/plugins/types.ts:27
 
 Plugin context passed to plugins during execution
 
 ## Indexable
 
-\[`key`: `string`\]: `unknown`
+> \[`key`: `string`\]: `unknown`
 
 ## Properties
 
+### dependsOn?
+
+> `optional` __dependsOn?__: (`topic`) => `void`
+
+Defined in: src/plugins/types.ts:40
+
+# 1751: this render reads `topic`'s data (by convention the owning
+manager's name, e.g. 'LedgerManager'). Call before reading; the cached
+page is re-rendered once the manager bumps that topic.
+
+#### Parameters
+
+##### topic
+
+`string`
+
+#### Returns
+
+`void`
+
+***
+
 ### engine?
 
-> `optional` __engine__: [`WikiEngine`](WikiEngine.md)
+> `optional` __engine?__: [`WikiEngine`](WikiEngine.md)
 
-Defined in: [plugins/types.ts:24](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L24)
+Defined in: src/plugins/types.ts:28
+
+***
+
+### formatters
+
+> __formatters__: [`PluginFormatters`](../../../managers/PluginManager/type-aliases/PluginFormatters.md)
+
+Defined in: src/plugins/types.ts:34
+
+# 1820: PluginManager's formatter helpers, e.g. `context.formatters.escapeHtml(s)`.
 
 ***
 
@@ -28,7 +60,21 @@ Defined in: [plugins/types.ts:24](https://github.com/jwilleke/ngdpbase/blob/b6a8
 
 > __linkGraph__: `Record`\<`string`, `unknown`\>
 
-Defined in: [plugins/types.ts:26](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L26)
+Defined in: src/plugins/types.ts:30
+
+***
+
+### markVolatile?
+
+> `optional` __markVolatile?__: () => `void`
+
+Defined in: src/plugins/types.ts:42
+
+# 1751: this render's output changes on its own; do not cache the page.
+
+#### Returns
+
+`void`
 
 ***
 
@@ -36,4 +82,14 @@ Defined in: [plugins/types.ts:26](https://github.com/jwilleke/ngdpbase/blob/b6a8
 
 > __pageName__: `string`
 
-Defined in: [plugins/types.ts:25](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L25)
+Defined in: src/plugins/types.ts:29
+
+***
+
+### query?
+
+> `optional` __query?__: `Record`\<`string`, `string`\>
+
+Defined in: src/plugins/types.ts:32
+
+Query-string parameters from the current HTTP request (e.g. { page: '2' })
