@@ -1,4 +1,4 @@
-[__ngdpbase API v1.5.0__](../../../README.md)
+[__ngdpbase API v5.43.0__](../../../README.md)
 
 ***
 
@@ -6,7 +6,7 @@
 
 # Interface: SimplePlugin
 
-Defined in: [plugins/types.ts:41](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L41)
+Defined in: src/plugins/types.ts:57
 
 Simple plugin interface for plugins that use the execute method pattern
 (does not require the callable function signature)
@@ -15,25 +15,25 @@ Simple plugin interface for plugins that use the execute method pattern
 
 ### author?
 
-> `optional` __author__: `string`
+> `optional` __author?__: `string`
 
-Defined in: [plugins/types.ts:44](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L44)
+Defined in: src/plugins/types.ts:60
 
 ***
 
 ### description?
 
-> `optional` __description__: `string`
+> `optional` __description?__: `string`
 
-Defined in: [plugins/types.ts:43](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L43)
+Defined in: src/plugins/types.ts:59
 
 ***
 
-### execute()?
+### execute?
 
-> `optional` __execute__: (`context`, `params`) => `string` \| `Promise`\<`string`\>
+> `optional` __execute?__: (`context`, `params`) => `string` \| `Promise`\<`string`\>
 
-Defined in: [plugins/types.ts:47](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L47)
+Defined in: src/plugins/types.ts:64
 
 #### Parameters
 
@@ -51,11 +51,29 @@ Defined in: [plugins/types.ts:47](https://github.com/jwilleke/ngdpbase/blob/b6a8
 
 ***
 
-### initialize()?
+### fetch?
 
-> `optional` __initialize__: (`engine`) => `void` \| `Promise`\<`void`\>
+> `optional` __fetch?__: (`engine`) => `void` \| `Promise`\<`void`\>
 
-Defined in: [plugins/types.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L46)
+Defined in: src/plugins/types.ts:63
+
+#### Parameters
+
+##### engine
+
+`unknown`
+
+#### Returns
+
+`void` \| `Promise`\<`void`\>
+
+***
+
+### initialize?
+
+> `optional` __initialize?__: (`engine`) => `void` \| `Promise`\<`void`\>
+
+Defined in: src/plugins/types.ts:62
 
 #### Parameters
 
@@ -71,14 +89,27 @@ Defined in: [plugins/types.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a8
 
 ### name?
 
-> `optional` __name__: `string`
+> `optional` __name?__: `string`
 
-Defined in: [plugins/types.ts:42](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L42)
+Defined in: src/plugins/types.ts:58
 
 ***
 
 ### version?
 
-> `optional` __version__: `string`
+> `optional` __version?__: `string`
 
-Defined in: [plugins/types.ts:45](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L45)
+Defined in: src/plugins/types.ts:61
+
+***
+
+### volatile?
+
+> `optional` __volatile?__: `boolean`
+
+Defined in: src/plugins/types.ts:71
+
+Its output changes with nothing written (a clock): a page that runs it is
+not kept in the page cache (#1751). Data a plugin reads from a manager is
+declared with `context.dependsOn(topic)` instead, which keeps the page
+cached until that data changes.
