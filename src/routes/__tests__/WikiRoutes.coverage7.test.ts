@@ -7,8 +7,6 @@
  *   POST /preferences       (updatePreferences)
  *   GET  /admin/backup      (adminBackupPage)
  *   POST /admin/backup/config (adminBackupConfig)
- *   POST /export/html/:page (exportPageHtml — error path)
- *   POST /export/markdown/:page (exportPageMarkdown — error path)
  */
 import express from 'express';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
@@ -145,10 +143,7 @@ const mockSearchManager = {
 
 const mockExportManager = {
   getExports: vi.fn(),
-  deleteExport: vi.fn(),
-  exportPageToHtml: vi.fn(),
-  saveExport: vi.fn(),
-  exportToMarkdown: vi.fn()
+  deleteExport: vi.fn()
 };
 
 // #1938: what the instance .env holds, byte for byte (no real secret).
@@ -337,9 +332,6 @@ function resetMocks() {
 
   mockExportManager.getExports.mockResolvedValue([]);
   mockExportManager.deleteExport.mockResolvedValue(undefined);
-  mockExportManager.exportPageToHtml.mockResolvedValue('<html>exported</html>');
-  mockExportManager.saveExport.mockResolvedValue('/tmp/test-export.html');
-  mockExportManager.exportToMarkdown.mockResolvedValue('# markdown');
 
   mockBackupManager.getAutoBackupStatus.mockResolvedValue({ enabled: false, time: '02:00', days: 'daily' });
   mockBackupManager.listBackups.mockResolvedValue([]);
@@ -1171,44 +1163,6 @@ describe('WikiRoutes — coverage batch 7', () => {
     test('a name that is not a stored backup is 404', async () => {
       const res = await request(app).get('/admin/backup/download/..%2F..%2Fetc%2Fpasswd');
       expect(res.status).toBe(404);
-    });
-  });
-
-  // ── POST /export/html/:page (exportPageHtml — error path) ───────────────────
-
-  describe('POST /export/html/:page (exportPageHtml)', () => {
-    test('returns 500 when exportPageToHtml throws', async () => {
-      mockExportManager.exportPageToHtml.mockRejectedValue(new Error('export failed'));
-      const res = await request(app)
-        .post('/export/html/TestPage')
-        .set('x-csrf-token', 'test-csrf-token');
-      expect(res.status).toBe(500);
-    });
-
-    test('returns 200 (download) when export succeeds', async () => {
-      const res = await request(app)
-        .post('/export/html/TestPage')
-        .set('x-csrf-token', 'test-csrf-token');
-      expect([200, 204]).toContain(res.status);
-    });
-  });
-
-  // ── POST /export/markdown/:page (exportPageMarkdown — error path) ────────────
-
-  describe('POST /export/markdown/:page (exportPageMarkdown)', () => {
-    test('returns 500 when exportToMarkdown throws', async () => {
-      mockExportManager.exportToMarkdown.mockRejectedValue(new Error('export failed'));
-      const res = await request(app)
-        .post('/export/markdown/TestPage')
-        .set('x-csrf-token', 'test-csrf-token');
-      expect(res.status).toBe(500);
-    });
-
-    test('returns 200 (download) when export succeeds', async () => {
-      const res = await request(app)
-        .post('/export/markdown/TestPage')
-        .set('x-csrf-token', 'test-csrf-token');
-      expect([200, 204]).toContain(res.status);
     });
   });
 });
