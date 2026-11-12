@@ -577,55 +577,6 @@ describe('WikiRoutes — coverage batch 13', () => {
     });
   });
 
-  // ── Exports ──────────────────────────────────────────────────────────────────
-
-  describe('GET /exports (listExports)', () => {
-    test('renders 200 with export list', async () => {
-      const res = await request(app).get('/exports');
-      expect(res.status).toBe(200);
-    });
-  });
-
-  describe('GET /download/:filename (downloadExport)', () => {
-    test('returns 403 without admin-system, before looking for the file', async () => {
-      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
-      const res = await request(app).get('/download/export-1.zip');
-      expect(res.status).toBe(403);
-      expect(mockExportManager.getExports).not.toHaveBeenCalled();
-    });
-
-    test('returns 404 when export not found', async () => {
-      const res = await request(app).get('/download/nonexistent.zip');
-      expect(res.status).toBe(404);
-    });
-
-    test('initiates download when export found', async () => {
-      mockExportManager.getExports.mockResolvedValue([
-        { filename: 'export-1.zip', path: '/tmp/export-1.zip' }
-      ]);
-      const res = await request(app).get('/download/export-1.zip');
-      expect([200, 404, 500]).toContain(res.status);
-    });
-  });
-
-  describe('DELETE /deleteExport/:filename (deleteExport)', () => {
-    test('returns 403 without admin-system and deletes nothing', async () => {
-      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
-      const res = await request(app)
-        .delete('/deleteExport/export-1.zip')
-        .set('x-csrf-token', 'test-csrf-token');
-      expect(res.status).toBe(403);
-      expect(mockExportManager.deleteExport).not.toHaveBeenCalled();
-    });
-
-    test('returns 204 when export deleted', async () => {
-      const res = await request(app)
-        .delete('/deleteExport/export-1.zip')
-        .set('x-csrf-token', 'test-csrf-token');
-      expect(res.status).toBe(204);
-    });
-  });
-
   // ── Admin Attachments ────────────────────────────────────────────────────────
 
   describe('GET /admin/attachments (adminAttachments)', () => {

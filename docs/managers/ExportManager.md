@@ -161,6 +161,8 @@ Default: `./exports`
 
 Configurable via `config.exportDirectory` during initialization.
 
+Files saved here by the single-page HTML and Markdown routes stay on disk. No screen lists, downloads or deletes them any more; an administrator manages the folder directly.
+
 ## Related Managers
 
 - [PageManager](PageManager.md) - Provides page content

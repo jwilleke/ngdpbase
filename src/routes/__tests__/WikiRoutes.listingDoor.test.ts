@@ -26,7 +26,7 @@ function methodBody(name: string): string {
 }
 
 /** Every handler that renders a page list to a request. */
-const READER_FACING = ['kiosk', 'exportPage', 'getPageSuggestions', 'getCommonTemplateData'];
+const READER_FACING = ['kiosk', 'getPageSuggestions', 'getCommonTemplateData'];
 
 /**
  * The sites that may still read the raw index: admin surfaces behind

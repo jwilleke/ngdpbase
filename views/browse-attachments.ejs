@@ -10,6 +10,10 @@
                 </button>
             </div>
 
+            <% if (typeof assetPickerNotice !== 'undefined' && assetPickerNotice) { %>
+            <div class="alert alert-info" role="status"><%= assetPickerNotice %></div>
+            <% } %>
+
             <%- include('_asset-picker', {
                 assetPickerMode:        'page',
                 assetPickerInsert:      false,

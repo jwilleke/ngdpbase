@@ -387,7 +387,7 @@ Registers JSON Schemas and validates typed entities against them. Identity recor
 
 Exports pages to styled HTML or Markdown.
 
-__Key API:__ `exportPageToHtml(name, user?)`, `exportPagesToHtml(names, user?)`, `exportToMarkdown(names, user?)`, `saveExport(content, filename, format)`, `getExports()`.
+__Key API:__ `exportPageToHtml(name, user?)`, `exportPagesToHtml(names, user?)`, `exportToMarkdown(names, user?)`, `saveExport(content, filename, format)`.
 
 Timestamp formatting is locale-aware via `LocaleUtils`.
 

@@ -41,17 +41,6 @@ export const PDF_UNAVAILABLE_REASON =
 const PDF_DEFAULTS = { provider: 'none', pageSize: 'Letter', timeoutMs: 30_000, maxConcurrent: 2, serviceMaxBytes: 52_428_800 };
 
 /**
- * Export file metadata interface
- */
-export interface ExportFileInfo {
-  filename: string;
-  path: string;
-  size: number;
-  created: Date;
-  modified: Date;
-}
-
-/**
  * Export configuration interface
  */
 export interface ExportConfig extends Record<string, unknown> {
@@ -636,51 +625,6 @@ class ExportManager extends BaseManager {
 
     logger.info(`Exported to: ${fullFilename}`);
     return filePath;
-  }
-
-  /**
-   * Get list of available exports
-   * @returns {Promise<ExportFileInfo[]>} List of export files
-   */
-  async getExports(): Promise<ExportFileInfo[]> {
-    try {
-      const files = await fs.readdir(this.exportDirectory);
-      const exports: ExportFileInfo[] = [];
-
-      for (const file of files) {
-        const filePath = path.join(this.exportDirectory, file);
-        const stats = await fs.stat(filePath);
-
-        exports.push({
-          filename: file,
-          path: filePath,
-          size: stats.size,
-          created: stats.birthtime,
-          modified: stats.mtime
-        });
-      }
-
-      return exports.sort((a, b) => b.created.getTime() - a.created.getTime());
-    } catch (err) {
-      logger.error('Error getting exports:', err);
-      return [];
-    }
-  }
-
-  /**
-   * Delete an export file
-   * @param {string} filename - Export filename
-   * @returns {Promise<void>}
-   */
-  async deleteExport(filename: string): Promise<void> {
-    // Only a plain file name inside the export folder: never a path that
-    // reaches another folder.
-    if (!filename || filename !== path.basename(filename) || filename === '.' || filename === '..') {
-      throw new Error(`Not an export file name: ${filename}`);
-    }
-    const filePath = path.join(this.exportDirectory, filename);
-    await fs.unlink(filePath);
-    logger.info(`Deleted export: ${filename}`);
   }
 
   /**
