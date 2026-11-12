@@ -1,7 +1,6 @@
 import type { ActorContext } from '../context/ActorContext.js';
 import BaseManager from './BaseManager.js';
 import fs from 'fs/promises';
-import path from 'path';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -88,7 +87,7 @@ export interface PageForExport {
  *
  * @example
  * const exportManager = engine.getManager('ExportManager');
- * const html = await exportManager.exportPageToHtml('Main');
+ * const csv = exportManager.toCsv(['name'], [['Main']]);
  */
 /** A text cell starting with one of these runs as a spreadsheet formula. */
 const CSV_FORMULA_START = /^[=+\-@\t\r]/;
@@ -309,28 +308,6 @@ class ExportManager extends BaseManager {
 
     const pdfProviderName = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.export.pdf.provider', PDF_DEFAULTS.provider) as string | undefined;
     logger.info(`ExportManager initialized (PDF provider: ${pdfProviderName ?? PDF_DEFAULTS.provider})`);
-  }
-
-  /**
-   * Export a single page to HTML
-   * @param {string} pageName - Page name to export
-   * @param {ExportUser|null} user - User object for locale-aware formatting
-   * @returns {Promise<string>} HTML content
-   */
-  async exportPageToHtml(pageName: string, ctx: ActorContext, user: ExportUser | null = null): Promise<string> {
-    const pageManager = this.engine.getManager<PageManager>('PageManager');
-    const renderingManager = this.engine.getManager<RenderingManager>('RenderingManager');
-
-    if (!pageManager || !renderingManager) {
-      throw new Error('Required managers not available');
-    }
-
-    const page = (await pageManager.getPage(pageName, ctx)) as PageForExport | null;
-    if (!page) {
-      throw new Error(`Page '${pageName}' not found`);
-    }
-
-    return this.renderPageDocument(pageName, page, user);
   }
 
   /**
@@ -564,67 +541,6 @@ class ExportManager extends BaseManager {
 </html>`;
 
     return html;
-  }
-
-  /**
-   * Export page(s) to markdown
-   * @param {string|string[]} pageNames - Single page name or array of page names
-   * @param {ExportUser|null} user - User object for locale-aware formatting
-   * @returns {Promise<string>} Markdown content
-   */
-  async exportToMarkdown(pageNames: string | string[], ctx: ActorContext, user: ExportUser | null = null): Promise<string> {
-    const pageManager = this.engine.getManager<PageManager>('PageManager');
-    if (!pageManager) {
-      throw new Error('PageManager not available');
-    }
-    const names = Array.isArray(pageNames) ? pageNames : [pageNames];
-
-    let markdown = '';
-
-    if (names.length > 1) {
-      markdown += '# ngdpbase Export\n\n';
-      markdown += `*Exported on ${this.getFormattedTimestamp(user)}*\n\n`;
-      markdown += '## Table of Contents\n\n';
-
-      for (const pageName of names) {
-        markdown += `- [${pageName}](#${pageName.toLowerCase().replace(/[^a-z0-9]/g, '-')})\n`;
-      }
-      markdown += '\n---\n\n';
-    }
-
-    for (const pageName of names) {
-      const page = (await pageManager.getPage(pageName, ctx)) as PageForExport | null;
-      if (page) {
-        if (names.length > 1) {
-          markdown += `# ${pageName}\n\n`;
-        }
-        markdown += page.content;
-        if (names.length > 1) {
-          markdown += '\n\n---\n\n';
-        }
-      }
-    }
-
-    return markdown;
-  }
-
-  /**
-   * Save export to file
-   * @param {string} content - Content to save
-   * @param {string} filename - Filename
-   * @param {string} format - File format
-   * @returns {Promise<string>} File path
-   */
-  async saveExport(content: string, filename: string, format: string): Promise<string> {
-    const sanitizedFilename = filename.replace(/[^a-zA-Z0-9\-_]/g, '-');
-    const timestamp = new Date().toISOString().slice(0, 10);
-    const fullFilename = `${sanitizedFilename}_${timestamp}.${format}`;
-    const filePath = path.join(this.exportDirectory, fullFilename);
-
-    await fs.writeFile(filePath, content, 'utf8');
-
-    logger.info(`Exported to: ${fullFilename}`);
-    return filePath;
   }
 
   /**

@@ -1382,54 +1382,6 @@ Export page selection form
 
 ***
 
-### exportPageHtml()
-
-> __exportPageHtml__(`req`, `res`): `Promise`\<`Response`\<`any`, `Record`\<`string`, `any`\>\>\>
-
-Defined in: [src/routes/WikiRoutes.ts:2168](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/routes/WikiRoutes.ts#L2168)
-
-Export page to HTML
-
-#### Parameters
-
-##### req
-
-`Request`
-
-##### res
-
-`Response`
-
-#### Returns
-
-`Promise`\<`Response`\<`any`, `Record`\<`string`, `any`\>\>\>
-
-***
-
-### exportPageMarkdown()
-
-> __exportPageMarkdown__(`req`, `res`): `Promise`\<`void`\>
-
-Defined in: [src/routes/WikiRoutes.ts:2186](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/routes/WikiRoutes.ts#L2186)
-
-Export page to Markdown
-
-#### Parameters
-
-##### req
-
-`Request`
-
-##### res
-
-`Response`
-
-#### Returns
-
-`Promise`\<`void`\>
-
-***
-
 ### formatLeftMenuContent()
 
 > __formatLeftMenuContent__(`content`): `string`

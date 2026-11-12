@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `npm run lint:signed-out-writes` names a write route registered ahead of the gate or in a file the gate does not cover; `npm run inventory:routes` prints every route and whether a signed-out write reaches it.
 - `./server.sh update` refuses, before it changes anything, a checkout with files marked `git update-index --assume-unchanged` or `--skip-worktree`, and lists them. `git status` does not show edits to those files, and a failed update's rollback might overwrite them. A sparse checkout is refused too, since `git sparse-checkout` marks files skip-worktree; update one by hand.
 
+### Removed
+
+- `POST /export/html/:page` and `POST /export/markdown/:page`, with `ExportManager.saveExport`, `exportPageToHtml` and `exportToMarkdown` ([#2378](https://github.com/jwilleke/ngdpbase/issues/2378)). Nothing on screen called them since the Export screen was retired, and they saved files into the exports folder that nothing listed or cleaned up. A script that posted to them now gets a 404; use __Export this page__ (`/export/page/:page`). Files they already saved stay in the exports folder, and `ngdpbase.directories.exports` is unchanged.
+
 ## [5.43.0] - 2026-11-07
 
 ### Upgrade notes
