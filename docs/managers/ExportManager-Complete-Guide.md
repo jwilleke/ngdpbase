@@ -198,40 +198,6 @@ const path = await exportManager.saveExport(html, 'Main Export', 'html');
 
 ---
 
-### getExports()
-
-List all export files in the export directory.
-
-```javascript
-async getExports()
-```
-
-__Returns:__ `Array<Object>` sorted by creation date (newest first)
-
-Each object contains:
-
-- `filename` - File name
-- `path` - Full file path
-- `size` - File size in bytes
-- `created` - Creation date
-- `modified` - Last modified date
-
----
-
-### deleteExport(filename)
-
-Delete an export file.
-
-```javascript
-async deleteExport(filename)
-```
-
-__Parameters:__
-
-- `filename` - Name of file to delete
-
----
-
 ## Locale Support
 
 ### getFormattedTimestamp(user)
@@ -267,8 +233,6 @@ If user has `preferences.locale` set, uses LocaleUtils for formatting. Otherwise
 | Method | Parameters | Returns |
 | -------- | ------------ | --------- |
 | `saveExport(content, filename, format)` | string, string, string | `Promise<string>` |
-| `getExports()` | - | `Promise<Array<Object>>` |
-| `deleteExport(filename)` | string | `Promise<void>` |
 
 ### Utility
 
@@ -320,23 +284,6 @@ app.post('/api/export/bulk', async (req, res) => {
 
   const filePath = await exportManager.saveExport(content, 'bulk-export', format);
   res.json({ success: true, path: filePath });
-});
-```
-
-### Export Management Dashboard
-
-```javascript
-app.get('/admin/exports', async (req, res) => {
-  const exportManager = engine.getManager('ExportManager');
-  const exports = await exportManager.getExports();
-
-  res.render('admin/exports', { exports });
-});
-
-app.delete('/admin/exports/:filename', async (req, res) => {
-  const exportManager = engine.getManager('ExportManager');
-  await exportManager.deleteExport(req.params.filename);
-  res.json({ success: true });
 });
 ```
 

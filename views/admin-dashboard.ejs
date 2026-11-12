@@ -388,13 +388,6 @@
                         </span>
 
                         <span class="d-inline-flex align-items-center gap-1">
-                            <a href="/export" class="btn btn-success btn-sm">
-                                <i class="fas fa-download"></i> Export Data
-                            </a>
-                            <a href="/view/export-data" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
-                        </span>
-
-                        <span class="d-inline-flex align-items-center gap-1">
                             <form method="POST" action="/admin/maintenance/toggle" class="d-inline">
                                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                                 <% if (maintenanceMode) { %>

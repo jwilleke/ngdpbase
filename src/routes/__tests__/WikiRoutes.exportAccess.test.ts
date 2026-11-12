@@ -60,8 +60,7 @@ const exportManager = {
   // `exportPageToMarkdown`. Naming it wrong here made an assertion below
   // vacuous — it can only ever pass.
   exportToMarkdown: vi.fn().mockResolvedValue('# SECRET'),
-  saveExport: vi.fn().mockResolvedValue('/exports/SecretPlans_2026-08-16.html'),
-  getExports: vi.fn().mockResolvedValue([{ filename: 'SecretPlans_2026-08-16.html' }])
+  saveExport: vi.fn().mockResolvedValue('/exports/SecretPlans_2026-08-16.html')
 };
 
 /**
@@ -176,57 +175,3 @@ describe('#1060 — per-page export requires read access', () => {
   });
 });
 
-describe('#1060 — the export picker and the saved-export listing', () => {
-  test('the picker is open — the per-page gate is what protects content', async () => {
-    const res = createMockRes();
-    const routes = makeRoutes(true, []) as unknown as Record<
-      string, (a: unknown, b: unknown) => Promise<void>
-    >;
-
-    await routes.exportPage(createMockReq(anonymous), res);
-
-    expect(res.render).toHaveBeenCalled();
-  });
-
-  test('#1219: the picker names only the pages this caller may read', async () => {
-    // A title is content. The list is the evaluator's answer for the caller,
-    // not the index — sabotage: swap listPagesFor back to getAllPages and
-    // SecretPlans is offered to anonymous.
-    const res = createMockRes();
-    const routes = makeRoutes(true, []) as unknown as Record<
-      string, (a: unknown, b: unknown) => Promise<void>
-    >;
-    await routes.exportPage(createMockReq(anonymous), res);
-    expect(res.render).toHaveBeenCalledWith('export', expect.objectContaining({ pageNames: ['PublicNotes'] }));
-
-    const owner = { username: 'owner', isAuthenticated: true, roles: ['editor', 'All'] };
-    await routes.exportPage(createMockReq(owner), res);
-    expect(res.render).toHaveBeenLastCalledWith('export', expect.objectContaining({ pageNames: ['SecretPlans', 'PublicNotes'] }));
-  });
-
-  test('the saved-export listing is admin-only — a different question entirely', async () => {
-    // This directory holds files saved by every user who ever exported, so it
-    // is not governed by what the caller may read now. That is why it keeps a
-    // permission check when the export routes do not.
-    const res = createMockRes();
-    const routes = makeRoutes(true, []) as unknown as Record<
-      string, (a: unknown, b: unknown) => Promise<void>
-    >;
-
-    await routes.listExports(createMockReq(reader), res);
-
-    expect(exportManager.getExports).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(403);
-  });
-
-  test('an admin can list saved exports', async () => {
-    const res = createMockRes();
-    const routes = makeRoutes(true, ['admin-system']) as unknown as Record<
-      string, (a: unknown, b: unknown) => Promise<void>
-    >;
-
-    await routes.listExports(createMockReq({ username: 'admin', isAuthenticated: true, roles: ['admin'] }), res);
-
-    expect(res.render).toHaveBeenCalled();
-  });
-});
