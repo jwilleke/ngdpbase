@@ -137,10 +137,7 @@ const mockSearchManager = {
 
 const mockExportManager = {
   getExports: vi.fn(),
-  deleteExport: vi.fn(),
-  exportPageToHtml: vi.fn(),
-  saveExport: vi.fn(),
-  exportToMarkdown: vi.fn()
+  deleteExport: vi.fn()
 };
 
 const mockConfigManager = {
@@ -299,9 +296,6 @@ function resetMocks() {
   mockSearchManager.updatePageInIndex.mockResolvedValue(undefined);
 
   mockExportManager.getExports.mockResolvedValue([]);
-  mockExportManager.exportPageToHtml.mockResolvedValue('<html>exported</html>');
-  mockExportManager.saveExport.mockResolvedValue('/tmp/test-export.html');
-  mockExportManager.exportToMarkdown.mockResolvedValue('# markdown');
 
   mockTemplateManager.getTemplates.mockResolvedValue([{ name: 'blank', content: '# {{pageName}}' }]);
   mockTemplateManager.applyTemplate.mockReturnValue('# Template content');

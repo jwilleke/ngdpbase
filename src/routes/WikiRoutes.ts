@@ -6533,123 +6533,6 @@ ${panes}
   }
 
   /**
-   * Export page to HTML
-   */
-  /**
-   * Deny an export unless the caller may read the page (#1060). Returns a sent
-   * response when denied, or null to proceed.
-   *
-   * ONE check, deliberately: the page door's read (#1622), the SAME one the
-   * view route uses. Export was a second path to page content that evaluated
-   * no ACL at all, so a private page was extractable by anyone who could name
-   * it.
-   *
-   * A `page-export` check on top was written first and removed. For a page the
-   * caller can already read, exporting hands back words they are looking at on
-   * screen; requiring a second permission to receive them as a file is friction
-   * wearing a security label. The read/export split would matter against a bulk
-   * surface — `ExportManager.exportPagesToHtml` and `exportToMarkdown` both
-   * take arrays — but no route reaches either, so today every export is one
-   * page the caller has already been granted. Gate the bulk route when one is
-   * built, on the act that is actually different.
-   *
-   * 404 rather than 403, matching how a caller who cannot see a page should
-   * experience it: a 403 confirms the page exists, which for a private page is
-   * itself the disclosure.
-   */
-  private async denyExport(req: Request, res: Response, pageName: string): Promise<Response | null> {
-    const read = await this.engine.getManager('PageManager').readPage(pageName, req.userContext);
-    if (!read.ok) {
-      logger.warn(`[export] Denied — no read access to '${pageName}'`);
-      return res.status(404).send('Page not found');
-    }
-    return null;
-  }
-
-  async exportPageHtml(req: Request, res: Response) {
-    try {
-      const { page: pageName } = req.params;
-      const denied = await this.denyExport(req, res, pageName);
-      if (denied) return denied;
-      const exportManager = this.engine.getManager('ExportManager');
-
-      const html = await exportManager.exportPageToHtml(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
-      const filePath = await exportManager.saveExport(html, pageName, 'html');
-
-      // #1204: page-export is bulk extraction, gated on read until a bulk
-      // surface exists. Recorded here because ExportManager cannot tell an
-      // HTTP download from an internal render — the same reason page-read is
-      // recorded at the route.
-      await recordAuditEvent(this.auditSink(), {
-        eventType: AUDIT_EVENT.PAGE_EXPORT,
-        ...WikiRoutes.auditWho(req, req.userContext, 'anonymous'),
-        action: 'page-export',
-        result: 'success',
-        severity: WikiRoutes.viaTokenOf(req) ? 'medium' : 'low',
-        resource: pageName,
-        resourceType: 'page',
-        metadata: { pageName, format: 'html', ...(WikiRoutes.viaTokenOf(req) ? { viaToken: WikiRoutes.viaTokenOf(req) } : {}) }
-      }, (err) => logger.warn(`Audit log failed for page-export of '${pageName}':`, err));
-
-      const filename = path.basename(filePath);
-
-      // Send file as download
-      return res.download(filePath, filename, (err) => {
-        if (err) {
-          logger.error('Error downloading export:', err);
-        }
-      });
-
-    } catch (err: unknown) {
-      logger.error('Error exporting to HTML:', err);
-      return res.status(500).send('Error exporting page');
-    }
-  }
-
-  /**
-   * Export page to Markdown
-   */
-  async exportPageMarkdown(req: Request, res: Response) {
-    try {
-      const { page: pageName } = req.params;
-      const denied = await this.denyExport(req, res, pageName);
-      if (denied) return denied;
-      const exportManager = this.engine.getManager('ExportManager');
-
-      const markdown = await exportManager.exportToMarkdown(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
-      const filePath = await exportManager.saveExport(markdown, pageName, 'md');
-
-      // #1204: page-export is bulk extraction, gated on read until a bulk
-      // surface exists. Recorded here because ExportManager cannot tell an
-      // HTTP download from an internal render — the same reason page-read is
-      // recorded at the route.
-      await recordAuditEvent(this.auditSink(), {
-        eventType: AUDIT_EVENT.PAGE_EXPORT,
-        ...WikiRoutes.auditWho(req, req.userContext, 'anonymous'),
-        action: 'page-export',
-        result: 'success',
-        severity: WikiRoutes.viaTokenOf(req) ? 'medium' : 'low',
-        resource: pageName,
-        resourceType: 'page',
-        metadata: { pageName, format: 'md', ...(WikiRoutes.viaTokenOf(req) ? { viaToken: WikiRoutes.viaTokenOf(req) } : {}) }
-      }, (err) => logger.warn(`Audit log failed for page-export of '${pageName}':`, err));
-
-      const filename = path.basename(filePath);
-
-      // Send file as download
-      return res.download(filePath, filename, (err) => {
-        if (err) {
-          logger.error('Error downloading export:', err);
-        }
-      });
-
-    } catch (err: unknown) {
-      logger.error('Error exporting to Markdown:', err);
-      return res.status(500).send('Error exporting page');
-    }
-  }
-
-  /**
    * GET /export/page/:page — the Export action on a page (#2120, ICE #1979).
    * Export starts from the thing being exported (operator, 2026-10-28): this
    * lists only the formats the engine can make from a page, and only when
@@ -19039,8 +18922,6 @@ ${panes}
     app.get('/user-info', (req: Request, res: Response) => this.userInfo(req, res));
     // #2174: the general Export screen is retired. An old link lands on search, with a note.
     app.get('/export', (_req: Request, res: Response) => res.redirect(302, '/search?from=export'));
-    app.post('/export/html/:page', (req: Request, res: Response) => this.exportPageHtml(req, res));
-    app.post('/export/markdown/:page', (req: Request, res: Response) => this.exportPageMarkdown(req, res));
     // #2120: the Export action on a page, through the ICE engine.
     app.get('/export/page/:page', (req: Request, res: Response) => void this.exportPageFormats(req, res));
     app.post('/export/page/:page', (req: Request, res: Response) => void this.exportPageStart(req, res));

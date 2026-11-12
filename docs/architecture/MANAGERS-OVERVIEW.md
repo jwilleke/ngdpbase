@@ -385,9 +385,9 @@ Registers JSON Schemas and validates typed entities against them. Identity recor
 
 ### ExportManager
 
-Exports pages to styled HTML or Markdown.
+Renders pages as styled HTML, writes CSV, and turns HTML into PDF.
 
-__Key API:__ `exportPageToHtml(name, user?)`, `exportPagesToHtml(names, user?)`, `exportToMarkdown(names, user?)`, `saveExport(content, filename, format)`.
+__Key API:__ `renderPageDocument(name, page, user?)`, `exportPagesToHtml(names, ctx, user?)`, `toCsv(headers, rows)`, `htmlToPdf(ctx, html, options?)`.
 
 Timestamp formatting is locale-aware via `LocaleUtils`.
 
