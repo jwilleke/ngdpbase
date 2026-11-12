@@ -11,10 +11,8 @@ __Generated API:__ [API Docs](../api/generated/src/managers/ExportManager/README
 1. [Architecture](#architecture)
 2. [Initialization](#initialization)
 3. [Export Methods](#export-methods)
-4. [File Management](#file-management)
-5. [Locale Support](#locale-support)
-6. [API Reference](#api-reference)
-7. [Integration Examples](#integration-examples)
+4. [Locale Support](#locale-support)
+5. [API Reference](#api-reference)
 
 ---
 
@@ -23,10 +21,7 @@ __Generated API:__ [API Docs](../api/generated/src/managers/ExportManager/README
 ```text
 ┌─────────────────────────────────────────────────────────┐
 │                    ExportManager                         │
-│  - exportPageToHtml(pageName, user)                     │
 │  - exportPagesToHtml(pageNames, user)                   │
-│  - exportToMarkdown(pageNames, user)                    │
-│  - saveExport(content, filename, format)                │
 └────────────────┬──────────────────────────────────────┘
                  │
          ┌───────┼───────┐
@@ -65,44 +60,6 @@ ExportManager creates the export directory automatically during initialization.
 
 ## Export Methods
 
-### exportPageToHtml(pageName, user)
-
-Export a single page to a complete HTML document.
-
-```javascript
-async exportPageToHtml(pageName, user = null)
-```
-
-__Parameters:__
-
-- `pageName` - Name of the page to export
-- `user` - User object for locale-aware timestamps (optional)
-
-__Returns:__ `string` - Complete HTML document
-
-__Throws:__ `Error` if page not found
-
-__Features:__
-
-- Full HTML5 document with `<head>` and `<body>`
-- Responsive CSS styling included
-- Page metadata (modified date, categories, keywords)
-- Print-friendly styles
-
-__Example:__
-
-```javascript
-const exportManager = engine.getManager('ExportManager');
-const html = await exportManager.exportPageToHtml('Main', req.user);
-
-// Send as download
-res.setHeader('Content-Type', 'text/html');
-res.setHeader('Content-Disposition', 'attachment; filename="Main.html"');
-res.send(html);
-```
-
----
-
 ### exportPagesToHtml(pageNames, user)
 
 Export multiple pages to a single HTML document with table of contents.
@@ -135,69 +92,6 @@ const html = await exportManager.exportPagesToHtml(pages);
 
 ---
 
-### exportToMarkdown(pageNames, user)
-
-Export pages to raw Markdown format.
-
-```javascript
-async exportToMarkdown(pageNames, user = null)
-```
-
-__Parameters:__
-
-- `pageNames` - Single page name or array of page names
-- `user` - User object for timestamps (optional)
-
-__Returns:__ `string` - Markdown content
-
-__Features:__
-
-- Raw page content (no rendering)
-- Multi-page exports include TOC
-- Page separators between pages
-
-__Example:__
-
-```javascript
-// Single page
-const md = await exportManager.exportToMarkdown('Main');
-
-// Multiple pages
-const md = await exportManager.exportToMarkdown(['Main', 'About', 'Help']);
-```
-
----
-
-## File Management
-
-### saveExport(content, filename, format)
-
-Save export content to a file.
-
-```javascript
-async saveExport(content, filename, format)
-```
-
-__Parameters:__
-
-- `content` - Content to save
-- `filename` - Base filename (sanitized automatically)
-- `format` - File extension (html, md, etc.)
-
-__Returns:__ `string` - Full path to saved file
-
-__Filename format:__ `{sanitized-name}_{YYYY-MM-DD}.{format}`
-
-__Example:__
-
-```javascript
-const html = await exportManager.exportPageToHtml('Main');
-const path = await exportManager.saveExport(html, 'Main Export', 'html');
-// Returns: ./exports/Main-Export_2025-12-19.html
-```
-
----
-
 ## Locale Support
 
 ### getFormattedTimestamp(user)
@@ -224,15 +118,7 @@ If user has `preferences.locale` set, uses LocaleUtils for formatting. Otherwise
 
 | Method | Parameters | Returns |
 | -------- | ------------ | --------- |
-| `exportPageToHtml(pageName, user)` | string, Object? | `Promise<string>` |
 | `exportPagesToHtml(pageNames, user)` | string[], Object? | `Promise<string>` |
-| `exportToMarkdown(pageNames, user)` | string\|string[], Object? | `Promise<string>` |
-
-### File Management
-
-| Method | Parameters | Returns |
-| -------- | ------------ | --------- |
-| `saveExport(content, filename, format)` | string, string, string | `Promise<string>` |
 
 ### Utility
 
@@ -242,58 +128,11 @@ If user has `preferences.locale` set, uses LocaleUtils for formatting. Otherwise
 
 ---
 
-## Integration Examples
-
-### Route Handler for HTML Export
-
-```javascript
-app.get('/wiki/:pageName/export/html', async (req, res) => {
-  const exportManager = engine.getManager('ExportManager');
-
-  try {
-    const html = await exportManager.exportPageToHtml(
-      req.params.pageName,
-      req.user
-    );
-
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${req.params.pageName}.html"`
-    );
-    res.send(html);
-  } catch (err) {
-    res.status(404).send('Page not found');
-  }
-});
-```
-
-### Bulk Export API
-
-```javascript
-app.post('/api/export/bulk', async (req, res) => {
-  const exportManager = engine.getManager('ExportManager');
-  const { pages, format } = req.body;
-
-  let content;
-  if (format === 'markdown') {
-    content = await exportManager.exportToMarkdown(pages, req.user);
-  } else {
-    content = await exportManager.exportPagesToHtml(pages, req.user);
-  }
-
-  const filePath = await exportManager.saveExport(content, 'bulk-export', format);
-  res.json({ success: true, path: filePath });
-});
-```
-
----
-
 ## Notes
 
+- __No save or single-page routes:__ `saveExport`, `exportPageToHtml`, `exportToMarkdown` and the `POST /export/html/:page` and `POST /export/markdown/:page` routes were removed in [#2378](https://github.com/jwilleke/ngdpbase/issues/2378). A page's export is started from __Export this page__ (`/export/page/:page`) and a search's from __Export these results__, both through the ImportManager's export engine.
 - __HTML styling:__ Exports include embedded CSS for consistent rendering
 - __Print support:__ HTML exports have print-friendly styles
-- __File sanitization:__ Filenames are sanitized to remove special characters
 - __PDF:__ `htmlToPdf(ctx, html, options?)` turns an HTML document into a PDF (#1974); see [ExportManager.md](ExportManager.md#html-to-pdf). There is no page-to-PDF export route yet
 
 ---
