@@ -4,6 +4,12 @@
  * /view/<name>. Any other screen is stored under its heading and opens its own
  * path. Its query string is not kept: it can carry a one-time token.
  *
+ * One-time screens are not recorded, because going back to them is useless or
+ * wrong: sign-in and sign-out (/login, /logout, /register), consent
+ * (/consent), anything under /auth/ (magic links, re-authentication, SSO
+ * callbacks), and an error page, which marks itself with a [data-trail-skip]
+ * element (error.ejs) because it renders at the path that failed.
+ *
  * An entry is { page, title, timestamp } and, for a screen that is not a wiki
  * page, `path`. Entries stored before `path` existed are wiki pages.
  *
@@ -15,6 +21,13 @@
   var KEY = 'navigationTrail';
   var MAX = 10;
   var RECENT_MS = 300000;
+  var SKIP_PATHS = ['/login', '/logout', '/consent', '/register'];
+  var SKIP_PREFIXES = ['/auth/'];
+
+  function skipped(path) {
+    if (document.querySelector('[data-trail-skip]')) return true;
+    return SKIP_PATHS.indexOf(path) !== -1 || SKIP_PREFIXES.some(function (p) { return path.indexOf(p) === 0; });
+  }
 
   function load() {
     try {
@@ -108,7 +121,7 @@
       a.className = 'dropdown-item';
       a.href = hrefOf(item);
       var icon = document.createElement('i');
-      icon.className = 'fas ' + (item.path !== undefined ? 'fa-link' : 'fa-file-alt') + ' me-2';
+      icon.className = 'fas ' + (item.path !== undefined ? 'fa-window-maximize' : 'fa-file-alt') + ' me-2';
       a.appendChild(icon);
       a.appendChild(document.createTextNode(item.path !== undefined ? item.title : item.page));
       if (Date.now() - item.timestamp < RECENT_MS) {
@@ -145,7 +158,8 @@
   }
 
   function init() {
-    add(current());
+    var here = current();
+    if (here.path === undefined || !skipped(here.path)) add(here);
     render();
   }
 

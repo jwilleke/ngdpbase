@@ -55,8 +55,8 @@ describe('nav-trail.js (#2390)', () => {
   });
 
   it('keeps no query string: a token in it would otherwise sit in storage', () => {
-    const r = visit('http://wiki.test/auth/magic-link/verify?token=secret', '<h1>Sign in</h1>', null);
-    expect(r.trail[0].path).toBe('/auth/magic-link/verify');
+    const r = visit('http://wiki.test/profile/verify?token=secret', '<h1>Verify</h1>', null);
+    expect(r.trail[0].path).toBe('/profile/verify');
     expect(JSON.stringify(r.trail)).not.toContain('secret');
   });
 
