@@ -100,11 +100,44 @@ describe('exporting an add-on\'s list as CSV', () => {
     expect(im.exportFile(runId, BOB)).toBeNull();
   });
 
-  test('a user who may not read is offered nothing, and a direct request is refused before any row is read', async () => {
+  test('a user who may not read is offered nothing, and a direct request is refused without a row being read', async () => {
     const { im, rows } = await load();
     expect(await im.exportFormatsFor('ice-export.rows', 'all', BOB)).toEqual([]);
     await expect(im.startExport({ source: 'ice-export.rows', ref: 'all', format: 'core.csv-file' }, BOB)).rejects.toBeInstanceOf(IceExportRefused);
     expect(rows.reads).toEqual([]);
+  });
+
+  test('core asks the source\'s mayExport before it reads: a source that says no is refused even though its read would return rows', async () => {
+    const { im, rows } = await load();
+    rows.exportRefused.add('alice');
+    expect(await im.exportFormatsFor('ice-export.rows', 'all', ALICE)).toEqual([]);
+    await expect(im.startExport({ source: 'ice-export.rows', ref: 'all', format: 'core.csv-file' }, ALICE)).rejects.toBeInstanceOf(IceExportRefused);
+    expect(rows.reads).toEqual([]);
+  });
+
+  test('a record with 1,500 different keys per row is refused before the table is built, with a plain message', async () => {
+    const { im, rows } = await load();
+    const wide = (n: number) => Object.fromEntries(Array.from({ length: 1500 }, (_, k) => [`field-${n}-${k}`, 'x']));
+    rows.rows.length = 0;
+    for (let n = 0; n < 200; n++) rows.rows.push({ id: `w${n}`, owner: 'alice', properties: wide(n) });
+    const toCsv = vi.spyOn(ExportManager.prototype, 'toCsv');
+    const runId = await im.startExport({ source: 'ice-export.rows', ref: 'all', format: 'core.csv-file' }, ALICE);
+    const run = await finished(im, runId, ALICE);
+    expect(run.state).toBe('failed');
+    expect(run.error).toMatch(/too many columns/i);
+    expect(run.error).not.toMatch(/#\d|github/i);
+    expect(toCsv).not.toHaveBeenCalled();
+    toCsv.mockRestore();
+  });
+
+  test('a normal 200-row export still downloads', async () => {
+    const { im, rows } = await load();
+    rows.rows.length = 0;
+    for (let n = 0; n < 200; n++) rows.rows.push({ id: `n${n}`, owner: 'alice', properties: { date: '2026-01-02', memo: `row ${n}`, amount: n } });
+    const runId = await im.startExport({ source: 'ice-export.rows', ref: 'all', format: 'core.csv-file' }, ALICE);
+    const run = await finished(im, runId, ALICE);
+    expect(run.state).toBe('done');
+    expect(im.exportFile(runId, ALICE)!.bytes.toString('utf8').split('\r\n')).toHaveLength(202);
   });
 
   test('a visitor who is not signed in is offered nothing', async () => {

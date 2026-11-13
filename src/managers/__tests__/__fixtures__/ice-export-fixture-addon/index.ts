@@ -26,6 +26,8 @@ export class FixtureRows {
   readonly rows: FixtureRow[] = [];
   /** People who hold the add-on's read permission. */
   readonly readers = new Set<string>();
+  /** People `mayExport` refuses although `read` would still give them rows (an add-on whose `read` forgot the rule). */
+  readonly exportRefused = new Set<string>();
   /** Every call to the read door, with the user it was for. */
   readonly reads: string[] = [];
 
@@ -44,7 +46,7 @@ function rowsSource(manager: FixtureRows): IceExportSource {
     name: 'rows',
     label: 'Rows',
     yields: 'record',
-    mayExport: async (_ref, ctx) => manager.mayRead(ctx),
+    mayExport: async (_ref, ctx) => manager.mayRead(ctx) && !manager.exportRefused.has(ctx.username),
     read: async (_ref, ctx): Promise<IceItem[] | null> => {
       if (!manager.mayRead(ctx)) return null;
       return manager.readable(ctx).map(r => ({ kind: 'record', name: 'rows', data: { id: r.id, properties: r.properties } }));

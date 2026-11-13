@@ -6,11 +6,13 @@ import type { ExportShimTools, IceItem, IceShim } from '../../types';
 import ExportManager from '../../../managers/ExportManager';
 
 const exportManager = new ExportManager({});
+let limits = { maxColumns: 1000, maxBytes: 26_214_400 };
 const shim = exportShims({
   renderDocument: async () => '',
   htmlToPdf: async () => Buffer.alloc(0),
   pdfAvailable: () => false,
-  toCsv: (headers, rows) => exportManager.toCsv(headers, rows)
+  toCsv: (headers, rows) => exportManager.toCsv(headers, rows),
+  csvLimits: () => limits
 }).find(s => s.name === 'csv-file') as IceShim;
 
 const record = (properties: Record<string, unknown>, name = 'ledger'): IceItem => ({ kind: 'record', name, data: { id: 'x', properties } });
@@ -54,6 +56,41 @@ describe('core.csv-file', () => {
 
   test('the file is named after the list, with nothing a file system refuses', async () => {
     expect((await write([record({ a: 1 }, 'My/list: 2026')])).name).toBe('My-list- 2026.csv');
+  });
+
+  test('a record with an own __proto__ key is a column of its own; rows without it get an empty cell', async () => {
+    const withProto = JSON.parse('{"__proto__": "p", "a": 1}') as Record<string, unknown>;
+    const file = await write([record(withProto), record({ a: 2 })]);
+    expect(textOf(file)).toBe('__proto__,a\r\np,1\r\n,2\r\n');
+  });
+
+  describe('limits on the table', () => {
+    const wide = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, k) => [`k${k}`, 'x']));
+
+    test('more distinct columns than the cap is refused in plain words, before the table is built', async () => {
+      const spy = vi.spyOn(exportManager, 'toCsv');
+      const items = Array.from({ length: 200 }, (_, i) => record(Object.fromEntries(Object.keys(wide(1500)).map(k => [`${k}-${i}`, 1]))));
+      await expect(write(items)).rejects.toThrow(/too many columns/i);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    test('rows x columns beyond the size limit is refused before the table is built', async () => {
+      limits = { maxColumns: 1000, maxBytes: 1000 };
+      const spy = vi.spyOn(exportManager, 'toCsv');
+      try {
+        await expect(write(Array.from({ length: 200 }, () => record(wide(10))))).rejects.toThrow(/too large/i);
+        expect(spy).not.toHaveBeenCalled();
+      } finally {
+        limits = { maxColumns: 1000, maxBytes: 26_214_400 };
+        spy.mockRestore();
+      }
+    });
+
+    test('a normal 200-row export is written', async () => {
+      const file = await write(Array.from({ length: 200 }, (_, i) => record({ date: '2026-01-02', memo: `m${i}`, amount: i })));
+      expect(textOf(file).split('\r\n')).toHaveLength(202);
+    });
   });
 
   test('an item without a record is refused', async () => {
