@@ -549,7 +549,11 @@ class ImportManager extends BaseManager {
       }),
       htmlToPdf: (ctx, html) => this.exportManager().htmlToPdf(ctx, html),
       pdfAvailable: () => this.engine.getManager<ExportManager>('ExportManager')?.isPdfConfigured() ?? false,
-      toCsv: (headers, rows) => this.exportManager().toCsv(headers, rows)
+      toCsv: (headers, rows) => this.exportManager().toCsv(headers, rows),
+      csvLimits: () => ({
+        maxColumns: this.numberSetting('ngdpbase.export.engine.csv-max-columns', 1000),
+        maxBytes: this.numberSetting('ngdpbase.export.engine.max-bytes', 26_214_400)
+      })
     })) this.registerShim('core', shim);
 
     logger.info('[ImportManager] Initialized with converters:', this.getAvailableFormats());
@@ -995,6 +999,10 @@ class ImportManager extends BaseManager {
     if (!ctx?.username) throw new Error('ImportManager.startExport requires an ActorContext');
     const source = this.exportSourceRegistry.get(request.source);
     if (!source || !signedIn(ctx)) throw new IceExportRefused();
+    // An add-on's own rule is asked here too, so a `read` that forgot it still cannot hand rows to
+    // someone `mayExport` refuses (#2174). Core's sources check as they read: step-up needs the
+    // request's own read.
+    if (this.isAddonExportSource(request.source) && !await source.mayExport(request.ref, ctx).catch(() => false)) throw new IceExportRefused();
     const chain = this.exportChainsFor(source).get(request.format);
     if (!chain) throw new IceExportRefused('That format is not offered here.');
     const settings = this.exportSettings();

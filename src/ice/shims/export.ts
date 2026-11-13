@@ -25,6 +25,7 @@
 import { parseHTML } from 'linkedom';
 import TurndownService from 'turndown';
 import type { ActorContext } from '../../context/ActorContext.js';
+import { IceExportFailed } from '../runExport.js';
 import { EXPORT_FILE_KIND, type IceItem, type IceRecordData, type IceShim } from '../types.js';
 
 /** The core doors the export shims call. */
@@ -37,6 +38,12 @@ export interface ExportShimDoors {
   pdfAvailable(): boolean;
   /** A header row and data rows as one CSV document (ExportManager.toCsv): RFC 4180, formula cells guarded. */
   toCsv(headers: readonly string[], rows: readonly (readonly unknown[])[]): string;
+  /**
+   * What the CSV writer may build (#2396): the most distinct columns, and the
+   * most bytes the file may come to. Read at each export, so a change to the
+   * site's settings applies at once.
+   */
+  csvLimits(): { maxColumns: number; maxBytes: number };
 }
 
 /** A file name from a title: the title, with what no file system takes replaced. */
@@ -166,7 +173,18 @@ export function exportShims(doors: ExportShimDoors): IceShim[] {
           return properties;
         });
         const headers = [...new Set(rows.flatMap(row => Object.keys(row)))];
-        const text = doors.toCsv(headers, rows.map(row => headers.map(h => row[h])));
+        // A table has a cell for every row and column, whatever the records hold, so its size is
+        // known before it is built: refuse here, not after the memory is spent (#2396).
+        const { maxColumns, maxBytes } = doors.csvLimits();
+        if (headers.length > maxColumns) {
+          throw new IceExportFailed(`This list has too many columns for a CSV file (${headers.length}; this site allows ${maxColumns}). Export a shorter list, or ask the site administrator.`);
+        }
+        // Every cell is at least its separator: a floor for the file's size.
+        if (rows.length * headers.length > maxBytes) {
+          throw new IceExportFailed(`This list is too large to write as a CSV file (this site allows ${Math.round(maxBytes / 1024 / 1024)} MB).`);
+        }
+        const has = (row: object, h: string): boolean => Object.prototype.hasOwnProperty.call(row, h);
+        const text = doors.toCsv(headers, rows.map(row => headers.map(h => has(row, h) ? (row)[h] : undefined)));
         return [{ ...textFile(items[0], text, '.csv', 'text/csv; charset=utf-8') }];
       }
     },
