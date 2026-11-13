@@ -234,7 +234,7 @@
     "typedoc": {
       "minimatch": "^10.2.6"
     },
-    "hono": "^4.13.13",
+    "hono": "^4.13.18",
     "@hono/node-server": "^2.0.5",
     "linkify-it": "^5.0.2",
     "fast-uri": "^3.1.8",
