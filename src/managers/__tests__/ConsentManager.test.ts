@@ -246,6 +246,16 @@ describe('ConsentManager (#1603)', () => {
       expect(cm.getManagerStatus().reason).toMatch(/'privacy-policy' page has no version/);
     });
 
+    test('a page with no version: says to add the line in the raw editor, and links there (#2385)', async () => {
+      pages['privacy-policy'] = { title: 'Privacy Policy' };
+      await cm.pendingFor('ann');
+      const status = cm.getManagerStatus();
+      expect(status.reason).toBe("The 'privacy-policy' page has no version number, so nobody is asked to accept it. Open this page in the raw editor and add the line version: 1 at the top, between the --- lines, so the site knows which version of the page people have accepted.");
+      expect(status.fixUrl).toBe('/admin/edit-raw/privacy-policy');
+      expect(status.fixLabel).toBe("Open the 'privacy-policy' page in the raw editor");
+      expect(status.configKey).toBeUndefined();
+    });
+
     test('a recovery-words page with no version: is told to restore it, not to add a version', async () => {
       pages['recovery-words'] = { title: 'Your Recovery Words' };
       expect(await cm.pendingFor('ann', 'recovery-words', 'words-set-1')).toEqual([]);
