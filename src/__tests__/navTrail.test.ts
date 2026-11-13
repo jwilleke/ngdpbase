@@ -105,6 +105,30 @@ describe('nav-trail.js (#2390)', () => {
     expect(r.items.map(a => a.getAttribute('href'))).not.toContain('//evil.test/');
   });
 
+  it.each([
+    '/login', '/logout', '/consent', '/register', '/auth/magic-link/verify', '/auth/reauth', '/auth/oidc/callback'
+  ])('does not record the one-time screen %s', (p) => {
+    const r = visit(`http://wiki.test${p}?token=x`, '<h1>Sign in</h1>', [old('A')]);
+    expect(r.trail.map(e => e.page)).toEqual(['A']);
+  });
+
+  it('does not record a screen that marks itself as an error page', () => {
+    const r = visit('http://wiki.test/view/Missing', '<h1>Page Not Found</h1><div data-trail-skip></div>', [old('A')]);
+    expect(r.trail.map(e => e.page)).toEqual(['A']);
+  });
+
+  it('still records paths that merely start like a skipped one', () => {
+    const r = visit('http://wiki.test/login-history', '<h1>History</h1>', null);
+    expect(r.trail.map(e => e.path)).toEqual(['/login-history']);
+  });
+
+  it('a non-wiki entry uses a neutral screen icon, a wiki page the file icon', () => {
+    const r = visit('http://wiki.test/view/Y', '', [old('A'), { page: '/admin', title: 'Admin', path: '/admin', timestamp: 1 }], 'Y');
+    const icons = r.items.map(a => a.querySelector('i')?.className);
+    expect(icons[0]).toContain('fa-file-alt');
+    expect(icons[1]).toContain('fa-window-maximize');
+  });
+
   it('Clear Trail empties the stored trail', () => {
     const r = visit('http://wiki.test/view/Y', '', [old('A')], 'Y');
     (r.doc.querySelector('#breadcrumbTrail a.text-danger') as HTMLAnchorElement).click();

@@ -59,8 +59,24 @@ describe('#2390 no in-page breadcrumb on the sync screens', () => {
   });
 
   test('Diff keeps its Back to Dashboard button but not the breadcrumb', async () => {
+    const doc = await render('admin-diff.ejs', { title: 'Page Diff', sourceMode: false, titleA: 'A', titleB: 'B', diffString: '' });
+    expect(doc.querySelector('nav[aria-label="breadcrumb"]')).toBeNull();
+    const back = Array.from(doc.querySelectorAll('a.btn')).find(a => (a.textContent ?? '').includes('Back to Dashboard'));
+    expect(back?.getAttribute('href')).toBe('/admin');
+  });
+
+  test('Diff opened from Required Pages Sync goes back to Required Pages Sync', async () => {
     const doc = await render('admin-diff.ejs', { title: 'Page Diff', sourceMode: true, titleA: 'A', titleB: 'B', diffString: '' });
     expect(doc.querySelector('nav[aria-label="breadcrumb"]')).toBeNull();
-    expect(Array.from(doc.querySelectorAll('a.btn')).some(a => (a.textContent ?? '').includes('Back to Dashboard'))).toBe(true);
+    const back = Array.from(doc.querySelectorAll('a.btn')).find(a => (a.textContent ?? '').includes('Back to Required Pages Sync'));
+    expect(back?.getAttribute('href')).toBe('/admin/required-pages');
+    expect(doc.body.textContent).not.toContain('Back to Dashboard');
+  });
+});
+
+describe('#2390 the error page keeps itself out of the Trail', () => {
+  test('error.ejs carries the skip marker', async () => {
+    const doc = await render('error.ejs', { title: 'Page Not Found', error: { status: 404 }, message: 'nope', appName: 'x', currentUser: null });
+    expect(doc.querySelector('[data-trail-skip]')).not.toBeNull();
   });
 });
