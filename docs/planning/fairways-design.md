@@ -12,16 +12,16 @@ The Fairways site is "boring". Most residents of the association are older, many
 
 The current `fairways` theme (v2.0.0, from [#2310](https://github.com/jwilleke/ngdpbase/pull/2310)) was built to be calm and readable:
 
-- **Colours:** paper background, fairway-green actions, and brick red only on the Members Only link.
-- **Text:** the Atkinson Hyperlegible font, in a reading column about 70 characters wide.
-- **Pictures:** the wordmark logo only, with no photos.
+- __Colours:__ paper background, fairway-green actions, and brick red only on the Members Only link.
+- __Text:__ the Atkinson Hyperlegible font, in a reading column about 70 characters wide.
+- __Pictures:__ the wordmark logo only, with no photos.
 
 ## Who the Home page is for
 
 Jim, 2026-11-13: Home has two jobs.
 
-1. **Signed out:** make people who don't live here want to. That means prospective owners only, not renters.
-2. **Signed in:** give current occupants quick information on what they want to see.
+1. __Signed out:__ make people who don't live here want to. That means prospective owners only, not renters.
+2. __Signed in:__ give current occupants quick information on what they want to see.
 
 ## What occupants want first
 
@@ -33,9 +33,9 @@ In Jim's order:
 
 ## Sources we already have
 
-- **Clubhouse calendar:** reservations go into a Google Calendar through [jwilleke/fairways-clubhouse-calendar](https://github.com/jwilleke/fairways-clubhouse-calendar), an Apps Script with a Google Form.
-- **Event calendar:** on the current site, www.fairwayscondos.org. How it is published isn't checked yet.
-- **Discussion list:** the occupants' Google Group. Whether the site can read recent topics, or can only link to the group, is still open.
+- __Clubhouse calendar:__ reservations go into a Google Calendar through [jwilleke/fairways-clubhouse-calendar](https://github.com/jwilleke/fairways-clubhouse-calendar), an Apps Script with a Google Form.
+- __Event calendar:__ on the current site, <https://www.fairwayscondos.org/>. How it is published isn't checked yet.
+- __Discussion list:__ the occupants' Google Group. Whether the site can read recent topics, or can only link to the group, is still open.
 - Related planning: [Forms-to-Calendar](../Forms-to-Calendar.md), [Condo-Management](Condo-Management.md).
 
 ## Mount Vernon events: the feed idea
@@ -51,11 +51,11 @@ The idea is to read each feed once a day and show only the next 7 days, a few it
 
 ## Community ideas (brainstorm, not agreed)
 
-- **New neighbours:** an opt-in welcome for each new owner, with a photo, where they came from and one interest.
-- **Interest circles:** walking, cards, golf, rides to appointments. People join a circle, not a list of names.
-- **A standing weekly event**, such as coffee at the clubhouse, always on Home. One regular thing is easier to join than a calendar.
-- **Check-in buddy:** people living alone can opt in to a daily or weekly "I'm OK" with a buddy.
-- **Resident story:** once a month, on the signed-out Home page, a resident, a photo and why they like living here.
+- __New neighbours:__ an opt-in welcome for each new owner, with a photo, where they came from and one interest.
+- __Interest circles:__ walking, cards, golf, rides to appointments. People join a circle, not a list of names.
+- __A standing weekly event__, such as coffee at the clubhouse, always on Home. One regular thing is easier to join than a calendar.
+- __Check-in buddy:__ people living alone can opt in to a daily or weekly "I'm OK" with a buddy.
+- __Resident story:__ once a month, on the signed-out Home page, a resident, a photo and why they like living here.
 
 ## Rules that hold whatever we build
 
