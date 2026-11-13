@@ -37,7 +37,6 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import FileConsentProvider from '../providers/FileConsentProvider.js';
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
-import { pageUrl } from '../utils/pageUrl.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import {
@@ -247,10 +246,11 @@ class ConsentManager extends BaseManager {
       const fix = addon
         ? 'It comes with an add-on; update or reinstall that add-on.'
         : core
-          ? 'Open the page in the editor and give it a version number, such as 1.'
+          ? 'Open the page in the raw editor and add the line version: 1 at the top of the page, between the two --- lines.'
           : 'Restore it with Required Pages Sync.';
-      // #2385: a core page gets its version where the page is edited; Required Pages Sync does not add one to a page the site already holds.
-      const edit = { fixUrl: pageUrl(id, 'edit'), fixLabel: `Open the '${id}' page in the editor` };
+      // #2385: the ordinary editor has no version field, and Required Pages Sync does not add one to a page the site already holds.
+      // Only the raw editor can set it. It needs the page-raw-edit permission; without it the editor opens read-only.
+      const edit = { fixUrl: `/admin/edit-raw/${encodeURIComponent(id)}`, fixLabel: `Open the '${id}' page in the raw editor` };
       this.problems.set(id, { text: `The '${id}' page has no version number, so nobody is asked to accept it. ${fix}`, setting: false, fix: addon ? undefined : core ? edit : SYNC_FIX });
       return null;
     }

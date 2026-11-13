@@ -28,7 +28,7 @@ The version and date are read from the page each time (`documents(scope)`), neve
 
 ### No document
 
-A page that is missing, or has no `version:`, is not asked for and blocks nothing. ConsentManager then needs attention (`markNeedsAttention`, shown on the admin dashboard) naming the page, until it is back. Warn, never force. The dashboard item says what to do and links to where: a missing page is restored with Required Pages Sync (`/admin/required-pages`); a core page with no `version:` links to that page's editor (`/edit/<page>`), because Required Pages Sync does not add front matter to a page the site already holds. An add-on's page has no link: it is fixed by updating or reinstalling the add-on ([#2385](https://github.com/jwilleke/ngdpbase/issues/2385)).
+A page that is missing, or has no `version:`, is not asked for and blocks nothing. ConsentManager then needs attention (`markNeedsAttention`, shown on the admin dashboard) naming the page, until it is back. Warn, never force. The dashboard item says what to do and links to where: a missing page is restored with Required Pages Sync (`/admin/required-pages`); a core page with no `version:` links to the raw editor (`/admin/edit-raw/<page>`, which needs `page-raw-edit`) and asks for the line `version: 1` in the page's front matter, because the ordinary editor has no version field and Required Pages Sync does not add front matter to a page the site already holds. An add-on's page has no link: it is fixed by updating or reinstalling the add-on ([#2385](https://github.com/jwilleke/ngdpbase/issues/2385)).
 
 ## Methods
 
