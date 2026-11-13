@@ -247,8 +247,9 @@ export function buildAddonHost(
       throw new Error(message);
     }
     const registry = engine?.getManager('ImportManager') as Partial<IceRegistry> | null | undefined;
-    if (typeof registry?.registerShim !== 'function' || typeof registry.registerReceiver !== 'function' || typeof registry.registerExportSource !== 'function') {
-      throw new Error(`register${what === 'shim' ? 'Shim' : what === 'receiver' ? 'Receiver' : 'ExportSource'} is not available: this host was built without a site's ImportManager`);
+    const method = what === 'shim' ? 'registerShim' : what === 'receiver' ? 'registerReceiver' : 'registerExportSource';
+    if (typeof registry?.[method] !== 'function') {
+      throw new Error(`${method} is not available: this host was built without a site's ImportManager`);
     }
     return registry as IceRegistry;
   };
