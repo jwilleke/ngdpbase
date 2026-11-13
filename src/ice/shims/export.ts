@@ -8,6 +8,10 @@
  * - `core.html-file`: the HTML document, as `.html`;
  * - `core.markdown-file`: the HTML document as plain Markdown (turndown), so
  *   plugin output and page links come out as what a reader sees;
+ * - `core.csv-file` (#2174): a list of `record` items as one CSV file, for an
+ *   add-on's list or any source that yields records (one writer for every CSV
+ *   export: ExportManager's `toCsv`, which quotes per RFC 4180 and guards a
+ *   cell a spreadsheet would run as a formula);
  * - `core.pdf`: the HTML document as PDF, through ExportManager's provider
  *   (#1974). Offered only while a provider is chosen. Outbound only for now:
  *   reading a PDF in (D3's other half) is not built. The HTML it hands the
@@ -21,7 +25,7 @@
 import { parseHTML } from 'linkedom';
 import TurndownService from 'turndown';
 import type { ActorContext } from '../../context/ActorContext.js';
-import { EXPORT_FILE_KIND, type IceItem, type IceShim } from '../types.js';
+import { EXPORT_FILE_KIND, type IceItem, type IceRecordData, type IceShim } from '../types.js';
 
 /** The core doors the export shims call. */
 export interface ExportShimDoors {
@@ -31,6 +35,8 @@ export interface ExportShimDoors {
   htmlToPdf(ctx: ActorContext, html: string): Promise<Buffer>;
   /** Is a PDF provider chosen? */
   pdfAvailable(): boolean;
+  /** A header row and data rows as one CSV document (ExportManager.toCsv): RFC 4180, formula cells guarded. */
+  toCsv(headers: readonly string[], rows: readonly (readonly unknown[])[]): string;
 }
 
 /** A file name from a title: the title, with what no file system takes replaced. */
@@ -143,6 +149,25 @@ export function exportShims(doors: ExportShimDoors): IceShim[] {
       receivers: [],
       async write(items) {
         return items.map(item => textFile(item, htmlToMarkdown(requireText('core.markdown-file', item)), '.md', 'text/markdown; charset=utf-8'));
+      }
+    },
+    {
+      name: 'csv-file',
+      label: 'CSV (.csv)',
+      direction: 'out',
+      accepts: { kinds: ['record'] },
+      produces: EXPORT_FILE_KIND,
+      receivers: [],
+      async write(items) {
+        // One file from every record: a column for each property name, in the order first seen.
+        const rows = items.map((item) => {
+          const properties = (item.data as IceRecordData | undefined)?.properties;
+          if (!properties || typeof properties !== 'object') throw new Error('core.csv-file: needs the record\'s data');
+          return properties;
+        });
+        const headers = [...new Set(rows.flatMap(row => Object.keys(row)))];
+        const text = doors.toCsv(headers, rows.map(row => headers.map(h => row[h])));
+        return [{ ...textFile(items[0], text, '.csv', 'text/csv; charset=utf-8') }];
       }
     },
     {

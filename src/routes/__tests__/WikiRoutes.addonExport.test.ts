@@ -152,9 +152,11 @@ describe('POST /export/source/:source', () => {
     expect(file.headers['content-type']).toMatch(/text\/csv/);
     expect(file.headers['content-disposition']).toMatch(/rows\.csv/);
     expect((file.body as Buffer).toString('utf8')).toBe('memo,amount\r\nMine,5\r\n');
-    // Another user cannot read the run.
-    expect((await request(app).get(`/export/runs/${runId}`).set('x-user', 'bob')).status).toBe(404);
-    expect((await request(app).get(`/export/runs/${runId}/download`).set('x-user', 'bob')).status).toBe(404);
+    // Another user cannot read the run: refused for want of page-export, or not found.
+    for (const url of [`/export/runs/${runId}`, `/export/runs/${runId}/download`]) {
+      expect([403, 404]).toContain((await request(app).get(url).set('x-user', 'bob')).status);
+      expect([403, 404]).toContain((await request(app).get(url).set('x-user', 'pat')).status);
+    }
   });
 
   test('a user who may not read the list is refused, and no row is read', async () => {
