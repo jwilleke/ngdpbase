@@ -17,7 +17,7 @@ const HOST_KEYS = [
   'recordAuditEvent', 'addonAuditEventName', 'actorOf',
   'jobContextFromRequest', 'jobContextFromSystem', 'systemContext',
   'logger', 'guardedFetch', 'setEnabledForPerson',
-  'registerShim', 'registerReceiver',
+  'registerShim', 'registerReceiver', 'registerExportSource',
   'resolveEgressPolicy', 'validateUrl', 'createGuardedElasticsearchClient', 'refusedNodeMessage', 'isAtLeast',
   'zonedParts', 'keyedSerial', 'reviews', 'registerReviewHandler', 'allowSignedOutWrite', 'access'
 ].sort();
@@ -48,6 +48,7 @@ describe('AddonsManager — host passed to register (#1813)', () => {
         if (key === 'ngdpbase.addons.ledger.enabled') return true;
         if (key === 'ngdpbase.addons.legacy.enabled') return true;
         if (key === 'ngdpbase.addons.importer.enabled') return true;
+        if (key === 'ngdpbase.addons.lister.enabled') return true;
         return def;
       }),
       getAddonDeclaredDefaults: vi.fn((slug: string) => (slug === 'ledger' ? ledgerDefaults : {})),
