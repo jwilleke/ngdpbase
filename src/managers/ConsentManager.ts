@@ -37,6 +37,7 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import FileConsentProvider from '../providers/FileConsentProvider.js';
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
+import { pageUrl } from '../utils/pageUrl.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import {
@@ -55,6 +56,8 @@ import {
 export const CONSENT_DOCUMENTS_KEY = 'ngdpbase.consent.documents';
 const CONSENT_STORAGE_KEY = 'ngdpbase.consent.storagedir';
 const DEFAULT_DOCUMENTS = ['terms-of-service', 'privacy-policy'];
+/** Where a missing consent page is restored (#2354). */
+const SYNC_FIX = { fixUrl: '/admin/required-pages', fixLabel: 'Open Admin → Required Pages Sync' };
 
 /** Refused: not this person, not signed in themselves, or not allowed. Nothing was recorded. */
 export class ConsentRefusedError extends Error {
@@ -109,7 +112,8 @@ class ConsentManager extends BaseManager {
   /** Username → their records, read once and dropped on every write. */
   private readonly cache = new Map<string, ConsentRecord[]>();
   /** Document id → why it cannot be asked for (the needs-attention reason is made from these), and whether it comes with an add-on (core's Required Pages Sync does not restore those). */
-  private readonly problems = new Map<string, { text: string; addon: boolean; core: boolean }>();
+  /** `setting`: the consent documents setting is part of the fix. `fix`: where in the app it is done (none for an add-on's page). */
+  private readonly problems = new Map<string, { text: string; setting: boolean; fix?: { fixUrl: string; fixLabel: string } }>();
   private attentionReason: string | null = null;
 
   constructor(engine: WikiEngine) {
@@ -234,7 +238,7 @@ class ConsentManager extends BaseManager {
           ? 'Restore it with Required Pages Sync, or remove it from the consent documents setting.'
           : 'Restore it with Required Pages Sync.';
       logger.warn(`[ConsentManager] No '${id}' page${whose}: nobody is asked to accept it. ${addon ? "Restore it (Admin → Required Pages Sync restores core's pages only; update or reinstall the add-on) or remove it from the add-on's registration" : core ? `Restore it (Admin → Required Pages Sync) or remove it from ${CONSENT_DOCUMENTS_KEY}` : 'Restore it (Admin → Required Pages Sync)'}`);
-      this.problems.set(id, { text: `The '${id}' page is missing, so nobody is asked to accept it. ${fix}`, addon, core });
+      this.problems.set(id, { text: `The '${id}' page is missing, so nobody is asked to accept it. ${fix}`, setting: core, fix: addon ? undefined : SYNC_FIX });
       return null;
     }
     const version = versionOf(meta['version']);
@@ -243,9 +247,11 @@ class ConsentManager extends BaseManager {
       const fix = addon
         ? 'It comes with an add-on; update or reinstall that add-on.'
         : core
-          ? 'Add one to the page.'
+          ? 'Open the page in the editor and give it a version number, such as 1.'
           : 'Restore it with Required Pages Sync.';
-      this.problems.set(id, { text: `The '${id}' page has no version number, so nobody is asked to accept it. ${fix}`, addon, core });
+      // #2385: a core page gets its version where the page is edited; Required Pages Sync does not add one to a page the site already holds.
+      const edit = { fixUrl: pageUrl(id, 'edit'), fixLabel: `Open the '${id}' page in the editor` };
+      this.problems.set(id, { text: `The '${id}' page has no version number, so nobody is asked to accept it. ${fix}`, setting: false, fix: addon ? undefined : core ? edit : SYNC_FIX });
       return null;
     }
     this.problems.delete(id);
@@ -263,9 +269,10 @@ class ConsentManager extends BaseManager {
     const all = [...this.problems.values()];
     const reason = all.length > 0 ? all.map((p) => p.text).join(' ') : null;
     if (reason === this.attentionReason) return;
-    // Core's pages are restored by Required Pages Sync; an add-on's are not, so with only add-on problems there is no link.
-    // The setting is named only when a core page is at fault; the subject pages' documents are fixed, not configured.
-    if (reason) this.markNeedsAttention(reason, all.some((p) => p.core) ? CONSENT_DOCUMENTS_KEY : undefined, all.some((p) => !p.addon) ? { fixUrl: '/admin/required-pages', fixLabel: 'Open Admin → Required Pages Sync' } : {});
+    // A missing page is restored by Required Pages Sync and a core page with no version is edited; an add-on's are neither, so with only add-on problems there is no link.
+    // One link: the first problem's. Once it is fixed the next shows.
+    // The setting is named only when a core page is missing; the subject pages' documents are fixed, not configured.
+    if (reason) this.markNeedsAttention(reason, all.some((p) => p.setting) ? CONSENT_DOCUMENTS_KEY : undefined, all.find((p) => p.fix)?.fix ?? {});
     else if (this.attentionReason) this.markReadyIfDegradedBy(this.attentionReason);
     this.attentionReason = reason;
   }
