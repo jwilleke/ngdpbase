@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { JSDOM } from 'jsdom';
 import { ThemeManager } from '../ThemeManager';
 
 /**
@@ -88,7 +89,8 @@ describe('ThemeManager theme stylesheets', () => {
     const phone = css.slice(css.indexOf('@media (max-width: 767.98px)'));
     expect(phone).toMatch(/^@media \(max-width: 767\.98px\) \{[^@]*\.jspwiki-header \.navbar-brand img \{[^}]*height:\s*30px !important;/);
     // Uploaded pictures are served under a code, so alt text marks a logo too.
-    expect(css).toMatch(/img\[alt\*="logo" i\],\s*\n\.markdown-body img\[alt\*="wordmark" i\],\s*\n\.markdown-body img\.logo \{\s*\n\s*max-width:\s*min\(100%,\s*18rem\)/);
+    expect(css).toMatch(/img\[alt~="wordmark\." i\],\s*\n\.markdown-body img\.logo \{\s*\n\s*max-width:\s*min\(100%,\s*18rem\)/);
+    expect(css).not.toMatch(/img\[alt\*=/);
     // Disabled primary buttons stay green, not Bootstrap blue.
     expect(css).toMatch(/--bs-btn-disabled-bg:\s*var\(--button-primary-bg\)/);
     // Plugin rows and the RecentChanges total keep their full width.
@@ -102,5 +104,63 @@ describe('ThemeManager theme stylesheets', () => {
     expect(css).toMatch(/a\.btn-outline-primary\[href\^="\/login"\] \{[^}]*gap:\s*0\.5rem;/);
     expect(css).not.toMatch(/[\s,]a\[href\^="\/login"\]/);
     expect(css).toMatch(/outline-color:\s*var\(--focus-ring\)\s*!important/);
+  });
+
+  describe('Fairways page-logo rule', () => {
+    const css = fs.readFileSync(path.resolve(__dirname, '../../../themes/fairways/css/fairways.css'), 'utf8');
+    const rule = css.match(/([^{}]*\.markdown-body img\.logo)\s*\{/);
+    // Drop the comment that sits in front of the selector list.
+    const selectors = (rule?.[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+
+    function isPageLogo(alt: string): boolean {
+      const dom = new JSDOM('<div class="markdown-body"><img src="/attach/abc123"></div>');
+      const img = dom.window.document.querySelector('img') as HTMLImageElement;
+      img.setAttribute('alt', alt);
+      return img.matches(selectors);
+    }
+
+    test('finds the selector list', () => {
+      expect(selectors).toContain('img.logo');
+    });
+
+    test.each([
+      'logo',
+      'Logo',
+      'Fairways logo',
+      'Fairways Logo',
+      'logo of Fairways',
+      'The Fairways logo on a card',
+      'Logo.',
+      'Fairways wordmark',
+      'wordmark',
+      'Wordmark.'
+    ])('alt "%s" is a logo', (alt) => {
+      expect(isPageLogo(alt)).toBe(true);
+    });
+
+    test.each([
+      'Logon screen of the members area',
+      'Logon',
+      'logout button',
+      'Logos of our sponsors',
+      'analogous colours',
+      'a catalogue page',
+      'Wordmarks compared',
+      'Uploaded image',
+      ''
+    ])('alt "%s" is not a logo', (alt) => {
+      expect(isPageLogo(alt)).toBe(false);
+    });
+  });
+
+  test('Fairways keeps the phone site name for screen readers and the disabled button border green', () => {
+    const css = fs.readFileSync(path.resolve(__dirname, '../../../themes/fairways/css/fairways.css'), 'utf8');
+    const phone = css.slice(css.indexOf('@media (max-width: 767.98px)'));
+    const siteName = phone.match(/\.jspwiki-header \.navbar-brand strong \{([^}]*)\}/);
+    expect(siteName).not.toBeNull();
+    // Hidden visually only: display: none would also hide it from screen readers.
+    expect(siteName?.[1]).not.toMatch(/display:\s*none/);
+    expect(siteName?.[1]).toMatch(/clip:\s*rect\(0 0 0 0\)/);
+    expect(css).toMatch(/--bs-btn-disabled-border-color:\s*var\(--button-primary-bg\)/);
   });
 });
