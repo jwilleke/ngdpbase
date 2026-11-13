@@ -75,7 +75,9 @@ export type {
   IceShim, IceReceiver, IceItem, IceKind, IceWarning, ShimDirection, ShimAccepts, ShimTools, ShimReadResult,
   ReceiveInfo, ReceiveOutcome, IceCitation, KeptOriginal, OriginalChoice, IceOriginalChoices, OriginalKeep, IceUpload, IceSource, IceUrlSource, IceRunRequest,
   IceRecordData, FileDoneInfo, IceTarget, IceArchiveView,
-  IceRunReport, IceFileReport, IceFileStatus, RecentImport
+  IceRunReport, IceFileReport, IceFileStatus, RecentImport,
+  // Export sources (#2174): an add-on's list offers the Export action through `host.registerExportSource`.
+  IceExportSource, ExportReadInfo, ExportOutcome, IceExportFormat, IceExportRequest, RegisteredExportSource
 } from '../../src/ice/types.js';
 
 // Accounts (#2025): the account door, and the change `updateUser` takes (the fields, or a function of the account as it is now).

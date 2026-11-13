@@ -6626,11 +6626,64 @@ ${panes}
     return this.startExportRun(req, res, SEARCH_EXPORT_SOURCE, searchExportRef(req.body as Record<string, unknown>));
   }
 
-  /** Start an export of `ref` from `source` for the signed-in user who asked, and answer with the run id (202) or why not. */
-  private async startExportRun(req: Request, res: Response, source: string, ref: string) {
+  /**
+   * GET /export/source/:source — the Export action on an add-on's list
+   * (#2174): `source` is the id the add-on registered (`ledger.entries`), `ref`
+   * says which list, and `back` is a path on this site to return to. Only the
+   * formats reachable from what the source yields are offered, and only when
+   * the add-on's own read rule lets this user export it; core asks no
+   * permission of its own, so `page-export` is not needed. Nothing to offer is a
+   * 404, whatever the reason. Core's own sources are not reachable here:
+   * pages and searches have their own routes.
+   */
+  async exportSourceFormats(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const source = String(req.params.source ?? '');
+      const ref = typeof req.query.ref === 'string' ? req.query.ref : '';
+      const importManager = this.engine.getManager<ImportManager>('ImportManager');
+      const formats = importManager?.isAddonExportSource(source) ? await importManager.exportFormatsFor(source, ref, wikiContext.userContext) : [];
+      if (!importManager || formats.length === 0) return await this.renderError(req, res, 404, 'Nothing to export', 'There is nothing you can export here.');
+
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('export-item', {
+        ...commonData,
+        title: `Export ${importManager.exportSourceLabel(source)}`,
+        exportName: importManager.exportSourceLabel(source),
+        exportBack: safeRedirect(req.query.back),
+        exportAction: `/export/source/${encodeURIComponent(source)}`,
+        exportBody: { ref },
+        formats: formats.map(f => ({ id: f.id, label: f.label }))
+      });
+    } catch (err) {
+      logger.error('[export] the Export action on an add-on list failed:', err);
+      return this.renderError(req, res, 500, 'Error', 'The export choices could not be shown.');
+    }
+  }
+
+  /**
+   * POST /export/source/:source — start exporting an add-on's list (#2174).
+   * JSON `{ format, ref }`. The add-on's `read` runs now, as this user, with its
+   * own permission check; the file is made and downloaded as every export is.
+   * Answers as {@link exportPageStart} does.
+   */
+  async exportSourceStart(req: Request, res: Response) {
+    const source = String(req.params.source ?? '');
+    if (!this.engine.getManager<ImportManager>('ImportManager')?.isAddonExportSource(source)) {
+      return res.status(404).json({ success: false, error: new IceExportRefused().message });
+    }
+    const ref: unknown = req.body?.ref;
+    return this.startExportRun(req, res, source, typeof ref === 'string' ? ref : '', false);
+  }
+
+  /**
+   * Start an export of `ref` from `source` for the signed-in user who asked, and answer with the run id (202) or why not.
+   * `pageExport` is whether core's `page-export` is asked first: true for pages and searches, false for an add-on's list, whose own rule decides.
+   */
+  private async startExportRun(req: Request, res: Response, source: string, ref: string, pageExport = true) {
     const wikiContext = this.createWikiContext(req);
     const currentUser = wikiContext.userContext;
-    if (!(await this.permitted(wikiContext, 'page-export', req, res, 'json'))) return;
+    if (pageExport && !(await this.permitted(wikiContext, 'page-export', req, res, 'json'))) return;
 
     const limit = exportStartRateLimiter.consume(currentUser.username);
     if (!limit.allowed) {
@@ -6663,9 +6716,10 @@ ${panes}
   async exportRunStatus(req: Request, res: Response) {
     const wikiContext = this.createWikiContext(req);
     const currentUser = wikiContext.userContext;
-    if (!(await this.permitted(wikiContext, 'page-export', req, res, 'json'))) return;
-
-    const run = this.engine.getManager<ImportManager>('ImportManager')?.getExportRun(String(req.params.runId ?? ''), currentUser) ?? null;
+    const importManager = this.engine.getManager<ImportManager>('ImportManager');
+    const run = importManager?.getExportRun(String(req.params.runId ?? ''), currentUser) ?? null;
+    // An export of an add-on's list is the add-on's to allow: its owner's run needs no `page-export` (#2174).
+    if (!(run && importManager?.isAddonExportSource(run.source)) && !(await this.permitted(wikiContext, 'page-export', req, res, 'json'))) return;
     res.setHeader('Cache-Control', 'no-store');
     if (!run) return res.status(404).json({ success: false, error: 'No such export.' });
     return res.json({ success: true, run });
@@ -6679,9 +6733,12 @@ ${panes}
   async exportRunDownload(req: Request, res: Response) {
     const wikiContext = this.createWikiContext(req);
     const currentUser = wikiContext.userContext;
-    if (!(await this.permitted(wikiContext, 'page-export', req, res, 'page'))) return;
+    const importManager = this.engine.getManager<ImportManager>('ImportManager');
+    const runId = String(req.params.runId ?? '');
+    const run = importManager?.getExportRun(runId, currentUser) ?? null;
+    if (!(run && importManager?.isAddonExportSource(run.source)) && !(await this.permitted(wikiContext, 'page-export', req, res, 'page'))) return;
 
-    const file = this.engine.getManager<ImportManager>('ImportManager')?.exportFile(String(req.params.runId ?? ''), currentUser) ?? null;
+    const file = importManager?.exportFile(runId, currentUser) ?? null;
     if (!file) return this.renderError(req, res, 404, 'Not found', 'That export is no longer here. Exports are kept for a short while; make it again.');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -18927,6 +18984,8 @@ ${panes}
     app.post('/export/page/:page', (req: Request, res: Response) => void this.exportPageStart(req, res));
     app.get('/export/search', (req: Request, res: Response) => void this.exportSearchFormats(req, res));
     app.post('/export/search', (req: Request, res: Response) => void this.exportSearchStart(req, res));
+    app.get('/export/source/:source', (req: Request, res: Response) => void this.exportSourceFormats(req, res));
+    app.post('/export/source/:source', (req: Request, res: Response) => void this.exportSourceStart(req, res));
     app.get('/export/runs/:runId', (req: Request, res: Response) => void this.exportRunStatus(req, res));
     app.get('/export/runs/:runId/download', (req: Request, res: Response) => void this.exportRunDownload(req, res));
 

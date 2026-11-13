@@ -548,7 +548,12 @@ class ImportManager extends BaseManager {
         ...(Array.isArray(item.metadata?.['user-keywords']) ? { 'user-keywords': (item.metadata['user-keywords'] as unknown[]).map(String) } : {})
       }),
       htmlToPdf: (ctx, html) => this.exportManager().htmlToPdf(ctx, html),
-      pdfAvailable: () => this.engine.getManager<ExportManager>('ExportManager')?.isPdfConfigured() ?? false
+      pdfAvailable: () => this.engine.getManager<ExportManager>('ExportManager')?.isPdfConfigured() ?? false,
+      toCsv: (headers, rows) => this.exportManager().toCsv(headers, rows),
+      csvLimits: () => ({
+        maxColumns: this.numberSetting('ngdpbase.export.engine.csv-max-columns', 1000),
+        maxBytes: this.numberSetting('ngdpbase.export.engine.max-bytes', 26_214_400)
+      })
     })) this.registerShim('core', shim);
 
     logger.info('[ImportManager] Initialized with converters:', this.getAvailableFormats());
@@ -943,6 +948,18 @@ class ImportManager extends BaseManager {
     return id;
   }
 
+  /** Is this an export source an add-on registered (#2174)? Core's own sources are not: pages and searches have their own routes and permission. */
+  isAddonExportSource(sourceId: string): boolean {
+    const source = this.exportSourceRegistry.get(sourceId);
+    return !!source && source.owner !== 'core';
+  }
+
+  /** The label an add-on's export source is shown under (#2174); empty when there is none. */
+  exportSourceLabel(sourceId: string): string {
+    const source = this.exportSourceRegistry.get(sourceId);
+    return source ? source.label ?? source.name : '';
+  }
+
   /**
    * The formats the Export action offers this context for one thing (#2120):
    * none when the source's owner would not let it export the thing (asked
@@ -982,13 +999,23 @@ class ImportManager extends BaseManager {
     if (!ctx?.username) throw new Error('ImportManager.startExport requires an ActorContext');
     const source = this.exportSourceRegistry.get(request.source);
     if (!source || !signedIn(ctx)) throw new IceExportRefused();
+    // An add-on's own rule is asked here too, so a `read` that forgot it still cannot hand rows to
+    // someone `mayExport` refuses (#2174). Core's sources check as they read: step-up needs the
+    // request's own read.
+    if (this.isAddonExportSource(request.source) && !await source.mayExport(request.ref, ctx).catch(() => false)) throw new IceExportRefused();
     const chain = this.exportChainsFor(source).get(request.format);
     if (!chain) throw new IceExportRefused('That format is not offered here.');
     const settings = this.exportSettings();
     this.makeRoomForExport(ctx.username, settings);
     const notes: string[] = [];
-    const items = await source.read(request.ref, ctx, { format: request.format, note: (text) => notes.push(text) });
+    let items = await source.read(request.ref, ctx, { format: request.format, note: (text) => notes.push(text) });
     if (!items || items.length === 0) throw new IceExportRefused();
+    // The site's item limit holds for every source, an add-on's included: what it leaves out is said (#2174).
+    if (items.length > settings.maxItems) {
+      const left = items.length - settings.maxItems;
+      notes.push(`${left} ${left === 1 ? 'item was' : 'items were'} left out: this site exports at most ${settings.maxItems} ${settings.maxItems === 1 ? 'item' : 'items'} at a time.`);
+      items = items.slice(0, settings.maxItems);
+    }
 
     const jobCtx = jobContextFromRequest(ctx);
     const report: IceExportReport = {

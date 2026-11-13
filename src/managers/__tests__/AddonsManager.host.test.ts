@@ -17,7 +17,7 @@ const HOST_KEYS = [
   'recordAuditEvent', 'addonAuditEventName', 'actorOf',
   'jobContextFromRequest', 'jobContextFromSystem', 'systemContext',
   'logger', 'guardedFetch', 'setEnabledForPerson',
-  'registerShim', 'registerReceiver',
+  'registerShim', 'registerReceiver', 'registerExportSource',
   'resolveEgressPolicy', 'validateUrl', 'createGuardedElasticsearchClient', 'refusedNodeMessage', 'isAtLeast',
   'zonedParts', 'keyedSerial', 'reviews', 'registerReviewHandler', 'allowSignedOutWrite', 'access'
 ].sort();
@@ -48,6 +48,7 @@ describe('AddonsManager — host passed to register (#1813)', () => {
         if (key === 'ngdpbase.addons.ledger.enabled') return true;
         if (key === 'ngdpbase.addons.legacy.enabled') return true;
         if (key === 'ngdpbase.addons.importer.enabled') return true;
+        if (key === 'ngdpbase.addons.lister.enabled') return true;
         return def;
       }),
       getAddonDeclaredDefaults: vi.fn((slug: string) => (slug === 'ledger' ? ledgerDefaults : {})),
@@ -68,7 +69,8 @@ describe('AddonsManager — host passed to register (#1813)', () => {
   /** #1979: the import engine's registry, as the host reaches it. */
   const iceRegistry = {
     registerShim: vi.fn((owner: string, shim: { name: string }) => `${owner}.${shim.name}`),
-    registerReceiver: vi.fn((owner: string, receiver: { name: string }) => `${owner}.${receiver.name}`)
+    registerReceiver: vi.fn((owner: string, receiver: { name: string }) => `${owner}.${receiver.name}`),
+    registerExportSource: vi.fn((owner: string, source: { name: string }) => `${owner}.${source.name}`)
   };
 
   const writeAddon = async (slug: string, registerSource: string, manifest?: Record<string, unknown>) => {
@@ -244,6 +246,21 @@ describe('AddonsManager — host passed to register (#1813)', () => {
     expect(iceRegistry.registerReceiver).toHaveBeenCalledWith('importer', expect.objectContaining({ name: 'statements' }));
     // The ledger add-on's manifest declares none.
     expect(() => hostOf('ledger').registerShim({ name: 'ofx' })).toThrow(/declared: none/);
+  });
+
+  test('#2174: the manifest\'s exportSources are what the host lets the add-on register as export sources', async () => {
+    iceRegistry.registerExportSource.mockClear();
+    await writeAddon('lister',
+      `function (engine, config, host) {
+        globalThis['${SLOT}'].lister = [engine, config, host];
+        host.registerExportSource({ name: 'entries', yields: 'record', mayExport: async () => true, read: async () => null });
+      }`,
+      { exportSources: ['entries'] });
+    const manager = await load();
+    expect((await manager.getStatus()).find((s: any) => s.name === 'lister')).toMatchObject({ loaded: true, error: null });
+    expect(iceRegistry.registerExportSource).toHaveBeenCalledWith('lister', expect.objectContaining({ name: 'entries' }));
+    expect(() => hostOf('lister').registerExportSource({ name: 'other' })).toThrow(/may register only the exportSources.*declared: entries/);
+    expect(() => hostOf('ledger').registerExportSource({ name: 'entries' })).toThrow(/declared: none/);
   });
 
   test('an undeclared audit event is refused through the host', async () => {

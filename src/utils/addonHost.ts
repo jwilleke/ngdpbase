@@ -15,8 +15,9 @@
  *   the add-on (#1973);
  * - `setEnabledForPerson` sets this add-on's own per-person switch (#1963),
  *   bound to its slug, so it can never set another add-on's;
- * - `registerShim` and `registerReceiver` (#1979, ICE) register into the import
- *   engine under this add-on's slug, and only the names its manifest declares;
+ * - `registerShim`, `registerReceiver` and `registerExportSource` (#1979, #2174,
+ *   ICE) register into the import and export engine under this add-on's slug,
+ *   and only the names its manifest declares;
  * - the egress tools (`resolveEgressPolicy`, `validateUrl`,
  *   `createGuardedElasticsearchClient`, `refusedNodeMessage`), `isAtLeast`
  *   and `zonedParts` (#1998) are core's own pure functions, handed on
@@ -49,7 +50,7 @@ import { recordAuditEvent } from './auditEvents.js';
 import { addonAuditEventName } from './auditEventNames.js';
 import { auditDeclarationsFrom } from './auditRegistry.js';
 import logger from './logger.js';
-import type { IceReceiver, IceShim } from '../ice/types.js';
+import type { IceExportSource, IceReceiver, IceShim } from '../ice/types.js';
 import type { AddonReviews, ReviewHandler } from '../types/Review.js';
 import { declareAddonSignedOutWrite, type SignedOutWriteRoute } from '../security/signedOutWrites.js';
 import type { AddonManifest } from '../managers/AddonsManager.js';
@@ -158,10 +159,20 @@ export interface AddonHost {
    * `receivers` does not name it. Returns the receiver's id.
    */
   readonly registerReceiver: (receiver: IceReceiver) => string;
+  /**
+   * #2174 (ICE): register an export source — your list's door for the Export
+   * action — as `<slug>.<source.name>`. Refused when the manifest's
+   * `exportSources` does not name it. Returns the source's id. Its `mayExport`
+   * and `read` are yours: apply your own read permission with the context
+   * given, and answer null from `read` for what that user may not read. Core
+   * adds no permission of its own. Send people to
+   * `/export/source/<id>?ref=<ref>&back=<path>` to export it.
+   */
+  readonly registerExportSource: (source: IceExportSource) => string;
 }
 
-/** What the host may register for an add-on: the shim and receiver names its manifest declares (#1979). */
-export type AddonIceDeclaration = Pick<AddonManifest, 'shims' | 'receivers'>;
+/** What the host may register for an add-on: the shim, receiver and export source names its manifest declares (#1979, #2174). */
+export type AddonIceDeclaration = Pick<AddonManifest, 'shims' | 'receivers' | 'exportSources'>;
 
 /** ReviewManager, as the host reaches it (#2072). */
 interface ReviewDoor extends AddonReviews {
@@ -172,6 +183,7 @@ interface ReviewDoor extends AddonReviews {
 interface IceRegistry {
   registerShim(owner: string, shim: IceShim): string;
   registerReceiver(owner: string, receiver: IceReceiver): string;
+  registerExportSource(owner: string, source: IceExportSource): string;
 }
 
 /** Sets one add-on's per-person switch; core binds the slug when it builds the host (#1963). */
@@ -224,8 +236,8 @@ export function buildAddonHost(
 
   const names = (list: unknown): ReadonlySet<string> =>
     new Set(Array.isArray(list) ? list.filter((n): n is string => typeof n === 'string') : []);
-  const iceDeclared = { shim: names(manifest?.shims), receiver: names(manifest?.receivers) };
-  const iceRegistry = (what: 'shim' | 'receiver', name: unknown): IceRegistry => {
+  const iceDeclared = { shim: names(manifest?.shims), receiver: names(manifest?.receivers), exportSource: names(manifest?.exportSources) };
+  const iceRegistry = (what: 'shim' | 'receiver' | 'exportSource', name: unknown): IceRegistry => {
     const allowed = iceDeclared[what];
     if (typeof name !== 'string' || !allowed.has(name)) {
       const message =
@@ -235,8 +247,9 @@ export function buildAddonHost(
       throw new Error(message);
     }
     const registry = engine?.getManager('ImportManager') as Partial<IceRegistry> | null | undefined;
-    if (typeof registry?.registerShim !== 'function' || typeof registry.registerReceiver !== 'function') {
-      throw new Error(`register${what === 'shim' ? 'Shim' : 'Receiver'} is not available: this host was built without a site's ImportManager`);
+    const method = what === 'shim' ? 'registerShim' : what === 'receiver' ? 'registerReceiver' : 'registerExportSource';
+    if (typeof registry?.[method] !== 'function') {
+      throw new Error(`${method} is not available: this host was built without a site's ImportManager`);
     }
     return registry as IceRegistry;
   };
@@ -326,6 +339,7 @@ export function buildAddonHost(
     setEnabledForPerson,
     registerShim: (shim: IceShim) => iceRegistry('shim', shim?.name).registerShim(slug, shim),
     registerReceiver: (receiver: IceReceiver) => iceRegistry('receiver', receiver?.name).registerReceiver(slug, receiver),
+    registerExportSource: (source: IceExportSource) => iceRegistry('exportSource', source?.name).registerExportSource(slug, source),
     resolveEgressPolicy,
     validateUrl,
     createGuardedElasticsearchClient,

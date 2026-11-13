@@ -355,6 +355,13 @@ export interface AddonManifest {
    * e.g. `["health-records"]`. The host refuses a receiver not named here.
    */
   receivers?: string[];
+  /**
+   * #2174 (ICE): the names of the export sources this add-on registers with
+   * `host.registerExportSource` — its own lists (a ledger, a set of records)
+   * that offer the Export action, e.g. `["entries"]` (id `<slug>.entries`). The
+   * host refuses a source not named here.
+   */
+  exportSources?: string[];
 }
 
 /**

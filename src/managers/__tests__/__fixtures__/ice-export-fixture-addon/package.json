@@ -1,0 +1,10 @@
+{
+  "name": "ice-export-fixture-addon",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Test fixture for #2174: an add-on shaped like the accounting ledger, whose list of rows is an export source that yields records",
+  "ngdpbase": {
+    "slug": "ice-export",
+    "exportSources": ["rows"]
+  }
+}

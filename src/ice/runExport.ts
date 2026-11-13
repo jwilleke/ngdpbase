@@ -84,9 +84,10 @@ export function exportChains(shims: readonly RegisteredShim[], kind: IceKind, ma
   return found;
 }
 
-/** The bytes items hold, their text counted as UTF-8. */
+/** The bytes items hold, their text counted as UTF-8, and a record's data as the JSON it is (#2174). */
 export function exportSize(items: readonly IceItem[]): number {
-  return items.reduce((sum, i) => sum + (i.bytes?.length ?? 0) + (i.text ? Buffer.byteLength(i.text) : 0), 0);
+  return items.reduce((sum, i) => sum + (i.bytes?.length ?? 0) + (i.text ? Buffer.byteLength(i.text) : 0)
+    + (i.data === undefined ? 0 : Buffer.byteLength(JSON.stringify(i.data) ?? '')), 0);
 }
 
 /**
