@@ -229,6 +229,9 @@ describe('a sealed kind\'s vault is never written in the clear (#1834)', () => {
     const status = fresh.getManagerStatus();
     expect(status.state).toBe('degraded');
     expect(status.reason).toMatch(/^An encrypted private vault holds files that are not encrypted/);
+    // #2385: says what to do, and that it is done on the server: nothing in the app moves them, so there is no link.
+    expect(status.reason).toBe('An encrypted private vault holds files that are not encrypted. They were left as they are, and the vault still works. Move or remove those files on the server, outside this page. The notice sent to administrators names the vault and the files.');
+    expect(status.fixUrl).toBeUndefined();
     expect(status.reason).not.toContain('molly');
     expect(notifications).toHaveLength(1);
     expect(String(notifications[0].message)).toContain('molly/phr (2 file(s) in attachments, versions)');
