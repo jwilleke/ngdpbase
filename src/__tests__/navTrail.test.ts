@@ -51,7 +51,7 @@ describe('nav-trail.js (#2390)', () => {
     expect(r.trail[0].title).toBe('Required Pages Sync');
     expect(r.trail[0].path).toBe('/admin/required-pages');
     const next = visit('http://wiki.test/view/Main', '', r.trail, 'Main');
-    expect(next.items.map(a => [a.textContent?.trim(), a.getAttribute('href')])).toEqual([['Required Pages Sync', '/admin/required-pages']]);
+    expect(next.items.map(a => [(a.textContent ?? '').replace(' (recent)', '').trim(), a.getAttribute('href')])).toEqual([['Required Pages Sync', '/admin/required-pages']]);
   });
 
   it('keeps no query string: a token in it would otherwise sit in storage', () => {

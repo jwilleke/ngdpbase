@@ -44,6 +44,9 @@
     <!-- CSRF token helpers (#663) — must load before any script that does fetch -->
     <script src="/js/csrf.js"></script>
 
+    <!-- Trail dropdown storage and drawing (#2390) -->
+    <script src="/js/nav-trail.js"></script>
+
     <!-- Session idle timeout warning (#1546): only when a limit applies to this signed-in person -->
     <% if (typeof idleTimeoutMs !== 'undefined' && idleTimeoutMs > 0 && typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated) { %>
     <script src="/js/idle-warning.js" data-timeout-ms="<%= idleTimeoutMs %>" defer></script>
@@ -206,7 +209,6 @@
                                 <i class="fas fa-bars"></i>
                             </button>
                         </li>
-                    <% if (typeof pageName !== 'undefined' && pageName) { %>
                         <!-- Breadcrumb trail dropdown (desktop only) -->
                         <li class="nav-item dropdown d-none d-md-block" id="trail">
                             <button class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Navigation Trail">
@@ -217,7 +219,6 @@
                                 <li><span class="dropdown-item-text text-muted">No trail available</span></li>
                             </ul>
                         </li>
-                    <% } %>
                     </ul>
                 </div>
 
@@ -1708,7 +1709,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeLeftMenuState();
 
     // Initialize breadcrumb trail
-    initializeTrail();
+    ngdpTrail.init();
 });
 
 // Left menu toggle (desktop only — mobile uses Bootstrap offcanvas via data-bs-toggle)
@@ -1819,15 +1820,7 @@ function initializeLeftMenuState() {
     }
 }
 
-// Breadcrumb trail management
-let navigationTrail = JSON.parse(localStorage.getItem('navigationTrail') || '[]');
-
-// Clear trail function
-function clearTrail() {
-    navigationTrail = [];
-    localStorage.removeItem('navigationTrail');
-    updateTrailDropdown();
-}
+// Breadcrumb trail: stored and drawn by /js/nav-trail.js (#2390)
 
 // Check if user has changed (for clearing trail on user switch)
 function checkUserChange() {
@@ -1836,7 +1829,7 @@ function checkUserChange() {
     
     if (lastUser && lastUser !== currentUserInfo) {
         // User has changed, clear the trail
-        clearTrail();
+        ngdpTrail.clear();
     }
     
     // Store current user
@@ -1850,123 +1843,10 @@ function checkServerRestart() {
     
     if (lastServerTime && Math.abs(serverStartTime - lastServerTime) > 300000) { // 5 minutes difference
         // Server likely restarted, clear trail
-        clearTrail();
+        ngdpTrail.clear();
     }
     
     localStorage.setItem('lastServerTime', serverStartTime);
-}
-
-function addToTrail(pageName, pageTitle) {
-    // Don't add the same page consecutively 
-    if (navigationTrail.length > 0 && navigationTrail[0].page === pageName) {
-        return;
-    }
-    
-    // Remove any existing entry for this page from anywhere in the trail
-    navigationTrail = navigationTrail.filter(item => item.page !== pageName);
-    
-    // Use pageName if pageTitle is not provided or is generic
-    const displayTitle = (pageTitle && pageTitle !== 'Markdown Wiki' && pageTitle !== pageName) ? pageTitle : pageName;
-    
-    // Add to beginning of trail
-    navigationTrail.unshift({
-        page: pageName,
-        title: displayTitle,
-        timestamp: Date.now()
-    });
-    
-    // Keep only last 10 entries
-    navigationTrail = navigationTrail.slice(0, 10);
-    
-    // Save to localStorage
-    localStorage.setItem('navigationTrail', JSON.stringify(navigationTrail));
-    
-    // Debug log
-    console.log('Added to trail:', pageName, 'as', displayTitle);
-    
-    // Update dropdown
-    updateTrailDropdown();
-}
-
-function updateTrailDropdown() {
-    const dropdown = document.getElementById('breadcrumbTrail');
-    if (!dropdown) return;
-    
-    dropdown.innerHTML = '';
-    
-    // Get current page to exclude it from trail
-    const currentPage = ngdpCurrentPageRaw(false);
-    const currentPageDecoded = currentPage ? decodeURIComponent(currentPage) : null;
-    
-    // Show only trail items (excluding current page)
-    const trailItemsToShow = navigationTrail.filter(item => 
-        !currentPageDecoded || item.page !== currentPageDecoded
-    );
-    
-    if (trailItemsToShow.length === 0) {
-        dropdown.innerHTML = '<li><span class="dropdown-item-text text-muted">No trail available</span></li>';
-        return;
-    }
-    
-    trailItemsToShow.forEach((item, index) => {
-        const li = document.createElement('li');
-        const a = document.createElement('a');
-        a.className = 'dropdown-item';
-        a.href = `/view/${encodeURIComponent(item.page)}`;
-        
-        // Use the page name from the URL, not a potentially generic title
-        const displayName = item.page; // Always use the actual page name
-        a.innerHTML = `<i class="fas fa-file-alt me-2"></i>${displayName}`;
-        
-        // Add time indicator for recent items
-        const timeDiff = Date.now() - item.timestamp;
-        if (timeDiff < 300000) { // Less than 5 minutes
-            a.innerHTML += ' <small class="text-muted">(recent)</small>';
-        }
-        
-        li.appendChild(a);
-        dropdown.appendChild(li);
-    });
-    
-    // Add separator and clear option if there are items
-    if (trailItemsToShow.length > 0) {
-        const separator = document.createElement('li');
-        separator.innerHTML = '<hr class="dropdown-divider">';
-        dropdown.appendChild(separator);
-        
-        const clearLi = document.createElement('li');
-        const clearA = document.createElement('a');
-        clearA.className = 'dropdown-item text-danger';
-        clearA.href = '#';
-        clearA.innerHTML = '<i class="fas fa-trash me-2"></i>Clear Trail';
-        clearA.onclick = (e) => {
-            e.preventDefault();
-            clearTrail();
-        };
-        clearLi.appendChild(clearA);
-        dropdown.appendChild(clearLi);
-    }
-}
-
-// Initialize trail on page load
-function initializeTrail() {
-    const currentPage = ngdpCurrentPageRaw(false);
-    if (!currentPage) {
-        updateTrailDropdown();
-        return;
-    }
-    
-    const currentPageDecoded = decodeURIComponent(currentPage);
-    // Use the page name from URL, not the document title
-    const pageName = currentPageDecoded;
-    
-    // Only add to trail if it's a different page than the last one visited
-    if (navigationTrail.length === 0 || navigationTrail[0].page !== currentPageDecoded) {
-        addToTrail(currentPageDecoded, pageName);
-    } else {
-        // Just update the dropdown without adding
-        updateTrailDropdown();
-    }
 }
 
 // Edit form functions for navbar buttons
