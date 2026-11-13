@@ -785,7 +785,7 @@ class PageManager extends BaseManager implements CatalogSource {
       // #2354: the dashboard says it in plain words; the owners and files are in the log line above.
       const plain = found.length > 0
         ? `${found.length === 1 ? 'A private vault is' : `${found.length} private vaults are`} marked as encrypted but ${found.length === 1 ? 'holds' : 'hold'} files that are not, so ${found.length === 1 ? 'it stays' : 'they stay'} closed. Move or remove those files on the server, outside this page, then ask the owner to open the vault.`
-        : `${mixed.length === 1 ? 'An encrypted private vault holds' : `${mixed.length} encrypted private vaults hold`} files that are not encrypted. Decide what to do with those files; they were left as they are.`;
+        : `${mixed.length === 1 ? 'An encrypted private vault holds' : `${mixed.length} encrypted private vaults hold`} files that are not encrypted. They were left as they are, and the vault still works. Move or remove those files on the server, outside this page. The notice sent to administrators names the vault and the files.`;
       // Closed vaults are down; open ones holding plaintext work and need an admin (#1946).
       if (found.length > 0 ? this.markDegraded(plain) : this.markNeedsAttention(plain)) {
         try {
