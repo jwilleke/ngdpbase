@@ -62,6 +62,27 @@ function compileAgainstEntry(consumer: string): string[] {
 }
 
 describe('@jwilleke/ngdpbase-types: what an add-on compiles against (#2022)', () => {
+  test('an add-on registers an export source, declared in its manifest, with no cast (#2174)', () => {
+    const errors = compileAgainstEntry(`
+      import type { AddonHost, AddonManifest, IceExportSource, IceItem, ExportReadInfo, ExportOutcome } from './index.js';
+      export const manifest: Pick<AddonManifest, 'exportSources'> = { exportSources: ['entries'] };
+      export function register(host: AddonHost, mayRead: (u: string) => boolean): string {
+        const source: IceExportSource = {
+          name: 'entries',
+          yields: 'record',
+          mayExport: async (_ref, ctx) => mayRead(ctx.username),
+          read: async (_ref, ctx, info: ExportReadInfo): Promise<IceItem[] | null> => {
+            info.note('none left out');
+            return mayRead(ctx.username) ? [{ kind: 'record', name: 'ledger', data: { id: '1', properties: { memo: 'x' } } }] : null;
+          },
+          recordExport: async (_ref, _ctx, _outcome: ExportOutcome) => undefined
+        };
+        return host.registerExportSource(source);
+      }
+    `);
+    expect(errors).toEqual([]);
+  });
+
   test('a receiver passes its context, a job\'s included, straight to the PDP, with no cast', () => {
     const errors = compileAgainstEntry(`
       import type { ActorContext, AddonHost, PolicyDecisionPoint, Decision } from './index.js';
