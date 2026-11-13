@@ -250,7 +250,7 @@ describe('ConsentManager (#1603)', () => {
       pages['privacy-policy'] = { title: 'Privacy Policy' };
       await cm.pendingFor('ann');
       const status = cm.getManagerStatus();
-      expect(status.reason).toBe("The 'privacy-policy' page has no version number, so nobody is asked to accept it. Open the page in the raw editor and add the line version: 1 at the top of the page, between the two --- lines.");
+      expect(status.reason).toBe("The 'privacy-policy' page has no version number, so nobody is asked to accept it. Open this page in the raw editor and add the line version: 1 at the top, between the --- lines, so the site knows which version of the page people have accepted.");
       expect(status.fixUrl).toBe('/admin/edit-raw/privacy-policy');
       expect(status.fixLabel).toBe("Open the 'privacy-policy' page in the raw editor");
       expect(status.configKey).toBeUndefined();
