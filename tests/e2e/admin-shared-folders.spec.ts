@@ -37,7 +37,8 @@ test.describe('Admin → Shared folders (#2126)', () => {
     // Either the words still to be made, or the form to make a folder.
     await expect(page.locator('#shared-folders-words-needed').or(page.locator('#shared-folders-make'))).toBeVisible();
     await page.goto('/admin');
-    await expect(page.locator('a[href="/admin/shared-folders"]').first()).toBeVisible();
+    // In the page body: the Trail in the header lists the screen just left, in a closed menu.
+    await expect(page.locator('main a[href="/admin/shared-folders"]').first()).toBeVisible();
   });
 
   test('a signed-in account without admin-system is refused the screen and the access change', async ({ page, browser }) => {
