@@ -246,7 +246,7 @@ class ConsentManager extends BaseManager {
       const fix = addon
         ? 'It comes with an add-on; update or reinstall that add-on.'
         : core
-          ? 'Open the page in the raw editor and add the line version: 1 at the top of the page, between the two --- lines.'
+          ? 'Open this page in the raw editor and add the line version: 1 at the top, between the --- lines, so the site knows which version of the page people have accepted.'
           : 'Restore it with Required Pages Sync.';
       // #2385: the ordinary editor has no version field, and Required Pages Sync does not add one to a page the site already holds.
       // Only the raw editor can set it. It needs the page-raw-edit permission; without it the editor opens read-only.
