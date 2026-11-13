@@ -114,7 +114,7 @@ test.describe('Admin Dashboard', () => {
     test('the dashboard links to the scheduled-jobs page, which renders', async ({ page }) => {
       // The link sits in the collapsed Add-ons section, beside Private Stores.
       await page.goto('/admin');
-      await expect(page.locator('a[href="/admin/jobs"]')).toHaveCount(1);
+      await expect(page.locator('main a[href="/admin/jobs"]')).toHaveCount(1);
       await page.goto('/admin/jobs');
       await expect(page.locator('h1')).toContainText('Scheduled Jobs');
       // #1721: core's maintenance jobs are listed on every site.
