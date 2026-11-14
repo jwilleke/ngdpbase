@@ -193,4 +193,27 @@ describe('WikiRoutes.getCommonTemplateData — lineLength (#2399)', () => {
     const data = await routes.getCommonTemplateData(buildRequest({ 'display.line-length': 'site' }));
     expect(data.lineLength).toBe('short');
   });
+
+  // The profile names what "Use the site's setting" is right now: the site
+  // setting, else the theme's, else full: never the person's own choice.
+  test('siteLineLength is full with no setting on the default theme', async () => {
+    expect((await routes.getCommonTemplateData(buildRequest())).siteLineLength).toBe('full');
+  });
+
+  test('siteLineLength follows the site setting', async () => {
+    configState.site = 'short';
+    expect((await routes.getCommonTemplateData(buildRequest())).siteLineLength).toBe('short');
+  });
+
+  test('siteLineLength follows the theme when the site sets nothing', async () => {
+    configState.theme = 'fairways';
+    expect((await routes.getCommonTemplateData(buildRequest())).siteLineLength).toBe('short');
+  });
+
+  test("siteLineLength ignores the person's own choice", async () => {
+    configState.site = 'short';
+    const data = await routes.getCommonTemplateData(buildRequest({ 'display.line-length': 'full' }));
+    expect(data.lineLength).toBe('full');
+    expect(data.siteLineLength).toBe('short');
+  });
 });
