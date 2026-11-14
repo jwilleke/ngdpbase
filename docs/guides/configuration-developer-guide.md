@@ -1,7 +1,7 @@
 ---
 name: Configuration developer guide
 description: How to add or change a configuration key — one reader, three merge layers, maps not arrays
-dateModified: 2026-10-29
+dateModified: 2026-11-14
 category: guides
 relatedModules: [ConfigurationManager]
 ---
@@ -52,6 +52,7 @@ How to add or change a configuration key. Config selects and parameterises; it n
 - Keys added with [#2174](https://github.com/jwilleke/ngdpbase/issues/2174): `ngdpbase.export.engine.max-items` (default 200), the most items one export holds (a search's pages and files together, or the items an add-on's list gives; the zip of a search), beside `ngdpbase.export.engine.max-bytes` (default 26214400, the most the whole zip holds) and `ngdpbase.export.engine.csv-max-columns` (default 1000, the most distinct columns a CSV export writes, [#2396](https://github.com/jwilleke/ngdpbase/issues/2396)); documented in [ImportManager](../managers/ImportManager.md#configuration)
 - Keys added with [#1974](https://github.com/jwilleke/ngdpbase/issues/1974), documented with their module: `ngdpbase.export.pdf.*`, the PDF provider (`none`, `local-chrome`, `chrome-service`) and its settings, in [ExportManager](../managers/ExportManager.md#configuration) (read on every render, no restart; a `chrome-service` URL on a private address also needs its range in `ngdpbase.security.egress.allowed-ranges`), `ngdpbase.mail.attachments.max-bytes` in [EmailManager](../managers/EmailManager.md#configuration) (read at startup)
 - `ngdpbase.share.public-base-url` ([#2117](https://github.com/jwilleke/ngdpbase/issues/2117)), the address share links are made with when it differs from `ngdpbase.application.base-url`, documented in [sharing.md](../sharing.md#configuration) (read on every link shown; an invalid value is ignored and named at startup)
+- `ngdpbase.display.line-length` ([#2399](https://github.com/jwilleke/ngdpbase/issues/2399)), `"short"` or `"full"`, shipped default `"full"`: the site default for the width of page text and pictures. A signed-in person's own choice (`display.line-length` in their preferences: `short`, `full` or `site`) wins; a signed-out visitor gets the site setting. Read it with `getCustomProperty`, so when the operator's own config leaves it out the active theme's `lineLength` in `theme.json` decides, and a theme that says nothing gets `"full"`. The choice rides on `<body data-line-length>` and `themes/core.css` applies it; how wide "short" is comes from `--ngdp-short-measure` (core fallback `36em`), see [theming.md](../theming.md#short-lines-and-full-width). Read on every page view, no restart
 - [bootstrap-developer-guide.md](bootstrap-developer-guide.md)
 - [security-developer-guide.md](security-developer-guide.md) — addon merge of permissions and policies
 - `src/utils/configFiles.ts`, `src/utils/configEnvKeys.ts`
