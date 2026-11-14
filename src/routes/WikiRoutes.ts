@@ -44,6 +44,7 @@ import {
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
+import { asLineLength, resolveLineLength, LINE_LENGTH_PREF_KEY, LINE_LENGTH_SITE_KEY, type LineLength } from '../utils/lineLength.js';
 import { PageTitleConflictError, pageTitleConflictLink, pageTitleConflictText, type ConflictingPage } from '../utils/pageTitleConflict.js';
 import { DENY_OVERRIDES_EXPLANATION, RULE_COMBINING_ALGORITHM_KEY, readDeclaredAsWritten, unenforcedConditionsNotice } from '../utils/policyAttributes.js';
 import { sessionCookieWithheld, SESSION_COOKIE_WITHHELD_MESSAGE } from '../utils/sessionSecurity.js';
@@ -1230,6 +1231,8 @@ class WikiRoutes {
       locationCssPath: string;
       themeFontUrls: string[];
       themeStylesheets: string[];
+      lineLength: LineLength;
+      siteLineLength: LineLength;
       addonStylesheets: string[];
       capabilities: Record<string, boolean>;
       allowRegistration: boolean;
@@ -1285,6 +1288,17 @@ class WikiRoutes {
       locationCssPath: themePaths.locationCssPath,
       themeFontUrls: themePaths.fontUrls,
       themeStylesheets: themePaths.themeStylesheets,
+      // #2399: the person's own choice, else the site's, else the theme's, else full.
+      lineLength: resolveLineLength({
+        user: (userContext?.preferences as Record<string, unknown> | undefined)?.[LINE_LENGTH_PREF_KEY],
+        site: configManager?.getCustomProperty(LINE_LENGTH_SITE_KEY),
+        theme: themePaths.themeInfo?.lineLength
+      }),
+      // What "Use the site's setting" means right now: the same order without the person's choice. The profile shows it.
+      siteLineLength: resolveLineLength({
+        site: configManager?.getCustomProperty(LINE_LENGTH_SITE_KEY),
+        theme: themePaths.themeInfo?.lineLength
+      }),
       addonStylesheets,
       capabilities: this.engine.getCapabilities?.() ?? {},
       allowRegistration,
@@ -11929,6 +11943,8 @@ ${panes}
       preferences['display.sectionEditing'] =
         getBodyValue('display.sectionEditing') === 'on';
       preferences['display.theme'] = getBodyValue('display.theme') || 'system';
+      // #2399: short, full, or "site" (follow the site's setting).
+      preferences[LINE_LENGTH_PREF_KEY] = asLineLength(getBodyValue(LINE_LENGTH_PREF_KEY)) ?? 'site';
 
       // Locale preferences (new system)
       if (getBodyValue('preferences.locale')) {

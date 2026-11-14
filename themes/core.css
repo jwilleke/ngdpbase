@@ -1687,3 +1687,60 @@ tr:target > td { background-color: var(--bs-warning-bg-subtle); }
   position: fixed; top: .5rem; left: 50%; transform: translateX(-50%);
   width: min(36rem, calc(100vw - 1rem)); z-index: 1080;
 }
+
+/* #2399: short lines or full width. The page sets data-line-length on <body>
+   ("short" or "full"); these rules are the only place the choice changes a
+   width. A theme sets how wide "short" is with --ngdp-short-measure on :root.
+   The fallback is 36em: about 70 characters a line at 16px, 576px wide.
+   Tables and other page content keep the full column. Plugin output that is
+   not running text (centred totals, list-group rows in a card) is left alone.
+   :where() keeps these rules at the lowest weight, so a theme can still give
+   one kind of picture (a logo, say) its own size. */
+:where([data-line-length="short"]) .markdown-body :where(p, li, blockquote, dl):where(:not(.text-center, .list-group-item)) {
+  max-width: var(--ngdp-short-measure, 36em);
+}
+
+/* Pictures follow the text: no wider than the text with short lines, and
+   with full width as wide as the column but never beyond the page. */
+:where([data-line-length="short"]) .markdown-body :where(img, .wiki-image) {
+  max-width: min(100%, var(--ngdp-short-measure, 36em));
+  height: auto;
+}
+
+/* A picture with a caption is wrapped by the Image plugin in a box that holds
+   both. The plugin centres that box (an inline margin: 0 auto) unless the
+   author asked for left, right or a float. Cap the box at the text width so the
+   caption wraps with the text, and move a default-centred box to the text edge
+   (!important, to beat the inline style). A box the author centred carries
+   .text-center and stays centred inside that width. The picture in a moved box
+   goes to the edge too, so picture and caption stay together. */
+:where([data-line-length="short"]) .markdown-body .image-plugin-container {
+  max-width: min(100%, var(--ngdp-short-measure, 36em));
+}
+
+:where([data-line-length="short"]) .markdown-body .image-plugin-container:not(.text-center)[style*="margin: 0 auto"],
+:where([data-line-length="short"]) .markdown-body .image-plugin-container:not(.text-center)[style*="margin: 0 auto"] :where(img) {
+  margin-inline: 0 !important;
+}
+
+/* A box the author centred (align=center, class .text-center) is anchored at
+   the text edge too, so that centring it inside its short-measure width puts
+   its centre on the text column's centre. The picture and the caption are
+   centred inside the box. !important beats the inline margins on the box and
+   the picture, and a theme's own !important picture margin (Fairways). */
+:where([data-line-length="short"]) .markdown-body .image-plugin-container.text-center {
+  margin-inline: 0 !important;
+}
+
+:where([data-line-length="short"]) .markdown-body .image-plugin-container.text-center :where(img) {
+  margin-inline: auto !important;
+}
+
+:where([data-line-length="short"]) .markdown-body .image-plugin-container.text-center .image-caption {
+  text-align: center;
+}
+
+:where([data-line-length="full"]) .markdown-body :where(img, .wiki-image) {
+  max-width: 100%;
+  height: auto;
+}

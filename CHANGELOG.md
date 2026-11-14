@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- Nothing to do. One new setting: `ngdpbase.display.line-length` (`short` or `full`, default `full`). Sites on the Fairways theme keep short lines until their own config says otherwise.
+
+### Added
+
+- __#2399__ — each person can choose short lines or full width in Profile → User Preferences → Line Length, and each site sets the default with `ngdpbase.display.line-length`. Signed-out visitors see the site's setting. Pictures follow the text width. A theme sets how wide "short" is with `--ngdp-short-measure`, default `36em`; Fairways sets `32em`, as before.
+
 ### Planned
 
 - Future enhancements
