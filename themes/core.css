@@ -1723,6 +1723,23 @@ tr:target > td { background-color: var(--bs-warning-bg-subtle); }
   margin-inline: 0 !important;
 }
 
+/* A box the author centred (align=center, class .text-center) is anchored at
+   the text edge too, so that centring it inside its short-measure width puts
+   its centre on the text column's centre. The picture and the caption are
+   centred inside the box. !important beats the inline margins on the box and
+   the picture, and a theme's own !important picture margin (Fairways). */
+:where([data-line-length="short"]) .markdown-body .image-plugin-container.text-center {
+  margin-inline: 0 !important;
+}
+
+:where([data-line-length="short"]) .markdown-body .image-plugin-container.text-center :where(img) {
+  margin-inline: auto !important;
+}
+
+:where([data-line-length="short"]) .markdown-body .image-plugin-container.text-center .image-caption {
+  text-align: center;
+}
+
 :where([data-line-length="full"]) .markdown-body :where(img, .wiki-image) {
   max-width: 100%;
   height: auto;
