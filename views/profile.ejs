@@ -664,6 +664,18 @@
                                                     </select>
                                                 </div>
                                                 
+                                                <% var lineLengthPref = (user.preferences && user.preferences['display.line-length']) || 'site'; %>
+                                                <div class="form-group mb-3">
+                                                    <label for="lineLength" class="form-label"><strong>Line Length</strong></label>
+                                                    <select class="form-control" id="lineLength" name="display.line-length">
+                                                        <%# What "the site's setting" is right now: the site's choice, else the theme's (#2399). %>
+                                                        <option value="site" <%= lineLengthPref === 'site' ? 'selected' : '' %>>Use the site's setting<%= typeof siteLineLength !== 'undefined' && siteLineLength ? ' (currently ' + (siteLineLength === 'short' ? 'short lines' : 'full width') + ')' : '' %></option>
+                                                        <option value="short" <%= lineLengthPref === 'short' ? 'selected' : '' %>>Short lines</option>
+                                                        <option value="full" <%= lineLengthPref === 'full' ? 'selected' : '' %>>Full width</option>
+                                                    </select>
+                                                    <small class="form-text text-muted">Short lines keep text and pictures about as wide as a book page, which is easier to read. Full width lets them fill the screen.</small>
+                                                </div>
+
                                                 <div class="form-check mb-3">
                                                     <input class="form-check-input" type="checkbox" id="showToolTips" name="display.tooltips" 
                                                            <%= (user.preferences && user.preferences['display.tooltips']) ? 'checked' : '' %>>
@@ -1023,6 +1035,7 @@ function resetPreferences() {
         document.getElementById('pageSize').value = '25';
         document.getElementById('dateFormat').value = 'default';
         document.getElementById('siteTheme').value = 'system';
+        document.getElementById('lineLength').value = 'site';
     }
 }
 

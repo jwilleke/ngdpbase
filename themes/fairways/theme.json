@@ -2,6 +2,7 @@
   "name": "Fairways",
   "description": "The Fairways Condominiums — paper and fairway green, existing wordmark, readable type",
   "version": "2.0.0",
+  "lineLength": "short",
   "author": "Jim Willeke",
   "fonts": [
     "https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap"

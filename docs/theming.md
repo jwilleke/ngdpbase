@@ -49,6 +49,20 @@ The `fonts` array is optional. Each URL is injected as a `<link rel="stylesheet"
 
 `stylesheets` is optional. Each entry is a CSS filename in `themes/<name>/css/`. The page loads those files after `themes/core.css`, so a site can adjust type, focus, and chrome without editing the shared sheet. A path (`../` or a slash) is ignored. `variables.css` is loaded on its own and does not need to be listed.
 
+`lineLength` is optional: `"short"` or `"full"`. It is what your theme asks for when the site's admin has not set `ngdpbase.display.line-length` in the site config. Leave it out and the site gets `"full"`. A site's own setting, and then each signed-in person's choice in their profile, win over it.
+
+### Short lines and full width
+
+Each page carries the choice on `<body data-line-length="short">` or `"full"`. `themes/core.css` is the only place the choice changes a width: with `short`, paragraphs, lists, quotes and pictures in page content are capped at one width; with `full`, text fills the column and pictures grow with it, never beyond the page. A theme does not write its own rules for this. It sets how wide "short" is, on `:root`:
+
+```css
+:root {
+  --ngdp-short-measure: 32em;
+}
+```
+
+If a theme sets nothing, short is `36em`, about 70 characters a line at a 16px font size. The Fairways theme sets `32em` because its text is 18px, so it keeps the same width as before. `em` is measured against the font size of the text or picture being capped. The core rules have the lowest weight, so a theme can still give one kind of picture, such as a logo, its own `max-width`.
+
 ### 3. Create `css/variables.css`
 
 Define your theme's CSS custom properties. The file must set values on `:root`:

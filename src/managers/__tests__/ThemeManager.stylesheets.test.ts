@@ -81,8 +81,15 @@ describe('ThemeManager theme stylesheets', () => {
     expect(css).toMatch(/min-height:\s*100dvh/);
     expect(css).not.toMatch(/65ch/);
     expect(css).not.toMatch(/18ch/);
-    expect(css).toMatch(/\.markdown-body p,\s*\n\.markdown-body li,[^{]*\{\s*\n\s*max-width:\s*32em;/);
-    expect(css).toMatch(/\.markdown-body img,\s*\n\.wiki-image \{[^}]*max-width:\s*min\(100%,\s*32em\);/);
+    // #2399: the 32em width is Fairways' "short lines" measure; core.css applies
+    // it only when the page asks for short lines, and to pictures too.
+    expect(css).toMatch(/:root \{\s*--ngdp-short-measure:\s*32em;/);
+    expect(css).not.toMatch(/max-width:\s*32em/);
+    expect(css).not.toMatch(/max-width:\s*min\(100%,\s*32em\)/);
+    const core = fs.readFileSync(path.resolve(__dirname, '../../../themes/core.css'), 'utf8');
+    expect(core).toMatch(/\[data-line-length="short"\]\) \.markdown-body :where\(p, li, blockquote, dl\)[^{]*\{\s*max-width:\s*var\(--ngdp-short-measure,\s*36em\);/);
+    expect(core).toMatch(/\[data-line-length="short"\]\) \.markdown-body :where\(img, \.wiki-image\) \{[^}]*max-width:\s*min\(100%,\s*var\(--ngdp-short-measure,\s*36em\)\);/);
+    expect(core).toMatch(/\[data-line-length="full"\]\) \.markdown-body :where\(img, \.wiki-image\) \{[^}]*max-width:\s*100%;/);
     expect(css).toMatch(/img\[src\*="logo" i\][^{]*\{\s*\n\s*max-width:\s*min\(100%,\s*18rem\)/);
     // The header logo is 24px wide-screen and 30px on phones.
     expect(css).toMatch(/\.jspwiki-header \.navbar-brand img \{[^}]*height:\s*24px !important;/);
@@ -94,7 +101,7 @@ describe('ThemeManager theme stylesheets', () => {
     // Disabled primary buttons stay green, not Bootstrap blue.
     expect(css).toMatch(/--bs-btn-disabled-bg:\s*var\(--button-primary-bg\)/);
     // Plugin rows and the RecentChanges total keep their full width.
-    expect(css).toMatch(/\.markdown-body p\.text-center,\s*\n\.markdown-body \.list-group-item \{\s*\n\s*max-width:\s*none;/);
+    expect(core).toMatch(/:not\(\.text-center, \.list-group-item\)/);
     // A logo inside a page sits on the same light panel as the header logo in dark mode.
     const pageLogo = css.match(/img\[src\*="logo" i\][^{]*\{([^}]*)\}/);
     expect(pageLogo?.[1]).toMatch(/background-color:\s*var\(--logo-panel-bg,\s*transparent\)/);

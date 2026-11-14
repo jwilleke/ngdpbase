@@ -15,6 +15,11 @@ export interface ThemeInfo {
    * sheet. Basenames only; paths are rejected.
    */
   stylesheets?: string[];
+  /**
+   * Optional: "short" or "full". What this theme asks for when the site's
+   * admin has not set `ngdpbase.display.line-length` (#2399).
+   */
+  lineLength?: 'short' | 'full';
 }
 
 export interface ThemePaths {

@@ -945,6 +945,23 @@ describe('WikiRoutes — coverage batch 14', () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain('/profile');
     });
+
+    // #2399: the line-length choice is saved as short, full, or "site".
+    async function savedLineLength(body: Record<string, string>): Promise<unknown> {
+      mockUserManager.updateUser.mockClear();
+      await request(app).post('/preferences').set('x-csrf-token', 'test-csrf-token').send(body);
+      const update = mockUserManager.updateUser.mock.calls[0][1] as (u: unknown) => { preferences: Record<string, unknown> };
+      return update({ preferences: {} }).preferences['display.line-length'];
+    }
+
+    test.each(['short', 'full', 'site'])('saves display.line-length = %s', async (choice) => {
+      expect(await savedLineLength({ 'display.line-length': choice })).toBe(choice);
+    });
+
+    test('a missing or unknown line-length value is saved as "site"', async () => {
+      expect(await savedLineLength({})).toBe('site');
+      expect(await savedLineLength({ 'display.line-length': 'enormous' })).toBe('site');
+    });
   });
 
   // ── Preview ───────────────────────────────────────────────────────────────────

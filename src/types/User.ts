@@ -49,6 +49,9 @@ export interface UserPreferences {
   /** Display page size for lists */
   'display.pagesize'?: string;
 
+  /** Page line length: "short", "full", or "site" to follow the site's setting (#2399) */
+  'display.line-length'?: string;
+
   /** Show tooltips */
   'display.tooltips'?: boolean;
 
