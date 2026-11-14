@@ -305,6 +305,9 @@ export interface WikiConfig {
   /** Default light/dark mode for new users ("light" | "dark" | "system") */
   'ngdpbase.theme.defaults.mode': string;
 
+  /** Site default for page line length ("short" | "full"); a person's own choice wins (#2399) */
+  'ngdpbase.display.line-length': string;
+
   /** Cache provider */
   'ngdpbase.cache.provider': string;
 

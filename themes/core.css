@@ -1687,3 +1687,27 @@ tr:target > td { background-color: var(--bs-warning-bg-subtle); }
   position: fixed; top: .5rem; left: 50%; transform: translateX(-50%);
   width: min(36rem, calc(100vw - 1rem)); z-index: 1080;
 }
+
+/* #2399: short lines or full width. The page sets data-line-length on <body>
+   ("short" or "full"); these rules are the only place the choice changes a
+   width. A theme sets how wide "short" is with --ngdp-short-measure on :root.
+   The fallback is 36em: about 70 characters a line at 16px, 576px wide.
+   Tables and other page content keep the full column. Plugin output that is
+   not running text (centred totals, list-group rows in a card) is left alone.
+   :where() keeps these rules at the lowest weight, so a theme can still give
+   one kind of picture (a logo, say) its own size. */
+:where([data-line-length="short"]) .markdown-body :where(p, li, blockquote, dl):where(:not(.text-center, .list-group-item)) {
+  max-width: var(--ngdp-short-measure, 36em);
+}
+
+/* Pictures follow the text: no wider than the text with short lines, and
+   with full width as wide as the column but never beyond the page. */
+:where([data-line-length="short"]) .markdown-body :where(img, .wiki-image) {
+  max-width: min(100%, var(--ngdp-short-measure, 36em));
+  height: auto;
+}
+
+:where([data-line-length="full"]) .markdown-body :where(img, .wiki-image) {
+  max-width: 100%;
+  height: auto;
+}

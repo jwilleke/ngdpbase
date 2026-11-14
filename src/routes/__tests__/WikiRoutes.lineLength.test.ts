@@ -5,6 +5,25 @@
 import express from 'express';
 import WikiRoutes from '../WikiRoutes';
 
+// The route finds themes/ relative to dist/; under vitest it does not, so say
+// what the Fairways theme.json says (pinned against the real file in
+// ThemeManager.lineLength.test.ts).
+vi.mock('../../managers/ThemeManager', () => ({
+  getThemeManager: (name: string) => ({
+    paths: {
+      activeTheme: name,
+      coreCssPath: '/themes/core.css',
+      variablesCssPath: '/themes/core-variables-empty.css',
+      logoPath: '/favicon.svg',
+      faviconPath: '/favicon.svg',
+      locationCssPath: '/themes/plugins/location.css',
+      themeInfo: name === 'fairways' ? { lineLength: 'short' } : { name: 'Default' },
+      fontUrls: [],
+      themeStylesheets: []
+    }
+  })
+}));
+
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
     getDateFormatOptions: vi.fn().mockReturnValue(['MM/dd/yyyy']),

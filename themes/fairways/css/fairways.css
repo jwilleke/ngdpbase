@@ -330,19 +330,11 @@ button:focus-visible {
 .markdown-body h2 { font-size: 1.55rem; }
 .markdown-body h3 { font-size: 1.3rem; }
 
-/* About 70 characters a line at 18px. Tables and images still use the full column. */
-.markdown-body p,
-.markdown-body li,
-.markdown-body blockquote,
-.markdown-body dl {
-  max-width: 32em;
-}
-
-/* Plugin output that is not running text keeps its full width: the
-   RecentChanges total under its table, and list-group rows in a card. */
-.markdown-body p.text-center,
-.markdown-body .list-group-item {
-  max-width: none;
+/* How wide "short lines" is: about 70 characters a line at 18px. core.css
+   applies it to text and pictures when the page has data-line-length="short"
+   (the site default for Fairways, or a person's choice in their profile). */
+:root {
+  --ngdp-short-measure: 32em;
 }
 
 .markdown-body p,
@@ -372,12 +364,12 @@ button:focus-visible {
   color: var(--link-color);
 }
 
-/* Page pictures may be as wide as the text column (32em), never wider. */
+/* Page pictures follow the text width (core.css: short lines cap them at
+   --ngdp-short-measure); with full width they grow with the column. */
 .markdown-body img,
 .wiki-image {
   display: block;
   width: auto;
-  max-width: min(100%, 32em);
   height: auto;
   margin: 0 0 1.25rem !important;
   border-radius: 10px;

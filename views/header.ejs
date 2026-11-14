@@ -77,7 +77,7 @@
 
     <%# JSON-LD structured data emission happens inside views/view.ejs via the unified pageToArticle → buildPageJsonLd pipeline. Per #792 cleanup the legacy pageSchema / siteSchema hooks here were removed — they were never assigned by any route handler. %>
 </head>
-<body>
+<body<% if (typeof lineLength !== 'undefined' && lineLength) { %> data-line-length="<%= lineLength %>"<% } %>>
     <!-- JSPWiki-style header (#371, #375) -->
     <nav class="navbar navbar-expand-md jspwiki-header border-bottom py-1 py-md-2">
         <div class="container-fluid">
