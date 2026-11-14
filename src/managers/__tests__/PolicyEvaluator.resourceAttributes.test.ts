@@ -9,6 +9,7 @@
  */
 vi.unmock('../PolicyEvaluator');
 import PolicyEvaluator, { conditionAttributeSource, conditionProblems } from '../PolicyEvaluator';
+import PolicyDecisionPoint from '../../security/PolicyDecisionPoint';
 import { declaredAttributes } from '../../utils/policyAttributes';
 import { attr, val } from './__fixtures__/conditions';
 
@@ -100,7 +101,9 @@ describe('the evaluator and the boot warning use the same sets', () => {
       'ngdpbase.access.resource-types': TYPES
     };
     const configManager = { getProperty: (key: string, def: unknown) => (key in config ? config[key] : def) };
-    const engine = { getManager: (n: string) => (n === 'ConfigurationManager' ? configManager : null) };
+    const managers: Record<string, unknown> = { ConfigurationManager: configManager };
+    const engine = { getManager: (n: string) => managers[n] ?? null };
+    managers.PolicyDecisionPoint = new PolicyDecisionPoint(engine);
     const pe = new PolicyEvaluator(engine);
     (pe as unknown as { configManager: unknown }).configManager = configManager;
     return pe;

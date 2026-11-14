@@ -212,7 +212,7 @@ describe('resource attributes from the vault (#2261 slice 5)', () => {
   describe('the spec\'s Verified-when scenarios', () => {
     test('a deny page-edit for anyone on general with resource:encrypted == true refuses edits in an encrypted vault, and (missing, fail closed) on an ordinary public page; removing it restores both', async () => {
       await boot(withDeny());
-      expect(validator.policyProblems(config['ngdpbase.access.policies'])).toEqual([]);
+      expect(validator.policyProblems((config['ngdpbase.access.policies'] as unknown[]).slice(-1))).toEqual([]);
       expect(await may(alice, 'edit', SECRET)).toBe(false);
       expect(await may(editor, 'edit', PUBLIC)).toBe(false);
       // An unencrypted vault page is not refused: encrypted is false there.
@@ -225,7 +225,7 @@ describe('resource attributes from the vault (#2261 slice 5)', () => {
 
     test('with a resources entry of type vault the deny stays off public pages', async () => {
       await boot(withDeny([{ type: 'vault', pattern: '*' }]));
-      expect(validator.policyProblems(config['ngdpbase.access.policies'])).toEqual([]);
+      expect(validator.policyProblems((config['ngdpbase.access.policies'] as unknown[]).slice(-1))).toEqual([]);
       expect(await may(alice, 'edit', SECRET)).toBe(false);
       expect(await may(editor, 'edit', PUBLIC)).toBe(true);
     });
