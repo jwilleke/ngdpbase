@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+## [5.45.0] - 2026-11-14
+
+### Upgrade notes
+
+- Nothing to do. One new setting: `ngdpbase.export.engine.csv-max-columns` (default 1000) limits the columns in a CSV export (#2395).
+
+### Added
+
+- __#2395__ — add-ons can offer __Export__ on their own lists as a CSV file, under each add-on's own read permission (#2174, slice 3). A manifest declares `exportSources`, and an add-on registers one with `host.registerExportSource`. The new types are published to npm with this release as `@jwilleke/ngdpbase-types`. New key `ngdpbase.export.engine.csv-max-columns`, default `1000`, limits the columns in a CSV export.
+- __#2398__ — the Trail button shows on every page that has the left menu. Admin and other screens now show the Trail under their heading.
+
+### Changed
+
+- The in-page breadcrumb is removed from Required Pages Sync and from the diff screen, since the Trail replaces it (#2398).
+- Dashboard items for a missing consent version and for unencrypted files in a vault now say where to fix them (#2394).
+- Docs: Fairways site design notes (#2392).
+
 ## [5.44.0] - 2026-11-12
 
 ### Upgrade notes
