@@ -1232,6 +1232,7 @@ class WikiRoutes {
       themeFontUrls: string[];
       themeStylesheets: string[];
       lineLength: LineLength;
+      siteLineLength: LineLength;
       addonStylesheets: string[];
       capabilities: Record<string, boolean>;
       allowRegistration: boolean;
@@ -1290,6 +1291,11 @@ class WikiRoutes {
       // #2399: the person's own choice, else the site's, else the theme's, else full.
       lineLength: resolveLineLength({
         user: (userContext?.preferences as Record<string, unknown> | undefined)?.[LINE_LENGTH_PREF_KEY],
+        site: configManager?.getCustomProperty(LINE_LENGTH_SITE_KEY),
+        theme: themePaths.themeInfo?.lineLength
+      }),
+      // What "Use the site's setting" means right now: the same order without the person's choice. The profile shows it.
+      siteLineLength: resolveLineLength({
         site: configManager?.getCustomProperty(LINE_LENGTH_SITE_KEY),
         theme: themePaths.themeInfo?.lineLength
       }),

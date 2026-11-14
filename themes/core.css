@@ -1707,6 +1707,22 @@ tr:target > td { background-color: var(--bs-warning-bg-subtle); }
   height: auto;
 }
 
+/* A picture with a caption is wrapped by the Image plugin in a box that holds
+   both. The plugin centres that box (an inline margin: 0 auto) unless the
+   author asked for left, right or a float. Cap the box at the text width so the
+   caption wraps with the text, and move a default-centred box to the text edge
+   (!important, to beat the inline style). A box the author centred carries
+   .text-center and stays centred inside that width. The picture in a moved box
+   goes to the edge too, so picture and caption stay together. */
+:where([data-line-length="short"]) .markdown-body .image-plugin-container {
+  max-width: min(100%, var(--ngdp-short-measure, 36em));
+}
+
+:where([data-line-length="short"]) .markdown-body .image-plugin-container:not(.text-center)[style*="margin: 0 auto"],
+:where([data-line-length="short"]) .markdown-body .image-plugin-container:not(.text-center)[style*="margin: 0 auto"] :where(img) {
+  margin-inline: 0 !important;
+}
+
 :where([data-line-length="full"]) .markdown-body :where(img, .wiki-image) {
   max-width: 100%;
   height: auto;
