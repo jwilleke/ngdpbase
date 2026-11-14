@@ -2863,7 +2863,7 @@
   "_comment_access_resource_types": "Policy resource types (#1504, docs/access-policies.md): the kinds of thing a policy's resources may name. Declared once here and read through ConfigurationManager. The evaluator holds one matcher per core type (page, system-category, vault, shared-folder). A type an add-on declares is matched by id only when a record of that type is decided (#1823); a page decision does not use it. A type that is not declared never matches.",
   "ngdpbase.access.resource-types": {
     "page": {
-      "description": "A page, matched by its name (glob pattern). Its attributes are what a policy's condition may read as resource:<name> (an attributeid in a condition), each read by the PIP from its source (#2255): owner is the page's author",
+      "description": "A page, matched by its name (glob pattern). Its attributes are what a policy's condition may read as resource:<name> (an attributeid in a condition), each read by the PIP from its source (#2255): owner is the page's author; vault-owner and encrypted are the owner and the encryption of the vault the page is in (vault:owner, vault:encrypted), missing for a page in no vault and for a shared folder's page. A vault and a shared-folder type may declare attributes too, and a policy that names the type may read them",
       "attributes": {
         "system-category": {
           "type": "string",
@@ -2872,6 +2872,14 @@
         "owner": {
           "type": "identity",
           "from": "frontmatter:author"
+        },
+        "encrypted": {
+          "type": "boolean",
+          "from": "vault:encrypted"
+        },
+        "vault-owner": {
+          "type": "identity",
+          "from": "vault:owner"
         }
       }
     },
