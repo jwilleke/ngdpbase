@@ -45,6 +45,12 @@ describe('#2389 _sync-status: the plain state words', () => {
   });
 });
 
+describe('#2389 _sync-status: "Same as shipped" only for same-as-shipped', () => {
+  test('a row with no syncState does not read as Same as shipped', async () => {
+    expect(statuses(await partial('_sync-status', { status: 'modified', userModified: false }))).not.toContain('same-as-shipped');
+  });
+});
+
 describe('#1918 _sync-button', () => {
   test('Sync carries the id and asks nothing', async () => {
     const b = (await partial('_sync-button', { userModified: false, id: 'u-1', name: 'Page' })).querySelector('button')!;

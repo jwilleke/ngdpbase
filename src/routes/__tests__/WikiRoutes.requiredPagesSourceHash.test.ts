@@ -162,6 +162,22 @@ describe('Required Pages Sync status — body and source-hash stamp (#1395)', ()
     expect(await listed(routes)).toMatchObject({ status: 'current', syncState: 'same-as-shipped' });
   });
 
+  test('a live copy with broken front matter is Update ready, so Sync All heals it (M1)', async () => {
+    await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('shipped body'), 'utf8');
+    // No closing `---`: the front matter does not parse.
+    await fs.writeFile(path.join(dirs.pagesDir, `${UUID}.md`), `---\ntitle: FootnoteExample\nuuid: ${UUID}\nslug: footnoteexample\n\nSome body\n- list\n`, 'utf8');
+    const { routes, pageManager } = await makeRoutes(dirs);
+    await reload(pageManager);
+
+    expect(await listed(routes)).toMatchObject({ status: 'modified', syncState: 'update-ready' });
+
+    const res = createMockRes();
+    await routes.adminRequiredPages(createMockReq(), res);
+    const data = res.render.mock.calls[0][1] as { counts: { outdatedSyncable: number }; comparison: Array<{ uuid: string; bulkOutdated?: boolean }> };
+    expect(data.counts.outdatedSyncable).toBe(1);
+    expect(data.comparison.find((p) => p.uuid === UUID)?.bulkOutdated).toBe(true);
+  });
+
   test('a page without a stamp whose body matches the source is current — frontmatter is not compared', async () => {
     // The nine pages on jimstest: synced before the stamp existed, differing only by `created`.
     await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('same body'), 'utf8');
