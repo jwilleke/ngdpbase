@@ -84,4 +84,25 @@ describe('themes/core.css plugin pictures with short lines (#2399)', () => {
     const rule = ruleFor(':where([data-line-length="short"]) .markdown-body .image-plugin-container:not(.text-center)');
     expect(rule).toContain('margin-inline: 0 !important');
   });
+
+  test('a box the author centred sits at the text edge (!important beats the inline margin), so its centre is the text centre', () => {
+    const rule = ruleFor(':where([data-line-length="short"]) .markdown-body .image-plugin-container.text-center {');
+    expect(rule).toContain('margin-inline: 0 !important');
+  });
+
+  test('the picture inside a centred box is centred in it, !important to beat the inline and Fairways margins', () => {
+    const rule = ruleFor(':where([data-line-length="short"]) .markdown-body .image-plugin-container.text-center :where(img)');
+    expect(rule).toContain('margin-inline: auto !important');
+  });
+
+  test('the caption of a centred box is centred in it', () => {
+    const rule = ruleFor(':where([data-line-length="short"]) .markdown-body .image-plugin-container.text-center .image-caption');
+    expect(rule).toContain('text-align: center');
+  });
+
+  test('every Short lines rule for centred boxes stays inside :where([data-line-length="short"])', () => {
+    const lines = css.split('\n').filter(l => l.includes('.image-plugin-container.text-center'));
+    expect(lines.length).toBeGreaterThanOrEqual(3);
+    for (const l of lines) expect(l.startsWith(':where([data-line-length="short"])')).toBe(true);
+  });
 });
