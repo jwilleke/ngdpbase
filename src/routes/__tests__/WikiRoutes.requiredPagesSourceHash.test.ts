@@ -175,7 +175,8 @@ describe('Required Pages Sync status — body and source-hash stamp (#1395)', ()
     const { routes, pageManager } = await makeRoutes(dirs);
     await reload(pageManager);
 
-    expect(await listed(routes)).toMatchObject({ status: 'modified', syncState: 'update-ready' });
+    // #2414: the row says its header could not be read.
+    expect(await listed(routes)).toMatchObject({ status: 'modified', syncState: 'update-ready', headerUnreadable: true });
 
     const res = createMockRes();
     await routes.adminRequiredPages(createMockReq(), res);
@@ -211,7 +212,7 @@ describe('Required Pages Sync status — body and source-hash stamp (#1395)', ()
       await fs.writeFile(path.join(dirs.pagesDir, `${ADDON_UUID}.md`), brokenLive('uncached'), 'utf8');
 
       const data = await renderAddonRows(routes);
-      expect(data.addonComparison.find((p) => p.uuid === ADDON_UUID)).toMatchObject({ status: 'modified', userModified: false, syncState: 'update-ready', bulkOutdated: true });
+      expect(data.addonComparison.find((p) => p.uuid === ADDON_UUID)).toMatchObject({ status: 'modified', userModified: false, syncState: 'update-ready', bulkOutdated: true, headerUnreadable: true });
       expect(data.addonCounts.outdatedSyncable).toBe(1);
     });
 
@@ -224,7 +225,7 @@ describe('Required Pages Sync status — body and source-hash stamp (#1395)', ()
       await reload(pageManager);
 
       const data = await renderAddonRows(routes);
-      expect(data.addonComparison.find((p) => p.uuid === ADDON_UUID)).toMatchObject({ status: 'modified', userModified: false, syncState: 'update-ready', bulkOutdated: true });
+      expect(data.addonComparison.find((p) => p.uuid === ADDON_UUID)).toMatchObject({ status: 'modified', userModified: false, syncState: 'update-ready', bulkOutdated: true, headerUnreadable: true });
       expect(data.addonCounts.outdatedSyncable).toBe(1);
     });
   });
@@ -463,10 +464,14 @@ describe('#1871 Sync All Outdated counts only the pages it will sync', () => {
     expect(button.disabled).toBe(true);
     // Nothing is ready, so the label carries no "(0)".
     expect(button.textContent?.replace(/\s+/g, ' ').trim()).toBe('Sync All');
-    // R5: the summary line says one page needs a decision, how to act on it, and that nothing is ready.
+    // R5 (#2414): the table's own header says one page needs a decision and nothing is ready;
+    // the line at the top of the page says how to act and carries no number.
+    const tableLine = doc.querySelector('[data-testid="core-sync-summary"]')?.textContent?.replace(/\s+/g, ' ').trim();
+    expect(tableLine).toBe('1 needs a decision; Sync All has nothing to update');
+    expect(tableLine).not.toContain('(0)');
     const summary = doc.querySelector('[data-testid="sync-summary"]')?.textContent?.replace(/\s+/g, ' ').trim();
-    expect(summary).toBe('1 page needs a decision. To act on an edited page, open Diff, then Use shipped version. Sync All has nothing to update, because no page is marked Update ready. Pages edited on this site are never changed by Sync All.');
-    expect(summary).not.toContain('(0)');
+    expect(summary).toContain('To act on an edited page, open Diff, then Use shipped version.');
+    expect(summary).not.toMatch(/\d/);
     // The count badges name the two kinds apart.
     const badge = (name: string) => doc.querySelector(`[data-testid="count-${name}"]`)?.textContent?.replace(/\s+/g, ' ').trim();
     expect(badge('update-ready')).toBe('0 Update ready');
@@ -493,8 +498,9 @@ describe('#1871 Sync All Outdated counts only the pages it will sync', () => {
     const button = doc.querySelector('[data-testid="sync-all-outdated"]') as HTMLButtonElement;
     expect(button.disabled).toBe(false);
     expect(button.textContent).toContain('Sync All (1)');
+    expect(doc.querySelector('[data-testid="core-sync-summary"]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('1 needs a decision; Sync All updates 1');
     const summary = doc.querySelector('[data-testid="sync-summary"]')?.textContent?.replace(/\s+/g, ' ').trim();
-    expect(summary).toBe('1 page needs a decision. To act on an edited page, open Diff, then Use shipped version. Sync All updates only pages marked Update ready (1). Pages edited on this site are never changed by Sync All.');
+    expect(summary).not.toMatch(/\d/);
     const badge = (name: string) => doc.querySelector(`[data-testid="count-${name}"]`)?.textContent?.replace(/\s+/g, ' ').trim();
     expect(badge('update-ready')).toBe('1 Update ready');
     expect(badge('edited-here')).toBe('1 Edited here');
@@ -503,11 +509,12 @@ describe('#1871 Sync All Outdated counts only the pages it will sync', () => {
     expect(selected).toEqual([OTHER]);
   });
 
-  test('the help text says an unreadable header also shows as Update ready, and updating repairs it', async () => {
+  test('the page says an unreadable header also shows as Update ready, and updating repairs it — in view, not in the collapsed list', async () => {
     await writeUserEdited();
     const { doc } = await renderList();
-    const help = doc.querySelector('#updateProtectionInfo')?.textContent?.replace(/\s+/g, ' ');
-    expect(help).toContain("A page whose header can't be read also shows as Update ready; updating it repairs it.");
+    const sentence = "A page whose header can't be read also shows as Update ready; updating it repairs it.";
+    expect(doc.querySelector('#updateProtectionInfo')?.textContent?.replace(/\s+/g, ' ')).not.toContain(sentence);
+    expect(doc.querySelector('[data-testid="sync-summary"]')?.textContent?.replace(/\s+/g, ' ')).toContain(sentence);
   });
 
   test('Sync All says how many edited pages it left alone', async () => {

@@ -66,6 +66,40 @@ describe('#2389 _sync-counts: Update ready and Edited here are counted apart', (
   });
 });
 
+describe('#2414 _sync-summary: what needs a decision and what Sync All updates, per table', () => {
+  const line = async (outdatedUserEdited: number, outdatedSyncable: number) => {
+    const html = await ejs.renderFile(path.join(VIEWS, '_sync-summary.ejs'), {
+      syncSummary: { counts: { outdatedSyncable, outdatedUserEdited }, testId: 'x-summary' }
+    });
+    const el = new JSDOM(`<body>${html}</body>`).window.document.querySelector('[data-testid="x-summary"]');
+    return el?.textContent?.replace(/\s+/g, ' ').trim();
+  };
+
+  test('says "N need a decision; Sync All updates M"', async () => {
+    expect(await line(3, 6)).toBe('3 need a decision; Sync All updates 6');
+    expect(await line(1, 1)).toBe('1 needs a decision; Sync All updates 1');
+  });
+
+  test('says so when nothing needs a decision or nothing is ready, never "(0)"', async () => {
+    expect(await line(0, 2)).toBe('Nothing needs a decision; Sync All updates 2');
+    expect(await line(2, 0)).toBe('2 need a decision; Sync All has nothing to update');
+    expect(await line(0, 0)).toBe('Nothing needs a decision; Sync All has nothing to update');
+  });
+});
+
+describe('#2414 _sync-status: an unreadable header', () => {
+  test('Update ready on such a page carries a short note, other pages do not', async () => {
+    const withNote = await partial('_sync-status', { status: 'modified', syncState: 'update-ready', userModified: false, headerUnreadable: true });
+    expect(statuses(withNote)).toEqual(['update-ready']);
+    const note = withNote.querySelector('[data-sync-note="header-unreadable"]');
+    expect(note?.textContent?.trim()).toBe("Page header couldn't be read");
+    expect(note?.getAttribute('title')).toContain('Updating the page repairs it');
+
+    const without = await partial('_sync-status', { status: 'modified', syncState: 'update-ready', userModified: false });
+    expect(without.querySelector('[data-sync-note]')).toBeNull();
+  });
+});
+
 describe('#1918 _sync-button', () => {
   test('Sync carries the id and asks nothing', async () => {
     const b = (await partial('_sync-button', { userModified: false, id: 'u-1', name: 'Page' })).querySelector('button')!;
@@ -103,5 +137,7 @@ describe('#1918 Admin → Required Pages draws shipped content through the parti
     expect(uses(required, '_sync-status')).toBe(2);
     expect(uses(required, '_sync-button')).toBe(2);
     expect(uses(required, '_sync-counts')).toBe(1);
+    // #2414: one summary line per table, drawn by the same partial.
+    expect(uses(required, '_sync-summary')).toBe(2);
   });
 });
