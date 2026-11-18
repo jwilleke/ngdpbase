@@ -6,7 +6,7 @@ import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { addonAudienceSlugs, audiencePrincipals } from '../utils/frontmatterAccess.js';
-import { evaluateSeededAddonPage, pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
+import { shippedPageState, pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
 import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
@@ -1104,11 +1104,16 @@ class PageManager extends BaseManager implements CatalogSource {
         if (live && !options.force) {
           const liveMeta = (live.metadata ?? {}) as Record<string, unknown>;
           const stamp = liveMeta[source.stampKey];
-          const edited = liveMeta['user-modified'] === true || evaluateSeededAddonPage({
-            sourceContent: parsed.content,
-            liveContent: live.content ?? '',
-            storedHash: typeof stamp === 'string' ? stamp : undefined
-          }) === 'locally-modified';
+          // #2389: the one state function the screen reads. Only Update ready
+          // (and Same as shipped, which has nothing to change) goes on; a page
+          // edited here, or with no stamp, is protected.
+          const { state } = shippedPageState({
+            shippedBody: parsed.content,
+            liveBody: live.content ?? '',
+            stamp: typeof stamp === 'string' ? stamp : undefined,
+            userModified: liveMeta['user-modified'] === true
+          });
+          const edited = state === 'edited-not-confirmed' || state === 'both-changed';
           if (edited) {
             report.protected.push(uuid);
             continue;

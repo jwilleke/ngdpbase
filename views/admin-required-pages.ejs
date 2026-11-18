@@ -1,6 +1,25 @@
 <%- include('header', { pageName: '' }) %>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/diff2html@3.4.56/bundles/css/diff2html.min.css" />
 
+<style>
+    /* A row's buttons keep each label on one line and flow to a second line when
+       the column is narrow, so the Actions column is never cut off. */
+    #pagesTable td:last-child .btn,
+    #addonPagesTable td:last-child .btn { white-space: nowrap; }
+    /* The theme's .btn-outline-primary sets its own padding and beats btn-sm, so
+       Update (and Sync) stood 35px tall beside 31px Diff. One size for every
+       row button. */
+    #pagesTable td:last-child .btn-sm,
+    #addonPagesTable td:last-child .btn-sm { padding: .25rem .5rem; }
+    /* Status words at 12px, not the 10.5px the table's text size gave them. */
+    #pagesTable [data-sync-status],
+    #addonPagesTable [data-sync-status] { font-size: .75rem; }
+    /* The add-on header's count chips at 12px too, not the 9px of the small text. */
+    [data-sync-count] { font-size: .75rem; }
+    /* A date stays on one line ("2026-10-14" no longer breaks after the month). */
+    [data-col="source-modified"] { white-space: nowrap; }
+</style>
+
 <div class="container mt-4">
     <% if (typeof successMessage !== 'undefined' && successMessage) { %>
         <div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -46,14 +65,14 @@
                             <div class="col-md-6">
                                 <h6 class="text-success"><i class="fas fa-lock me-1"></i>Protected from overwrite</h6>
                                 <ul class="mb-0">
-                                    <li>Live pages in <code>data/pages/</code> that have been edited in the wiki UI are flagged <code>user-modified: true</code>. A sync will show them as <strong>Modified</strong> and will not auto-overwrite them — an admin must sync them manually.</li>
+                                    <li>Pages that have been edited on this site show as <strong>Edited here, not confirmed</strong>. Sync All never replaces them — an admin must choose <strong>Use shipped version</strong> on the row. The same goes for a page whose text differs from what ships and that has no record of which shipped version it came from.</li>
                                 </ul>
                             </div>
                             <div class="col-md-6">
                                 <h6 class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i>At risk of overwrite</h6>
                                 <ul class="mb-0">
                                     <li>Files written via <strong>Push to Source</strong> exist only in the local <code>required-pages/</code> directory. A <code>git pull</code> or product upgrade will overwrite them. They are not in the repository unless manually committed and pushed by a contributor.</li>
-                                    <li>Live pages that were never edited in the wiki UI (no <code>user-modified</code> flag) will be silently replaced when a new product version ships updated source content and an admin syncs.</li>
+                                    <li>Live pages that were never edited in the wiki UI show as <strong>Update ready</strong> when a new product version ships updated source content, and Sync All replaces them. Nothing replaces a page at start-up.</li>
                                 </ul>
                             </div>
                         </div>
@@ -83,19 +102,35 @@
                     <i class="fas fa-tag me-1"></i> <%= counts.titleDrift %> Title Drift
                 </span>
                 <% } %>
-                <span class="badge bg-primary fs-6 px-3 py-2">
+                <span class="badge bg-primary fs-6 px-3 py-2" data-strip-count="new">
                     <i class="fas fa-plus-circle me-1"></i> <%= counts.new %> New
                 </span>
-                <span class="badge bg-warning text-dark fs-6 px-3 py-2">
-                    <i class="fas fa-edit me-1"></i> <%= counts.modified %> Modified
+                <span class="badge bg-warning text-dark fs-6 px-3 py-2" data-testid="count-update-ready" data-strip-count="update-ready">
+                    <i class="fas fa-edit me-1"></i> <%= counts.outdatedSyncable %> Update ready
                 </span>
-                <span class="badge bg-success fs-6 px-3 py-2">
-                    <i class="fas fa-check me-1"></i> <%= counts.current %> Current
+                <span class="badge bg-secondary fs-6 px-3 py-2" data-testid="count-edited-here" data-strip-count="edited-here">
+                    <i class="fas fa-user-edit me-1"></i> <%= counts.outdatedUserEdited %> Edited here
+                </span>
+                <span class="badge bg-success fs-6 px-3 py-2" data-strip-count="current">
+                    <i class="fas fa-check me-1"></i> <%= counts.current %> Same as shipped
                 </span>
                 <span class="text-muted"><%= comparison.length %> total source pages</span>
             </div>
         </div>
     </div>
+
+    <!-- #2389: how to act on a page. No number here: each table says its own
+         counts in its header, in the scope of its own Sync All (#2414). -->
+    <% const anyEdited = counts.modified > 0 || (typeof addonCounts !== 'undefined' && addonCounts.modified > 0); %>
+    <p class="mb-3" data-testid="sync-summary">
+        <% if (anyEdited) { %>
+        Sync All updates only pages marked Update ready. Pages edited on this site are never changed by Sync All.
+        To act on an edited page, open Diff, then Use shipped version.
+        A page whose header can't be read also shows as Update ready; updating it repairs it.
+        <% } else { %>
+        Everything matches what shipped.
+        <% } %>
+    </p>
 
     <!-- Action Buttons -->
     <% if (counts.uuidMismatch > 0 || counts.new > 0 || counts.modified > 0) { %>
@@ -113,18 +148,8 @@
                 </button>
                 <% } %>
                 <% if (counts.new > 0) { %>
-                <button class="btn btn-primary" onclick="syncByStatus('new')">
-                    <i class="fas fa-plus-circle me-1"></i> Sync All New (<%= counts.new %>)
-                </button>
-                <% } %>
-                <% if (counts.outdatedSyncable > 0) { %>
-                <button class="btn btn-warning" onclick="syncByStatus('outdated')" data-testid="sync-all-outdated"
-                        title="<%= counts.outdatedUserEdited > 0 ? `${counts.outdatedUserEdited} user-edited page${counts.outdatedUserEdited !== 1 ? 's are' : ' is'} skipped` : 'Sync all new and modified pages' %>">
-                    <i class="fas fa-sync me-1"></i> Sync All Outdated (<%= counts.outdatedSyncable %>)
-                </button>
-                <% } else if (counts.outdatedUserEdited > 0) { %>
-                <button class="btn btn-warning" disabled data-testid="sync-all-outdated">
-                    <i class="fas fa-sync me-1"></i> Sync All Outdated — <%= counts.outdatedUserEdited %> user-edited: use <%= counts.outdatedUserEdited !== 1 ? "their rows'" : "its row's" %> Sync or diff
+                <button class="btn btn-primary" onclick="syncByStatus('new')" data-testid="sync-all-new">
+                    <i class="fas fa-plus-circle me-1"></i> Sync All New<span data-sync-new-count> (<%= counts.new %>)</span>
                 </button>
                 <% } %>
                 <button class="btn btn-outline-secondary" onclick="syncSelected()">
@@ -139,11 +164,24 @@
     <div class="row">
         <div class="col-12">
             <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="fas fa-file-alt"></i> Source Pages</h5>
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div>
-                        <button class="btn btn-sm btn-outline-secondary me-1" onclick="selectAll(true)">Select All</button>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="selectAll(false)">Deselect All</button>
+                        <h5 class="mb-0"><i class="fas fa-file-alt"></i> Source Pages</h5>
+                        <small class="text-muted"><%- include('_sync-summary', { syncSummary: { counts: counts, testId: 'core-sync-summary' } }) %></small>
+                    </div>
+                    <div class="d-flex flex-wrap gap-1">
+                        <% if (counts.outdatedSyncable > 0) { %>
+                        <button class="btn btn-sm btn-warning text-nowrap" onclick="syncByStatus('outdated')" data-testid="sync-all-outdated"
+                                title="<%= counts.outdatedUserEdited > 0 ? `${counts.outdatedUserEdited} page${counts.outdatedUserEdited !== 1 ? 's edited' : ' edited'} on this site ${counts.outdatedUserEdited !== 1 ? 'are' : 'is'} not changed` : 'Update every page marked Update ready' %>">
+                            <i class="fas fa-sync me-1"></i> Sync All<span data-sync-all-count> (<%= counts.outdatedSyncable %>)</span>
+                        </button>
+                        <% } else if (counts.outdatedUserEdited > 0) { %>
+                        <button class="btn btn-sm btn-warning text-nowrap" disabled data-testid="sync-all-outdated">
+                            <i class="fas fa-sync me-1"></i> Sync All<span data-sync-all-count></span>
+                        </button>
+                        <% } %>
+                        <button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="selectAll(true)">Select All</button>
+                        <button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="selectAll(false)">Deselect All</button>
                     </div>
                 </div>
                 <div class="card-body p-0">
@@ -164,7 +202,7 @@
                                     </th>
                                     <th>Title</th>
                                     <th>Slug</th>
-                                    <th>Status</th>
+                                    <th style="min-width: 12rem;">Status</th>
                                     <th>Source Modified</th>
                                     <th>Actions</th>
                                 </tr>
@@ -193,7 +231,7 @@
                                         <br><small class="text-muted font-monospace"><%= page.uuid %></small>
                                     </td>
                                     <td><code><%= page.slug || '—' %></code></td>
-                                    <td>
+                                    <td data-col="status">
                                         <% if (page.status === 'uuid-mismatch') { %>
                                             <span class="badge bg-danger"
                                                   title="Source UUID: <%= page.uuid %> | Live UUID: <%= page.liveUuid %>">
@@ -201,10 +239,10 @@
                                             </span>
                                             <br><small class="text-muted font-monospace">live: <%= page.liveUuid %></small>
                                         <% } else { %>
-                                            <%- include('_sync-status', { syncItem: { status: page.status, userModified: page.userModified } }) %>
+                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable } }) %>
                                         <% } %>
                                     </td>
-                                    <td><small class="text-muted"><%= page.lastModified || '—' %></small></td>
+                                    <td data-col="source-modified"><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>
                                     <td>
                                         <% if (page.status === 'modified') { %>
                                         <button class="btn btn-sm btn-outline-info"
@@ -235,7 +273,7 @@
                                         </button>
                                         <% } %>
                                         <% if (page.status !== 'current' && page.status !== 'uuid-mismatch') { %>
-                                        <%- include('_sync-button', { syncItem: { userModified: page.userModified, id: page.uuid, name: page.title, forceNote: 'The edited version stays in the page history.' } }) %>
+                                        <%- include('_sync-button', { syncItem: { status: page.status, userModified: page.userModified, id: page.uuid, name: page.title } }) %>
                                         <% } %>
                                         <% if (page.userModified || page.titleDrift) { %>
                                         <button class="btn btn-sm btn-outline-warning"
@@ -330,15 +368,16 @@
                         <small class="text-muted">Pages shipped with enabled addons —
                             <%- include('_sync-counts', { syncCounts: addonCounts }) %>
                         </small>
+                        <br><small class="text-muted"><%- include('_sync-summary', { syncSummary: { counts: addonCounts, testId: 'addon-sync-summary' } }) %></small>
                     </div>
                     <% if (addonCounts.outdatedSyncable > 0) { %>
-                    <button class="btn btn-sm btn-warning" onclick="syncAddonOutdated()" data-testid="sync-addon-outdated"
-                            title="<%= addonCounts.outdatedUserEdited > 0 ? `${addonCounts.outdatedUserEdited} user-edited addon page${addonCounts.outdatedUserEdited !== 1 ? 's are' : ' is'} skipped` : 'Sync all new and modified addon pages' %>">
-                        <i class="fas fa-sync me-1"></i> Sync All Outdated (<%= addonCounts.outdatedSyncable %>)
+                    <button class="btn btn-sm btn-warning text-nowrap" onclick="syncAddonOutdated()" data-testid="sync-addon-outdated"
+                            title="<%= addonCounts.outdatedUserEdited > 0 ? `${addonCounts.outdatedUserEdited} addon page${addonCounts.outdatedUserEdited !== 1 ? 's edited' : ' edited'} on this site ${addonCounts.outdatedUserEdited !== 1 ? 'are' : 'is'} not changed` : 'Update every addon page marked Update ready' %>">
+                        <i class="fas fa-sync me-1"></i> Sync All<span data-sync-all-count> (<%= addonCounts.outdatedSyncable %>)</span>
                     </button>
                     <% } else if (addonCounts.outdatedUserEdited > 0) { %>
-                    <button class="btn btn-sm btn-warning" disabled data-testid="sync-addon-outdated">
-                        <i class="fas fa-sync me-1"></i> Sync All Outdated — <%= addonCounts.outdatedUserEdited %> user-edited: use <%= addonCounts.outdatedUserEdited !== 1 ? "their rows'" : "its row's" %> Sync or diff
+                    <button class="btn btn-sm btn-warning text-nowrap" disabled data-testid="sync-addon-outdated">
+                        <i class="fas fa-sync me-1"></i> Sync All<span data-sync-all-count></span>
                     </button>
                     <% } %>
                 </div>
@@ -359,7 +398,7 @@
                                     <th>Title</th>
                                     <th>Addon</th>
                                     <th>Slug</th>
-                                    <th>Status</th>
+                                    <th style="min-width: 12rem;">Status</th>
                                     <th>Source Modified</th>
                                     <th>Actions</th>
                                 </tr>
@@ -381,15 +420,15 @@
                                     </td>
                                     <td><span class="badge bg-secondary"><%= page.addonName %></span></td>
                                     <td><code><%= page.slug || '—' %></code></td>
-                                    <td>
+                                    <td data-col="status">
                                         <% if (page.status === 'uuid-mismatch') { %>
                                             <span class="badge bg-danger">UUID Mismatch</span>
                                             <br><small class="text-muted">live: <span class="font-monospace"><%= page.liveUuid %></span></small>
                                         <% } else { %>
-                                            <%- include('_sync-status', { syncItem: { status: page.status, userModified: page.userModified } }) %>
+                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable } }) %>
                                         <% } %>
                                     </td>
-                                    <td><small class="text-muted"><%= page.lastModified || '—' %></small></td>
+                                    <td data-col="source-modified"><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>
                                     <td>
                                         <% if (page.status === 'modified') { %>
                                         <button class="btn btn-sm btn-outline-info"
@@ -405,7 +444,7 @@
                                         </button>
                                         <% } %>
                                         <% if (page.status !== 'current' && page.status !== 'uuid-mismatch') { %>
-                                        <%- include('_sync-button', { syncItem: { userModified: page.userModified, id: page.uuid, name: page.title, forceNote: 'The edited version stays in the page history.' } }) %>
+                                        <%- include('_sync-button', { syncItem: { status: page.status, userModified: page.userModified, id: page.uuid, name: page.title } }) %>
                                         <% } %>
                                         <% if (page.slug) { %>
                                         <a href="/view/<%= encodeURIComponent(page.slug) %>"
@@ -668,7 +707,10 @@ async function syncAddonOutdated() {
     const uuids = Array.from(document.querySelectorAll('.addon-row[data-bulk-outdated="true"]'))
         .map(row => row.dataset.uuid);
     if (uuids.length === 0) { showToast('No addon pages to sync.'); return; }
-    await doSync(uuids, `Syncing ${uuids.length} addon page${uuids.length !== 1 ? 's' : ''}…`);
+    // The message says how many edited pages Sync All left alone.
+    const leftAlone = Array.from(document.querySelectorAll('.addon-row[data-user-modified="true"]'))
+        .map(row => row.dataset.uuid);
+    await doSync(uuids, `Syncing ${uuids.length} addon page${uuids.length !== 1 ? 's' : ''}…`, false, leftAlone);
 }
 
 function getUuidsByStatus(status) {
@@ -719,7 +761,11 @@ async function syncByStatus(status) {
         showToast('No pages to sync.');
         return;
     }
-    await doSync(uuids, `Syncing ${uuids.length} page${uuids.length !== 1 ? 's' : ''}…`);
+    // Sync All names the edited pages it leaves alone, so the message can count them.
+    const leftAlone = status === 'outdated'
+        ? Array.from(document.querySelectorAll('#pagesTable tr[data-user-modified="true"]')).map(row => row.dataset.uuid)
+        : [];
+    await doSync(uuids, `Syncing ${uuids.length} page${uuids.length !== 1 ? 's' : ''}…`, false, leftAlone);
 }
 
 async function syncSelected() {
@@ -763,7 +809,67 @@ async function postSync(body, statusMsg) {
     }
 }
 
-async function doSync(uuids, statusMsg, force = false) {
+// #2414: each table's line and Sync All button count that table's own rows, as
+// views/_sync-summary.ejs and the buttons do when the page is drawn. Redrawn here
+// after a sync, so they match the toast before the page reloads.
+function refreshSyncSummary(tableSelector, summaryTestId, buttonTestId) {
+    const rows = Array.from(document.querySelectorAll(`${tableSelector} tr[data-status]`))
+        .filter(row => row.dataset.status !== 'current');
+    const need = rows.filter(row => row.dataset.userModified === 'true').length;
+    const update = rows.filter(row => row.dataset.bulkOutdated === 'true').length;
+    const line = document.querySelector(`[data-testid="${summaryTestId}"]`);
+    if (line) {
+        line.textContent = (need > 0 ? `${need} ${need !== 1 ? 'need' : 'needs'} a decision` : 'Nothing needs a decision') +
+            '; ' + (update > 0 ? `Sync All updates ${update}` : 'Sync All has nothing to update');
+    }
+    const button = document.querySelector(`[data-testid="${buttonTestId}"]`);
+    if (button) {
+        const count = button.querySelector('[data-sync-all-count]');
+        if (count) count.textContent = update > 0 ? ` (${update})` : '';
+        if (update === 0) button.disabled = true;
+    }
+}
+
+// The count chips (the line of badges above the tables and the add-on header's)
+// follow the rows too, so they match the toast before the page reloads.
+const SYNC_CHIP_LABELS = { 'new': 'New', 'update-ready': 'Update ready', 'edited-here': 'Edited here', 'current': 'Same as shipped' };
+
+function refreshSyncChips(tableSelector, chipSelector) {
+    const rows = Array.from(document.querySelectorAll(`${tableSelector} tr[data-status]`));
+    const open = rows.filter(row => row.dataset.status !== 'current');
+    const counts = {
+        'new': rows.filter(row => row.dataset.status === 'new').length,
+        'update-ready': open.filter(row => row.dataset.bulkOutdated === 'true').length,
+        'edited-here': open.filter(row => row.dataset.userModified === 'true').length,
+        'current': rows.length - open.length
+    };
+    document.querySelectorAll(chipSelector).forEach(chip => {
+        const kind = chip.getAttribute(chipSelector.includes('strip') ? 'data-strip-count' : 'data-sync-count');
+        if (!(kind in counts) || !chip.lastChild) return;
+        chip.lastChild.textContent = ` ${counts[kind]} ${SYNC_CHIP_LABELS[kind]}`;
+    });
+}
+
+function refreshSyncSummaries() {
+    refreshSyncChips('#pagesTable', '[data-strip-count]');
+    refreshSyncChips('#addonPagesTable', '[data-sync-count]');
+    refreshSyncSummary('#pagesTable', 'core-sync-summary', 'sync-all-outdated');
+    refreshSyncSummary('#addonPagesTable', 'addon-sync-summary', 'sync-addon-outdated');
+    refreshSyncNew();
+}
+
+// "Sync All New (N)" counts the required-pages rows still New, like the strip's
+// New chip; at 0 it greys out and drops the "(0)", as the Sync All buttons do.
+function refreshSyncNew() {
+    const button = document.querySelector('[data-testid="sync-all-new"]');
+    if (!button) return;
+    const fresh = document.querySelectorAll('#pagesTable tr[data-status="new"]').length;
+    const count = button.querySelector('[data-sync-new-count]');
+    if (count) count.textContent = fresh > 0 ? ` (${fresh})` : '';
+    if (fresh === 0) button.disabled = true;
+}
+
+async function doSync(uuids, statusMsg, force = false, leftAlone = []) {
     showToast(statusMsg);
 
     try {
@@ -773,7 +879,7 @@ async function doSync(uuids, statusMsg, force = false) {
                 'Content-Type': 'application/json',
                 'X-CSRF-Token': CSRF_TOKEN
             },
-            body: JSON.stringify({ uuids, force })
+            body: JSON.stringify({ uuids, force, leftAlone })
         });
 
         const result = await response.json();
@@ -785,12 +891,15 @@ async function doSync(uuids, statusMsg, force = false) {
                 const row = document.querySelector(`tr[data-uuid="${uuid}"]`);
                 if (row) {
                     row.dataset.status = 'current';
-                    row.querySelector('td:nth-child(4)').innerHTML =
-                        '<span class="badge bg-success">Current</span>';
+                    row.dataset.bulkOutdated = 'false';
+                    row.dataset.userModified = 'false';
+                    row.querySelector('td[data-col="status"]').innerHTML =
+                        '<span class="badge bg-success" data-sync-status="same-as-shipped">Same as shipped</span>';
                     row.querySelectorAll('.page-checkbox').forEach(el => el.remove());
                     row.querySelectorAll('td:last-child button').forEach(el => el.remove());
                 }
             });
+            refreshSyncSummaries();
             // Highlight protected (user-edited) rows that were skipped
             if (result.protected && result.protected.length > 0) {
                 result.protected.forEach(uuid => {
@@ -870,8 +979,8 @@ async function doReconcile(items, statusMsg) {
                 const row = document.querySelector(`tr[data-uuid="${uuid}"]`);
                 if (row) {
                     row.dataset.status = 'current';
-                    row.querySelector('td:nth-child(4)').innerHTML =
-                        '<span class="badge bg-success">Current</span>';
+                    row.querySelector('td[data-col="status"]').innerHTML =
+                        '<span class="badge bg-success" data-sync-status="same-as-shipped">Same as shipped</span>';
                     row.querySelectorAll('.page-checkbox').forEach(el => el.remove());
                     row.querySelectorAll('td:last-child button').forEach(el => el.remove());
                 }

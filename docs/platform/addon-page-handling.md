@@ -29,7 +29,7 @@ An addon page exists in two distinct places with different rules:
 Since [#1406](https://github.com/jwilleke/ngdpbase/issues/1406) the addon seed hands each folder to `PageManager.seedShippedPages()`, the same seeder required pages use:
 
 1. Parse frontmatter — a valid __`uuid`__ (the 8-4-4-4-12 hex form, not only UUID v4), a __`title`__ and a __`slug`__ are required, and two files may not share a uuid; otherwise the file is reported (an error for a domain addon, a warning otherwise, plus an admin notification).
-2. __Lookup by uuid__ — a page this site holds under that uuid first gets its `addon-source-hash` backfilled if it has none and its text matches the source ([#1408](https://github.com/jwilleke/ngdpbase/issues/1408); a metadata-only save that keeps `lastModified` and writes no version). A page with no stamp whose text differs is left unstamped and logged. The page is then left to the addon's own steps (the #971 / #1003 metadata tidy-ups and the opt-in [content-aware reseed](#content-aware-reseed-920)), then re-indexed for search by title.
+2. __Lookup by uuid__ — a page this site holds under that uuid first gets its `addon-source-hash` backfilled if it has none and its text matches the source ([#1408](https://github.com/jwilleke/ngdpbase/issues/1408); a metadata-only save that keeps `lastModified` and writes no version). A page with no stamp whose text differs is left unstamped and logged. The page is then left to the addon's own steps (the #971 / #1003 metadata tidy-ups and nothing that changes its text: see [Updating seeded pages](#updating-seeded-pages-920-2389)), then re-indexed for search by title.
 3. __Seeded once per site__ — the site's record, `${FAST_STORAGE}/seeded-shipped-pages.json` (source `addon:<name>`), lists every page it has seeded. A recorded page that is no longer live was removed on this site and is not seeded again, whatever the provider. A uuid in the trash is recorded and skipped. A site without a record starts it from its live and trashed pages.
 4. Otherwise `pageManager.savePage(title, content, metadata)` writes `<data>/pages/{uuid}.md` with `addon`, `system-category` (`addon` if absent), `addon-source-category`, a default `access` for the category, `addon-source-hash`, `created` and `lastModified`, and indexes it for search by title.
 
@@ -44,32 +44,36 @@ On restart, comparing the addon's current `pages/` against an already-seeded ins
 | Change to `addons/<addon>/pages/` | Synced? | Why |
 |---|---|---|
 | __New__ page (new UUID, never seeded here) | ✅ __Yes__ | Not live and not in the site's seeded record → `savePage` seeds it |
-| __Updated__ content of a seeded page | ⚙️ Opt-in | Skipped by default; reseeded when the reseed flag is on __and__ the page is unmodified (or a legacy no-hash page) — see [Content-aware reseed](#content-aware-reseed-920) |
+| __Updated__ content of a seeded page | 🖐 Admin | Never at start-up. Shows as Update ready in Required Pages Sync; Sync All or the row's Update button applies it to a page nobody edited here — see [Updating seeded pages](#updating-seeded-pages-920-2389) |
 | __Deleted__ source page | ❌ No | There is no removal logic; the instance copy persists indefinitely ([#920](https://github.com/jwilleke/ngdpbase/issues/920) discusses a gated policy) |
 | __Renamed slug__ (same UUID) | ❌ No (skipped) | The UUID guard matches — the page keeps its old slug |
 | Instance page __deleted by an operator__ | ❌ No (skipped) | The site's record says it was seeded, so it was removed on purpose — also after the trash purges it, and with `filesystemprovider`, which has no trash ([#1403](https://github.com/jwilleke/ngdpbase/issues/1403), [#1405](https://github.com/jwilleke/ngdpbase/issues/1405)). It comes back through a restore from the trash or an admin's Sync in Required Pages Sync |
 
-So __additions always flow; updates flow only with reseed enabled on an unmodified page; deletions and renames do not.__
+So __additions always flow; updates flow only when an admin presses Sync All (unedited pages) or Use shipped version; deletions and renames do not.__
 
 Purging a trash entry whose uuid is also a live page removes only the trash file and entry; the version folder belongs to the live page and is kept ([#1403](https://github.com/jwilleke/ngdpbase/issues/1403)).
 
-### Content-aware reseed (#920)
+### Updating seeded pages (#920, #2389)
 
-Every seeded page carries an __`addon-source-hash`__ in frontmatter — the trimmed SHA-256 of the body it was seeded with. On a later boot, `seedAddonPages` compares:
+Every seeded page carries an __`addon-source-hash`__ in frontmatter — the trimmed SHA-256 of the body it was seeded or last synced with. __Start-up never replaces a page the site already holds.__ It adds pages that are not on the site yet, stamps a page that already matches the source ([#1408](https://github.com/jwilleke/ngdpbase/issues/1408)), and fixes metadata (category drift, author) without touching the text. A newer addon page reaches the site only through __Required Pages Sync__.
 
-- `sha(current instance body)` vs the stored `addon-source-hash` → whether the operator has edited the page since seeding;
-- stored hash vs `sha(current addon source body)` → whether the source changed.
+The state of each page is one function, `shippedPageState()` in `src/utils/addonPageSync.ts`, the same for core and addon pages ([#2389](https://github.com/jwilleke/ngdpbase/issues/2389)):
 
-When `ngdpbase.addons.page-reseed` is __`true`__ (config-gated, __default `false`__ so existing deployments are unaffected) and the source changed __and__ the instance page is byte-identical to what was seeded (never operator-edited), the page is refreshed from source via `savePage` (UUID preserved, a revertable version recorded, hash re-stamped). If the page was locally modified, it is __skipped__ and logged as *"update available … locally modified"*. Unchanged source is a no-op.
+| State | Meaning | Sync All |
+| --- | --- | --- |
+| Same as shipped | The text matches the source and nobody edited the page here | nothing to do |
+| Update ready | The source changed and the page was never edited here | replaces it |
+| Edited here, not confirmed | The page was changed on this site: saved in the editor (`user-modified`, even if only the title or keywords changed), has no stamp, or its text no longer matches its stamp | leaves it |
+| Edited here, and a newer version is available | Edited here, and the source also changed | leaves it |
 
-__Legacy pages (no `addon-source-hash`).__ Pages seeded *before* this feature landed carry no stamp, so their edit-state can't be proven. Since [#1408](https://github.com/jwilleke/ngdpbase/issues/1408) a legacy page whose text already matches the source is stamped at boot, so only legacy pages that differ remain. Because addon pages are addon-owned content the operator opted to sync, a legacy page whose body differs from the current source __is reseeded from source__ on the first enabled pass (adopting source authority) and then stamped — its prior content is kept as a revertable version, so a pre-hash hand-edit is recoverable. A legacy page already identical to source is a no-op. From the second pass on, every page is hashed and fully edit-preserving (a divergent hashed page is treated as an operator edit and skipped). If you want a legacy page to *keep* a local edit through the first enabled pass, stamp it first or leave `page-reseed` off until after you've reviewed.
+A page with no `addon-source-hash` is never replaced: its edit state cannot be proven, so it reads Edited here, not confirmed. Since #1408 a legacy page whose text already matches the source is stamped at boot, so only legacy pages that differ remain, and an admin chooses __Use shipped version__ on each.
 
-__On-demand reseed (admin UI).__ Beyond the boot-time pass, addon pages are surfaced in __Required Pages Sync__ at `/admin/required-pages` (shipped in [#513](https://github.com/jwilleke/ngdpbase/issues/513)): an "Addon Pages" section lists each page's status (`new` / `modified` / `current`), the status table __is__ the dry-run/preview, and per-status / per-selection buttons apply on demand — no restart, no persistent `page-reseed` flag. Operator-edited pages are protected and skipped there too. There is no dedicated `POST /admin/addons/:addonName/reseed` REST route — the Required Pages Sync surface is the entry point.
+__`ngdpbase.addons.page-reseed` is retired.__ It used to refresh unedited addon pages at every restart (default `false`). It now does nothing; boot logs *"ngdpbase.addons.page-reseed is retired; add-on pages update through Admin › Required Pages Sync"* when it is `true`. A site that had it on now sees those pages as __Update ready__ until an admin presses __Sync All__ at `/admin/required-pages` ([#513](https://github.com/jwilleke/ngdpbase/issues/513)). The status table is the preview, and the row's __Update__ button or __Sync All__ applies it on demand, no restart. __Use shipped version__ replaces an edited page, after a confirm; the edited version stays in the page history. There is no dedicated `POST /admin/addons/:addonName/reseed` REST route — Required Pages Sync is the entry point.
 
 [#920](https://github.com/jwilleke/ngdpbase/issues/920) is __closed__, along with both follow-ups it had been holding open:
 
 - __Removed-source-page policy__ ([#930](https://github.com/jwilleke/ngdpbase/issues/930)) — see [Source-removed pages](#source-removed-pages-930) below.
-- __Unified modified-detection__ ([#931](https://github.com/jwilleke/ngdpbase/issues/931)) — the boot pass and the sync UI both call `evaluateSeededAddonPage()` in `src/utils/addonPageSync.ts`, so a page cannot be reported `modified` by one surface and `current` by the other.
+- __Unified modified-detection__ ([#931](https://github.com/jwilleke/ngdpbase/issues/931)) — the core list, the addon list and Sync all call `shippedPageState()` in `src/utils/addonPageSync.ts` ([#2389](https://github.com/jwilleke/ngdpbase/issues/2389)), so one surface cannot report a page differently from another.
 
 ### Source-removed pages (#930)
 
@@ -81,15 +85,15 @@ Removal is __opt-in, per page, from Required Pages Sync__. The server re-verifie
 
 ### Why updates default to frozen
 
-The idempotency guard exists so an addon upgrade can never clobber a page the operator edited in-app. By default updates therefore don't propagate. The [content-aware reseed](#content-aware-reseed-920) above lifts this __for unmodified pages only__ when explicitly enabled — operator-edited pages are always left alone. Removals still never propagate.
+The idempotency guard exists so an addon upgrade can never clobber a page the operator edited in-app. Updates therefore don't propagate at start-up. [Required Pages Sync](#updating-seeded-pages-920-2389) lifts this __for unedited pages only__ (Sync All) — edited pages are always left alone until an admin chooses Use shipped version. Removals still never propagate.
 
-## A deleted instance copy is not reseeded
+## A deleted instance copy is not seeded again
 
-The boot-time auto-reseed only touches unmodified pages and needs an `addon-source-hash` stamp (see the bootstrap note above).
+Start-up never replaces a page's text, and a page needs an `addon-source-hash` stamp to ever count as unedited (see the bootstrap note above).
 
-__Try the admin surface first.__ For an unmodified page, Required Pages Sync at `/admin/required-pages` reseeds on demand with no restart and no config change — see [On-demand reseed](#content-aware-reseed-920) above.
+__Try the admin surface first.__ For an unedited page, Required Pages Sync at `/admin/required-pages` updates it on demand with no restart and no config change — see [Updating seeded pages](#updating-seeded-pages-920-2389) above.
 
-Deleting the instance file and restarting does __not__ seed it again: the site's seeded-pages record treats a removed page as removed on purpose. Bring it back from Required Pages Sync, or restore it from the trash. Operator-edited pages are left in place by the boot reseed and by the sync surface. Deleting the source file does __not__ remove the instance copy.
+Deleting the instance file and restarting does __not__ seed it again: the site's seeded-pages record treats a removed page as removed on purpose. Bring it back from Required Pages Sync, or restore it from the trash. Operator-edited pages: start-up leaves them in place, and so does the sync surface. Deleting the source file does __not__ remove the instance copy.
 
 ## Orphans — name-based files in `<data>/pages/`
 
@@ -105,5 +109,5 @@ See [geohazardwatch#139](https://github.com/jwilleke/geohazardwatch/issues/139) 
 - [`addons-developer-guide.md` → Seed Wiki Pages](../guides/addons-developer-guide.md#seed-wiki-pages) — the how-to (UUID requirement, auto-set fields).
 - [#442](https://github.com/jwilleke/ngdpbase/issues/442) — original first-boot seeding (shipped, closed).
 - [#908](https://github.com/jwilleke/ngdpbase/issues/908) — seed idempotency + orphan investigation.
-- [#920](https://github.com/jwilleke/ngdpbase/issues/920) — content-aware reseed + removal policy (closed).
+- [#920](https://github.com/jwilleke/ngdpbase/issues/920) — content-aware reseed + removal policy (closed; the start-up reseed was retired by #2389).
 - [geohazardwatch#139](https://github.com/jwilleke/geohazardwatch/issues/139) — addon-side orphan handling.

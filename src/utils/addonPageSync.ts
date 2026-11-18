@@ -1,19 +1,12 @@
 /**
- * Single source of truth for addon-seeded page reseed detection (#931).
+ * Single source of truth for the state of a shipped page the site holds (#931,
+ * #2389).
  *
- * Before this module, two independent definitions of "is this addon page
- * modified?" existed and could disagree:
- *   - the boot pass (`AddonsManager.seedAddonPages`) used a three-way
- *     `addon-source-hash` comparison;
- *   - the Required Pages Sync admin surface (#513) used a source-vs-live
- *     content normalize plus a `user-modified` frontmatter flag, and never
- *     read `addon-source-hash` at all.
- *
- * Both now call `evaluateSeededAddonPage()` so their status and behavior can
- * no longer drift. Required pages use it too (#1395), stamped under
- * `REQUIRED_SOURCE_HASH_KEY`. The hash is content-derived (the stronger signal); the
- * `user-modified` flag remains a secondary manual override at the call sites
- * that want it.
+ * The core list, the add-on list and `PageManager.syncShippedPages` all call
+ * `shippedPageState()`, so what the screen shows and what Sync does cannot
+ * drift. Core pages stamp `REQUIRED_SOURCE_HASH_KEY`, add-on pages
+ * `addon-source-hash`. The hash is content-derived; the `user-modified` flag
+ * is read as well: a page saved here is never replaced without an admin.
  */
 import { createHash } from 'node:crypto';
 
@@ -30,51 +23,76 @@ export function pageSourceHash(content: string): string {
 /**
  * Frontmatter key a required page's live copy carries: `pageSourceHash` of the
  * body it was seeded or synced with (#1395). The required-pages analogue of
- * `addon-source-hash`, read by the same `evaluateSeededAddonPage()`.
+ * `addon-source-hash`, read by the same `shippedPageState()`.
  */
 export const REQUIRED_SOURCE_HASH_KEY = 'required-source-hash';
 
-/** Reseed status of an addon page that ALREADY exists in the instance. */
-export type SeededAddonPageStatus = 'current' | 'outdated' | 'locally-modified';
+/**
+ * The state of a shipped page that exists on the site (#2389, slice 1): the one
+ * answer the core list, the add-on list and `PageManager.syncShippedPages` all
+ * read, from docs/design/required-pages-sync-states.md.
+ *
+ *  - `same-as-shipped`       — the text matches what ships and nobody edited it here.
+ *  - `update-ready`          — a newer version shipped; this page was never edited
+ *                              here. The only state Sync All replaces.
+ *  - `edited-not-confirmed`  — changed on this site (an editor save set
+ *                              `user-modified`, or it has no stamp, or its text no
+ *                              longer matches its stamp). Never replaced without
+ *                              an admin.
+ *  - `both-changed`          — edited here, and a newer version also shipped.
+ *
+ * The kept states (K) and working changes (W) come in a later slice.
+ */
+export type ShippedPageStateName =
+  | 'same-as-shipped'
+  | 'update-ready'
+  | 'edited-not-confirmed'
+  | 'both-changed';
 
 /**
- * Decide what should happen to an already-seeded addon page, given its source
- * body, its current live body, and the `addon-source-hash` stamped at seed time.
+ * Decide a shipped page's state. Core pages stamp `required-source-hash`, add-on
+ * pages `addon-source-hash`; the caller reads whichever applies and passes its
+ * value, so both go through the same table.
  *
- *  - `current`          — live body already matches source; nothing to do.
- *  - `outdated`         — source changed and the live page is unmodified since
- *                         seed (stored hash matches live), OR the page is legacy
- *                         (no stored hash — pre-#920 seed; treated as reseedable
- *                         since the previous body is kept as a revertable version).
- *                         Safe to reseed.
- *  - `locally-modified` — source changed but the live body differs from what was
- *                         last seeded (⇒ operator-edited). Skip; never clobber.
+ * Inputs: L = hash of the live body, T = the stamp, S = hash of the shipped body,
+ * U = `user-modified`. E (edited here) = U, or no stamp, or L != T. C (shipped
+ * changed) = a stamp exists and S != T. First match wins:
+ *  1. L = S and not U  → same-as-shipped
+ *  4. E and C          → both-changed
+ *  5. E and not C      → edited-not-confirmed
+ *  6. C (so not E)     → update-ready
+ *
+ * @param args.shippedBody - Body of the shipped page
+ * @param args.liveBody - Body of the live copy
+ * @param args.stamp - The live copy's source-hash stamp, or undefined
+ * @param args.userModified - The live copy's front-matter `user-modified` is true
  */
-export function evaluateSeededAddonPage(args: {
-  sourceContent: string;
-  liveContent: string;
-  storedHash: string | undefined;
-}): SeededAddonPageStatus {
-  const srcHash = pageSourceHash(args.sourceContent);
-  const liveHash = pageSourceHash(args.liveContent);
-  if (srcHash === liveHash) return 'current';
+export function shippedPageState(args: {
+  shippedBody: string;
+  liveBody: string;
+  stamp: string | undefined;
+  userModified: boolean;
+}): { state: ShippedPageStateName } {
+  const shipped = pageSourceHash(args.shippedBody);
+  const live = pageSourceHash(args.liveBody);
+  if (live === shipped && !args.userModified) return { state: 'same-as-shipped' };
 
-  const hasHash = typeof args.storedHash === 'string' && args.storedHash.length > 0;
-  const unmodified = hasHash && args.storedHash === liveHash;
-  const legacy = !hasHash;
-  return unmodified || legacy ? 'outdated' : 'locally-modified';
+  const hasStamp = typeof args.stamp === 'string' && args.stamp.length > 0;
+  const edited = args.userModified || !hasStamp || live !== args.stamp;
+  const shippedChanged = hasStamp && shipped !== args.stamp;
+  if (edited && shippedChanged) return { state: 'both-changed' };
+  if (edited) return { state: 'edited-not-confirmed' };
+  return { state: 'update-ready' };
 }
 
 /**
- * How a shipped item's sync status reads on an admin screen: the status words
- * and the edit protection of Admin → Required Pages, which every screen that
- * syncs shipped content shares (`views/_sync-status.ejs`, `views/_sync-button.ejs`,
- * #1918).
+ * How a shipped item's sync status reads on an admin screen: the legacy status
+ * word the screen's script keys on, plus the edit flag (`views/_sync-status.ejs`,
+ * `views/_sync-button.ejs`, #1918).
  *
- *  - `status` — `modified` when the live copy differs from what ships,
- *    `current` when it is the same.
- *  - `userModified` — edited on this site: Sync does not replace it; Force Sync
- *    does, after a confirm.
+ *  - `status` — `modified` when the live copy is not Same as shipped.
+ *  - `userModified` — edited on this site (Edited here, or Both changed): Sync
+ *    does not replace it; Use shipped version does, after a confirm.
  */
 export interface SyncRowState {
   status: 'current' | 'modified';
@@ -82,16 +100,13 @@ export interface SyncRowState {
 }
 
 /**
- * The one mapping from `evaluateSeededAddonPage`'s answer to the admin screen's
- * words (#1918). `userModifiedFlag` is a page's explicit `user-modified`
- * frontmatter, which marks it edited even when the hash cannot tell.
+ * Map a `shippedPageState` to the admin screen's row fields (#2389).
  *
- * @param seedStatus - `evaluateSeededAddonPage`'s answer for the live copy
- * @param userModifiedFlag - The live copy is explicitly marked edited
+ * @param state - `shippedPageState`'s answer for the live copy
  */
-export function syncRowState(seedStatus: SeededAddonPageStatus, userModifiedFlag = false): SyncRowState {
+export function syncRowState(state: ShippedPageStateName): SyncRowState {
   return {
-    status: seedStatus === 'current' ? 'current' : 'modified',
-    userModified: userModifiedFlag || seedStatus === 'locally-modified'
+    status: state === 'same-as-shipped' ? 'current' : 'modified',
+    userModified: state === 'edited-not-confirmed' || state === 'both-changed'
   };
 }

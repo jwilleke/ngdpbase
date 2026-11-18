@@ -1,29 +1,36 @@
 <%#
-  The status of a shipped item's copy on this site (#1918): the words and
+  The state of a shipped item's copy on this site (#1918, #2389): the words and
   badges of Admin -> Required Pages, shared by every admin screen that syncs
-  shipped content (required pages, add-on pages). The words come
-  from syncRowState (src/utils/addonPageSync.ts).
+  shipped content (required pages, add-on pages). The state comes from
+  shippedPageState (src/utils/addonPageSync.ts).
 
   locals: syncItem, one object (an include also sees its parent's data, so a
   loose name could be picked up from the screen by accident), with:
-    status        'new' | 'modified' | 'current'
-    userModified  edited on this site: Sync does not replace it, Force Sync does
+    status      'new' | 'modified' | 'current'
+    syncState   'same-as-shipped' | 'update-ready' | 'edited-not-confirmed' |
+                'both-changed'; absent for a page that is not on the site yet
+    headerUnreadable  the live copy's header could not be read; it reads as
+                Update ready, and a note under the badge says why (#2414)
 %>
 <% if (syncItem.status === 'new') { %>
 <span class="badge bg-primary" data-sync-status="new">New</span>
-<% } else if (syncItem.status === 'modified') { %>
-<span class="badge bg-warning text-dark" data-sync-status="modified">Modified</span>
-<% if (syncItem.userModified) { %>
-<br><span class="badge bg-secondary mt-1" data-sync-status="user-edited"
-      title="Edited on this site. Sync does not replace it; Force Sync replaces those edits.">
-    <i class="fas fa-user-edit me-1"></i>User Edited
-</span>
+<% } else if (syncItem.syncState === 'update-ready') { %>
+<span class="badge bg-warning text-dark" data-sync-status="update-ready"
+      title="A newer version came with this release. This page has not been changed on this site.">Update ready</span>
+<% if (syncItem.headerUnreadable) { %>
+<small class="d-block text-muted" data-sync-note="header-unreadable"
+       title="The header at the top of this page could not be read. Updating the page repairs it.">Page header couldn't be read</small>
 <% } %>
-<% } else { %>
-<% if (syncItem.userModified) { %>
-<span class="badge bg-secondary" data-sync-status="user-edited" title="Edited on this site">
-    <i class="fas fa-user-edit me-1"></i>User Edited
+<% } else if (syncItem.syncState === 'edited-not-confirmed') { %>
+<span class="badge bg-secondary text-wrap text-start lh-sm" data-sync-status="edited-not-confirmed"
+      title="This page was changed on this site. Sync All does not replace it.">
+    <i class="fas fa-user-edit me-1"></i>Edited here, not confirmed
 </span>
-<% } %>
-<span class="badge bg-success" data-sync-status="current">Current</span>
+<% } else if (syncItem.syncState === 'both-changed') { %>
+<span class="badge bg-danger text-wrap text-start lh-sm" data-sync-status="both-changed"
+      title="This page was changed on this site, and a newer version also shipped. Sync All does not replace it.">
+    <i class="fas fa-user-edit me-1"></i>Edited here, and a newer version is available
+</span>
+<% } else if (syncItem.syncState === 'same-as-shipped') { %>
+<span class="badge bg-success" data-sync-status="same-as-shipped">Same as shipped</span>
 <% } %>

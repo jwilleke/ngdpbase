@@ -1166,10 +1166,9 @@ Use a freshly generated UUID for every seed page. Two files in the same `pages/`
 
 By default seeding is __first-load only__: once a page exists in the instance it is skipped on every restart (see [Idempotency](#idempotency--existing-pages-are-never-overwritten) above), so operator edits are never clobbered.
 
-__Pushing updated addon page content is supported__ two ways ([#920](https://github.com/jwilleke/ngdpbase/issues/920)):
+__Pushing updated addon page content__ goes through __Required Pages Sync__ at `/admin/required-pages` ([#513](https://github.com/jwilleke/ngdpbase/issues/513), [#2389](https://github.com/jwilleke/ngdpbase/issues/2389)). It lists addon pages by state: Same as shipped, Update ready, Edited here (not confirmed), or Edited here with a newer version available. __Sync All__ replaces only pages marked Update ready and leaves edited pages alone; a row's __Update__ button updates one page, and __Use shipped version__ replaces an edited page after a confirm, keeping the edited version in page history. A page with no `addon-source-hash` stamp, or saved in the editor, counts as edited.
 
-- __Content-aware boot reseed__ — set `ngdpbase.addons.page-reseed: true` (default `false`). On each boot, a page is refreshed from source only when the source changed __and__ the instance copy is unmodified since seed (edited pages are skipped). Reseed keeps the UUID and records a revertable version. Safe to leave on ("keep addon pages in sync") or flip on → restart → off for a one-time sync.
-- __On-demand via the admin UI__ — __Required Pages Sync__ at `/admin/required-pages` ([#513](https://github.com/jwilleke/ngdpbase/issues/513)) lists addon pages with status, previews would-update / would-skip, and applies on demand with no restart.
+Restarting never replaces a page. The `ngdpbase.addons.page-reseed` key is __retired__: it has no effect and boot logs a warning when it is `true`.
 
 (The original first-boot seeding lives in the now-closed #442. There is no dedicated `POST /admin/addons/:addonName/reseed` REST route — the Required Pages Sync surface is the entry point.)
 

@@ -12,7 +12,7 @@
 
 ## Type Aliases
 
-- [SeededAddonPageStatus](type-aliases/SeededAddonPageStatus.md)
+- [ShippedPageStateName](type-aliases/ShippedPageStateName.md)
 
 ## Variables
 
@@ -20,6 +20,6 @@
 
 ## Functions
 
-- [evaluateSeededAddonPage](functions/evaluateSeededAddonPage.md)
 - [pageSourceHash](functions/pageSourceHash.md)
+- [shippedPageState](functions/shippedPageState.md)
 - [syncRowState](functions/syncRowState.md)

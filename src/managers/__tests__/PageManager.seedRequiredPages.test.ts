@@ -448,6 +448,56 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
       expect(report.protected).toEqual([uuid(1)]);
     });
 
+    describe.each([
+      ['a core page', () => ({ source: undefined, key: REQUIRED_SOURCE_HASH_KEY })],
+      ['an add-on page', () => ({ source: 'addon', key: 'addon-source-hash' })]
+    ])('#2389 Sync leaves what is not Update ready — %s', (_label, make) => {
+      let addonDir: string;
+      const livePath = (n: number) => path.join(pagesDir, `${uuid(n)}.md`);
+      const sourceOf = (pm: PageManager) => (make().source === 'addon' ? pm.addonPagesSource('demo', addonDir) : pm.requiredPagesSource());
+      const srcDir = () => (make().source === 'addon' ? addonDir : requiredDir);
+      const writeShipped = (body: string) => fse.writeFile(path.join(srcDir(), `${uuid(1)}.md`), matter.stringify(`${body}\n`, { title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation' }));
+      const writeLive = (body: string, extra: Record<string, unknown>) => fse.writeFile(livePath(1), matter.stringify(`${body}\n`, { title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation', ...extra }));
+
+      beforeEach(async () => {
+        addonDir = path.join(tmpDir, 'addon-pages');
+        await fse.ensureDir(addonDir);
+      });
+
+      test('a page with no stamp and a different body is protected, never replaced', async () => {
+        await writeShipped('Shipped v2.');
+        const pm = await boot();
+        await writeLive('Old body.', {});
+        await pm.refreshPageList();
+        await pm.refreshPageList();
+        const report = await pm.syncShippedPages(sourceOf(pm), [uuid(1)], {}, ADMIN);
+        expect(report.protected).toEqual([uuid(1)]);
+        expect((await liveOf(1)).content).toContain('Old body.');
+      });
+
+      test('a flagged page whose text is unchanged is protected (Q1)', async () => {
+        await writeShipped('Same body.');
+        const pm = await boot();
+        await writeLive('Same body.', { 'user-modified': true, title: 'My title', [make().key]: pageSourceHash('Same body.') });
+        await pm.refreshPageList();
+        await pm.refreshPageList();
+        const report = await pm.syncShippedPages(sourceOf(pm), [uuid(1)], {}, ADMIN);
+        expect(report.protected).toEqual([uuid(1)]);
+        expect((await liveOf(1)).data.title).toBe('My title');
+      });
+
+      test('an Update ready page is replaced', async () => {
+        await writeShipped('Shipped v2.');
+        const pm = await boot();
+        await writeLive('Shipped v1.', { [make().key]: pageSourceHash('Shipped v1.') });
+        await pm.refreshPageList();
+        await pm.refreshPageList();
+        const report = await pm.syncShippedPages(sourceOf(pm), [uuid(1)], {}, ADMIN);
+        expect(report.synced).toEqual([uuid(1)]);
+        expect((await liveOf(1)).content).toContain('Shipped v2.');
+      });
+    });
+
     test('brings back a page removed on the site — the recovery path (decision A)', async () => {
       await writeSource(1, 'Alpha', 'documentation');
       const pm = await boot();

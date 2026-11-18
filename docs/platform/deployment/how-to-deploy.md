@@ -49,14 +49,13 @@ Config lives in __`<data>/config/app-custom-config.json`__ on the data volume (c
       "repository": "github.com/jwilleke/geohazardwatch"
     }
   },
-  "ngdpbase.addons.geohazardwatch.enabled": true,
-  "ngdpbase.addons.page-reseed": true
+  "ngdpbase.addons.geohazardwatch.enabled": true
 }
 ```
 
 - __`ngdpbase.addons.install`__ — the add-ons this site installs from npm ([`domain-site.md`](./domain-site.md)).
 - __`ngdpbase.addons.<slug>.enabled`__ — installing an addon makes it *available*; this flag makes it *active*.
-- __`ngdpbase.addons.page-reseed`__ (optional, default off) — when true, addon page updates reseed on restart (edit-preserving, revertable via version history). See [`../addon-page-handling.md`](../addon-page-handling.md).
+- __`ngdpbase.addons.page-reseed`__ — retired. It no longer does anything, and boot logs a warning if it is `true`. Add-on pages update through Admin › Required Pages Sync. See [`../addon-page-handling.md`](../addon-page-handling.md).
 
 ## 5. Storage
 
@@ -76,7 +75,7 @@ addon release (npm tag)  ──▶ npm registry ─▶ Update on Admin → Add-o
 
 The two axes are independent and each pinned: the image tag moves core, the add-on's entry in `ngdpbase.addons.install` moves the add-on. The drift that caused #672 is gone.
 
-- __Addon page content__ updates only propagate when `page-reseed` is on and the page is unmodified — see [`../addon-page-handling.md`](../addon-page-handling.md).
+- __Addon page content__ never changes at restart. A newer add-on page shows as Update ready in Admin › Required Pages Sync, and Sync All applies it — see [`../addon-page-handling.md`](../addon-page-handling.md).
 - __Restart__ the instance after a redeploy so the in-memory caches and addon discovery re-run.
 
 ## Related

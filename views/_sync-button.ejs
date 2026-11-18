@@ -1,27 +1,27 @@
 <%#
-  Sync, or Force Sync for a copy edited on this site, for one shipped item
-  (#1918): the row action of Admin -> Required Pages, shared by every admin
-  screen that syncs shipped content. Force Sync always asks first. No inline
+  Update, or Use shipped version for a copy edited on this site, for one shipped
+  item (#1918, #2389): the row action of Admin -> Required Pages, shared by every
+  admin screen that syncs shipped content. Use shipped version always asks first. No inline
   handler: the screen's own script acts on data-action and data-confirm.
 
   locals: syncItem, one object (an include also sees its parent's data, so a
   loose name could be picked up from the screen by accident), with:
-    userModified  edited on this site: Force Sync, which replaces those edits
-    name          the item's name, for the question Force Sync asks
-    forceNote     optional: a line after that question (what happens to the edits)
+    userModified  edited on this site: Use shipped version, which replaces those edits
+    status        'new' for a page not on the site yet: the button reads Sync
+    name          the item's name, for the question it asks
     id            the item's id, sent with data-sync-id; the screen's script
                   syncs on a click (Required Pages)
 %>
 <%
   var force = !!syncItem.userModified;
   var question = force
-    ? 'Replace the edits made to "' + syncItem.name + '" on this site with the version that ships?' + (syncItem.forceNote ? '\n\n' + syncItem.forceNote : '')
+    ? 'Replace the changes made to "' + syncItem.name + '" on this site with the shipped version? Your version stays in the page history.'
     : undefined;
 %>
     <button type="button" data-sync-id="<%= syncItem.id %>" data-sync-name="<%= syncItem.name %>"
             class="btn btn-sm <%= force ? 'btn-outline-danger' : 'btn-outline-primary' %>"
             data-action="<%= force ? 'force-sync' : 'sync' %>"
             <% if (question) { %>data-confirm="<%= question %>"<% } %>
-            <% if (force) { %>title="Edited on this site. Force Sync replaces those edits with the version that ships."<% } %>>
-        <i class="fas fa-sync-alt"></i> <%= force ? 'Force Sync' : 'Sync' %>
+            <% if (force) { %>title="Changed on this site. This replaces those changes with the shipped version."<% } %>>
+        <i class="fas fa-sync-alt"></i> <%= force ? 'Use shipped version' : (syncItem.status === 'new' ? 'Sync' : 'Update') %>
     </button>

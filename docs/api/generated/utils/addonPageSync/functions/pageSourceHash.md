@@ -8,7 +8,7 @@
 
 > __pageSourceHash__(`content`): `string`
 
-Defined in: src/utils/addonPageSync.ts:26
+Defined in: src/utils/addonPageSync.ts:19
 
 Stable content hash of an addon page body. Trimmed so a trailing-newline
 difference between the source file and the on-disk form does not read as a

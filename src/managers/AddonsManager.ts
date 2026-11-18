@@ -19,7 +19,6 @@ import { systemPrincipalOf } from '../context/bootActions.js';
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import * as path from 'path';
-import { pageSourceHash, evaluateSeededAddonPage } from '../utils/addonPageSync.js';
 import matter from 'gray-matter';
 import type { WikiPage } from '../types/Page.js';
 import type { BackupFolder } from './BaseManager.js';
@@ -587,6 +586,12 @@ class AddonsManager extends BaseManager {
       if (!enabled) {
         logger.info('AddonsManager disabled in configuration');
         return;
+      }
+
+      // #2389: start-up no longer replaces an add-on page. The key stays readable
+      // so an old config does not fail, but it does nothing.
+      if (configManager.getProperty('ngdpbase.addons.page-reseed', false) === true) {
+        logger.warn('[AddonsManager] ngdpbase.addons.page-reseed is retired; add-on pages update through Admin › Required Pages Sync');
       }
 
       // Get configured addons path(s) — accepts a string or array of strings
@@ -1481,14 +1486,6 @@ class AddonsManager extends BaseManager {
       return;
     }
 
-    // #920: content-aware, edit-preserving reseed of already-seeded pages.
-    // Opt-in (default false) so existing deployments' boot behavior is
-    // unchanged; when enabled, a page is refreshed from the addon source only
-    // when the source changed AND the instance copy is byte-identical to what
-    // was last seeded (i.e. never operator-edited).
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const reseedEnabled = configManager?.getProperty('ngdpbase.addons.page-reseed', false) === true;
-
     // #951: a domain addon's page failing to seed is a broken site; the same
     // failure in an additive addon is a missing help page.
     const isDomain = this.addons.get(addonName)?.manifest?.type === 'domain';
@@ -1497,13 +1494,12 @@ class AddonsManager extends BaseManager {
       else logger.warn(message);
     };
 
-    this.lastReseedCount = 0;
-
     // #1406: the shared seeder owns validation, the site lookup (by uuid), the
     // trash check (#1403), the seeded-pages record and the new-page save. What
     // stays here is what only addon pages have: the category and author they
-    // are stamped with, and the tidy-ups and opt-in reseed of a page the site
-    // already holds.
+    // are stamped with, and the metadata tidy-ups of a page the site already
+    // holds. Start-up never replaces a page's text (#2389): that is Required
+    // Pages Sync's job.
     const report = await pageManager.seedShippedPages({
       id: `addon:${addonName}`,
       label: `${addonName}/pages`,
@@ -1522,7 +1518,7 @@ class AddonsManager extends BaseManager {
       // #2255: the add-on is its pages' author. Who may change them is their
       // system-category's policy; the `access` stamp that once did is gone.
       author: addonAuthor(addonName),
-      onPresent: (live, parsed) => this.reconcileSeededAddonPage(addonName, live, parsed, seedContext, reseedEnabled)
+      onPresent: (live, parsed) => this.reconcileSeededAddonPage(addonName, live, parsed, seedContext)
     }, seedContext);
 
     // #1412: a title or slug held by another page is a status an admin settles
@@ -1551,27 +1547,23 @@ class AddonsManager extends BaseManager {
       logger.info(`[AddonsManager] ${report.unstamped.length} page(s) from ${addonName} have no stamp and differ from the source: ${report.unstamped.join(', ')}`);
     }
 
-    if (report.seeded.length > 0 || this.lastReseedCount > 0) {
-      logger.info(`[AddonsManager] Seeded ${report.seeded.length} new + reseeded ${this.lastReseedCount} page(s) from ${addonName}/pages/`);
+    if (report.seeded.length > 0) {
+      logger.info(`[AddonsManager] Seeded ${report.seeded.length} new page(s) from ${addonName}/pages/`);
     } else {
       logger.debug(`[AddonsManager] No new pages to seed for ${addonName}`);
     }
   }
 
-  /** Pages reseeded by the current `seedAddonPages` pass (#920). */
-  private lastReseedCount = 0;
-
   /**
-   * An addon page this site already holds: metadata tidy-ups (#971, #1003) and
-   * the opt-in content reseed (#920), then a search-index refresh. Called by the
+   * An addon page this site already holds: metadata tidy-ups (#971, #1003), never
+   * its text (#2389). Called by the
    * shared seeder for each source page that is live (#1406).
    */
   private async reconcileSeededAddonPage(
     addonName: string,
     existing: WikiPage,
     parsed: { data: Record<string, unknown>; content: string },
-    seedContext: ActorContext,
-    reseedEnabled: boolean
+    seedContext: ActorContext
   ): Promise<void> {
     const pageManager = this.engine.getManager<PageManager>('PageManager');
     if (!pageManager) return;
@@ -1580,15 +1572,13 @@ class AddonsManager extends BaseManager {
     const existingSlug = (existingMeta.slug as string) || slug;
 
     // #1003: `system-category` drift. A category-only edit in an addon
-    // source never reached an already-seeded page — `evaluateSeededAddonPage`
-    // compares BODY content, so a metadata-only change never flips a page
-    // to `outdated` and the reseed branch below never runs. Categories set
-    // at first seed were therefore frozen forever, which is how all 16
+    // source never reached an already-seeded page — the sync state compares
+    // BODY content, so a metadata-only change never flips a page to Update
+    // ready. Categories set at first seed were therefore frozen forever, which is how all 16
     // geohazardwatch pages stayed on the flattened `addon` default after
     // their source was corrected per addons.md §9.
     //
-    // Corrected here, independent of the body-hash comparison and of
-    // `reseedEnabled` — reseed governs overwriting CONTENT, and a category
+    // Corrected here, independent of the body-hash comparison: a category
     // is metadata, the same argument #971 made for `access`.
     //
     // `addon-source-category` records the source value last propagated —
@@ -1628,8 +1618,8 @@ class AddonsManager extends BaseManager {
 
     if (reasons.length > 0) {
       // Metadata-only: the body is passed through untouched, and
-      // pageSourceHash covers the body alone, so this cannot disturb the
-      // #920 reseed comparison or mark the page locally-modified. An author
+      // pageSourceHash covers the body alone, so this cannot change the
+      // page's sync state or mark it user-modified. An author
       // re-stamp alone keeps `lastModified`: nobody wrote anything.
       const reconciled: Record<string, unknown> = { ...existingMeta, ...metaPatch };
       await pageManager.savePage(existingSlug, existing.content, reconciled, seedContext, {
@@ -1637,63 +1627,12 @@ class AddonsManager extends BaseManager {
         shippedAuthor: author,
         ...(categoryDrifted ? {} : { preserveLastModified: true })
       });
-      // Keep the in-memory copy consistent — the reseed branch below reads
-      // existingMeta again, and would otherwise re-apply a stale category.
+      // Keep the in-memory copy consistent with what was just saved.
       Object.assign(existingMeta, metaPatch);
       if (restampAuthor) existingMeta.author = author;
       logger.info(
         `[AddonsManager] Reconciled '${existingSlug}' (${addonName}): ${reasons.join('; ')}`
       );
-    }
-
-    const srcHash = pageSourceHash(parsed.content);
-    const storedHash = existingMeta['addon-source-hash'];
-    const hasHash = typeof storedHash === 'string' && storedHash.length > 0;
-    // A legacy page (seeded before the #920 hash existed) has no stamp —
-    // treated as reseedable since the previous body is kept as a
-    // revertable version. Used only to pick the log message below.
-    const legacy = !hasHash;
-    // #931: single shared evaluator — the Required Pages Sync admin
-    // surface computes status the identical way, so boot + UI cannot
-    // disagree. `outdated` = source changed and the live body is
-    // unmodified-since-seed (or legacy); `locally-modified` = edited, skip.
-    const status = evaluateSeededAddonPage({
-      sourceContent: parsed.content,
-      liveContent: existing.content,
-      storedHash: typeof storedHash === 'string' ? storedHash : undefined
-    });
-
-    if (reseedEnabled && status === 'outdated') {
-      // Source is the authority. Merge existing metadata (preserve operator
-      // /pipeline extras + original `created`) with the source's declared
-      // fields, adopt the source body, keep the UUID, stamp the hash. Goes
-      // through savePage so the versioning provider records a revertable
-      // version.
-      const reseedCategory = (parsed.data)['system-category']
-        ?? existingMeta['system-category'] ?? 'addon';
-      const reseedMetadata: Record<string, unknown> = {
-        ...existingMeta,
-        ...(parsed.data),
-        addon: addonName,
-        'system-category': reseedCategory,
-        // #1003: keep the marker truthful — it must always name the source
-        // category most recently applied, whichever path applied it.
-        ...(typeof reseedCategory === 'string' ? { 'addon-source-category': reseedCategory } : {}),
-        'addon-source-hash': srcHash
-      };
-      // #1197: the system principal, not a literal, is who reseeded it. The
-      // door reads that from `seedContext` (#1462 slice 2) — the same name —
-      // and this keeps it in the page's own frontmatter too.
-      reseedMetadata.editor = systemPrincipalOf(this.engine);
-      await pageManager.savePage(existingSlug, parsed.content, reseedMetadata, seedContext, { skipValidation: true, shippedAuthor: addonAuthor(addonName) });
-      this.lastReseedCount++;
-      logger.info(legacy
-        ? `[AddonsManager] Reseeded legacy '${existingSlug}' from ${addonName} (no prior source-hash; previous content kept in version history)`
-        : `[AddonsManager] Reseeded '${existingSlug}' from ${addonName} (source changed, page unmodified)`);
-    } else if (reseedEnabled && status === 'locally-modified') {
-      logger.info(`[AddonsManager] Update available for '${existingSlug}' from ${addonName} but the page was locally modified — skipped`);
-    } else {
-      logger.debug(`[AddonsManager] Page '${existingSlug}' already seeded — skipping (${addonName})`);
     }
 
     // #1462: each save above went through the page door, which indexes it.

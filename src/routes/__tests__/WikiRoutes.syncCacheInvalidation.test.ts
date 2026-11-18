@@ -26,6 +26,7 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import WikiRoutes from '../WikiRoutes';
 import PageManager from '../../managers/PageManager';
+import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../../utils/addonPageSync';
 import { ALLOWING_PIP, ALLOWING_PDP } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 const UUID = 'b780e809-d45b-4c4b-84ec-ad30a74a3605';
@@ -151,7 +152,7 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
     // THE regression. Without this the write lands and readers keep the old
     // render until a restart.
     await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body'), 'utf8');
-    await fs.writeFile(path.join(dirs.pagesDir, `${UUID}.md`), page('old body'), 'utf8');
+    await fs.writeFile(path.join(dirs.pagesDir, `${UUID}.md`), page('old body', `${REQUIRED_SOURCE_HASH_KEY}: ${pageSourceHash('old body')}\n`), 'utf8');
 
     const { routes, invalidatePageCache } = await makeRoutes(dirs);
     const res = createMockRes();
@@ -162,7 +163,7 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
 
   test('the new content really is on disk — eviction is not covering for a failed write', async () => {
     await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body'), 'utf8');
-    await fs.writeFile(path.join(dirs.pagesDir, `${UUID}.md`), page('old body'), 'utf8');
+    await fs.writeFile(path.join(dirs.pagesDir, `${UUID}.md`), page('old body', `${REQUIRED_SOURCE_HASH_KEY}: ${pageSourceHash('old body')}\n`), 'utf8');
 
     const { routes } = await makeRoutes(dirs);
     await routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID] }), createMockRes());

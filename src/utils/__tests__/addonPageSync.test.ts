@@ -1,11 +1,10 @@
 /**
- * Tests for the shared addon-page reseed evaluator (#931) — the single source
- * of truth used by both AddonsManager.seedAddonPages (boot) and the Required
- * Pages Sync admin surface, so their status/behavior can't diverge.
+ * Tests for the body hash behind the shared state function (#931, #2389). The
+ * decision table itself is in addonPageSync.state.test.ts.
  */
 import { describe, expect, test } from 'vitest';
 import matter from 'gray-matter';
-import { pageSourceHash, evaluateSeededAddonPage } from '../addonPageSync';
+import { pageSourceHash, shippedPageState } from '../addonPageSync';
 
 describe('pageSourceHash', () => {
   test('is stable and trims — trailing-newline difference does not change the hash', () => {
@@ -43,87 +42,29 @@ describe('pageSourceHash — frontmatter independence (#972)', () => {
     expect(pageSourceHash(matter(after).content)).toBe(pageSourceHash(matter(before).content));
   });
 
-  test('such a page evaluates as `current`, so reseed is untouched', () => {
-    expect(evaluateSeededAddonPage({
-      sourceContent: matter(after).content,
-      liveContent: matter(before).content,
-      storedHash: pageSourceHash(matter(before).content)
-    })).toBe('current');
+  test('such a page is Same as shipped, so Sync is untouched', () => {
+    expect(shippedPageState({
+      shippedBody: matter(after).content,
+      liveBody: matter(before).content,
+      stamp: pageSourceHash(matter(before).content),
+      userModified: false
+    }).state).toBe('same-as-shipped');
   });
 
   test('the guard is real — hashing the RAW file instead would break this', () => {
     // Demonstrates the failure mode the callers avoid: raw-file hashing makes a
     // frontmatter-only edit look like a body change.
     expect(pageSourceHash(after)).not.toBe(pageSourceHash(before));
-    expect(evaluateSeededAddonPage({
-      sourceContent: after,
-      liveContent: before,
-      storedHash: pageSourceHash(before)
-    })).toBe('outdated');
+    expect(shippedPageState({
+      shippedBody: after,
+      liveBody: before,
+      stamp: pageSourceHash(before),
+      userModified: false
+    }).state).toBe('update-ready');
   });
 
   test('a real body edit is still detected', () => {
     const edited = after.replace('USGS.', 'USGS and the Smithsonian.');
     expect(pageSourceHash(matter(edited).content)).not.toBe(pageSourceHash(matter(before).content));
-  });
-});
-
-describe('evaluateSeededAddonPage (#931)', () => {
-  test('current — live body already matches source', () => {
-    expect(evaluateSeededAddonPage({
-      sourceContent: 'Same body',
-      liveContent: 'Same body',
-      storedHash: pageSourceHash('anything')
-    })).toBe('current');
-  });
-
-  test('current wins even if the stored hash is stale, as long as live == source', () => {
-    // A page synced to source but with an old/absent stamp is still "current".
-    expect(evaluateSeededAddonPage({
-      sourceContent: 'Body',
-      liveContent: 'Body',
-      storedHash: undefined
-    })).toBe('current');
-  });
-
-  test('outdated — source changed and live is unmodified since seed (stored == live)', () => {
-    const seeded = 'Seeded body';
-    expect(evaluateSeededAddonPage({
-      sourceContent: 'New source body',
-      liveContent: seeded,
-      storedHash: pageSourceHash(seeded)
-    })).toBe('outdated');
-  });
-
-  test('outdated — legacy page (no stored hash) is reseedable', () => {
-    expect(evaluateSeededAddonPage({
-      sourceContent: 'New source body',
-      liveContent: 'Old seeded body',
-      storedHash: undefined
-    })).toBe('outdated');
-  });
-
-  test('outdated — empty-string stored hash counts as legacy', () => {
-    expect(evaluateSeededAddonPage({
-      sourceContent: 'New source body',
-      liveContent: 'Old seeded body',
-      storedHash: ''
-    })).toBe('outdated');
-  });
-
-  test('locally-modified — source changed AND live differs from the seed stamp (operator-edited)', () => {
-    expect(evaluateSeededAddonPage({
-      sourceContent: 'New source body',
-      liveContent: 'Operator hand-edited body',
-      storedHash: pageSourceHash('Originally seeded body') // != live hash
-    })).toBe('locally-modified');
-  });
-
-  test('trailing-newline-only divergence is treated as current, not modified', () => {
-    expect(evaluateSeededAddonPage({
-      sourceContent: 'Body text\n',
-      liveContent: 'Body text',
-      storedHash: undefined
-    })).toBe('current');
   });
 });

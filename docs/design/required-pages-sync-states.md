@@ -199,17 +199,22 @@ __Showing the change.__ "Kept, needs your review" lists the parts added, removed
 
 __Known limit.__ A page kept before this ships has no baseline, because nothing starts kept (R7). The first time an admin ticks the box, the baseline is written. No back-computation is needed.
 
-## R5: the summary line, and what Sync All does
+## R5: the summary lines, and what Sync All does
 
-At the top, one line, counting core and add-on pages together:
+Each table says its own numbers, in its own header, next to its own Sync All button. The Source Pages table and the add-on table each count only their own rows, so the line, the button and the toast that follows a sync all use the same scope (#2414). A combined count at the top of the page put "(8)" beside buttons reading (6) and (2), and it went stale after one table synced.
 
-- "__2 pages need a decision.__ Sync All updates only pages marked Update ready (3). Pages edited on this site are never changed by Sync All."
-- With none: "Nothing needs a decision. Sync All updates the 3 pages marked Update ready."
-- With none at all: "Everything matches what shipped."
+- In a table's header: "__3 need a decision; Sync All updates 6__". With one: "1 needs a decision". With none: "Nothing needs a decision".
+- When nothing in that table is ready the line reads "Sync All has nothing to update", and the disabled button says "Sync All", with no "(0)".
+- The line, the button and the count chips (the badges at the top of the page and the add-on header's) redraw after a sync, from that table's rows, so they match the toast before the page reloads.
+- The Source Modified column shows the date only (YYYY-MM-DD), and the Status column asks for 12rem, so the Actions column is not cut off at 1280px. The add-on header's chips are 12px.
+
+At the top of the page, one sentence with no number: "Sync All updates only pages marked Update ready. Pages edited on this site are never changed by Sync All. To act on an edited page, open Diff, then Use shipped version. A page whose header can't be read also shows as Update ready; updating it repairs it." When nothing differs from what shipped: "Everything matches what shipped."
+
+A page whose header can't be read shows "Update ready" with a muted note under the badge, "Page header couldn't be read", and a tooltip that says updating the page repairs it.
 
 The count is rows in states 2, 4 and 5 of the table (Kept needs your review, Both changed, Edited here not confirmed). Same as shipped, Kept for this site and Update ready do not count.
 
-__Sync All__ replaces "Sync All Outdated". It sends only the uuids the server marked Update ready (`bulkOutdated` becomes `state === 'update-ready'`). The server re-evaluates each uuid with `shippedPageState` and skips (reports as protected) any that is no longer Update ready. A forged request cannot overwrite an edited page. The existing `data-testid="sync-all-outdated"` stays for the E2E tests.
+__Sync All__ replaces "Sync All Outdated". It sends only the uuids the server marked Update ready (`bulkOutdated` becomes `state === 'update-ready'`). The server re-evaluates each uuid with `shippedPageState` and skips (reports as protected) any that is no longer Update ready. A forged request cannot overwrite an edited page. The page sends the edited pages it left out as `leftAlone`, and the result message ends with "N edited pages left alone"; the field feeds the message only and never selects a write. The count badges split Not same as shipped into Update ready and Edited here. The existing `data-testid="sync-all-outdated"` stays for the E2E tests.
 
 ## R6: Push to Source only from a source checkout
 
@@ -246,7 +251,7 @@ No longer does:
 - __Read `ngdpbase.addons.page-reseed`.__ The key no longer does anything. It stays readable so an old config does not fail, boot logs a one-line warning when it is `true` ("page-reseed is retired; add-on pages update through Admin › Required Pages Sync"), and the docs that describe it (`docs/platform/addon-page-handling.md`, `docs/guides/addons-developer-guide.md`, `docs/platform/deployment/how-to-deploy.md`, `docs/planning/addons.md`) are updated in slice 1.
 - __Log "update available … locally modified"__ per page per boot. The screen shows it.
 
-Consequence to say plainly: a site that had `page-reseed` on (the key defaults to off, so most do not) used to get unedited add-on pages refreshed at every restart. After this change those pages show Update ready until an admin presses Sync All. The summary line (R5) counts only rows that need a decision, and Update ready is not one, so the top of the screen should tell the admin how many pages are ready ("Sync All updates the 3 pages marked Update ready"). It does.
+Consequence to say plainly: a site that had `page-reseed` on (the key defaults to off, so most do not) used to get unedited add-on pages refreshed at every restart. After this change those pages show Update ready until an admin presses Sync All. The summary line (R5) counts only rows that need a decision, and Update ready is not one, so each table's header tells the admin how many pages are ready ("Sync All updates 3"). It does.
 
 ## R8: the editor banner
 

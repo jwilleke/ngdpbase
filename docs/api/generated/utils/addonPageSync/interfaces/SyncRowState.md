@@ -6,17 +6,15 @@
 
 # Interface: SyncRowState
 
-Defined in: src/utils/addonPageSync.ts:79
+Defined in: src/utils/addonPageSync.ts:97
 
-How a shipped item's sync status reads on an admin screen: the status words
-and the edit protection of Admin → Required Pages, which every screen that
-syncs shipped content shares (`views/_sync-status.ejs`, `views/_sync-button.ejs`,
-# 1918).
+How a shipped item's sync status reads on an admin screen: the legacy status
+word the screen's script keys on, plus the edit flag (`views/_sync-status.ejs`,
+`views/_sync-button.ejs`, #1918).
 
-- `status` — `modified` when the live copy differs from what ships,
-   `current` when it is the same.
-- `userModified` — edited on this site: Sync does not replace it; Force Sync
-   does, after a confirm.
+- `status` — `modified` when the live copy is not Same as shipped.
+- `userModified` — edited on this site (Edited here, or Both changed): Sync
+   does not replace it; Use shipped version does, after a confirm.
 
 ## Properties
 
@@ -24,7 +22,7 @@ syncs shipped content shares (`views/_sync-status.ejs`, `views/_sync-button.ejs`
 
 > __status__: `"current"` \| `"modified"`
 
-Defined in: src/utils/addonPageSync.ts:80
+Defined in: src/utils/addonPageSync.ts:98
 
 ***
 
@@ -32,4 +30,4 @@ Defined in: src/utils/addonPageSync.ts:80
 
 > __userModified__: `boolean`
 
-Defined in: src/utils/addonPageSync.ts:81
+Defined in: src/utils/addonPageSync.ts:99

@@ -11,8 +11,8 @@
  *     ignored in favour of the stale live one — while the reseed path forty
  *     lines below resolved the same field source-first.
  *  2. Nothing propagated a category-only source edit at all.
- *     `evaluateSeededAddonPage` compares BODY content, so a metadata-only
- *     change never flips a page to `outdated` and the reseed branch never runs.
+ *     the sync state compares BODY content, so a metadata-only
+ *     change never flips a page to Update ready.
  *
  * Live consequence: all 16 geohazardwatch pages stayed on the flattened
  * `addon` default after their source was corrected per addons.md §9, and
