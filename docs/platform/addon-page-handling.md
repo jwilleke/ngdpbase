@@ -93,7 +93,7 @@ Start-up never replaces a page's text, and a page needs an `addon-source-hash` s
 
 __Try the admin surface first.__ For an unedited page, Required Pages Sync at `/admin/required-pages` updates it on demand with no restart and no config change — see [Updating seeded pages](#updating-seeded-pages-920-2389) above.
 
-Deleting the instance file and restarting does __not__ seed it again: the site's seeded-pages record treats a removed page as removed on purpose. Bring it back from Required Pages Sync, or restore it from the trash. Operator-edited pages are left in place by the boot reseed and by the sync surface. Deleting the source file does __not__ remove the instance copy.
+Deleting the instance file and restarting does __not__ seed it again: the site's seeded-pages record treats a removed page as removed on purpose. Bring it back from Required Pages Sync, or restore it from the trash. Operator-edited pages: start-up leaves them in place, and so does the sync surface. Deleting the source file does __not__ remove the instance copy.
 
 ## Orphans — name-based files in `<data>/pages/`
 
