@@ -261,3 +261,81 @@ describe('#2414 lows', () => {
     expect(text(doc.querySelector('[data-sync-status="both-changed"]'))).toBe('Edited here, and a newer version is available');
   });
 });
+
+describe('#2414 the table fits at 1280px, and the count chips follow a sync', () => {
+  const STAMP = '2026-11-10T14:23:45.123Z';
+
+  function stubbedWindow(window: unknown) {
+    const w = window as Record<string, unknown>;
+    w.csrfFetch = async (_url: string, init: { body: string }) => {
+      const body = JSON.parse(init.body);
+      return { json: async () => ({ success: true, message: 'ok', uuids: body.uuids, protected: body.leftAlone }) };
+    };
+    w.bootstrap = { Toast: class { show() { /* no toast in jsdom */ } }, Modal: class {} };
+  }
+
+  test('Source Modified shows the date only, in both tables', async () => {
+    const { core, addon } = seed();
+    core[0].lastModified = STAMP;
+    addon[0].lastModified = STAMP;
+    const doc = new JSDOM(await renderPage(core, addon)).window.document;
+    for (const [table, uuidOfRow] of [['#pagesTable', uuid(1)], ['#addonPagesTable', uuid(21)]]) {
+      const headers = [...doc.querySelectorAll(`${table} thead th`)];
+      const column = headers.findIndex((th) => text(th) === 'Source Modified');
+      expect(column).toBeGreaterThan(-1);
+      const cell = doc.querySelector(`${table} tr[data-uuid="${uuidOfRow}"]`)?.children[column];
+      expect(text(cell)).toBe('2026-11-10');
+      // A row with no date still shows a dash.
+      const other = doc.querySelector(`${table} tbody tr:last-child`)?.children[column];
+      expect(text(other)).toBe('—');
+    }
+    expect(doc.body.textContent).not.toContain('T14:23:45');
+  });
+
+  test('the Status column asks for 12rem, not 15rem, so the Actions column is not cut off at 1280px', async () => {
+    const { core, addon } = seed();
+    const doc = new JSDOM(await renderPage(core, addon)).window.document;
+    for (const table of ['#pagesTable', '#addonPagesTable']) {
+      const header = [...doc.querySelectorAll(`${table} thead th`)].find((th) => text(th) === 'Status') as HTMLElement;
+      expect(header.getAttribute('style')).toMatch(/min-width:\s*12rem/);
+    }
+  });
+
+  test('the count chips in the add-on header are 12px', async () => {
+    const { core, addon } = seed();
+    const doc = new JSDOM(await renderPage(core, addon)).window.document;
+    const css = [...doc.querySelectorAll('style')].map((s) => s.textContent).join('\n');
+    expect(css).toMatch(/\[data-sync-count\][^{]*\{[^}]*font-size:\s*0?\.75rem/);
+  });
+
+  test('after the core Sync All, the top-of-page chips show the new numbers before the reload', async () => {
+    const { core, addon } = seed();
+    const dom = new JSDOM(await renderPage(core, addon), { runScripts: 'dangerously', beforeParse: stubbedWindow });
+    const doc = dom.window.document;
+    const chip = (kind: string) => text(doc.querySelector(`[data-strip-count="${kind}"]`));
+    expect(chip('update-ready')).toBe('6 Update ready');
+    expect(chip('current')).toBe('1 Same as shipped');
+    (doc.querySelector('[data-testid="sync-all-outdated"]') as HTMLElement).click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(chip('update-ready')).toBe('0 Update ready');
+    expect(chip('edited-here')).toBe('3 Edited here');
+    expect(chip('current')).toBe('7 Same as shipped');
+    dom.window.close();
+  });
+
+  test('after the add-on Sync All, the add-on header chips show the new numbers, and the core chips do not move', async () => {
+    const { core, addon } = seed();
+    const dom = new JSDOM(await renderPage(core, addon), { runScripts: 'dangerously', beforeParse: stubbedWindow });
+    const doc = dom.window.document;
+    const chip = (kind: string) => text(doc.querySelector(`[data-sync-count="${kind}"]`));
+    expect(chip('update-ready')).toBe('2 Update ready');
+    expect(chip('current')).toBe('0 Same as shipped');
+    (doc.querySelector('[data-testid="sync-addon-outdated"]') as HTMLElement).click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(chip('update-ready')).toBe('0 Update ready');
+    expect(chip('edited-here')).toBe('1 Edited here');
+    expect(chip('current')).toBe('2 Same as shipped');
+    expect(text(doc.querySelector('[data-strip-count="update-ready"]'))).toBe('6 Update ready');
+    dom.window.close();
+  });
+});
