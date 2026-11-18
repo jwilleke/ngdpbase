@@ -260,8 +260,7 @@ Members of the owning department may read a project document. A project lead may
   "document-approve": {
     "description": "Approve a project document",
     "label": "Approve project documents",
-    "step-up": true,
-    "audit": { "enabled": true, "on-failure": "refuse" }
+    "step-up": true
   }
 },
 "ngdpbase.access.policies": [
@@ -325,6 +324,21 @@ How it decides:
 | Lead whose profile has no department | deny | deny | none |
 
 The seven rows are a test, `src/security/__tests__/projectDocuments.decisionTable.test.ts`, run against the same policies (`src/managers/__tests__/__fixtures__/projectDocumentsConfig.ts`), and the page list gives the same read answer as the door in each row.
+
+__What the approve rows need.__ The read rows work on any site with this configuration: `page-read` is asked every time a page is opened. The approve rows do not, because nothing in the shipped build asks for `document-approve`. There is no page, route or action that approves a document, so on a site with only the configuration above the table's approve column cannot be tried by clicking. It needs an add-on that does the approving. That add-on does two things:
+
+- __Declares the permission__ in its own `config/default-config.json` and asks the decision point for it when someone approves ([Permissions in the add-on guide](guides/addons-developer-guide.md#permissions); [`addons/journal/config/default-config.json`](../addons/journal/config/default-config.json) is a worked example). The example above declares it in the site's file so that `step-up` is on, and the three policies name it; an add-on that declares it itself does not need that entry.
+- __Declares the audit event on the permission__, if approvals are to be recorded, and records it with `host.recordAuditEvent` ([Addons in the audit guide](guides/audit-developer-guide.md#addons); [`addons/forms/config/default-config.json`](../addons/forms/config/default-config.json) declares `submission-clear` this way):
+
+  ```json
+  "document-approve": {
+    "audit": { "on-failure": "refuse", "description": "A project document was approved" }
+  }
+  ```
+
+  Do not put this in `app-custom-config.json`. A site's own file cannot declare an event: the start-up check finds an enabled event that neither the shipped defaults nor an enabled add-on declare, and the site stops serving with a 503 ("enables 'document-approve', which nothing in this build emits"). That is why the example above has no `audit`.
+
+The decisions in the approve column are the same either way: `projectDocuments.decisionTable.test.ts` asks for `document-approve` directly of the decision point, with no add-on, and `projectDocuments.docExample.test.ts` checks that the configuration above, as written here, lets a fresh site start.
 
 ## Decided, not yet built
 
