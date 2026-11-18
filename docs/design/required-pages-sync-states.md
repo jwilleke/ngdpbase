@@ -203,13 +203,14 @@ __Known limit.__ A page kept before this ships has no baseline, because nothing 
 
 At the top, one line, counting core and add-on pages together:
 
-- "__2 pages need a decision.__ Sync All updates only pages marked Update ready (3). Pages edited on this site are never changed by Sync All."
+- "__2 pages need a decision.__ To act on an edited page, open Diff, then Use shipped version. Sync All updates only pages marked Update ready (3). Pages edited on this site are never changed by Sync All."
+- When nothing is ready the sentence reads "Sync All has nothing to update, because no page is marked Update ready." and the disabled button says "Sync All", with no "(0)".
 - With none: "Nothing needs a decision. Sync All updates the 3 pages marked Update ready."
 - With none at all: "Everything matches what shipped."
 
 The count is rows in states 2, 4 and 5 of the table (Kept needs your review, Both changed, Edited here not confirmed). Same as shipped, Kept for this site and Update ready do not count.
 
-__Sync All__ replaces "Sync All Outdated". It sends only the uuids the server marked Update ready (`bulkOutdated` becomes `state === 'update-ready'`). The server re-evaluates each uuid with `shippedPageState` and skips (reports as protected) any that is no longer Update ready. A forged request cannot overwrite an edited page. The existing `data-testid="sync-all-outdated"` stays for the E2E tests.
+__Sync All__ replaces "Sync All Outdated". It sends only the uuids the server marked Update ready (`bulkOutdated` becomes `state === 'update-ready'`). The server re-evaluates each uuid with `shippedPageState` and skips (reports as protected) any that is no longer Update ready. A forged request cannot overwrite an edited page. The page sends the edited pages it left out as `leftAlone`, and the result message ends with "N edited pages left alone"; the field feeds the message only and never selects a write. The count badges split Not same as shipped into Update ready and Edited here. The existing `data-testid="sync-all-outdated"` stays for the E2E tests.
 
 ## R6: Push to Source only from a source checkout
 

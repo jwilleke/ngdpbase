@@ -16,12 +16,12 @@
 <span class="badge bg-warning text-dark" data-sync-status="update-ready"
       title="A newer version came with this release. This page has not been changed on this site.">Update ready</span>
 <% } else if (syncItem.syncState === 'edited-not-confirmed') { %>
-<span class="badge bg-secondary" data-sync-status="edited-not-confirmed"
+<span class="badge bg-secondary text-wrap text-start lh-sm" data-sync-status="edited-not-confirmed"
       title="This page was changed on this site. Sync All does not replace it.">
     <i class="fas fa-user-edit me-1"></i>Edited here, not confirmed
 </span>
 <% } else if (syncItem.syncState === 'both-changed') { %>
-<span class="badge bg-danger" data-sync-status="both-changed"
+<span class="badge bg-danger text-wrap text-start lh-sm" data-sync-status="both-changed"
       title="This page was changed on this site, and a newer version also shipped. Sync All does not replace it.">
     <i class="fas fa-user-edit me-1"></i>Edited here, and a newer version is available
 </span>

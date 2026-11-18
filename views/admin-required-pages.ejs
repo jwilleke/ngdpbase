@@ -1,6 +1,13 @@
 <%- include('header', { pageName: '' }) %>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/diff2html@3.4.56/bundles/css/diff2html.min.css" />
 
+<style>
+    /* A row's buttons keep each label on one line and flow to a second line when
+       the column is narrow, so the Actions column is never cut off. */
+    #pagesTable td:last-child .btn,
+    #addonPagesTable td:last-child .btn { white-space: nowrap; }
+</style>
+
 <div class="container mt-4">
     <% if (typeof successMessage !== 'undefined' && successMessage) { %>
         <div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -54,6 +61,7 @@
                                 <ul class="mb-0">
                                     <li>Files written via <strong>Push to Source</strong> exist only in the local <code>required-pages/</code> directory. A <code>git pull</code> or product upgrade will overwrite them. They are not in the repository unless manually committed and pushed by a contributor.</li>
                                     <li>Live pages that were never edited in the wiki UI show as <strong>Update ready</strong> when a new product version ships updated source content, and Sync All replaces them. Nothing replaces a page at start-up.</li>
+                                    <li>A page whose header can't be read also shows as <strong>Update ready</strong>; updating it repairs it.</li>
                                 </ul>
                             </div>
                         </div>
@@ -86,8 +94,11 @@
                 <span class="badge bg-primary fs-6 px-3 py-2">
                     <i class="fas fa-plus-circle me-1"></i> <%= counts.new %> New
                 </span>
-                <span class="badge bg-warning text-dark fs-6 px-3 py-2">
-                    <i class="fas fa-edit me-1"></i> <%= counts.modified %> Not same as shipped
+                <span class="badge bg-warning text-dark fs-6 px-3 py-2" data-testid="count-update-ready">
+                    <i class="fas fa-edit me-1"></i> <%= counts.outdatedSyncable %> Update ready
+                </span>
+                <span class="badge bg-secondary fs-6 px-3 py-2" data-testid="count-edited-here">
+                    <i class="fas fa-user-edit me-1"></i> <%= counts.outdatedUserEdited %> Edited here
                 </span>
                 <span class="badge bg-success fs-6 px-3 py-2">
                     <i class="fas fa-check me-1"></i> <%= counts.current %> Same as shipped
@@ -105,7 +116,9 @@
     <p class="mb-3" data-testid="sync-summary">
         <% if (syncSummary.needDecision > 0) { %>
         <strong><%= syncSummary.needDecision %> page<%= syncSummary.needDecision !== 1 ? 's need' : ' needs' %> a decision.</strong>
-        Sync All updates only pages marked Update ready (<%= syncSummary.updateReady %>). Pages edited on this site are never changed by Sync All.
+        To act on an edited page, open Diff, then Use shipped version.
+        <% if (syncSummary.updateReady > 0) { %>Sync All updates only pages marked Update ready (<%= syncSummary.updateReady %>).<% } else { %>Sync All has nothing to update, because no page is marked Update ready.<% } %>
+        Pages edited on this site are never changed by Sync All.
         <% } else if (syncSummary.updateReady > 0) { %>
         Nothing needs a decision. Sync All updates the <%= syncSummary.updateReady %> page<%= syncSummary.updateReady !== 1 ? 's' : '' %> marked Update ready.
         <% } else { %>
@@ -140,7 +153,7 @@
                 </button>
                 <% } else if (counts.outdatedUserEdited > 0) { %>
                 <button class="btn btn-warning" disabled data-testid="sync-all-outdated">
-                    <i class="fas fa-sync me-1"></i> Sync All (0)
+                    <i class="fas fa-sync me-1"></i> Sync All
                 </button>
                 <% } %>
                 <button class="btn btn-outline-secondary" onclick="syncSelected()">
@@ -354,7 +367,7 @@
                     </button>
                     <% } else if (addonCounts.outdatedUserEdited > 0) { %>
                     <button class="btn btn-sm btn-warning" disabled data-testid="sync-addon-outdated">
-                        <i class="fas fa-sync me-1"></i> Sync All (0)
+                        <i class="fas fa-sync me-1"></i> Sync All
                     </button>
                     <% } %>
                 </div>
@@ -684,7 +697,10 @@ async function syncAddonOutdated() {
     const uuids = Array.from(document.querySelectorAll('.addon-row[data-bulk-outdated="true"]'))
         .map(row => row.dataset.uuid);
     if (uuids.length === 0) { showToast('No addon pages to sync.'); return; }
-    await doSync(uuids, `Syncing ${uuids.length} addon page${uuids.length !== 1 ? 's' : ''}…`);
+    // The message says how many edited pages Sync All left alone.
+    const leftAlone = Array.from(document.querySelectorAll('.addon-row[data-user-modified="true"]'))
+        .map(row => row.dataset.uuid);
+    await doSync(uuids, `Syncing ${uuids.length} addon page${uuids.length !== 1 ? 's' : ''}…`, false, leftAlone);
 }
 
 function getUuidsByStatus(status) {
@@ -735,7 +751,11 @@ async function syncByStatus(status) {
         showToast('No pages to sync.');
         return;
     }
-    await doSync(uuids, `Syncing ${uuids.length} page${uuids.length !== 1 ? 's' : ''}…`);
+    // Sync All names the edited pages it leaves alone, so the message can count them.
+    const leftAlone = status === 'outdated'
+        ? Array.from(document.querySelectorAll('#pagesTable tr[data-user-modified="true"]')).map(row => row.dataset.uuid)
+        : [];
+    await doSync(uuids, `Syncing ${uuids.length} page${uuids.length !== 1 ? 's' : ''}…`, false, leftAlone);
 }
 
 async function syncSelected() {
@@ -779,7 +799,7 @@ async function postSync(body, statusMsg) {
     }
 }
 
-async function doSync(uuids, statusMsg, force = false) {
+async function doSync(uuids, statusMsg, force = false, leftAlone = []) {
     showToast(statusMsg);
 
     try {
@@ -789,7 +809,7 @@ async function doSync(uuids, statusMsg, force = false) {
                 'Content-Type': 'application/json',
                 'X-CSRF-Token': CSRF_TOKEN
             },
-            body: JSON.stringify({ uuids, force })
+            body: JSON.stringify({ uuids, force, leftAlone })
         });
 
         const result = await response.json();

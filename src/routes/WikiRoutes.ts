@@ -15945,8 +15945,11 @@ ${panes}
         removeOrphans?: string[];
         decline?: Array<{ source: string; uuid: string; reason?: string }>;
         allow?: Array<{ source: string; uuid: string }>;
+        leftAlone?: unknown[];
       };
       const uuids = Array.isArray(body.uuids) ? body.uuids : [];
+      // Sync All names the edited pages it did not send; they only feed the message.
+      const leftAloneCount = Array.isArray(body.leftAlone) ? body.leftAlone.filter((id) => typeof id === 'string').length : 0;
       const forceSync = body.force === true;
       const reconcileItems = Array.isArray(body.reconcile) ? body.reconcile : [];
       const adoptItems = Array.isArray(body.adoptUuid) ? body.adoptUuid : [];
@@ -16278,6 +16281,7 @@ ${panes}
       const parts: string[] = [];
       if (synced.length > 0) parts.push(`${synced.length} page${synced.length !== 1 ? 's' : ''} synced`);
       if (protected_.length > 0) parts.push(`${protected_.length} skipped (user-edited — use Push to Source or diff first)`);
+      if (leftAloneCount > 0) parts.push(`${leftAloneCount} edited page${leftAloneCount !== 1 ? 's' : ''} left alone`);
       if (removedOrphans.length > 0) parts.push(`${removedOrphans.length} orphaned addon page${removedOrphans.length !== 1 ? 's' : ''} removed`);
       if (failed.length > 0) parts.push(`${failed.length} could not be saved: ${failed.map((f) => f.reason).join('; ')}`);
       if (declined.length > 0) parts.push(`${declined.length} page${declined.length !== 1 ? 's' : ''} will not be seeded here`);
