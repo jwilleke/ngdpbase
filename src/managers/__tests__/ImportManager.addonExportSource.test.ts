@@ -211,6 +211,19 @@ describe('exporting an add-on\'s list as CSV', () => {
     expect(im.exportFile(runId, ALICE)).toBeNull();
   });
 
+  test('the shipped default for csv-max-cells is 20 million cells (#2409)', async () => {
+    const shipped = await fs.readJson(path.join(__dirname, '../../../config/app-default-config.json'));
+    expect(shipped['ngdpbase.export.engine.csv-max-cells']).toBe(20_000_000);
+  });
+
+  test('with csv-max-cells unset, the fallback the code reads is 20 million cells (#2409)', async () => {
+    const { im, engine } = await load();
+    const getProperty = vi.spyOn(engine.getManager('ConfigurationManager') as { getProperty: (k: string, d: unknown) => unknown }, 'getProperty');
+    const runId = await im.startExport({ source: 'ice-export.rows', ref: 'all', format: 'core.csv-file' }, ALICE);
+    expect((await finished(im, runId, ALICE)).state).toBe('done');
+    expect(getProperty).toHaveBeenCalledWith('ngdpbase.export.engine.csv-max-cells', 20_000_000);
+  });
+
   test('a records CSV with exactly csv-max-cells cells is made', async () => {
     const { im, rows } = await load({ 'ngdpbase.export.engine.csv-max-cells': 900 });
     sparse(rows, 30);
