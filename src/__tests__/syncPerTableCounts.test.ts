@@ -43,7 +43,7 @@ function row(n: number, syncState: ShippedPageStateName, extra: Partial<Row> = {
 function countsOf(rows: Row[]) {
   return {
     uuidMismatch: 0,
-    new: 0,
+    new: rows.filter((r) => r.status === 'new').length,
     modified: rows.filter((r) => r.status === 'modified').length,
     current: rows.filter((r) => r.status === 'current').length,
     titleDrift: 0,
@@ -336,6 +336,84 @@ describe('#2414 the table fits at 1280px, and the count chips follow a sync', ()
     expect(chip('edited-here')).toBe('1 Edited here');
     expect(chip('current')).toBe('2 Same as shipped');
     expect(text(doc.querySelector('[data-strip-count="update-ready"]'))).toBe('6 Update ready');
+    dom.window.close();
+  });
+});
+
+describe('#2414 lows, round 3, and #2428', () => {
+  function stubbedWindow(window: unknown) {
+    const w = window as Record<string, unknown>;
+    w.csrfFetch = async (_url: string, init: { body: string }) => {
+      const body = JSON.parse(init.body);
+      const uuids = body.uuids ?? (body.reconcile ?? []).map((i: { sourceUuid: string }) => i.sourceUuid);
+      return { json: async () => ({ success: true, message: 'ok', uuids, protected: body.leftAlone }) };
+    };
+    w.confirm = () => true;
+    w.bootstrap = { Toast: class { show() { /* no toast in jsdom */ } }, Modal: class {} };
+  }
+
+  const newRow = (n: number): Row => row(n, 'same-as-shipped', { status: 'new', userModified: false, syncState: undefined });
+
+  test('the Source Modified cell carries a nowrap marker in both tables, and the page styles it nowrap', async () => {
+    const { core, addon } = seed();
+    core[0].lastModified = '2026-10-14T10:00:00Z';
+    const doc = new JSDOM(await renderPage(core, addon)).window.document;
+    for (const table of ['#pagesTable', '#addonPagesTable']) {
+      const column = [...doc.querySelectorAll(`${table} thead th`)].findIndex((th) => text(th) === 'Source Modified');
+      const cells = [...doc.querySelectorAll(`${table} tbody tr[data-uuid]`)].map((tr) => tr.children[column]);
+      expect(cells.length).toBeGreaterThan(0);
+      for (const cell of cells) expect(cell.getAttribute('data-col')).toBe('source-modified');
+    }
+    const css = [...doc.querySelectorAll('style')].map((s) => s.textContent).join('\n');
+    expect(css).toMatch(/\[data-col="source-modified"\][^{]*\{[^}]*white-space:\s*nowrap/);
+  });
+
+  test('after Sync All, "Sync All New (N)" counts the rows that are still new, and disables at 0', async () => {
+    const { core, addon } = seed();
+    core.push(newRow(31), newRow(32));
+    const dom = new JSDOM(await renderPage(core, addon), { runScripts: 'dangerously', beforeParse: stubbedWindow });
+    const doc = dom.window.document;
+    const button = doc.querySelector('[data-testid="sync-all-new"]') as HTMLButtonElement;
+    expect(text(button)).toBe('Sync All New (2)');
+    expect(button.disabled).toBe(false);
+    button.click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(text(doc.querySelector('[data-strip-count="new"]'))).toBe('0 New');
+    expect(text(button)).toBe('Sync All New');
+    expect(button.textContent).not.toContain('(0)');
+    expect(button.disabled).toBe(true);
+    dom.window.close();
+  });
+
+  test('after a sync on an add-on row, the Slug cell keeps its slug and the Status cell says Same as shipped', async () => {
+    const { core, addon } = seed();
+    const dom = new JSDOM(await renderPage(core, addon), { runScripts: 'dangerously', beforeParse: stubbedWindow });
+    const doc = dom.window.document;
+    const cellOf = (header: string) => {
+      const column = [...doc.querySelectorAll('#addonPagesTable thead th')].findIndex((th) => text(th) === header);
+      return doc.querySelector(`#addonPagesTable tr[data-uuid="${uuid(21)}"]`)?.children[column];
+    };
+    expect(text(cellOf('Slug'))).toBe('page21');
+    (doc.querySelector('[data-testid="sync-addon-outdated"]') as HTMLElement).click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(text(cellOf('Slug'))).toBe('page21');
+    expect(cellOf('Slug')?.querySelector('[data-sync-status]')).toBeNull();
+    expect(text(cellOf('Status'))).toBe('Same as shipped');
+    dom.window.close();
+  });
+
+  test('after a reconcile on an add-on row, the Slug cell keeps its slug and the Status cell says Same as shipped', async () => {
+    const { core, addon } = seed();
+    addon.push(row(24, 'update-ready', { source: 'addon:demo', addonName: 'demo', status: 'uuid-mismatch', userModified: false, bulkOutdated: false, liveUuid: uuid(99) } as Partial<Row>));
+    const dom = new JSDOM(await renderPage(core, addon), { runScripts: 'dangerously', beforeParse: stubbedWindow });
+    const doc = dom.window.document;
+    const cellOf = (header: string) => {
+      const column = [...doc.querySelectorAll('#addonPagesTable thead th')].findIndex((th) => text(th) === header);
+      return doc.querySelector(`#addonPagesTable tr[data-uuid="${uuid(24)}"]`)?.children[column];
+    };
+    await (dom.window as unknown as { reconcileOne: (a: string, b: string, c: string) => Promise<void> }).reconcileOne(uuid(24), uuid(99), 'Page 24');
+    expect(text(cellOf('Slug'))).toBe('page24');
+    expect(text(cellOf('Status'))).toBe('Same as shipped');
     dom.window.close();
   });
 });
