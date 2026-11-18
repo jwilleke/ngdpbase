@@ -237,6 +237,95 @@ __Where the page decision applies.__ Everywhere a page is shown: opening it, a l
 
 The three levels of checking built on this (the global `PolicyDecisionPoint.permits`, the page-aware `PolicyInformationPoint`, and this evaluator at the bottom) are described in [architecture/Access-Control.md](architecture/Access-Control.md#two-evaluation-engines).
 
+### Lists and search
+
+A condition runs on a page list and on a search as it does on a single page ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261), decided by the operator). Every source is allowed there. The subject's attributes and the environment are read once per listing; a page's attributes come from the page index and its frontmatter, per candidate, and the vault facts once per vault. A search filters up to 5,000 candidates (`ngdpbase.search.access-filter.max-candidates`), one decision each, so the cost of a condition is checked: `SearchManager.conditionBudget.test.ts` runs a 5,000-candidate search with a condition on the subject (`subject:aal`, `subject:department-id`), on the environment (`environment:is-business-hours`) and on the page (`resource:owning-department`), and requires it to take at most twice as long as the same search with no condition. A change that reads a profile or a schedule once per page fails it.
+
+## Worked example: project documents
+
+Members of the owning department may read a project document. A project lead may approve one, but not outside business hours and not below AAL 2. It needs no resource type of its own: the documents are the pages whose `system-category` is `project-document`, the department is a frontmatter field, and the attributes are declared on `page`. To select by name instead, give each `resources` entry `{ "type": "page", "pattern": "Project *" }`; a page-name pattern reads the same attributes.
+
+```json
+"ngdpbase.access.resource-types": {
+  "page": {
+    "attributes": {
+      "owning-department": { "type": "string", "from": "frontmatter:department" }
+    }
+  }
+},
+"ngdpbase.access.subject-attributes": {
+  "department-id": { "type": "string", "from": "profile:department" }
+},
+"ngdpbase.permissions.definitions": {
+  "document-approve": {
+    "description": "Approve a project document",
+    "label": "Approve project documents",
+    "step-up": true,
+    "audit": { "enabled": true, "on-failure": "refuse" }
+  }
+},
+"ngdpbase.access.policies": [
+  {
+    "id": "project-document-read-department",
+    "name": "Project documents: the owning department reads",
+    "effect": "allow",
+    "subjects": [{ "type": "authenticated" }],
+    "resources": [{ "type": "system-category", "pattern": "project-document" }],
+    "actions": ["page-read"],
+    "condition": {
+      "string-equal": [
+        { "attributeid": "subject:department-id", "datatype": "string" },
+        { "attributeid": "resource:owning-department", "datatype": "string" }
+      ]
+    }
+  },
+  {
+    "id": "project-document-approve",
+    "name": "Project documents: a lead in the owning department approves",
+    "effect": "allow",
+    "subjects": [{ "type": "role", "value": "project-lead" }],
+    "resources": [{ "type": "system-category", "pattern": "project-document" }],
+    "actions": ["document-approve"],
+    "condition": {
+      "string-equal": [
+        { "attributeid": "subject:department-id", "datatype": "string" },
+        { "attributeid": "resource:owning-department", "datatype": "string" }
+      ]
+    }
+  },
+  {
+    "id": "project-document-approve-guard",
+    "name": "Project documents: no approval outside business hours or below AAL 2",
+    "effect": "deny",
+    "subjects": [{ "type": "anyone" }],
+    "resources": [{ "type": "system-category", "pattern": "project-document" }],
+    "actions": ["document-approve"],
+    "condition": {
+      "or": [
+        { "boolean-equal": [ { "attributeid": "environment:is-business-hours", "datatype": "boolean" }, { "value": false, "datatype": "boolean" } ] },
+        { "integer-less-than-or-equal": [ { "attributeid": "subject:aal", "datatype": "integer" }, { "value": 1, "datatype": "integer" } ] }
+      ]
+    }
+  }
+]
+```
+
+Every policy needs a `name`. The shipped configuration declares no `owning-department` and no `department-id`: a site adds them, and no account field `department` exists until it does. The deny has no priority and needs none: under `deny-overrides` it wins whatever the order.
+
+How it decides:
+
+| Who, when | Read | Approve | Deciding policies |
+| --- | --- | --- | --- |
+| Engineering member, document in Engineering | permit | deny (no allow) | read: `project-document-read-department` |
+| Sales member, document in Engineering | deny | deny | none |
+| Engineering lead, AAL 2, Tuesday 10:00 | permit | permit, after a fresh factor (`step-up`) | read: `project-document-read-department`; approve: `project-document-approve` |
+| Engineering lead, AAL 2, Saturday | permit | deny | approve: `project-document-approve-guard` |
+| Engineering lead, AAL 1, Tuesday 10:00 | permit | deny | approve: `project-document-approve-guard` |
+| Anyone, document with no `department` | deny (the allow cannot apply) | deny | none |
+| Lead whose profile has no department | deny | deny | none |
+
+The seven rows are a test, `src/security/__tests__/projectDocuments.decisionTable.test.ts`, run against the same policies (`src/managers/__tests__/__fixtures__/projectDocumentsConfig.ts`), and the page list gives the same read answer as the door in each row.
+
 ## Decided, not yet built
 
 - __A system-category's vault settings__ (`defaultPrivate`, `encrypt`) are not policy: they are the declaration of the entry's `owner` (`admin`, or the add-on that declared it), and they stand (operator, 2026-09-29, reversing the 2026-09-28 note). A health-record add-on that declares `encrypt: true` keeps its vault sealed.

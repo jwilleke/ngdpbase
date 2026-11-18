@@ -39,6 +39,31 @@ How to add or change a configuration key. Config selects and parameterises; it n
   `npm run lint:sensitive` (part of `npm run lint`) fails on a secret-looking string setting that isn't declared; the other two choices are yours to make.
 - 6 Document it next to the module that consumes it (`docs/managers/…`), not as a second catalog.
 
+## Attributes for access policies
+
+An access policy's `condition` ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)) reads only attributes declared in config. An attribute with no declaration cannot be used: the validator refuses a policy that names it.
+
+| Key | Declares | Example |
+| --- | --- | --- |
+| `ngdpbase.access.resource-types` | Each type's `attributes`, read as `resource:<name>` | `owner`, `owning-department` |
+| `ngdpbase.access.subject-attributes` | Attributes of whoever asks, read as `subject:<name>` | `id`, `aal`, `department-id` |
+| `ngdpbase.access.environment-attributes` | Attributes of the moment or the site, read as `environment:<name>` | `is-business-hours`, `vaults-admin-access` |
+
+Each is `{ "type": …, "from": … }`. Types: `string`, `integer`, `boolean`, `identity` (an @id) and `list` (of strings, booleans or whole numbers). `from` names the PIP source by prefix and name:
+
+| Source | Reads | Declared on |
+| --- | --- | --- |
+| `frontmatter:<field>` | The page's frontmatter field | resource |
+| `vault:<field>` | The vault a page is in: `vault:owner`, `vault:encrypted` | resource |
+| `account:<field>`, `profile:<field>` | The signed-in account's record; `account:id` is the @id | subject |
+| `sign-in` | The assurance level the session's sign-in reached | subject |
+| `schedule:<name>` | Whether now is inside a schedule in `ngdpbase.schedules` | environment |
+| `config:<key>` | A boolean configuration value | environment |
+
+The set of sources is code: each is a reader in `PolicyInformationPoint`. Config chooses which attributes exist and where each comes from, never how a source is read. `id` and `aal` are pinned in code and cannot be redeclared. The attribute tables and what each source reads when it is missing are in [access-policies.md](../access-policies.md#subject-attributes); a worked example that declares `owning-department` and `department-id` is [there too](../access-policies.md#worked-example-project-documents).
+
+Checks in the Admin screen and at boot: saving `ngdpbase.access.policies` refuses a policy that reads an undeclared attribute, the wrong datatype or an unknown function, and `ngdpbase.access.rule-combining-algorithm` accepts only `deny-overrides`. A `priority` left on a policy is ignored and named once at start-up.
+
 ## How you know you are done
 
 - The key appears in `config/app-default-config.json`.
