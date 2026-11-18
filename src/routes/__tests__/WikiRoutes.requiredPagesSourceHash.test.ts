@@ -461,10 +461,17 @@ describe('#1871 Sync All Outdated counts only the pages it will sync', () => {
     expect(data.counts).toMatchObject({ modified: 1, outdatedSyncable: 0, outdatedUserEdited: 1 });
     const button = doc.querySelector('[data-testid="sync-all-outdated"]') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(button.textContent).toContain('Sync All (0)');
-    // R5: the summary line says one page needs a decision and nothing is ready.
+    // Nothing is ready, so the label carries no "(0)".
+    expect(button.textContent?.replace(/\s+/g, ' ').trim()).toBe('Sync All');
+    // R5: the summary line says one page needs a decision, how to act on it, and that nothing is ready.
     const summary = doc.querySelector('[data-testid="sync-summary"]')?.textContent?.replace(/\s+/g, ' ').trim();
-    expect(summary).toBe('1 page needs a decision. Sync All updates only pages marked Update ready (0). Pages edited on this site are never changed by Sync All.');
+    expect(summary).toBe('1 page needs a decision. To act on an edited page, open Diff, then Use shipped version. Sync All has nothing to update, because no page is marked Update ready. Pages edited on this site are never changed by Sync All.');
+    expect(summary).not.toContain('(0)');
+    // The count badges name the two kinds apart.
+    const badge = (name: string) => doc.querySelector(`[data-testid="count-${name}"]`)?.textContent?.replace(/\s+/g, ' ').trim();
+    expect(badge('update-ready')).toBe('0 Update ready');
+    expect(badge('edited-here')).toBe('1 Edited here');
+    expect(doc.body.textContent).not.toContain('Not same as shipped');
     // What the button's sync would select: nothing.
     expect(doc.querySelectorAll('#pagesTable tr[data-bulk-outdated="true"]')).toHaveLength(0);
     // #1918: the row reads and syncs through the shared partials; Force Sync asks first.
@@ -487,10 +494,42 @@ describe('#1871 Sync All Outdated counts only the pages it will sync', () => {
     expect(button.disabled).toBe(false);
     expect(button.textContent).toContain('Sync All (1)');
     const summary = doc.querySelector('[data-testid="sync-summary"]')?.textContent?.replace(/\s+/g, ' ').trim();
-    expect(summary).toBe('1 page needs a decision. Sync All updates only pages marked Update ready (1). Pages edited on this site are never changed by Sync All.');
+    expect(summary).toBe('1 page needs a decision. To act on an edited page, open Diff, then Use shipped version. Sync All updates only pages marked Update ready (1). Pages edited on this site are never changed by Sync All.');
+    const badge = (name: string) => doc.querySelector(`[data-testid="count-${name}"]`)?.textContent?.replace(/\s+/g, ' ').trim();
+    expect(badge('update-ready')).toBe('1 Update ready');
+    expect(badge('edited-here')).toBe('1 Edited here');
     const selected = [...doc.querySelectorAll('#pagesTable tr[data-bulk-outdated="true"]')]
       .map((row) => row.getAttribute('data-uuid'));
     expect(selected).toEqual([OTHER]);
+  });
+
+  test('the help text says an unreadable header also shows as Update ready, and updating repairs it', async () => {
+    await writeUserEdited();
+    const { doc } = await renderList();
+    const help = doc.querySelector('#updateProtectionInfo')?.textContent?.replace(/\s+/g, ' ');
+    expect(help).toContain("A page whose header can't be read also shows as Update ready; updating it repairs it.");
+  });
+
+  test('Sync All says how many edited pages it left alone', async () => {
+    await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new source body'), 'utf8');
+    await fs.writeFile(
+      path.join(dirs.pagesDir, `${UUID}.md`),
+      page('synced body', `${REQUIRED_SOURCE_HASH_KEY}: ${pageSourceHash('synced body')}\n`),
+      'utf8'
+    );
+    const { routes, pageManager } = await makeRoutes(dirs);
+    await reload(pageManager);
+
+    const res = createMockRes();
+    await routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID], leftAlone: [OTHER, '11111111-2222-4333-8444-555555555555'] }), res);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, message: '1 page synced; 2 edited pages left alone' }));
+
+    const one = createMockRes();
+    await routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID], leftAlone: [OTHER] }), one);
+    expect(one.json.mock.calls[0][0].message).toContain('1 edited page left alone');
+    const none = createMockRes();
+    await routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID] }), none);
+    expect(none.json.mock.calls[0][0].message).not.toContain('left alone');
   });
 
   test('the add-on rows use the same rule: only Update ready is taken, New keeps its own button', () => {

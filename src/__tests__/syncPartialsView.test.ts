@@ -51,6 +51,21 @@ describe('#2389 _sync-status: "Same as shipped" only for same-as-shipped', () =>
   });
 });
 
+describe('#2389 _sync-counts: Update ready and Edited here are counted apart', () => {
+  test('two badges, no "Not same as shipped"', async () => {
+    const html = await ejs.renderFile(path.join(VIEWS, '_sync-counts.ejs'), {
+      syncCounts: { new: 1, outdatedSyncable: 2, outdatedUserEdited: 3, current: 4 }
+    });
+    const doc = new JSDOM(`<body>${html}</body>`).window.document;
+    const text = (kind: string) => doc.querySelector(`[data-sync-count="${kind}"]`)?.textContent?.trim();
+    expect(text('new')).toBe('1 New');
+    expect(text('update-ready')).toBe('2 Update ready');
+    expect(text('edited-here')).toBe('3 Edited here');
+    expect(text('current')).toBe('4 Same as shipped');
+    expect(doc.body.textContent).not.toContain('Not same as shipped');
+  });
+});
+
 describe('#1918 _sync-button', () => {
   test('Sync carries the id and asks nothing', async () => {
     const b = (await partial('_sync-button', { userModified: false, id: 'u-1', name: 'Page' })).querySelector('button')!;
