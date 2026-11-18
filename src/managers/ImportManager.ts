@@ -554,7 +554,7 @@ class ImportManager extends BaseManager {
       toCsv: (headers, rows) => this.exportManager().toCsv(headers, rows),
       csvLimits: () => ({
         maxColumns: this.numberSetting('ngdpbase.export.engine.csv-max-columns', 1000),
-        maxCells: this.numberSetting('ngdpbase.export.engine.csv-max-cells', 50_000_000)
+        maxCells: this.numberSetting('ngdpbase.export.engine.csv-max-cells', 20_000_000)
       })
     })) this.registerShim('core', shim);
 

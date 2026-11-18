@@ -6,7 +6,7 @@ import type { ExportShimTools, IceItem, IceShim } from '../../types';
 import ExportManager from '../../../managers/ExportManager';
 
 const exportManager = new ExportManager({});
-const limits = { maxColumns: 1000, maxCells: 50_000_000 };
+const limits = { maxColumns: 1000, maxCells: 20_000_000 };
 const shim = exportShims({
   renderDocument: async () => '',
   htmlToPdf: async () => Buffer.alloc(0),
@@ -87,7 +87,7 @@ describe('core.csv-file', () => {
   });
 
   describe('the cell cap (#2410)', () => {
-    afterEach(() => { limits.maxCells = 50_000_000; });
+    afterEach(() => { limits.maxCells = 20_000_000; });
 
     test('rows x columns over csv-max-cells is refused in plain words, before the table is built', async () => {
       limits.maxCells = 40;
