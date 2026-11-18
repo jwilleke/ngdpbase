@@ -259,11 +259,11 @@ The `PolicyInformationPoint` applies it in two places:
 
 ### What an administrator can and cannot see
 
-An administrator has no read, list, search, edit or upload access to another user's container, encrypted or not. Concretely:
+An administrator has no list, search or upload access to another user's container, and no access at all to an encrypted store. The one way in is at a door, to a vault that is not encrypted, when `ngdpbase.vaults.admin-access` is true (shipped true, [#2255](https://github.com/jwilleke/ngdpbase/issues/2255)): the `/vaults/…` page routes (`privatePageRoute()`, [#2413](https://github.com/jwilleke/ngdpbase/issues/2413)), the raw editor and the page door admit a holder of `admin-system` to read, change and delete its pages, and the page door records each access as `vault-admin-access`. With the key false, or for an encrypted vault, every non-owner is refused. Concretely:
 
 - no private page is in `page-index.json`, the shared search index, the link graph or the parse cache, so `/admin/deleted-pages`, site search and page lists have nothing to show
 - no private file is in `attachment-metadata.json`
-- `mayActInPrivateContainer` refuses every non-owner, so a direct URL is refused too
+- `mayActInPrivateContainer` refuses every non-owner, so a direct URL is refused too, except at a door for the administrator above (`mayEnterVaultAtDoor`)
 - for an encrypted store there is no key an administrator could hold: the KEK is wrapped by the owner's password and their 12 words
 
 Private page titles are kept out of logs and audit records by `src/utils/redactPrivateNames.ts`: a name in any of its three forms (plain, URL path, URL-encoded) keeps its owner and store and loses its title, so a line stays diagnosable without saying which page. Code that knows a page is private logs its uuid instead.
