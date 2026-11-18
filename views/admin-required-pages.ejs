@@ -6,6 +6,14 @@
        the column is narrow, so the Actions column is never cut off. */
     #pagesTable td:last-child .btn,
     #addonPagesTable td:last-child .btn { white-space: nowrap; }
+    /* The theme's .btn-outline-primary sets its own padding and beats btn-sm, so
+       Update (and Sync) stood 35px tall beside 31px Diff. One size for every
+       row button. */
+    #pagesTable td:last-child .btn-sm,
+    #addonPagesTable td:last-child .btn-sm { padding: .25rem .5rem; }
+    /* Status words at 12px, not the 10.5px the table's text size gave them. */
+    #pagesTable [data-sync-status],
+    #addonPagesTable [data-sync-status] { font-size: .75rem; }
 </style>
 
 <div class="container mt-4">
@@ -61,7 +69,6 @@
                                 <ul class="mb-0">
                                     <li>Files written via <strong>Push to Source</strong> exist only in the local <code>required-pages/</code> directory. A <code>git pull</code> or product upgrade will overwrite them. They are not in the repository unless manually committed and pushed by a contributor.</li>
                                     <li>Live pages that were never edited in the wiki UI show as <strong>Update ready</strong> when a new product version ships updated source content, and Sync All replaces them. Nothing replaces a page at start-up.</li>
-                                    <li>A page whose header can't be read also shows as <strong>Update ready</strong>; updating it repairs it.</li>
                                 </ul>
                             </div>
                         </div>
@@ -108,19 +115,14 @@
         </div>
     </div>
 
-    <!-- #2389: what needs a decision, and what Sync All will do -->
-    <% const syncSummary = {
-        needDecision: (counts.outdatedUserEdited || 0) + (typeof addonCounts !== 'undefined' ? addonCounts.outdatedUserEdited || 0 : 0),
-        updateReady: (counts.outdatedSyncable || 0) + (typeof addonCounts !== 'undefined' ? addonCounts.outdatedSyncable || 0 : 0)
-    }; %>
+    <!-- #2389: how to act on a page. No number here: each table says its own
+         counts in its header, in the scope of its own Sync All (#2414). -->
+    <% const anyEdited = counts.modified > 0 || (typeof addonCounts !== 'undefined' && addonCounts.modified > 0); %>
     <p class="mb-3" data-testid="sync-summary">
-        <% if (syncSummary.needDecision > 0) { %>
-        <strong><%= syncSummary.needDecision %> page<%= syncSummary.needDecision !== 1 ? 's need' : ' needs' %> a decision.</strong>
+        <% if (anyEdited) { %>
+        Sync All updates only pages marked Update ready. Pages edited on this site are never changed by Sync All.
         To act on an edited page, open Diff, then Use shipped version.
-        <% if (syncSummary.updateReady > 0) { %>Sync All updates only pages marked Update ready (<%= syncSummary.updateReady %>).<% } else { %>Sync All has nothing to update, because no page is marked Update ready.<% } %>
-        Pages edited on this site are never changed by Sync All.
-        <% } else if (syncSummary.updateReady > 0) { %>
-        Nothing needs a decision. Sync All updates the <%= syncSummary.updateReady %> page<%= syncSummary.updateReady !== 1 ? 's' : '' %> marked Update ready.
+        A page whose header can't be read also shows as Update ready; updating it repairs it.
         <% } else { %>
         Everything matches what shipped.
         <% } %>
@@ -146,16 +148,6 @@
                     <i class="fas fa-plus-circle me-1"></i> Sync All New (<%= counts.new %>)
                 </button>
                 <% } %>
-                <% if (counts.outdatedSyncable > 0) { %>
-                <button class="btn btn-warning" onclick="syncByStatus('outdated')" data-testid="sync-all-outdated"
-                        title="<%= counts.outdatedUserEdited > 0 ? `${counts.outdatedUserEdited} page${counts.outdatedUserEdited !== 1 ? 's edited' : ' edited'} on this site ${counts.outdatedUserEdited !== 1 ? 'are' : 'is'} not changed` : 'Update every page marked Update ready' %>">
-                    <i class="fas fa-sync me-1"></i> Sync All (<%= counts.outdatedSyncable %>)
-                </button>
-                <% } else if (counts.outdatedUserEdited > 0) { %>
-                <button class="btn btn-warning" disabled data-testid="sync-all-outdated">
-                    <i class="fas fa-sync me-1"></i> Sync All
-                </button>
-                <% } %>
                 <button class="btn btn-outline-secondary" onclick="syncSelected()">
                     <i class="fas fa-check-square me-1"></i> Sync Selected
                 </button>
@@ -168,11 +160,24 @@
     <div class="row">
         <div class="col-12">
             <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="fas fa-file-alt"></i> Source Pages</h5>
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div>
-                        <button class="btn btn-sm btn-outline-secondary me-1" onclick="selectAll(true)">Select All</button>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="selectAll(false)">Deselect All</button>
+                        <h5 class="mb-0"><i class="fas fa-file-alt"></i> Source Pages</h5>
+                        <small class="text-muted"><%- include('_sync-summary', { syncSummary: { counts: counts, testId: 'core-sync-summary' } }) %></small>
+                    </div>
+                    <div class="d-flex flex-wrap gap-1">
+                        <% if (counts.outdatedSyncable > 0) { %>
+                        <button class="btn btn-sm btn-warning text-nowrap" onclick="syncByStatus('outdated')" data-testid="sync-all-outdated"
+                                title="<%= counts.outdatedUserEdited > 0 ? `${counts.outdatedUserEdited} page${counts.outdatedUserEdited !== 1 ? 's edited' : ' edited'} on this site ${counts.outdatedUserEdited !== 1 ? 'are' : 'is'} not changed` : 'Update every page marked Update ready' %>">
+                            <i class="fas fa-sync me-1"></i> Sync All<span data-sync-all-count> (<%= counts.outdatedSyncable %>)</span>
+                        </button>
+                        <% } else if (counts.outdatedUserEdited > 0) { %>
+                        <button class="btn btn-sm btn-warning text-nowrap" disabled data-testid="sync-all-outdated">
+                            <i class="fas fa-sync me-1"></i> Sync All<span data-sync-all-count></span>
+                        </button>
+                        <% } %>
+                        <button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="selectAll(true)">Select All</button>
+                        <button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="selectAll(false)">Deselect All</button>
                     </div>
                 </div>
                 <div class="card-body p-0">
@@ -193,7 +198,7 @@
                                     </th>
                                     <th>Title</th>
                                     <th>Slug</th>
-                                    <th>Status</th>
+                                    <th style="min-width: 15rem;">Status</th>
                                     <th>Source Modified</th>
                                     <th>Actions</th>
                                 </tr>
@@ -230,7 +235,7 @@
                                             </span>
                                             <br><small class="text-muted font-monospace">live: <%= page.liveUuid %></small>
                                         <% } else { %>
-                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified } }) %>
+                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable } }) %>
                                         <% } %>
                                     </td>
                                     <td><small class="text-muted"><%= page.lastModified || '—' %></small></td>
@@ -359,15 +364,16 @@
                         <small class="text-muted">Pages shipped with enabled addons —
                             <%- include('_sync-counts', { syncCounts: addonCounts }) %>
                         </small>
+                        <br><small class="text-muted"><%- include('_sync-summary', { syncSummary: { counts: addonCounts, testId: 'addon-sync-summary' } }) %></small>
                     </div>
                     <% if (addonCounts.outdatedSyncable > 0) { %>
-                    <button class="btn btn-sm btn-warning" onclick="syncAddonOutdated()" data-testid="sync-addon-outdated"
+                    <button class="btn btn-sm btn-warning text-nowrap" onclick="syncAddonOutdated()" data-testid="sync-addon-outdated"
                             title="<%= addonCounts.outdatedUserEdited > 0 ? `${addonCounts.outdatedUserEdited} addon page${addonCounts.outdatedUserEdited !== 1 ? 's edited' : ' edited'} on this site ${addonCounts.outdatedUserEdited !== 1 ? 'are' : 'is'} not changed` : 'Update every addon page marked Update ready' %>">
-                        <i class="fas fa-sync me-1"></i> Sync All (<%= addonCounts.outdatedSyncable %>)
+                        <i class="fas fa-sync me-1"></i> Sync All<span data-sync-all-count> (<%= addonCounts.outdatedSyncable %>)</span>
                     </button>
                     <% } else if (addonCounts.outdatedUserEdited > 0) { %>
-                    <button class="btn btn-sm btn-warning" disabled data-testid="sync-addon-outdated">
-                        <i class="fas fa-sync me-1"></i> Sync All
+                    <button class="btn btn-sm btn-warning text-nowrap" disabled data-testid="sync-addon-outdated">
+                        <i class="fas fa-sync me-1"></i> Sync All<span data-sync-all-count></span>
                     </button>
                     <% } %>
                 </div>
@@ -388,7 +394,7 @@
                                     <th>Title</th>
                                     <th>Addon</th>
                                     <th>Slug</th>
-                                    <th>Status</th>
+                                    <th style="min-width: 15rem;">Status</th>
                                     <th>Source Modified</th>
                                     <th>Actions</th>
                                 </tr>
@@ -415,7 +421,7 @@
                                             <span class="badge bg-danger">UUID Mismatch</span>
                                             <br><small class="text-muted">live: <span class="font-monospace"><%= page.liveUuid %></span></small>
                                         <% } else { %>
-                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified } }) %>
+                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable } }) %>
                                         <% } %>
                                     </td>
                                     <td><small class="text-muted"><%= page.lastModified || '—' %></small></td>
@@ -799,6 +805,32 @@ async function postSync(body, statusMsg) {
     }
 }
 
+// #2414: each table's line and Sync All button count that table's own rows, as
+// views/_sync-summary.ejs and the buttons do when the page is drawn. Redrawn here
+// after a sync, so they match the toast before the page reloads.
+function refreshSyncSummary(tableSelector, summaryTestId, buttonTestId) {
+    const rows = Array.from(document.querySelectorAll(`${tableSelector} tr[data-status]`))
+        .filter(row => row.dataset.status !== 'current');
+    const need = rows.filter(row => row.dataset.userModified === 'true').length;
+    const update = rows.filter(row => row.dataset.bulkOutdated === 'true').length;
+    const line = document.querySelector(`[data-testid="${summaryTestId}"]`);
+    if (line) {
+        line.textContent = (need > 0 ? `${need} ${need !== 1 ? 'need' : 'needs'} a decision` : 'Nothing needs a decision') +
+            '; ' + (update > 0 ? `Sync All updates ${update}` : 'Sync All has nothing to update');
+    }
+    const button = document.querySelector(`[data-testid="${buttonTestId}"]`);
+    if (button) {
+        const count = button.querySelector('[data-sync-all-count]');
+        if (count) count.textContent = update > 0 ? ` (${update})` : '';
+        if (update === 0) button.disabled = true;
+    }
+}
+
+function refreshSyncSummaries() {
+    refreshSyncSummary('#pagesTable', 'core-sync-summary', 'sync-all-outdated');
+    refreshSyncSummary('#addonPagesTable', 'addon-sync-summary', 'sync-addon-outdated');
+}
+
 async function doSync(uuids, statusMsg, force = false, leftAlone = []) {
     showToast(statusMsg);
 
@@ -821,12 +853,15 @@ async function doSync(uuids, statusMsg, force = false, leftAlone = []) {
                 const row = document.querySelector(`tr[data-uuid="${uuid}"]`);
                 if (row) {
                     row.dataset.status = 'current';
+                    row.dataset.bulkOutdated = 'false';
+                    row.dataset.userModified = 'false';
                     row.querySelector('td:nth-child(4)').innerHTML =
                         '<span class="badge bg-success" data-sync-status="same-as-shipped">Same as shipped</span>';
                     row.querySelectorAll('.page-checkbox').forEach(el => el.remove());
                     row.querySelectorAll('td:last-child button').forEach(el => el.remove());
                 }
             });
+            refreshSyncSummaries();
             // Highlight protected (user-edited) rows that were skipped
             if (result.protected && result.protected.length > 0) {
                 result.protected.forEach(uuid => {

@@ -9,12 +9,18 @@
     status      'new' | 'modified' | 'current'
     syncState   'same-as-shipped' | 'update-ready' | 'edited-not-confirmed' |
                 'both-changed'; absent for a page that is not on the site yet
+    headerUnreadable  the live copy's header could not be read; it reads as
+                Update ready, and a note under the badge says why (#2414)
 %>
 <% if (syncItem.status === 'new') { %>
 <span class="badge bg-primary" data-sync-status="new">New</span>
 <% } else if (syncItem.syncState === 'update-ready') { %>
 <span class="badge bg-warning text-dark" data-sync-status="update-ready"
       title="A newer version came with this release. This page has not been changed on this site.">Update ready</span>
+<% if (syncItem.headerUnreadable) { %>
+<small class="d-block text-muted" data-sync-note="header-unreadable"
+       title="The header at the top of this page could not be read. Updating the page repairs it.">Page header couldn't be read</small>
+<% } %>
 <% } else if (syncItem.syncState === 'edited-not-confirmed') { %>
 <span class="badge bg-secondary text-wrap text-start lh-sm" data-sync-status="edited-not-confirmed"
       title="This page was changed on this site. Sync All does not replace it.">

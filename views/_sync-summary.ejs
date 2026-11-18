@@ -1,0 +1,17 @@
+<%#
+  What a table needs from an admin and what its Sync All does (#2389, #2414):
+  "3 need a decision; Sync All updates 6". Each table of Admin -> Required Pages
+  draws one in its own header, beside its own Sync All button, from that table's
+  counts alone: the button, this line and the toast that follows a sync all count
+  the same pages.
+
+  locals: syncSummary, one object (an include also sees its parent's data, so a
+  loose name could be picked up from the screen by accident), with:
+    counts  { outdatedSyncable, outdatedUserEdited } of that one table
+    testId  the data-testid of the line
+%>
+<%
+  var need = syncSummary.counts.outdatedUserEdited || 0;
+  var update = syncSummary.counts.outdatedSyncable || 0;
+%>
+<span data-testid="<%= syncSummary.testId %>" data-need="<%= need %>" data-update="<%= update %>"><%= need > 0 ? need + (need !== 1 ? ' need' : ' needs') + ' a decision' : 'Nothing needs a decision' %>; <%= update > 0 ? 'Sync All updates ' + update : 'Sync All has nothing to update' %></span>

@@ -15592,6 +15592,7 @@ ${panes}
         titleDrift?: boolean;
         liveTitle?: string;
         affectedLinks?: number;
+        headerUnreadable?: boolean;
         bulkOutdated?: boolean;
       }> = [];
 
@@ -15661,7 +15662,7 @@ ${panes}
             logger.warn(`[adminRequiredPages] malformed frontmatter in live copy ${uuid}: ${String(yamlErr)}`);
             syncState = 'update-ready';
             ({ status, userModified } = syncRowState(syncState));
-            comparison.push({ source: 'required-pages', uuid, title, slug, lastModified, status, userModified, syncState, liveUuid, titleDrift, liveTitle, affectedLinks });
+            comparison.push({ source: 'required-pages', uuid, title, slug, lastModified, status, userModified, syncState, liveUuid, titleDrift, liveTitle, affectedLinks, headerUnreadable: true });
             continue;
           }
           // Auto-heal System/Admin → system (invalid legacy category).
@@ -15724,6 +15725,7 @@ ${panes}
         userModified: boolean;
         liveUuid?: string;
         syncState?: ShippedPageStateName;
+        headerUnreadable?: boolean;
         bulkOutdated?: boolean;
       }> = [];
 
@@ -15802,7 +15804,7 @@ ${panes}
                 logger.warn(`[adminRequiredPages] malformed frontmatter in live copy of ${addonName}/pages/${file} (${uuid}): ${String(yamlErr)}`);
                 syncState = 'update-ready';
                 ({ status, userModified } = syncRowState(syncState));
-                addonComparison.push({ source: `addon:${addonName}`, addonName, uuid, title, slug, lastModified, status, userModified, syncState, liveUuid });
+                addonComparison.push({ source: `addon:${addonName}`, addonName, uuid, title, slug, lastModified, status, userModified, syncState, liveUuid, headerUnreadable: true });
                 continue;
               }
               // #2389: the same state function the core list and Sync read, with
