@@ -16,6 +16,8 @@
     #addonPagesTable [data-sync-status] { font-size: .75rem; }
     /* The add-on header's count chips at 12px too, not the 9px of the small text. */
     [data-sync-count] { font-size: .75rem; }
+    /* A date stays on one line ("2026-10-14" no longer breaks after the month). */
+    [data-col="source-modified"] { white-space: nowrap; }
 </style>
 
 <div class="container mt-4">
@@ -146,8 +148,8 @@
                 </button>
                 <% } %>
                 <% if (counts.new > 0) { %>
-                <button class="btn btn-primary" onclick="syncByStatus('new')">
-                    <i class="fas fa-plus-circle me-1"></i> Sync All New (<%= counts.new %>)
+                <button class="btn btn-primary" onclick="syncByStatus('new')" data-testid="sync-all-new">
+                    <i class="fas fa-plus-circle me-1"></i> Sync All New<span data-sync-new-count> (<%= counts.new %>)</span>
                 </button>
                 <% } %>
                 <button class="btn btn-outline-secondary" onclick="syncSelected()">
@@ -229,7 +231,7 @@
                                         <br><small class="text-muted font-monospace"><%= page.uuid %></small>
                                     </td>
                                     <td><code><%= page.slug || '—' %></code></td>
-                                    <td>
+                                    <td data-col="status">
                                         <% if (page.status === 'uuid-mismatch') { %>
                                             <span class="badge bg-danger"
                                                   title="Source UUID: <%= page.uuid %> | Live UUID: <%= page.liveUuid %>">
@@ -240,7 +242,7 @@
                                             <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable } }) %>
                                         <% } %>
                                     </td>
-                                    <td><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>
+                                    <td data-col="source-modified"><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>
                                     <td>
                                         <% if (page.status === 'modified') { %>
                                         <button class="btn btn-sm btn-outline-info"
@@ -418,7 +420,7 @@
                                     </td>
                                     <td><span class="badge bg-secondary"><%= page.addonName %></span></td>
                                     <td><code><%= page.slug || '—' %></code></td>
-                                    <td>
+                                    <td data-col="status">
                                         <% if (page.status === 'uuid-mismatch') { %>
                                             <span class="badge bg-danger">UUID Mismatch</span>
                                             <br><small class="text-muted">live: <span class="font-monospace"><%= page.liveUuid %></span></small>
@@ -426,7 +428,7 @@
                                             <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable } }) %>
                                         <% } %>
                                     </td>
-                                    <td><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>
+                                    <td data-col="source-modified"><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>
                                     <td>
                                         <% if (page.status === 'modified') { %>
                                         <button class="btn btn-sm btn-outline-info"
@@ -853,6 +855,18 @@ function refreshSyncSummaries() {
     refreshSyncChips('#addonPagesTable', '[data-sync-count]');
     refreshSyncSummary('#pagesTable', 'core-sync-summary', 'sync-all-outdated');
     refreshSyncSummary('#addonPagesTable', 'addon-sync-summary', 'sync-addon-outdated');
+    refreshSyncNew();
+}
+
+// "Sync All New (N)" counts the required-pages rows still New, like the strip's
+// New chip; at 0 it greys out and drops the "(0)", as the Sync All buttons do.
+function refreshSyncNew() {
+    const button = document.querySelector('[data-testid="sync-all-new"]');
+    if (!button) return;
+    const fresh = document.querySelectorAll('#pagesTable tr[data-status="new"]').length;
+    const count = button.querySelector('[data-sync-new-count]');
+    if (count) count.textContent = fresh > 0 ? ` (${fresh})` : '';
+    if (fresh === 0) button.disabled = true;
 }
 
 async function doSync(uuids, statusMsg, force = false, leftAlone = []) {
@@ -879,7 +893,7 @@ async function doSync(uuids, statusMsg, force = false, leftAlone = []) {
                     row.dataset.status = 'current';
                     row.dataset.bulkOutdated = 'false';
                     row.dataset.userModified = 'false';
-                    row.querySelector('td:nth-child(4)').innerHTML =
+                    row.querySelector('td[data-col="status"]').innerHTML =
                         '<span class="badge bg-success" data-sync-status="same-as-shipped">Same as shipped</span>';
                     row.querySelectorAll('.page-checkbox').forEach(el => el.remove());
                     row.querySelectorAll('td:last-child button').forEach(el => el.remove());
@@ -965,7 +979,7 @@ async function doReconcile(items, statusMsg) {
                 const row = document.querySelector(`tr[data-uuid="${uuid}"]`);
                 if (row) {
                     row.dataset.status = 'current';
-                    row.querySelector('td:nth-child(4)').innerHTML =
+                    row.querySelector('td[data-col="status"]').innerHTML =
                         '<span class="badge bg-success" data-sync-status="same-as-shipped">Same as shipped</span>';
                     row.querySelectorAll('.page-checkbox').forEach(el => el.remove());
                     row.querySelectorAll('td:last-child button').forEach(el => el.remove());
