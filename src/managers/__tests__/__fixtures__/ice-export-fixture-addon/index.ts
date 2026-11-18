@@ -12,7 +12,7 @@
  */
 import type { ActorContext } from '../../../../context/ActorContext.js';
 import type { AddonModule } from '../../../AddonsManager.js';
-import type { IceExportSource, IceItem } from '../../../../ice/types.js';
+import type { ExportOutcome, IceExportSource, IceItem } from '../../../../ice/types.js';
 
 export interface FixtureRow {
   id: string;
@@ -30,6 +30,8 @@ export class FixtureRows {
   readonly exportRefused = new Set<string>();
   /** Every call to the read door, with the user it was for. */
   readonly reads: string[] = [];
+  /** Every outcome core handed to `recordExport`. */
+  readonly outcomes: ExportOutcome[] = [];
 
   mayRead(ctx: ActorContext): boolean {
     return !!ctx?.username && this.readers.has(ctx.username);
@@ -50,7 +52,8 @@ function rowsSource(manager: FixtureRows): IceExportSource {
     read: async (_ref, ctx): Promise<IceItem[] | null> => {
       if (!manager.mayRead(ctx)) return null;
       return manager.readable(ctx).map(r => ({ kind: 'record', name: 'rows', data: { id: r.id, properties: r.properties } }));
-    }
+    },
+    recordExport: async (_ref, _ctx, outcome) => { manager.outcomes.push(outcome); }
   };
 }
 

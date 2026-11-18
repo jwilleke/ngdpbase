@@ -91,12 +91,15 @@ export function exportSize(items: readonly IceItem[]): number {
 }
 
 /**
- * Refuse items larger than the export limit.
+ * Refuse items larger than the export limit. With no limit (`Infinity`) the
+ * items are not measured. `size` is `exportSize(items)` when the caller has
+ * it already (#2412): measuring walks every record.
  *
  * @throws IceExportFailed when they are
  */
-export function checkExportSize(items: readonly IceItem[], maxBytes: number): void {
-  if (exportSize(items) > maxBytes) {
+export function checkExportSize(items: readonly IceItem[], maxBytes: number, size?: number): void {
+  if (!Number.isFinite(maxBytes)) return;
+  if ((size ?? exportSize(items)) > maxBytes) {
     throw new IceExportFailed(`This export is larger than this site allows (${Math.round(maxBytes / 1024 / 1024)} MB).`);
   }
 }
@@ -123,6 +126,7 @@ function freeName(name: string, taken: Set<string>): string {
  * packed into `<zipName>.zip` (`export.zip` by default), each under its own
  * name, a repeated name made unique. The zip is held to `maxBytes` too.
  *
+ * @param itemsSize `exportSize(items)`, when the caller has it already (#2412)
  * @throws IceExportFailed when a step holds more than `maxBytes`, a shim
  *   makes something other than what it declares, or the end is no file
  */
@@ -131,12 +135,13 @@ export async function runExportChain(
   chain: readonly RegisteredShim[],
   tools: (shim: RegisteredShim) => ExportShimTools,
   settings: IceExportSettings,
-  zipName?: string
+  zipName?: string,
+  itemsSize?: number
 ): Promise<IceItem> {
   if (chain.length === 0 || chain.length > settings.maxChainDepth) {
     throw new IceExportFailed(`An export runs through 1 to ${settings.maxChainDepth} shims.`);
   }
-  checkExportSize(items, settings.maxBytes);
+  checkExportSize(items, settings.maxBytes, itemsSize);
   const made = items.filter(i => i.kind === EXPORT_FILE_KIND);
   let current = items.filter(i => i.kind !== EXPORT_FILE_KIND);
   for (const shim of chain) {

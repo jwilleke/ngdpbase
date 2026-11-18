@@ -11,7 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes
 
-- Nothing to do. One new setting: `ngdpbase.display.line-length` (`short` or `full`, default `full`). Sites on the Fairways theme keep short lines until their own config says otherwise.
+- A CSV export of an add-on's list now writes every row, whatever `max-items` and `max-bytes` say. Nothing to change in configuration. One new setting: `ngdpbase.display.line-length` (`short` or `full`, default `full`). Sites on the Fairways theme keep short lines until their own config says otherwise.
+
+### Fixed
+
+- __#2408__ — a CSV export of an add-on's list is no longer cut short: `ngdpbase.export.engine.max-items` and `ngdpbase.export.engine.max-bytes` apply to page, file and search exports, not to records exported as CSV. `ngdpbase.export.engine.csv-max-columns` still applies. A new `ngdpbase.export.engine.csv-max-cells` (default 20000000, records times columns; an admin can raise it, each extra 10 million cells costs about 0.35 GB of peak memory) is checked before the table is built, so a sparse list can no longer run the server out of memory ([#2410](https://github.com/jwilleke/ngdpbase/issues/2410)); a finished export over `max-held-bytes` is refused and not kept. An add-on's `recordExport` now gets `count` and at most the first 200 item names ([#2411](https://github.com/jwilleke/ngdpbase/issues/2411)), and the size of the items is worked out once per run ([#2412](https://github.com/jwilleke/ngdpbase/issues/2412)).
 
 ### Added
 
