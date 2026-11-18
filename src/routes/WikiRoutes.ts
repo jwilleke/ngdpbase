@@ -15620,13 +15620,17 @@ ${panes}
           let destData: Record<string, unknown> = {};
           let destBody = '';
           try {
-            ({ data: destData, content: destBody } = matter(destContent));
+            // The empty options object skips gray-matter's cache. A parse that
+            // threw is cached half-done, and the next call on the same text
+            // returns it with no error: the whole file as body.
+            ({ data: destData, content: destBody } = matter(destContent, {}));
           } catch (yamlErr) {
             // Live copy has malformed YAML frontmatter (e.g. missing closing ---).
-            // Treat as modified so the admin can re-sync to heal it.
+            // Update ready (#2389), so Sync All re-syncs it and heals it.
             logger.warn(`[adminRequiredPages] malformed frontmatter in live copy ${uuid}: ${String(yamlErr)}`);
-            status = 'modified';
-            comparison.push({ source: 'required-pages', uuid, title, slug, lastModified, status, userModified, liveUuid, titleDrift, liveTitle, affectedLinks });
+            syncState = 'update-ready';
+            ({ status, userModified } = syncRowState(syncState));
+            comparison.push({ source: 'required-pages', uuid, title, slug, lastModified, status, userModified, syncState, liveUuid, titleDrift, liveTitle, affectedLinks });
             continue;
           }
           // Auto-heal System/Admin → system (invalid legacy category).

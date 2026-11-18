@@ -25,6 +25,6 @@
       title="This page was changed on this site, and a newer version also shipped. Sync All does not replace it.">
     <i class="fas fa-user-edit me-1"></i>Edited here, and a newer version is available
 </span>
-<% } else { %>
+<% } else if (syncItem.syncState === 'same-as-shipped') { %>
 <span class="badge bg-success" data-sync-status="same-as-shipped">Same as shipped</span>
 <% } %>
