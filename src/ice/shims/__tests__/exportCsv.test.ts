@@ -6,7 +6,7 @@ import type { ExportShimTools, IceItem, IceShim } from '../../types';
 import ExportManager from '../../../managers/ExportManager';
 
 const exportManager = new ExportManager({});
-let limits = { maxColumns: 1000, maxBytes: 26_214_400 };
+const limits = { maxColumns: 1000, maxCells: 20_000_000 };
 const shim = exportShims({
   renderDocument: async () => '',
   htmlToPdf: async () => Buffer.alloc(0),
@@ -75,21 +75,40 @@ describe('core.csv-file', () => {
       spy.mockRestore();
     });
 
-    test('rows x columns beyond the size limit is refused before the table is built', async () => {
-      limits = { maxColumns: 1000, maxBytes: 1000 };
-      const spy = vi.spyOn(exportManager, 'toCsv');
-      try {
-        await expect(write(Array.from({ length: 200 }, () => record(wide(10))))).rejects.toThrow(/too large/i);
-        expect(spy).not.toHaveBeenCalled();
-      } finally {
-        limits = { maxColumns: 1000, maxBytes: 26_214_400 };
-        spy.mockRestore();
-      }
+    test('rows x columns is not held to a size limit (#2408)', async () => {
+      const file = await write(Array.from({ length: 5000 }, () => record(wide(10))));
+      expect(textOf(file).split('\r\n')).toHaveLength(5002);
     });
 
     test('a normal 200-row export is written', async () => {
       const file = await write(Array.from({ length: 200 }, (_, i) => record({ date: '2026-01-02', memo: `m${i}`, amount: i })));
       expect(textOf(file).split('\r\n')).toHaveLength(202);
+    });
+  });
+
+  describe('the cell cap (#2410)', () => {
+    afterEach(() => { limits.maxCells = 20_000_000; });
+
+    test('rows x columns over csv-max-cells is refused in plain words, before the table is built', async () => {
+      limits.maxCells = 40;
+      const spy = vi.spyOn(exportManager, 'toCsv');
+      // 10 rows, 5 distinct columns: 50 cells.
+      const items = Array.from({ length: 10 }, (_, i) => record({ [`c${i % 5}`]: i }));
+      await expect(write(items)).rejects.toThrow(/too big for a CSV file.*fewer records or fewer fields/i);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    test('the message has no issue number or docs path', async () => {
+      limits.maxCells = 1;
+      const refusal = await write([record({ a: 1 }), record({ b: 2 })]).catch((e: Error) => e.message);
+      expect(refusal).not.toMatch(/#\d|docs\/|csv-max-cells/);
+    });
+
+    test('exactly csv-max-cells is written', async () => {
+      limits.maxCells = 50;
+      const items = Array.from({ length: 10 }, (_, i) => record({ [`c${i % 5}`]: i }));
+      expect(textOf(await write(items)).split('\r\n')).toHaveLength(12);
     });
   });
 

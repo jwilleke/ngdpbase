@@ -728,7 +728,9 @@ export interface ExportOutcome {
   /** The shim that made, or was to make, the file. */
   format: string;
   runId: string;
-  /** The names of the items the source read. */
+  /** How many items the source read. */
+  count: number;
+  /** The names of the first items the source read, at most 200: `count` says how many there were. */
   items: string[];
   result: 'success' | 'failure';
   /** Why it failed, as the user is told. */

@@ -76,7 +76,7 @@ import { givenNameProblem, type IceNameForm } from '../ice/givenName.js';
 import { FileIceLedger } from '../ice/ledger.js';
 import { searchExportSource, pageItem } from '../ice/searchExportSource.js';
 import { IceExportFailed, checkExportSize, exportChains, exportSize, runExportChain, type IceExportSettings } from '../ice/runExport.js';
-import { exportShims } from '../ice/shims/export.js';
+import { CSV_FILE_SHIM_ID, exportShims } from '../ice/shims/export.js';
 import { PdfUnavailableError } from '../export/pdfEngine.js';
 import type ExportManager from './ExportManager.js';
 import type {
@@ -417,6 +417,8 @@ interface ExportRunSettings extends IceExportSettings {
 }
 
 /** Why an export is not started when the site is making all it may (#2120). */
+/** The most item names an export's record to its source lists (#2411): `count` says how many there were. */
+const EXPORT_OUTCOME_NAMES = 200;
 const SITE_BUSY = 'The site is making as many exports as it can just now. Try again in a few minutes.';
 
 /**
@@ -552,7 +554,7 @@ class ImportManager extends BaseManager {
       toCsv: (headers, rows) => this.exportManager().toCsv(headers, rows),
       csvLimits: () => ({
         maxColumns: this.numberSetting('ngdpbase.export.engine.csv-max-columns', 1000),
-        maxBytes: this.numberSetting('ngdpbase.export.engine.max-bytes', 26_214_400)
+        maxCells: this.numberSetting('ngdpbase.export.engine.csv-max-cells', 20_000_000)
       })
     })) this.registerShim('core', shim);
 
@@ -1005,12 +1007,13 @@ class ImportManager extends BaseManager {
     if (this.isAddonExportSource(request.source) && !await source.mayExport(request.ref, ctx).catch(() => false)) throw new IceExportRefused();
     const chain = this.exportChainsFor(source).get(request.format);
     if (!chain) throw new IceExportRefused('That format is not offered here.');
-    const settings = this.exportSettings();
+    const settings = this.exportLimitsFor(chain);
     this.makeRoomForExport(ctx.username, settings);
     const notes: string[] = [];
     let items = await source.read(request.ref, ctx, { format: request.format, note: (text) => notes.push(text) });
     if (!items || items.length === 0) throw new IceExportRefused();
     // The site's item limit holds for every source, an add-on's included: what it leaves out is said (#2174).
+    // A records CSV has none (#2408): its settings carry no item limit.
     if (items.length > settings.maxItems) {
       const left = items.length - settings.maxItems;
       notes.push(`${left} ${left === 1 ? 'item was' : 'items were'} left out: this site exports at most ${settings.maxItems} ${settings.maxItems === 1 ? 'item' : 'items'} at a time.`);
@@ -1022,15 +1025,17 @@ class ImportManager extends BaseManager {
       runId: uuidv4(), source: source.id, ref: request.ref, format: request.format, chain: chain.map(s => s.id),
       username: ctx.username, state: 'queued', ...(notes.length ? { notes } : {})
     };
+    // Counted once for the run (#2412): measuring walks every record.
+    const size = exportSize(items);
     try {
-      checkExportSize(items, settings.maxBytes);
-      this.holdExportRun(report, exportSize(items), settings);
+      checkExportSize(items, settings.maxBytes, size);
+      this.holdExportRun(report, size, settings);
     } catch (err) {
       // Read, but not exported: recorded as a failure (#2120).
       await this.recordExportOutcome(source, report, items, jobCtx, err);
       throw err;
     }
-    this.iceQueue.push({ ctx: jobCtx, run: () => this.executeExport(source, report, items, chain, jobCtx, settings) });
+    this.iceQueue.push({ ctx: jobCtx, run: () => this.executeExport(source, report, items, size, chain, jobCtx, settings) });
     await this.kickIceQueue(jobCtx);
     return report.runId;
   }
@@ -1054,14 +1059,18 @@ class ImportManager extends BaseManager {
   }
 
   private async executeExport(
-    source: RegisteredExportSource, report: IceExportReport, items: IceItem[], chain: RegisteredShim[], ctx: JobContext, settings: ExportRunSettings
+    source: RegisteredExportSource, report: IceExportReport, items: IceItem[], size: number, chain: RegisteredShim[], ctx: JobContext, settings: ExportRunSettings
   ): Promise<void> {
     report.state = 'running';
     report.startedAt = new Date().toISOString();
     let failure: unknown = null;
     try {
-      const file = await runExportChain(items, chain, (shim) => ({ ...this.shimTools(shim), ctx }), settings, source.zipAs);
+      const file = await runExportChain(items, chain, (shim) => ({ ...this.shimTools(shim), ctx }), settings, source.zipAs, size);
       const bytes = file.bytes ?? Buffer.alloc(0);
+      // The file is counted, not only the items it was made from: a sparse list makes a file many times their size (#2410).
+      if (bytes.length > settings.maxHeldBytes) {
+        throw new IceExportFailed('This export came out too big for this site to hold. Export fewer records or fewer fields, or ask the site administrator.');
+      }
       report.file = { name: path.basename(file.name), mediaType: file.mediaType ?? 'application/octet-stream', size: bytes.length };
       report.expiresAt = new Date(Date.now() + settings.keepMinutes * 60_000).toISOString();
       report.state = 'done';
@@ -1090,7 +1099,7 @@ class ImportManager extends BaseManager {
     const reason = failure === null ? undefined
       : report.error ?? (failure instanceof IceExportFailed || failure instanceof IceExportBusy ? failure.message : 'The export could not be made.');
     await source.recordExport(report.ref, ctx, {
-      format: report.format, runId: report.runId, items: items.map(i => i.name), result: failure === null ? 'success' : 'failure', ...(reason ? { reason } : {})
+      format: report.format, runId: report.runId, count: items.length, items: items.slice(0, EXPORT_OUTCOME_NAMES).map(i => i.name), result: failure === null ? 'success' : 'failure', ...(reason ? { reason } : {})
     }).catch((err: unknown) => logger.warn(`[ImportManager] the export record for run ${report.runId} failed (${errorClassOf(err)})`));
   }
 
@@ -1180,6 +1189,20 @@ class ImportManager extends BaseManager {
     const held = this.exportRuns.get(runId);
     if (held?.timer) clearTimeout(held.timer);
     this.exportRuns.delete(runId);
+  }
+
+  /**
+   * The settings for a run of `chain`. A records-to-CSV export (the chain ends
+   * in `core.csv-file`) has no row or size limit (#2408): `max-items` and
+   * `max-bytes` are for pages, files and searches. Its column limit stays,
+   * checked by the shim, with the most cells a table may have (`csv-max-cells`,
+   * #2410). This is the one place the two are told apart.
+   */
+  private exportLimitsFor(chain: readonly RegisteredShim[]): ExportRunSettings {
+    const settings = this.exportSettings();
+    return chain[chain.length - 1]?.id === CSV_FILE_SHIM_ID
+      ? { ...settings, maxItems: Number.POSITIVE_INFINITY, maxBytes: Number.POSITIVE_INFINITY }
+      : settings;
   }
 
   /** `ngdpbase.export.engine.*`: every limit an export applies is configuration (the chain's length is import's). */
@@ -1528,7 +1551,7 @@ class ImportManager extends BaseManager {
           resource: 'search',
           resourceType: 'search',
           ...(outcome.reason ? { reason: outcome.reason } : {}),
-          metadata: { ...who.metadata, items: outcome.items, format: outcome.format, runId: outcome.runId }
+          metadata: { ...who.metadata, count: outcome.count, items: outcome.items, format: outcome.format, runId: outcome.runId }
         }, (err) => logger.warn('[ImportManager] the search-export audit record failed:', err));
       }
     };
