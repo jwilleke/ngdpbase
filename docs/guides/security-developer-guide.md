@@ -250,6 +250,66 @@ A site adds both in its `app-custom-config.json` (on the instance's data volume,
 - On the site: Admin → Roles (`/admin/roles`) lists each role's permissions as the policies grant them, marking a grant that applies only somewhere (a vault, a folder); the policies themselves, with their resources, are `ngdpbase.access.policies` in Admin → Configuration. Admin → Shared folders (`/admin/shared-folders`) shows, per folder, the roles its own policies give and every other policy that reaches it ([#2126](https://github.com/jwilleke/ngdpbase/issues/2126)). Find the policies that name the permission, read their resource patterns, then their subjects; a matching deny wins over any allow ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)).
 - In code: `PolicyDecisionPoint.usersHolding(action)` lists the accounts holding a permission, and `SharedFolderManager.foldersReadableBy(ctx)` the folders one subject may open. Never compare role names.
 
+## A condition reads only what the server supplies
+
+A policy's `condition` ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)) compares declared attributes of the subject, the resource and the environment. The request supplies only who is asking (the session or token), the resource it names and the action. Every attribute a condition reads comes from the server side, through the PIP, so a request cannot send `department` or `aal` and have it believed.
+
+```mermaid
+flowchart LR
+  subgraph untrusted["Request (untrusted)"]
+    req["Browser, API client, agent token<br/>session cookie or bearer token"]
+  end
+
+  subgraph server["Server (trusted)"]
+    subgraph pep["PEP: where a decision is enforced"]
+      routes["Routes<br/>ApiContext.requirePermission"]
+      pmw["PageManager write check<br/>savePage, deletePage"]
+    end
+    pdp["PDP<br/>PolicyDecisionPoint + PolicyEvaluator<br/>deny overrides allow, missing attribute fails closed"]
+    pip["PIP<br/>reads only declared attributes"]
+    subgraph sources["Attribute sources"]
+      fm["Page frontmatter<br/>author, department, system-category"]
+      acct["Account and profile<br/>@id, department"]
+      signin["Sign-in record<br/>aal"]
+      vault["Vault<br/>owner, encrypted"]
+      cfg["Config<br/>ngdpbase.vaults.admin-access"]
+      sched["Schedule config<br/>ngdpbase.schedules business-hours"]
+    end
+    policycfg["Policy config<br/>ngdpbase.access.policies<br/>resource-types, subject-attributes,<br/>environment-attributes"]
+    audit["Audit log<br/>decision + deciding policy ids"]
+  end
+
+  admin(["Admin edits config<br/>app-custom-config.json or Admin screens"])
+
+  req -->|"identity + resource + action"| routes
+  req --> pmw
+  routes -->|"subject, resource, action"| pdp
+  pmw --> pdp
+  pdp -->|"attributes it lacks"| pip
+  pip --> fm
+  pip --> acct
+  pip --> signin
+  pip --> vault
+  pip --> cfg
+  pip --> sched
+  policycfg -->|"validated at save and load"| pdp
+  policycfg -->|"declared sources"| pip
+  admin --> policycfg
+  pdp -->|"permit or deny + policy ids"| routes
+  pdp --> pmw
+  routes --> audit
+  pmw --> audit
+```
+
+What that means when you write code:
+
+- __A source is code, an attribute is config.__ The sources (`frontmatter:`, `account:`, `profile:`, `sign-in`, `vault:`, `config:`, `schedule:`) are readers in `PolicyInformationPoint`. Config says which attributes exist and where each comes from, never how a source is read ([configuration guide](configuration-developer-guide.md#attributes-for-access-policies)). A new source is a new reader in the PIP, with a test that a request cannot supply its value, and an entry in the [attribute tables](../access-policies.md#subject-attributes).
+- __A missing attribute fails closed.__ An allow whose condition reads one does not apply; a deny does. Never fill in a default for "do not know" (a vault whose state cannot be read is not `encrypted: false`).
+- __Read facts once per list.__ A page list or search reads the subject's attributes and the environment once, and a vault's state once per vault; only a page's own attributes are read per candidate. A condition that costs a lookup per page is a performance regression: `SearchManager.conditionBudget.test.ts` holds a 5,000-candidate search to twice the time of one without conditions.
+- __Every decision names its policies.__ `Decision.policyIds` is the deny that won, or the allows that matched when nothing denied; the refusal's audit record carries them. A test of a policy asserts the ids, as `projectDocuments.decisionTable.test.ts` does for the [worked example](../access-policies.md#worked-example-project-documents).
+- __A `config:` source reads any key.__ A policy author can probe a secret's value through whether a condition holds, so a change to `PolicyInformationPoint.environmentAttribute` needs a security review. The value is never logged, audited or put in a validator message; only booleans can be read.
+- __Why our own evaluator.__ The [#2255 comparison](https://github.com/jwilleke/ngdpbase/issues/2255#issuecomment-6653866027) kept our JSON evaluator over OPA and Cedar: Cedar in WASM took 124 µs a decision against 0.04 µs in plain JS, about 0.6 s for one 5,000-candidate search. It took two ideas from Cedar, which are built: a decision returns its deciding policy ids, and a deny overrides an allow.
+
 ## A signed-out write is refused before any route runs
 
 Every request other than GET, HEAD and OPTIONS from a caller who is not signed in is refused by `signedOutWriteGate`, so a method nobody planned for (PROPFIND, SEARCH…) fails closed ([#2298](https://github.com/jwilleke/ngdpbase/issues/2298)), registered in `src/app.ts` after the session and Bearer middleware and before CSRF and every route. A form from a browser is sent to sign-in through `safeRedirect` (back to the page it was on, when the Referer is this site's); anything else gets the 401 JSON. The answer is the same whatever the route and whether its target exists, so it says nothing about the target. It is recorded as `authorization-deny` (`PolicyInformationPoint.recordRouteRefusal`) with `METHOD /path`, never the query or the body.
