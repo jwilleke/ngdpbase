@@ -13025,9 +13025,15 @@ ${panes}
               path.join(requiredDirResolved, file),
               'utf8'
             );
-            const dst = matter(await fse.readFile(destPath, 'utf8')) as { data: Record<string, unknown>; content: string };
-            // #1395: the same status the Required Pages Sync page shows.
-            if (WikiRoutes.shippedState(src, dst.content, dst.data) !== 'same-as-shipped') requiredPagesSyncNeeded++;
+            try {
+              // `{}` skips gray-matter's cache, as the Required Pages Sync page does.
+              const dst = matter(await fse.readFile(destPath, 'utf8'), {}) as { data: Record<string, unknown>; content: string };
+              // #1395: the same status the Required Pages Sync page shows.
+              if (WikiRoutes.shippedState(src, dst.content, dst.data) !== 'same-as-shipped') requiredPagesSyncNeeded++;
+            } catch {
+              // Broken front matter in the live copy is Update ready (#2389): it needs a sync.
+              requiredPagesSyncNeeded++;
+            }
           }
         }
       } catch {
@@ -15760,7 +15766,20 @@ ${panes}
               }
             } else {
               const destContent: string = await fse.readFile(destPath, 'utf8');
-              const destParsed = matter(destContent) as { data: Record<string, unknown>; content: string };
+              let destParsed: { data: Record<string, unknown>; content: string };
+              try {
+                // The empty options object skips gray-matter's cache, which
+                // keeps a parse that threw as the whole file as body.
+                destParsed = matter(destContent, {});
+              } catch (yamlErr) {
+                // Broken front matter in the live copy (e.g. no closing ---).
+                // Update ready (#2389), as for the core rows: Sync All heals it.
+                logger.warn(`[adminRequiredPages] malformed frontmatter in live copy of ${addonName}/pages/${file} (${uuid}): ${String(yamlErr)}`);
+                syncState = 'update-ready';
+                ({ status, userModified } = syncRowState(syncState));
+                addonComparison.push({ source: `addon:${addonName}`, addonName, uuid, title, slug, lastModified, status, userModified, syncState, liveUuid });
+                continue;
+              }
               // #2389: the same state function the core list and Sync read, with
               // the add-on stamp, so the screen and Sync cannot disagree.
               syncState = WikiRoutes.shippedState(sourceContent, destParsed.content, destParsed.data, 'addon-source-hash');

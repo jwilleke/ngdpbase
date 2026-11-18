@@ -802,7 +802,7 @@ async function doSync(uuids, statusMsg, force = false) {
                 if (row) {
                     row.dataset.status = 'current';
                     row.querySelector('td:nth-child(4)').innerHTML =
-                        '<span class="badge bg-success">Current</span>';
+                        '<span class="badge bg-success" data-sync-status="same-as-shipped">Same as shipped</span>';
                     row.querySelectorAll('.page-checkbox').forEach(el => el.remove());
                     row.querySelectorAll('td:last-child button').forEach(el => el.remove());
                 }
@@ -887,7 +887,7 @@ async function doReconcile(items, statusMsg) {
                 if (row) {
                     row.dataset.status = 'current';
                     row.querySelector('td:nth-child(4)').innerHTML =
-                        '<span class="badge bg-success">Current</span>';
+                        '<span class="badge bg-success" data-sync-status="same-as-shipped">Same as shipped</span>';
                     row.querySelectorAll('.page-checkbox').forEach(el => el.remove());
                     row.querySelectorAll('td:last-child button').forEach(el => el.remove());
                 }
