@@ -205,7 +205,8 @@ Each table says its own numbers, in its own header, next to its own Sync All but
 
 - In a table's header: "__3 need a decision; Sync All updates 6__". With one: "1 needs a decision". With none: "Nothing needs a decision".
 - When nothing in that table is ready the line reads "Sync All has nothing to update", and the disabled button says "Sync All", with no "(0)".
-- The line and the button redraw after a sync, from that table's rows, so they match the toast before the page reloads.
+- The line, the button and the count chips (the badges at the top of the page and the add-on header's) redraw after a sync, from that table's rows, so they match the toast before the page reloads.
+- The Source Modified column shows the date only (YYYY-MM-DD), and the Status column asks for 12rem, so the Actions column is not cut off at 1280px. The add-on header's chips are 12px.
 
 At the top of the page, one sentence with no number: "Sync All updates only pages marked Update ready. Pages edited on this site are never changed by Sync All. To act on an edited page, open Diff, then Use shipped version. A page whose header can't be read also shows as Update ready; updating it repairs it." When nothing differs from what shipped: "Everything matches what shipped."
 

@@ -14,6 +14,8 @@
     /* Status words at 12px, not the 10.5px the table's text size gave them. */
     #pagesTable [data-sync-status],
     #addonPagesTable [data-sync-status] { font-size: .75rem; }
+    /* The add-on header's count chips at 12px too, not the 9px of the small text. */
+    [data-sync-count] { font-size: .75rem; }
 </style>
 
 <div class="container mt-4">
@@ -98,16 +100,16 @@
                     <i class="fas fa-tag me-1"></i> <%= counts.titleDrift %> Title Drift
                 </span>
                 <% } %>
-                <span class="badge bg-primary fs-6 px-3 py-2">
+                <span class="badge bg-primary fs-6 px-3 py-2" data-strip-count="new">
                     <i class="fas fa-plus-circle me-1"></i> <%= counts.new %> New
                 </span>
-                <span class="badge bg-warning text-dark fs-6 px-3 py-2" data-testid="count-update-ready">
+                <span class="badge bg-warning text-dark fs-6 px-3 py-2" data-testid="count-update-ready" data-strip-count="update-ready">
                     <i class="fas fa-edit me-1"></i> <%= counts.outdatedSyncable %> Update ready
                 </span>
-                <span class="badge bg-secondary fs-6 px-3 py-2" data-testid="count-edited-here">
+                <span class="badge bg-secondary fs-6 px-3 py-2" data-testid="count-edited-here" data-strip-count="edited-here">
                     <i class="fas fa-user-edit me-1"></i> <%= counts.outdatedUserEdited %> Edited here
                 </span>
-                <span class="badge bg-success fs-6 px-3 py-2">
+                <span class="badge bg-success fs-6 px-3 py-2" data-strip-count="current">
                     <i class="fas fa-check me-1"></i> <%= counts.current %> Same as shipped
                 </span>
                 <span class="text-muted"><%= comparison.length %> total source pages</span>
@@ -198,7 +200,7 @@
                                     </th>
                                     <th>Title</th>
                                     <th>Slug</th>
-                                    <th style="min-width: 15rem;">Status</th>
+                                    <th style="min-width: 12rem;">Status</th>
                                     <th>Source Modified</th>
                                     <th>Actions</th>
                                 </tr>
@@ -238,7 +240,7 @@
                                             <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable } }) %>
                                         <% } %>
                                     </td>
-                                    <td><small class="text-muted"><%= page.lastModified || '—' %></small></td>
+                                    <td><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>
                                     <td>
                                         <% if (page.status === 'modified') { %>
                                         <button class="btn btn-sm btn-outline-info"
@@ -394,7 +396,7 @@
                                     <th>Title</th>
                                     <th>Addon</th>
                                     <th>Slug</th>
-                                    <th style="min-width: 15rem;">Status</th>
+                                    <th style="min-width: 12rem;">Status</th>
                                     <th>Source Modified</th>
                                     <th>Actions</th>
                                 </tr>
@@ -424,7 +426,7 @@
                                             <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable } }) %>
                                         <% } %>
                                     </td>
-                                    <td><small class="text-muted"><%= page.lastModified || '—' %></small></td>
+                                    <td><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>
                                     <td>
                                         <% if (page.status === 'modified') { %>
                                         <button class="btn btn-sm btn-outline-info"
@@ -826,7 +828,29 @@ function refreshSyncSummary(tableSelector, summaryTestId, buttonTestId) {
     }
 }
 
+// The count chips (the line of badges above the tables and the add-on header's)
+// follow the rows too, so they match the toast before the page reloads.
+const SYNC_CHIP_LABELS = { 'new': 'New', 'update-ready': 'Update ready', 'edited-here': 'Edited here', 'current': 'Same as shipped' };
+
+function refreshSyncChips(tableSelector, chipSelector) {
+    const rows = Array.from(document.querySelectorAll(`${tableSelector} tr[data-status]`));
+    const open = rows.filter(row => row.dataset.status !== 'current');
+    const counts = {
+        'new': rows.filter(row => row.dataset.status === 'new').length,
+        'update-ready': open.filter(row => row.dataset.bulkOutdated === 'true').length,
+        'edited-here': open.filter(row => row.dataset.userModified === 'true').length,
+        'current': rows.length - open.length
+    };
+    document.querySelectorAll(chipSelector).forEach(chip => {
+        const kind = chip.getAttribute(chipSelector.includes('strip') ? 'data-strip-count' : 'data-sync-count');
+        if (!(kind in counts) || !chip.lastChild) return;
+        chip.lastChild.textContent = ` ${counts[kind]} ${SYNC_CHIP_LABELS[kind]}`;
+    });
+}
+
 function refreshSyncSummaries() {
+    refreshSyncChips('#pagesTable', '[data-strip-count]');
+    refreshSyncChips('#addonPagesTable', '[data-sync-count]');
     refreshSyncSummary('#pagesTable', 'core-sync-summary', 'sync-all-outdated');
     refreshSyncSummary('#addonPagesTable', 'addon-sync-summary', 'sync-addon-outdated');
 }
