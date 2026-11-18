@@ -72,8 +72,7 @@ export const projectDocumentsConfig = (shipped: Record<string, unknown>): Record
       'document-approve': {
         description: 'Approve a project document',
         label: 'Approve project documents',
-        'step-up': true,
-        audit: { enabled: true, 'on-failure': 'refuse' }
+        'step-up': true
       }
     },
     'ngdpbase.access.policies': PROJECT_DOCUMENT_POLICIES
