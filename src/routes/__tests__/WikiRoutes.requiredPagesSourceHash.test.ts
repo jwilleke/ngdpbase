@@ -70,7 +70,7 @@ async function makeDirs() {
   return { root, requiredDir, pagesDir, instanceDir };
 }
 
-async function makeRoutes(dirs: { requiredDir: string; pagesDir: string; instanceDir: string }) {
+async function makeRoutes(dirs: { requiredDir: string; pagesDir: string; instanceDir: string; addonPagesDir?: string }) {
   const configManager = {
     getProperty: vi.fn((key: string, def: unknown) => {
       if (key === 'ngdpbase.page.provider') return 'filesystemprovider';
@@ -97,6 +97,12 @@ async function makeRoutes(dirs: { requiredDir: string; pagesDir: string; instanc
       }
       if (name === 'PageManager') return holder.pageManager;
       if (name === 'SearchManager') return { rebuildIndex: vi.fn().mockResolvedValue(undefined) };
+      if (name === 'AddonsManager' && dirs.addonPagesDir) {
+        return {
+          getEnabledAddonPagesDirectories: () => [{ name: 'demo', pagesDir: dirs.addonPagesDir }],
+          findOrphanedAddonPages: async () => []
+        };
+      }
       return null;
     }))
   };
@@ -176,6 +182,51 @@ describe('Required Pages Sync status — body and source-hash stamp (#1395)', ()
     const data = res.render.mock.calls[0][1] as { counts: { outdatedSyncable: number }; comparison: Array<{ uuid: string; bulkOutdated?: boolean }> };
     expect(data.counts.outdatedSyncable).toBe(1);
     expect(data.comparison.find((p) => p.uuid === UUID)?.bulkOutdated).toBe(true);
+  });
+
+  describe('an add-on live copy with broken front matter (#2389)', () => {
+    const ADDON_UUID = '7d3f1c9a-2b4e-4f6a-8c1d-5e9a0b7c3d21';
+    const addonSource = `---\ntitle: AddonPage\nuuid: ${ADDON_UUID}\nslug: addonpage\n---\nshipped add-on body\n`;
+    // No closing `---`: the front matter does not parse.
+    const brokenLive = (tag: string) => `---\ntitle: AddonPage\nuuid: ${ADDON_UUID}\nslug: addonpage\n\nbroken ${tag}\n- list\n`;
+
+    async function renderAddonRows(routes: Awaited<ReturnType<typeof makeRoutes>>['routes']) {
+      const res = createMockRes();
+      await routes.adminRequiredPages(createMockReq(), res);
+      // The screen loads: no 500 from the outer catch.
+      expect(res.status).not.toHaveBeenCalledWith(500);
+      expect(res.render).toHaveBeenCalledWith('admin-required-pages', expect.anything());
+      return res.render.mock.calls[0][1] as {
+        addonComparison: Array<{ uuid: string; status: string; userModified: boolean; syncState?: string; bulkOutdated?: boolean }>;
+        addonCounts: { outdatedSyncable: number };
+      };
+    }
+
+    test('nothing has parsed the text yet: the screen loads and the row is Update ready, counted for Sync All', { retry: 0 }, async () => {
+      const addonDir = path.join(dirs.root, 'addon-pages');
+      await fs.mkdir(addonDir);
+      const { routes } = await makeRoutes({ ...dirs, addonPagesDir: addonDir });
+      await fs.writeFile(path.join(addonDir, 'addonpage.md'), addonSource, 'utf8');
+      // Written after the provider started and never reloaded: the route parses it first.
+      await fs.writeFile(path.join(dirs.pagesDir, `${ADDON_UUID}.md`), brokenLive('uncached'), 'utf8');
+
+      const data = await renderAddonRows(routes);
+      expect(data.addonComparison.find((p) => p.uuid === ADDON_UUID)).toMatchObject({ status: 'modified', userModified: false, syncState: 'update-ready', bulkOutdated: true });
+      expect(data.addonCounts.outdatedSyncable).toBe(1);
+    });
+
+    test('the page provider parsed the text first: the row is Update ready, not Edited here', { retry: 0 }, async () => {
+      const addonDir = path.join(dirs.root, 'addon-pages');
+      await fs.mkdir(addonDir);
+      await fs.writeFile(path.join(addonDir, 'addonpage.md'), addonSource, 'utf8');
+      await fs.writeFile(path.join(dirs.pagesDir, `${ADDON_UUID}.md`), brokenLive('cached'), 'utf8');
+      const { routes, pageManager } = await makeRoutes({ ...dirs, addonPagesDir: addonDir });
+      await reload(pageManager);
+
+      const data = await renderAddonRows(routes);
+      expect(data.addonComparison.find((p) => p.uuid === ADDON_UUID)).toMatchObject({ status: 'modified', userModified: false, syncState: 'update-ready', bulkOutdated: true });
+      expect(data.addonCounts.outdatedSyncable).toBe(1);
+    });
   });
 
   test('a page without a stamp whose body matches the source is current — frontmatter is not compared', async () => {
