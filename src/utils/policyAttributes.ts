@@ -174,6 +174,48 @@ export function compareLeaf(kind: ComparisonKind, left: unknown, right: unknown)
   }
 }
 
+/** One attribute declared on a resource type: its type and the PIP source it is read from. */
+export interface DeclaredResourceAttribute {
+  type?: string;
+  from?: string;
+}
+
+/** `ngdpbase.access.resource-types` as read: each type's own `attributes`. */
+export type ResourceTypeDeclarations = Record<string, { attributes?: Record<string, DeclaredResourceAttribute> }>;
+
+/**
+ * The resource types, besides `page`, whose attributes a policy naming them may
+ * read (#2261 slice 5). `system-category` selects pages and declares none.
+ */
+export const ATTRIBUTE_RESOURCE_TYPES: readonly string[] = ['vault', 'shared-folder'];
+
+/**
+ * The attributes one resource type declares in `ngdpbase.access.resource-types`,
+ * or `{}` for a type with none, an unknown type, or no declarations at all.
+ */
+export function declaredAttributes(types: ResourceTypeDeclarations | null | undefined, type: string): Record<string, DeclaredResourceAttribute> {
+  if (!types || typeof types !== 'object' || !Object.hasOwn(types, type)) return {};
+  const attributes = types[type]?.attributes;
+  return attributes && typeof attributes === 'object' && !Array.isArray(attributes) ? attributes : {};
+}
+
+/**
+ * What a policy may read as `resource:<name>`, and the PIP reads for it: the
+ * `page` set, then the set of each of `vault` and `shared-folder` the policy
+ * names. A name declared on `page` and on another type keeps the page's
+ * declaration, so one name has one meaning on a page. A policy naming no type,
+ * or only `system-category`, gets the `page` set alone.
+ */
+export function attributesForResourceTypes(types: ResourceTypeDeclarations | null | undefined, named: readonly string[]): Record<string, DeclaredResourceAttribute> {
+  const merged: Record<string, DeclaredResourceAttribute> = {};
+  for (const type of ['page', ...ATTRIBUTE_RESOURCE_TYPES.filter((t) => named.includes(t))]) {
+    for (const [name, decl] of Object.entries(declaredAttributes(types, type))) {
+      if (!Object.hasOwn(merged, name)) merged[name] = decl;
+    }
+  }
+  return merged;
+}
+
 /** The key that names how rules are combined (#2330). */
 export const RULE_COMBINING_ALGORITHM_KEY = 'ngdpbase.access.rule-combining-algorithm';
 

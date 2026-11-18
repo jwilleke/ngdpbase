@@ -22,7 +22,7 @@ Whether a user may do something is decided by the policies alone. No other setti
 | `ngdpbase.access.policies` | The list of policies |
 | `ngdpbase.access.policies.enabled` | Must be `true`. When it is not, no policy applies and every check is denied |
 | `ngdpbase.access.rule-combining-algorithm` | How the matching policies are combined: XACML's rule-combining algorithm ([#2330](https://github.com/jwilleke/ngdpbase/issues/2330)). Shipped `"deny-overrides"`, the only value accepted: any matching deny wins. Any other value is refused on save in Admin → Configuration, and at start-up it is reported and the site does not start. The start-up log states it in one line, `Access policies: 25 loaded, rule-combining-algorithm deny-overrides`, and Admin → Configuration shows it above the policies. See [How a decision is made](#how-a-decision-is-made) |
-| `ngdpbase.access.resource-types` | The kinds of thing a policy's `resources` may name, each with a description (#1504). Read through ConfigurationManager by the evaluator and the validator. The `page` type declares its `attributes`, what a `condition` may read as `resource:<name>`, each with a `type` and the PIP source it comes `from` ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)) |
+| `ngdpbase.access.resource-types` | The kinds of thing a policy's `resources` may name, each with a description (#1504). Read through ConfigurationManager by the evaluator and the validator. The `page` type declares its `attributes`, what a `condition` may read as `resource:<name>`, each with a `type` and the PIP source it comes `from` ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)); `vault` and `shared-folder` may declare them too (see [Resource attributes](#resource-attributes)) |
 | `ngdpbase.access.subject-attributes` | The attributes of whoever asks that a `condition` may read as `subject:<name>`, each with a `type` and the `from` source the PIP reads it from ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)). Shipped: `id` and `aal`. See [Subject attributes](#subject-attributes) |
 | `ngdpbase.access.environment-attributes` | The attributes of the moment or the site that a `condition` may read as `environment:<name>`, each a boolean with a `from` of `schedule:<name>` or `config:<key>` ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)). Shipped: `is-business-hours` and `vaults-admin-access`. See [Environment attributes](#environment-attributes) |
 | `ngdpbase.vaults.admin-access` | Whether a holder of `admin-system` may enter another person's unencrypted vault at a door ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)); shipped `true`. See the [security guide](guides/security-developer-guide.md#a-vault-is-its-owners-an-administrator-may-enter-one-that-is-not-encrypted) |
@@ -54,7 +54,7 @@ __Add-ons__ declare their own permissions and policies in their own `config/defa
 | `subjects` | Who the policy is about | A list of `{ "type": "role", "value": "<role>" }`, `{ "type": "job", "value": "<job id>" }` for a scheduled job that holds its own permissions ([#1999](https://github.com/jwilleke/ngdpbase/issues/1999)), `{ "type": "authenticated" }` for any signed-in user, or `{ "type": "anyone" }` for every caller ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261)). `authenticated` and `anyone` take no `value`; the validator refuses one ("takes no value"). Only these four types are matched; the validator refuses any other | The policy applies to everyone |
 | `resources` | What the policy is about | A list of `{ "type": "<resource type>", "pattern": "<glob>" }`. `page` matches the page name; `system-category` matches the page's `system-category` frontmatter; `vault` matches the id of the vault a page or file is in; `shared-folder` matches a shared folder as `shared/<name>` (micromatch). Only types declared in `ngdpbase.access.resource-types` that the evaluator has a matcher for ever match | The policy applies to every resource |
 | `actions` | Which permissions the policy decides | Permission names from the catalogue, or `*` for all | The policy applies to every action |
-| `condition` | When the policy applies ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255), [#2261](https://github.com/jwilleke/ngdpbase/issues/2261)) | One XACML 3.0 function in lowercase over its arguments, such as `{ "string-equal": [ a, b ] }`, or `and`, `or` or `not` over other conditions (see [Conditions](#conditions)). An argument is an attribute, `{ "attributeid": "subject:id", "datatype": "string" }`, or a literal, `{ "value": "sales", "datatype": "string" }`. An `attributeid` starts `subject:`, `resource:` or `environment:`. The attributes are those declared in `ngdpbase.access.subject-attributes` (`subject:id`, the signed-in account; `subject:aal`, the sign-in level; see [Subject attributes](#subject-attributes)) and those declared on the `page` resource type (`resource:system-category`, `resource:owner`, the page's `author`). Environment attributes are those declared in `ngdpbase.access.environment-attributes` (`environment:is-business-hours`; see [Environment attributes](#environment-attributes)) | The policy applies whenever it matches |
+| `condition` | When the policy applies ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255), [#2261](https://github.com/jwilleke/ngdpbase/issues/2261)) | One XACML 3.0 function in lowercase over its arguments, such as `{ "string-equal": [ a, b ] }`, or `and`, `or` or `not` over other conditions (see [Conditions](#conditions)). An argument is an attribute, `{ "attributeid": "subject:id", "datatype": "string" }`, or a literal, `{ "value": "sales", "datatype": "string" }`. An `attributeid` starts `subject:`, `resource:` or `environment:`. The attributes are those declared in `ngdpbase.access.subject-attributes` (`subject:id`, the signed-in account; `subject:aal`, the sign-in level; see [Subject attributes](#subject-attributes)) and those declared on the `page` resource type (`resource:system-category`, `resource:owner`, the page's `author`; `resource:vault-owner` and `resource:encrypted`, see [Resource attributes](#resource-attributes)). Environment attributes are those declared in `ngdpbase.access.environment-attributes` (`environment:is-business-hours`; see [Environment attributes](#environment-attributes)) | The policy applies whenever it matches |
 
 A permission that was renamed or split keeps working under its old name: a policy or an agent token naming it is read as what it now stands for, and a policy naming it is warned about once, at the first decision that reads it, naming the policy. The list is `RETIRED_PERMISSIONS` in `src/utils/permissionCatalog.ts`: `share-manage` is read as `share-create`, `share-extend` and `share-revoke` ([#1638](https://github.com/jwilleke/ngdpbase/issues/1638)); `contact-read` as `identity-read` and `contact-manage` as `identity-manage`, accepted for one release only ([#2038](https://github.com/jwilleke/ngdpbase/issues/2038)). Name the new permissions in anything you write.
 
@@ -164,6 +164,25 @@ A schedule name that is misspelled in a declaration makes the attribute missing:
 
 A `config:` source may read any configuration key. There is no list of allowed keys and none is refused, secrets included ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261), decided by the operator). The consequence is that anyone who can edit policies can probe a secret's value through whether a condition holds, which is why this needs a security review. The value is never written to a log line, an audit record or a validator message: the PIP returns it to the evaluator and nowhere else, and the messages name the key, never its value. Only a boolean can be read, so a secret that is a string reads as missing.
 
+### Resource attributes
+
+A condition reads something about the page as `resource:<name>`. Each is declared in `ngdpbase.access.resource-types`, under `attributes` of a resource type, as `{ "type": …, "from": … }`, and read only by `PolicyInformationPoint.pageAttributesFrom`. Shipped on `page`: `system-category` (from `frontmatter:system-category`), `owner` (from `frontmatter:author`), `encrypted` (boolean, from `vault:encrypted`) and `vault-owner` (identity, from `vault:owner`).
+
+__Which attributes a policy may read.__ A policy reads the `page` attributes, plus those declared on `vault` and on `shared-folder` when the policy names that type in its `resources`. An attribute declared on `vault` is not readable by a policy that names only `system-category` or `page`, or by one with no `resources`: the validator reports it as "not declared", and at decision time the condition never holds (an allow does not apply, a deny does). A name declared on `page` and on another type keeps its `page` declaration. There are no other types: a type with a matcher in code (`page`, `system-category`, `vault`, `shared-folder`) is the only kind a page decision uses ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261), decided by the operator, 2026-11-06). An add-on's own type naming only itself still reads only its own attributes.
+
+__The `vault:` source.__ Both are derived from the page's name, so a page list and a single page read the same value, and neither is stored in the page index.
+
+| `from` | Reads | Missing when |
+| --- | --- | --- |
+| `vault:owner` | The account that owns the vault the page is in, lower-cased, as an `identity` | The page is not in a vault: an ordinary page, or a page in a shared folder |
+| `vault:encrypted` | Whether that vault is encrypted (`ShareManager.isEncryptedVault`), a `boolean` | The page is not in a vault, the vault's state cannot be read, or there is no `ShareManager`. It is never read as `false` for "do not know" |
+
+A page list or search asks whether a vault is encrypted once per vault for the listing, not once per page.
+
+__A deny on a vault-only attribute also hits public pages.__ A page in no vault has no `encrypted`, so the attribute is missing and a deny whose condition is unknown applies. A deny `page-edit` for `anyone` on `general` with `{ "boolean-equal": [ { "attributeid": "resource:encrypted", "datatype": "boolean" }, { "value": true, "datatype": "boolean" } ] }` refuses edits in an encrypted vault and, because the attribute is missing there, on every ordinary page too. To keep it off public pages, give the policy a `resources` entry of type `vault`, such as `{ "type": "vault", "pattern": "*" }`: it then matches only pages in a vault, where `encrypted` is always known (true or false) unless the vault's state cannot be read.
+
+The container rule is unchanged: a policy cannot let anyone into a vault, only narrow what a person who is already admitted may do. An administrator is still refused in an encrypted vault with `ngdpbase.vaults.admin-access` true, whatever the policies say.
+
 ### How a decision is made
 
 In `PolicyEvaluator.evaluateAccess` (`src/managers/PolicyEvaluator.ts`), with the policies from `PolicyDecisionPoint.policies()`:
@@ -217,6 +236,95 @@ Every write also meets the same audience rule at `PageManager`'s write door (`sa
 __Where the page decision applies.__ Everywhere a page is shown: opening it, a list of pages, a search hit, a count. Lists and search hits are decided by the same `PolicyInformationPoint` tiers as a page view — audience first, then these policies, `system-category` included — so a policy that refuses `page-read` also keeps the page out of that user's search results ([#1962](https://github.com/jwilleke/ngdpbase/issues/1962)). The rule for code is in [the security guide](guides/security-developer-guide.md#every-page-a-viewer-is-shown-goes-through-the-page-list-door).
 
 The three levels of checking built on this (the global `PolicyDecisionPoint.permits`, the page-aware `PolicyInformationPoint`, and this evaluator at the bottom) are described in [architecture/Access-Control.md](architecture/Access-Control.md#two-evaluation-engines).
+
+### Lists and search
+
+A condition runs on a page list and on a search as it does on a single page ([#2261](https://github.com/jwilleke/ngdpbase/issues/2261), decided by the operator). Every source is allowed there. The subject's attributes and the environment are read once per listing; a page's attributes come from the page index and its frontmatter, per candidate, and the vault facts once per vault. A search filters up to 5,000 candidates (`ngdpbase.search.access-filter.max-candidates`), one decision each, so the cost of a condition is checked: `SearchManager.conditionBudget.test.ts` runs a 5,000-candidate search with a condition on the subject (`subject:aal`, `subject:department-id`), on the environment (`environment:is-business-hours`) and on the page (`resource:owning-department`), and requires it to take at most twice as long as the same search with no condition. A change that reads a profile or a schedule once per page fails it.
+
+## Worked example: project documents
+
+Members of the owning department may read a project document. A project lead may approve one, but not outside business hours and not below AAL 2. It needs no resource type of its own: the documents are the pages whose `system-category` is `project-document`, the department is a frontmatter field, and the attributes are declared on `page`. To select by name instead, give each `resources` entry `{ "type": "page", "pattern": "Project *" }`; a page-name pattern reads the same attributes.
+
+```json
+"ngdpbase.access.resource-types": {
+  "page": {
+    "attributes": {
+      "owning-department": { "type": "string", "from": "frontmatter:department" }
+    }
+  }
+},
+"ngdpbase.access.subject-attributes": {
+  "department-id": { "type": "string", "from": "profile:department" }
+},
+"ngdpbase.permissions.definitions": {
+  "document-approve": {
+    "description": "Approve a project document",
+    "label": "Approve project documents",
+    "step-up": true,
+    "audit": { "enabled": true, "on-failure": "refuse" }
+  }
+},
+"ngdpbase.access.policies": [
+  {
+    "id": "project-document-read-department",
+    "name": "Project documents: the owning department reads",
+    "effect": "allow",
+    "subjects": [{ "type": "authenticated" }],
+    "resources": [{ "type": "system-category", "pattern": "project-document" }],
+    "actions": ["page-read"],
+    "condition": {
+      "string-equal": [
+        { "attributeid": "subject:department-id", "datatype": "string" },
+        { "attributeid": "resource:owning-department", "datatype": "string" }
+      ]
+    }
+  },
+  {
+    "id": "project-document-approve",
+    "name": "Project documents: a lead in the owning department approves",
+    "effect": "allow",
+    "subjects": [{ "type": "role", "value": "project-lead" }],
+    "resources": [{ "type": "system-category", "pattern": "project-document" }],
+    "actions": ["document-approve"],
+    "condition": {
+      "string-equal": [
+        { "attributeid": "subject:department-id", "datatype": "string" },
+        { "attributeid": "resource:owning-department", "datatype": "string" }
+      ]
+    }
+  },
+  {
+    "id": "project-document-approve-guard",
+    "name": "Project documents: no approval outside business hours or below AAL 2",
+    "effect": "deny",
+    "subjects": [{ "type": "anyone" }],
+    "resources": [{ "type": "system-category", "pattern": "project-document" }],
+    "actions": ["document-approve"],
+    "condition": {
+      "or": [
+        { "boolean-equal": [ { "attributeid": "environment:is-business-hours", "datatype": "boolean" }, { "value": false, "datatype": "boolean" } ] },
+        { "integer-less-than-or-equal": [ { "attributeid": "subject:aal", "datatype": "integer" }, { "value": 1, "datatype": "integer" } ] }
+      ]
+    }
+  }
+]
+```
+
+Every policy needs a `name`. The shipped configuration declares no `owning-department` and no `department-id`: a site adds them, and no account field `department` exists until it does. The deny has no priority and needs none: under `deny-overrides` it wins whatever the order.
+
+How it decides:
+
+| Who, when | Read | Approve | Deciding policies |
+| --- | --- | --- | --- |
+| Engineering member, document in Engineering | permit | deny (no allow) | read: `project-document-read-department` |
+| Sales member, document in Engineering | deny | deny | none |
+| Engineering lead, AAL 2, Tuesday 10:00 | permit | permit, after a fresh factor (`step-up`) | read: `project-document-read-department`; approve: `project-document-approve` |
+| Engineering lead, AAL 2, Saturday | permit | deny | approve: `project-document-approve-guard` |
+| Engineering lead, AAL 1, Tuesday 10:00 | permit | deny | approve: `project-document-approve-guard` |
+| Anyone, document with no `department` | deny (the allow cannot apply) | deny | none |
+| Lead whose profile has no department | deny | deny | none |
+
+The seven rows are a test, `src/security/__tests__/projectDocuments.decisionTable.test.ts`, run against the same policies (`src/managers/__tests__/__fixtures__/projectDocumentsConfig.ts`), and the page list gives the same read answer as the door in each row.
 
 ## Decided, not yet built
 

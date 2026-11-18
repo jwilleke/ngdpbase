@@ -3,7 +3,7 @@ import BaseManager, { type ManagerStatus } from './BaseManager.js';
 // sat here and drifted from it.
 import type { Policy, PolicySubject, PolicyResource, PolicyCondition } from '../types/Policy.js';
 import { isAttributeName } from '../types/Policy.js';
-import { readDeclaredAsWritten, COMPARISON_FUNCTIONS, CONDITION_EXAMPLE, CONDITION_FUNCTIONS, DATATYPES, GROUP_FUNCTIONS, LEGACY_CONDITION_KEYS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_FUNCTION, OPERAND_KEYS, RULE_COMBINING_ALGORITHM_KEY, combiningAlgorithmProblem, compareLeaf, datatypeOf, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesFindings, environmentDeclarationProblem, literalFits, literalType, subjectAttributesFindings, subjectDeclarationProblem, unenforcedConditionsLine, unenforcedConditionsNotice, type DeclaredEnvironmentAttribute, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
+import { readDeclaredAsWritten, COMPARISON_FUNCTIONS, CONDITION_EXAMPLE, CONDITION_FUNCTIONS, DATATYPES, GROUP_FUNCTIONS, LEGACY_CONDITION_KEYS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_FUNCTION, OPERAND_KEYS, RULE_COMBINING_ALGORITHM_KEY, combiningAlgorithmProblem, compareLeaf, datatypeOf, ATTRIBUTE_RESOURCE_TYPES, attributesForResourceTypes, declaredAttributes, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesFindings, environmentDeclarationProblem, literalFits, literalType, subjectAttributesFindings, subjectDeclarationProblem, unenforcedConditionsLine, unenforcedConditionsNotice, type DeclaredEnvironmentAttribute, type DeclaredSubjectAttribute, type ResourceTypeDeclarations } from '../utils/policyAttributes.js';
 import { SCHEDULES_KEY, TIME_ZONE_KEY, scheduleIsEnabled, scheduleProblem, type Schedule } from '../utils/availability.js';
 import { normalizeUsername } from '../utils/username.js';
 import logger from '../utils/logger.js';
@@ -380,23 +380,25 @@ export const VALUELESS_SUBJECT_TYPES: readonly string[] = ['authenticated', 'any
 const RESOURCE_TYPES_KEY = 'ngdpbase.access.resource-types';
 
 /**
- * Which resource attributes a policy's condition may read (#1823).
+ * Which resource attributes a policy's condition may read (#1823, #2261).
  *
  * A policy that names exactly one add-on type (no page matcher) uses that
- * type's attributes. A policy on a core type, including `system-category`,
- * still reads the `page` attributes: those conditions are about the page.
+ * type's attributes. Any other policy reads the `page` attributes, as a
+ * condition on a core type is about the page, and also those declared on the
+ * `vault` and `shared-folder` types it names: an attribute declared on one is
+ * readable only by a policy that names it. A policy naming no type, or only
+ * `system-category`, gets the `page` set alone.
  */
 export function conditionAttributeSource(
   resources: readonly { type?: string }[] | undefined,
-  types: Record<string, { attributes?: Record<string, { type?: string }> }> | null
+  types: ResourceTypeDeclarations | null
 ): { attributes: Record<string, { type?: string }>; label: string } {
   const named = [...new Set((resources ?? []).map((r) => r?.type).filter((t): t is string => typeof t === 'string' && t.length > 0))];
   if (named.length === 1 && !Object.hasOwn(RESOURCE_MATCHERS, named[0]) && types && Object.hasOwn(types, named[0])) {
-    const attributes = types[named[0]]?.attributes;
-    return { attributes: attributes && typeof attributes === 'object' ? attributes : {}, label: named[0] };
+    return { attributes: declaredAttributes(types, named[0]), label: named[0] };
   }
-  const page = types?.page?.attributes;
-  return { attributes: page && typeof page === 'object' ? page : {}, label: 'page' };
+  const also = ATTRIBUTE_RESOURCE_TYPES.filter((t) => named.includes(t));
+  return { attributes: attributesForResourceTypes(types, named), label: ['page', ...also].join(' or ') };
 }
 
 /**
@@ -467,7 +469,7 @@ class PolicyEvaluator extends BaseManager {
    * decision starts again from nothing. The policies themselves are still read
    * live for every decision; only a condition's compiled form is reused.
    */
-  private preparedConditions: { revision: number; byCondition: WeakMap<PolicyCondition, Omit<PreparedPolicy, 'policy'>> } | null = null;
+  private preparedConditions: { revision: number; byPolicy: WeakMap<Policy, Omit<PreparedPolicy, 'policy'>> } | null = null;
 
   /**
    * The policies in force NOW. Only the PDP interprets them (#1431 step 14b);
@@ -682,18 +684,16 @@ class PolicyEvaluator extends BaseManager {
   private prepared(policies: readonly Policy[]): PreparedPolicy[] {
     const revision = typeof this.configManager?.getRevision === 'function' ? this.configManager.getRevision() : undefined;
     if (revision === undefined) return this.prepare(policies);
-    if (this.preparedConditions?.revision !== revision) this.preparedConditions = { revision, byCondition: new WeakMap() };
-    const cache = this.preparedConditions.byCondition;
-    // A condition that is not an object (a hand-written mistake) cannot be a key; it is prepared each time, and has a problem.
-    const kept = (c: unknown): c is PolicyCondition => typeof c === 'object' && c !== null && cache.has(c as PolicyCondition);
-    const missing = policies.filter((p) => p.condition !== undefined && !kept(p.condition));
-    const fresh = new Map(missing.length > 0 ? this.prepare(missing).map(({ policy, ...rest }) => [policy, rest]) : []);
-    for (const [policy, rest] of fresh) {
-      if (typeof policy.condition === 'object' && policy.condition !== null) cache.set(policy.condition, rest);
+    if (this.preparedConditions?.revision !== revision) this.preparedConditions = { revision, byPolicy: new WeakMap() };
+    // Keyed by the policy, not its condition: what a condition may read depends on the resource types the policy names (#2261), so two policies sharing one condition object are checked each.
+    const cache = this.preparedConditions.byPolicy;
+    const missing = policies.filter((p) => p.condition !== undefined && !cache.has(p));
+    if (missing.length > 0) {
+      for (const { policy, ...rest } of this.prepare(missing)) cache.set(policy, rest);
     }
     return policies.map((policy) => (policy.condition === undefined
       ? { policy, invalid: false }
-      : { policy, ...(fresh.get(policy) ?? cache.get(policy.condition)!) }));
+      : { policy, ...cache.get(policy)! }));
   }
 
   /**
@@ -702,13 +702,15 @@ class PolicyEvaluator extends BaseManager {
    */
   private prepare(policies: readonly Policy[], attributes?: Record<string, { type?: string }>, label = 'page'): PreparedPolicy[] {
     const conditional = policies.some((p) => p.condition !== undefined);
-    const declared = attributes ?? (conditional ? this.declaredPageAttributes() : {});
+    const types = conditional && !attributes ? this.resourceTypeMap() : null;
     const subjects = conditional ? this.declaredSubjectAttributes() : {};
     const environment = conditional ? this.declaredEnvironmentAttributes() : {};
     return policies.map((policy) => {
       if (policy.condition === undefined) return { policy, invalid: false };
-      if (conditionProblems(policy.condition, declared, subjects, environment, label).length > 0) return { policy, invalid: true };
-      return { policy, invalid: false, condition: compileCondition(policy.condition, (name) => attributeTypeOf(name, declared, subjects, environment)) };
+      // #2261: the attributes a condition may read are the ones declared for the resource types THIS policy names.
+      const source = attributes ? { attributes, label } : conditionAttributeSource(policy.resources, types);
+      if (conditionProblems(policy.condition, source.attributes, subjects, environment, source.label).length > 0) return { policy, invalid: true };
+      return { policy, invalid: false, condition: compileCondition(policy.condition, (name) => attributeTypeOf(name, source.attributes, subjects, environment)) };
     });
   }
 
@@ -748,9 +750,9 @@ class PolicyEvaluator extends BaseManager {
     return resources.some((r) => r.type === type && typeof r.pattern === 'string' && micromatch.isMatch(id, r.pattern, { dot: true }));
   }
 
-  private resourceTypeMap(): Record<string, { attributes?: Record<string, { type?: string }> }> | null {
+  private resourceTypeMap(): ResourceTypeDeclarations | null {
     const types = this.configManager?.getProperty(RESOURCE_TYPES_KEY, null);
-    return types && typeof types === 'object' ? types as Record<string, { attributes?: Record<string, { type?: string }> }> : null;
+    return types && typeof types === 'object' ? types as ResourceTypeDeclarations : null;
   }
 
   /**
@@ -893,9 +895,7 @@ class PolicyEvaluator extends BaseManager {
 
   /** The attributes declared on the `page` resource type (#2255), for checking a condition. */
   declaredPageAttributes(): Record<string, { type?: string }> {
-    const types = this.configManager?.getProperty(RESOURCE_TYPES_KEY, null) as Record<string, { attributes?: Record<string, { type?: string }> }> | null;
-    const attributes = types?.page?.attributes;
-    return attributes && typeof attributes === 'object' ? attributes : {};
+    return declaredAttributes(this.configManager?.getProperty(RESOURCE_TYPES_KEY, null) as ResourceTypeDeclarations | null, 'page');
   }
 
   /** The subject attributes a condition may read (#2261): `id` always, and those declared in `ngdpbase.access.subject-attributes`. */

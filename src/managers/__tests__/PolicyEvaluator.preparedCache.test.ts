@@ -91,6 +91,40 @@ describe('compiled conditions are kept until the configuration changes (#2279)',
     expect((await decide()).allowed).toBe(false);
   });
 
+  test('one condition object shared by policies naming different resource types is checked for each (#2261)', async () => {
+    // `tier` is declared on vault: valid for the policy naming vault, not for the one naming only system-category.
+    const shared = { 'string-equal': [attr('resource:tier'), val('gold')] } as PolicyCondition;
+    const policy = (id: string, type: string, pattern: string): Policy => ({
+      id, effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type, pattern }], actions: ['page-edit'], condition: shared
+    });
+    const config: Record<string, unknown> = {
+      'ngdpbase.access.resource-types': {
+        page: { attributes: {} },
+        'system-category': {},
+        vault: { attributes: { tier: { type: 'string' } } }
+      }
+    };
+    const configManager = { getProperty: (k: string, d: unknown) => (k in config ? config[k] : d), getRevision: () => 0 };
+    const policies = [policy('on-vault', 'vault', '*'), policy('on-category', 'system-category', 'general')];
+    const engine = {
+      getManager: (name: string) => {
+        if (name === 'ConfigurationManager') return configManager;
+        if (name === 'PolicyDecisionPoint') return { policies: () => policies, categoriesGranting: () => [] };
+        return null;
+      }
+    } as never;
+    const ev = new PolicyEvaluator(engine);
+    await ev.initialize();
+    const gold = (name: string) => (name === 'resource:tier' ? 'gold' : undefined);
+    const decide = (attributes: Record<string, string>) =>
+      ev.evaluateAccess({ pageName: 'P', action: 'page-edit', userContext: editor, attributes, readAttribute: gold });
+
+    // Only the vault policy matches a vault page: its condition is valid and is compiled.
+    expect(await decide({ vault: 'default' })).toMatchObject({ allowed: true, policyIds: ['on-vault'] });
+    // Only the category policy matches a public general page: tier is not declared for it, so its allow does not apply.
+    expect((await decide({ 'system-category': 'general' })).hasDecision).toBe(false);
+  });
+
   test('a condition that is not an object is refused every time, not cached', async () => {
     const { ev, decide } = setUp([allow('a', 'oops')]);
     await ev.initialize();

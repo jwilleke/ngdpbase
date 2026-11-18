@@ -30,6 +30,7 @@ import { jobContextFromRequest, jobContextFromRequestWithReason } from '../conte
 import { actorOf, type ActorAttribution, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
+import { mayEnterVaultAtDoor, type VaultDecider } from '../utils/privateStoreAccess.js';
 import { hideDeclaredPaths, keepHiddenValues, NO_SECRETS, secretKeys, valueLevels } from '../utils/sensitiveValues.js';
 import { createPatch, diffLines } from 'diff';
 import { exec } from 'child_process';
@@ -207,7 +208,7 @@ import type { ReviewRequest } from '../types/Review.js';
 const REVIEW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 import { ContactDetailsInvalidError } from '../managers/IdentityManager.js';
 import { contactDetailLabel, contactDetailsCard, contactDetailsFromForm, type ContactDetailsCard } from './profileContactDetails.js';
-import { isEmail } from '../types/guards.js';
+import { isEmail, isUuid } from '../types/guards.js';
 import { ACCOUNTLESS_PERSON_PREFIX } from '../utils/username.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type ExportManager from '../managers/ExportManager.js';
@@ -4532,7 +4533,19 @@ ${panes}
       const pageName = decodeURIComponent(req.params.page);
       const pageManager = this.engine.getManager('PageManager') as {
         getRawPageContent?: (id: string, ctx: ActorContext) => Promise<{ filePath: string; content: string } | null>;
+        checkPrivatePageAccess?: (ctx: WikiContext, name: string, adminEntry?: 'record' | 'quiet' | 'none') => Promise<boolean | null>;
       } | null;
+      // #2413: a vault page is read only by whoever the vault door admits: the
+      // owner, or an administrator let in by ngdpbase.vaults.admin-access to a
+      // vault that is not encrypted (#2255), recorded. `null` is a public name.
+      // A vault name is refused when the check cannot run.
+      const vaultAllowed = pageManager?.checkPrivatePageAccess
+        ? (await pageManager.checkPrivatePageAccess(wikiContext, pageName, 'record')) !== false
+        : !parsePrivatePageName(pageName);
+      if (!vaultAllowed) {
+        await this.renderError(req, res, 403, 'Access Denied', 'You do not have access to this page.');
+        return;
+      }
       const raw = pageManager?.getRawPageContent ? await pageManager.getRawPageContent(pageName, wikiContext.userContext) : null;
       if (!raw) {
         await this.renderError(req, res, 404, 'Page Not Found', `No page named '${pageName}' on this instance.`);
@@ -4601,7 +4614,17 @@ ${panes}
       const pageManager = this.engine.getManager('PageManager') as {
         saveRawPageWithAdminOverride?: (name: string, raw: string, ctx: ActorContext) => Promise<PageSaveResult>;
         getRawPageContent?: (id: string, ctx: ActorContext) => Promise<{ filePath: string; content: string } | null>;
+        checkPrivatePageAccess?: (ctx: WikiContext, name: string, adminEntry?: 'record' | 'quiet' | 'none') => Promise<boolean | null>;
       } | null;
+      // #2413: the same vault door as the GET route; a vault name is refused
+      // when the check cannot run.
+      const vaultAllowed = pageManager?.checkPrivatePageAccess
+        ? (await pageManager.checkPrivatePageAccess(wikiContext, pageName, 'record')) !== false
+        : !parsePrivatePageName(pageName);
+      if (!vaultAllowed) {
+        await this.renderError(req, res, 403, 'Access Denied', 'You do not have access to this page.');
+        return;
+      }
       if (!pageManager?.saveRawPageWithAdminOverride) {
         await this.renderError(req, res, 500, 'Unavailable', 'PageManager does not support raw save on this deployment.');
         return;
@@ -4634,15 +4657,11 @@ ${panes}
       }
       const errorMessage = err instanceof Error ? err.message : String(err);
       logger.warn(`adminSaveRaw('${pageName}') failed: ${errorMessage}`);
-      const pageManager = this.engine.getManager('PageManager') as {
-        getRawPageContent?: (id: string, ctx: ActorContext) => Promise<{ filePath: string; content: string } | null>;
-      } | null;
-      const raw = pageManager?.getRawPageContent ? await pageManager.getRawPageContent(pageName, wikiContext.userContext).catch(() => null) : null;
       const templateData = await this.getCommonTemplateData(req);
       res.status(400).render('admin-edit-raw', {
         ...templateData,
         pageName,
-        filePath: raw?.filePath ?? '(unknown)',
+        filePath: pageName,
         rawContent,
         errorMessage,
         csrfToken: req.session?.csrfToken ?? ''
@@ -10401,7 +10420,13 @@ ${panes}
     const pageName = formatPrivatePageName(name.owner, name.store, name.title);
     const pip = this.engine.getManager('PolicyInformationPoint');
     const subject = req.userContext ?? (await pip.currentSubject(req));
-    if (!pip.canAccessPrivateContainer(subject, name.owner, `page:${pageName}`, action)) {
+    // #2413: the owner or their delegate, else an administrator let in by
+    // ngdpbase.vaults.admin-access to a vault that is not encrypted (#2255), as
+    // at the page door. Asked quietly: the page door records the access.
+    const admitted = pip.canAccessPrivateContainer(subject, name.owner, `page:${pageName}`, action)
+      || (Boolean(subject) && await mayEnterVaultAtDoor(this.engine.getManager<VaultDecider>('PolicyDecisionPoint'), subject,
+        { owner: name.owner, vault: name.store, resource: pageName }, false));
+    if (!admitted) {
       // The same words as a private name that reads as nothing, and no echo of
       // the path asked for: one answer for a page that is not there and for one
       // this reader may not open (operator, 2026-09-23).
@@ -16314,6 +16339,8 @@ ${panes}
     const { uuid, source, a, b, liveUuid } = req.query as Record<string, string>;
 
     if (uuid && source === 'required') {
+      // Both ids name a file in a flat folder, so each must be a plain uuid.
+      if (!isUuid(uuid) || (liveUuid && !isUuid(liveUuid))) return null;
       // Compare required-pages source vs live page.
       // liveUuid param used for uuid-mismatch case (different UUID, same slug).
       const sourcePath = path.join(requiredDirResolved, `${uuid}.md`);

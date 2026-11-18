@@ -7,7 +7,7 @@ import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { carriesCeiling, proxyAttribution } from '../utils/proxyClaim.js';
 import { isSharedFolderOwner, parsePrivatePageName } from '../utils/privateStorePath.js';
 import { permitsInSharedFolder } from '../utils/sharedFolderAccess.js';
-import { readDeclaredAsWritten, declaredEnvironmentAttributes, declaredSubjectAttributes, effectiveAal, environmentDeclarationProblem, subjectDeclarationProblem, valueFits, aalFactsOf, type AalFacts, type DeclaredSubjectAttribute } from '../utils/policyAttributes.js';
+import { ATTRIBUTE_RESOURCE_TYPES, attributesForResourceTypes, readDeclaredAsWritten, declaredEnvironmentAttributes, declaredSubjectAttributes, effectiveAal, environmentDeclarationProblem, subjectDeclarationProblem, valueFits, aalFactsOf, type AalFacts, type DeclaredSubjectAttribute, type ResourceTypeDeclarations } from '../utils/policyAttributes.js';
 import { SCHEDULES_KEY, TIME_ZONE_KEY, scheduleIsEnabled, scheduleIsOpen, scheduleProblem, type Schedule } from '../utils/availability.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 import type { VaultDecider } from '../utils/privateStoreAccess.js';
@@ -1142,6 +1142,8 @@ class PolicyInformationPoint extends BaseManager {
       if (!subjectReads.has(name)) subjectReads.set(name, this.subjectAttribute(subjectForConditions, name));
       return subjectReads.get(name);
     };
+    // #2261 slice 5: whether a vault is encrypted does not vary by page: asked once per vault for the listing.
+    const vaultsEncrypted = new Map<string, Promise<boolean | undefined>>();
     // #2261: nor does the moment: the clock is read once for the listing.
     const readEnvironment = this.environmentReader();
     const matchable = await this.matchableNow(userContext);
@@ -1179,7 +1181,7 @@ class PolicyInformationPoint extends BaseManager {
         matchable: () => Promise.resolve(matchable),
         policy: async (extra) => {
           // #2255: the same page attributes the PDP asks this PIP for.
-          const page = this.pageAttributesFrom(title, metadata);
+          const page = this.pageAttributesFrom(title, metadata, vaultsEncrypted);
           const p = await decidePolicy?.(title, { ...extra, ...page.attributes }, (name) =>
             name.startsWith('resource:') ? page.read(name.slice('resource:'.length)) : name.startsWith('environment:') ? readEnvironment(name) : readSubject(name));
           if (p?.hasDecision) return { applicable: true, permit: p.allowed, reason: 'global_policy', policyIds: p.policyIds, conditionNotMet: p.conditionNotMet };
@@ -1291,9 +1293,11 @@ class PolicyInformationPoint extends BaseManager {
 
   /**
    * {@link pageAttributes} from frontmatter already in hand (the list
-   * filter). Attributes are those declared on the `page` resource type in
-   * `ngdpbase.access.resource-types`, each read from its `from` source; the
-   * sources are code (`frontmatter:<field>` today).
+   * filter). Attributes are those declared in `ngdpbase.access.resource-types`
+   * on `page`, `vault` and `shared-folder` (which of them a policy may read is
+   * the evaluator's call, from the types the policy names), each read from its
+   * `from` source; the sources are code (`frontmatter:<field>` and
+   * `vault:<field>`).
    *
    * - `system-category` is lowercased; a page with none is in the default
    *   category (the entry with `default: true`); a page in a shared folder is
@@ -1301,29 +1305,61 @@ class PolicyInformationPoint extends BaseManager {
    * - An `identity` attribute (`owner`, from `author`) is compared by the
    *   account it names: an @id or a username not yet converted both read as
    *   that account's username, an orphan as missing (#2097).
+   * - `vault:owner` is the account that owns the vault the page is in, and
+   *   `vault:encrypted` whether that vault is encrypted (#2261). Both are
+   *   missing, not false, for a page that is not in a vault (a public page, a
+   *   shared folder's page), and `vault:encrypted` is missing when the vault's
+   *   state cannot be read: a condition on a missing attribute fails closed.
+   *   Derived from the page's name, so a list reads what a single page does.
+   *   `vaultsEncrypted` lets a listing ask once per vault.
    */
-  pageAttributesFrom(pageName: string, metadata: PageFrontmatter | null | undefined): PageAttributes {
+  pageAttributesFrom(pageName: string, metadata: PageFrontmatter | null | undefined, vaultsEncrypted: Map<string, Promise<boolean | undefined>> = new Map()): PageAttributes {
     if (!metadata) return { attributes: {}, read: () => undefined };
     this.warnLegacyAccess(pageName, metadata);
     const category = this.pageCategory(pageName, metadata);
-    const declared = this.declaredPageAttributes();
+    const declared = this.declaredResourceAttributes();
+    const vault = parsePrivatePageName(pageName);
+    const inVault = vault && !isSharedFolderOwner(vault.owner) ? vault : null;
     const memo = new Map<string, unknown>();
     const read = (name: string): unknown => {
       if (memo.has(name)) return memo.get(name);
       const decl = Object.hasOwn(declared, name) ? declared[name] : undefined;
-      const field = typeof decl?.from === 'string' && decl.from.startsWith('frontmatter:') ? decl.from.slice('frontmatter:'.length) : null;
+      const from = typeof decl?.from === 'string' ? decl.from : '';
+      const field = from.startsWith('frontmatter:') ? from.slice('frontmatter:'.length) : null;
+      const type = decl?.type ?? 'string';
       let value: unknown;
       if (field === 'system-category') value = category;
       else if (field) {
         const raw = (metadata as Record<string, unknown>)[field];
         // A value that does not fit the declared type is missing, never coerced (#2261).
-        const type = decl?.type ?? 'string';
         value = type === 'identity' ? this.identityValue(raw) : valueFits(type, raw) ? raw : undefined;
+      } else if (from === 'vault:owner' && inVault) {
+        value = valueFits(type, inVault.owner) ? (type === 'identity' ? normalizeUsername(inVault.owner) : inVault.owner) : undefined;
+      } else if (from === 'vault:encrypted' && inVault && type === 'boolean') {
+        value = this.vaultEncrypted(inVault.owner, inVault.store, vaultsEncrypted);
       }
       memo.set(name, value);
       return value;
     };
     return { attributes: { 'system-category': category }, read };
+  }
+
+  /** Whether `owner`'s vault is encrypted, once per vault for `known`; a read that fails, or no ShareManager, is missing (never "not encrypted"). */
+  private vaultEncrypted(owner: string, vault: string, known: Map<string, Promise<boolean | undefined>>): Promise<boolean | undefined> {
+    const key = `${owner}/${vault}`;
+    let asked = known.get(key);
+    if (!asked) {
+      const shares = this.engine.getManager<{ isEncryptedVault?(owner: string, vault: string): Promise<boolean> }>('ShareManager');
+      try {
+        asked = shares?.isEncryptedVault
+          ? shares.isEncryptedVault(owner, vault).then((encrypted) => (typeof encrypted === 'boolean' ? encrypted : undefined), () => undefined)
+          : Promise.resolve(undefined);
+      } catch {
+        asked = Promise.resolve(undefined); // a synchronous throw is missing too, never an error out of a decision
+      }
+      known.set(key, asked);
+    }
+    return asked;
   }
 
   /**
@@ -1424,11 +1460,14 @@ class PolicyInformationPoint extends BaseManager {
     return validation?.getDefaultSystemCategory?.()?.toLowerCase() ?? 'general';
   }
 
-  /** The attributes declared on the `page` resource type (#2255). */
-  private declaredPageAttributes(): Record<string, DeclaredAttribute> {
-    const types = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.access.resource-types', null) as Record<string, { attributes?: Record<string, DeclaredAttribute> }> | null;
-    const attributes = types?.page?.attributes;
-    return attributes && typeof attributes === 'object' ? attributes : {};
+  /**
+   * The attributes declared on the `page` resource type (#2255) and on `vault`
+   * and `shared-folder` (#2261), all of them: which a policy may read is
+   * decided by the evaluator, from the resource types the policy names.
+   */
+  private declaredResourceAttributes(): Record<string, DeclaredAttribute> {
+    const types = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.access.resource-types', null) as ResourceTypeDeclarations | null;
+    return attributesForResourceTypes(types, ATTRIBUTE_RESOURCE_TYPES);
   }
 
   /** An identity reference as the policies compare it: the username of the account it names, or missing (#2097). */
