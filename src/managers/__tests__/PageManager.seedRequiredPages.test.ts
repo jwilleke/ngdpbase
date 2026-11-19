@@ -607,6 +607,22 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
         expect(await fse.readFile(path.join(pagesDir, `${uuid(1)}.md`), 'utf8')).toBe(before);
       });
 
+      test('keep applies only the three kept keys to the page as re-read, so a change made a moment earlier is not reverted', async () => {
+        const pm = await bootWithEditedPage();
+        const real = pm.getPage.bind(pm);
+        // Another admin changed the slug and the text after the first read.
+        vi.spyOn(pm, 'getPage').mockImplementation(async (...args: Parameters<typeof real>) => {
+          const page = await real(...args);
+          return page && { ...page, content: 'Fresher text.', metadata: { ...page.metadata, slug: 'fresher-slug' } };
+        });
+        const result = await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
+        expect(result).toEqual({ ok: true, kept: true });
+        const live = await liveOf(1);
+        expect(live.data.slug).toBe('fresher-slug');
+        expect(live.content).toContain('Fresher text.');
+        expect(live.data['kept-edited']).toBe(true);
+      });
+
       test('unkeeping removes the three keys', async () => {
         const pm = await bootWithEditedPage();
         await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
