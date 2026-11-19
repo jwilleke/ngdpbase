@@ -1387,7 +1387,50 @@ class MarkupParser extends BaseManager {
       const inputLines = sanitized.split(/\r?\n/);
       const outputLines: string[] = [];
       let li = 0;
+      // #1726: an indented code block (four spaces or a tab, after a blank
+      // line or at the start, outside a list) holds its lines as text, so a
+      // fence or a `[link]` written in it is code, not markup.
+      let prevBlank = true;
+      let inList = false;
+      let inFootnote = false;
       while (li < inputLines.length) {
+        const here = inputLines[li];
+        // A footnote body written under `[^id]:` is that footnote's, not code.
+        if (prevBlank && !inList && !inFootnote && /^(?: {4}|\t)/.test(here) && here.trim() !== '') {
+          const startLine = li;
+          const block: string[] = [];
+          while (li < inputLines.length && (inputLines[li].trim() === '' || /^(?: {4}|\t)/.test(inputLines[li]))) {
+            block.push(inputLines[li]);
+            li++;
+          }
+          // Blank lines at the end belong to what follows, not to the block.
+          const trailing: string[] = [];
+          while (block.length > 0 && block[block.length - 1].trim() === '') trailing.push(block.pop() as string);
+          const codeContent = block.map((l) => l.replace(/^(?: {1,4}|\t)/, '')).join('\n') + '\n';
+          jspwikiElements.push({
+            type: 'fenced-code',
+            syntax: block.join('\n'),
+            codeLanguage: '',
+            codeContent,
+            id: id++,
+            position: startLine
+          });
+          outputLines.push(`<span data-jspwiki-placeholder="${uuid}-${id - 1}"></span>`);
+          // A blank line closes the block, so a `---` straight after it is not
+          // read as the underline of a heading made of the placeholder.
+          outputLines.push(...(trailing.length > 0 || li >= inputLines.length ? trailing : ['']));
+          prevBlank = true;
+          continue;
+        }
+        if (here.trim() === '') {
+          prevBlank = true;
+        } else {
+          prevBlank = false;
+          if (/^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]/.test(here)) inList = true;
+          else if (!/^[ \t]/.test(here)) inList = false;
+          if (/^\[\^[^\]\s]+\]:/.test(here)) inFootnote = true;
+          else if (!/^[ \t]/.test(here)) inFootnote = false;
+        }
         // #1335: a fence may be indented — a code block inside a list item sits
         // at the item's content indent — and may have a space before its
         // language (```` ``` text ````). Both are CommonMark. The old test,
@@ -1442,7 +1485,19 @@ class MarkupParser extends BaseManager {
           });
           // Keep the fence's indent on the placeholder so an indented block
           // stays inside the list item it was written in.
-          outputLines.push(`${marker}<span data-jspwiki-placeholder="${uuid}-${id - 1}"></span>`);
+          const placeholder = `<span data-jspwiki-placeholder="${uuid}-${id - 1}"></span>`;
+          // Four spaces in, `~~~` would read as text; that shape never joined the quote.
+          const afterQuote = marker.length < 4 && /^[ \t]*>/.test(outputLines[outputLines.length - 1] ?? '');
+          if (afterQuote) {
+            // #1726: a bare placeholder line after a quote is that quote's lazy
+            // continuation, which pulled the block into the quote. A fence
+            // ends the quote, so write the placeholder as a one-line fence;
+            // placeRendered swaps the rendered block in for it.
+            outputLines.push(`${marker}~~~`, `${indent}${placeholder}`, `${indent}~~~`);
+          } else {
+            outputLines.push(`${marker}${placeholder}`);
+          }
+          prevBlank = false;
         } else {
           outputLines.push(inputLines[li]);
           li++;
@@ -1832,7 +1887,7 @@ class MarkupParser extends BaseManager {
     //   otherwise            → wiki link        [PageName], [Display|Target]
     // #1708: brackets inside a Markdown link's text are that text, for markdown-it.
     const markdownLinkText = markdownLinkTextRanges(sanitized);
-    sanitized = sanitized.replace(new RegExp(`${UNESCAPED_BRACKET}${NOT_TASK_MARKER}${NOT_ALERT_MARKER}\\[([^\\]]*)\\](?!\\()`, 'g'),
+    sanitized = sanitized.replace(new RegExp(`${UNESCAPED_BRACKET}${NOT_TASK_MARKER}${NOT_ALERT_MARKER}\\[((?:[^\\]\\n]|\\n(?![ \\t]*\\n))*)\\](?!\\()`, 'g'),
       (match: string, inner: string, offset: number) => {
         if (insideMarkdownLinkText(markdownLinkText, offset)) return match;
 
@@ -2718,6 +2773,14 @@ class MarkupParser extends BaseManager {
   private static placeRendered(html: string, placeholder: string, rendered: string): string {
     let result = html;
     const ph = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // #1726: a placeholder written inside a one-line fence (to end a quote
+    // before it) comes out as a code block holding the escaped placeholder.
+    const escaped = placeholder.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    result = result.replace(
+      new RegExp(`<pre><code>${escaped.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n</code></pre>`, 'g'),
+      () => placeholder
+    );
 
     // #1368: a block element cannot sit inside a <p>. A placeholder alone on
     // its line comes out of markdown-it as a paragraph — or as a line of one,

@@ -44,7 +44,6 @@ const REASONS = {
   'html-policy': 'Raw HTML in the page goes through the HTML policy (#1623). These run with no policy configured, so author HTML is dropped; CommonMark passes it through.',
   'soft-line-break': 'A new line is a new line (R4 in the #1271 decision log, `breaks: true`); CommonMark renders a soft break as a space.',
   'reference-definition-narrowed': 'A reference definition counts only on its own line, with a link-like destination on the same line (#1491), so `[Term]: value` wiki lines keep rendering. Multi-line definitions, plain-word destinations and definitions inside other blocks are not recognised.',
-  'bug-code-extraction': 'KNOWN BUG #1726: the parser protects code spans and fences with its own pattern before markdown-it parses blocks, and disagrees with CommonMark: the internal placeholder printed into the page, a span across list items, spaces kept in multi-line spans, a fence after a quote inside a list item.',
   'wiki-link': '`[text]` is an NCM wiki link when the page defines no such reference label; in CommonMark it is literal text.',
   'fence-class-as-written': 'The code-fence class follows showdown (`showdownFenceClasses`): the bare language name beside `language-…`, and the info string as written; CommonMark decodes escapes and entities and adds only `language-…`.',
   'ncm-escape': '`[[` is NCM\'s escape for a literal `[` (kept, J1 in the #1271 decision log).',
@@ -71,12 +70,8 @@ const EXCEPTIONS: Record<number, keyof typeof REASONS> = Object.fromEntries(([
     218, 528, 529, 533, 540, 541, 542, 543, 545, 546, 547, 549, 569, 571,
     573, 576, 577
   ]],
-  ['bug-code-extraction', [
-    134, 211, 321,
-    537
-  ]],
   ['wiki-link', [
-    182, 511, 513, 523, 629
+    182, 211, 511, 513, 523, 629
   ]],
   ['fence-class-as-written', [
     24, 34

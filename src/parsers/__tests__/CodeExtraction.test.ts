@@ -87,4 +87,98 @@ describe('code extraction follows CommonMark (#1726)', () => {
     expect(html).toContain('[Inline: [{Image src=\'a.png\'}] and `code` here.]');
     expect(html).not.toContain('placeholder');
   });
+
+  test('an indented code block holding a fence is code, not a fence', async () => {
+    const html = await render('    ```\n    aaa\n    ```\n');
+
+    expect(html).toContain('<pre><code>```\naaa\n```\n</code></pre>');
+    expect(html).not.toContain('placeholder');
+  });
+
+  test('an indented block holding a reference definition is code', async () => {
+    const html = await render('    [foo]: /url "title"\n\n[foo]\n');
+
+    expect(html).toContain('<pre><code>[foo]: /url "title"\n</code></pre>');
+    expect(html).not.toContain('placeholder');
+  });
+
+  test('a fence after a quote inside a list item stays in the item', async () => {
+    const html = await render('- a\n  > b\n  ```\n  c\n  ```\n- d\n');
+
+    expect(html).toMatch(/<li>a\s*<blockquote>\s*<p>b<\/p>\s*<\/blockquote>\s*<pre><code>c\n<\/code><\/pre>\s*<\/li>\s*<li>d<\/li>/);
+    expect(html).not.toContain('placeholder');
+  });
+
+  test('a code span inside link brackets leaves no placeholder', async () => {
+    const html = await render('[foo`][ref]`\n\n[ref]: /uri\n');
+
+    expect(html).toContain('<p>[foo<code>][ref]</code></p>');
+    expect(html).not.toContain('placeholder');
+  });
+
+  // Round 2 (PR #2438 review).
+  test('a footnote body after a blank line is not lifted as code', async () => {
+    const html = await render('Text[^1] here.\n\n[^1]:\n\n    Body after blank.\n');
+
+    expect(html).toContain('Body after blank.');
+    expect(html).not.toContain('placeholder');
+    expect(html).not.toContain('<pre>');
+  });
+
+  test('a footnote body on the next line, or in a second paragraph, renders as on master', async () => {
+    const next = await render('Text[^1] here.\n\n[^1]:\n    Body next line.\n');
+    const second = await render('Text[^1] here.\n\n[^1]: first\n\n    second paragraph\n');
+
+    expect(next).toContain('Body next line.');
+    expect(second).toContain('second paragraph');
+    // The second paragraph is markdown-it's own indented code block, as before.
+    for (const html of [next, second]) expect(html).not.toContain('placeholder');
+    expect(next).not.toContain('<pre>');
+  });
+
+  test('a fence indented four spaces right after a quote prints no stray ~~~', async () => {
+    const html = await render('> q\n    ```\n    c\n    ```\nafter\n');
+
+    expect(html).not.toContain('~~~');
+    expect(html).not.toContain('placeholder');
+    expect(html).toContain('after');
+  });
+
+  test('a tab-indented block is code, the same as four spaces', async () => {
+    const html = await render('para\n\n\t```\n\taaa\n\t```\n');
+
+    expect(html).toContain('<pre><code>```\naaa\n```\n</code></pre>');
+    expect(html).not.toContain('placeholder');
+  });
+
+  test('CRLF line endings give the same indented block', async () => {
+    const html = await render('para\r\n\r\n    ```\r\n    aaa\r\n    ```\r\n');
+
+    expect(html).toContain('<pre><code>```\naaa\n```\n</code></pre>');
+    expect(html).not.toContain('placeholder');
+  });
+
+  test('an indented line continuing a list item stays in the item, not code', async () => {
+    const html = await render('- a\n\n    text\n');
+
+    expect(html).toMatch(/<li>[\s\S]*text[\s\S]*<\/li>/);
+    expect(html).not.toContain('<pre>');
+    expect(html).not.toContain('placeholder');
+  });
+
+  test('brackets do not link across a blank line', async () => {
+    const html = await render('[a\n\nb]');
+
+    expect(html).toContain('<p>[a</p>');
+    expect(html).toContain('<p>b]</p>');
+    expect(html).not.toContain('placeholder');
+  });
+
+  test('a footnote with several indented paragraphs renders as one block, as on master', async () => {
+    const html = await render('Text[^1] here.\n\n[^1]: first\n\n    second\n\n    third\n\nafter\n');
+
+    expect(html).not.toContain('placeholder');
+    expect(html.match(/<pre>/g)).toHaveLength(1);
+    expect(html).toContain('second\n\nthird');
+  });
 });
