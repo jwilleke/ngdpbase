@@ -29,8 +29,8 @@ import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoo
 
 vi.mock('../../utils/logger', () => ({
   default: {
-    info:  vi.fn(),
-    warn:  vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
     error: vi.fn(),
     debug: vi.fn()
   }
@@ -40,10 +40,10 @@ import logger from '../../utils/logger';
 import PageManager from '../PageManager';
 
 const SYSTEM_CATEGORIES = {
-  general:       { label: 'general',       storageLocation: { defaultstore: 'pages/' } },
-  system:        { label: 'system',        storageLocation: { defaultstore: 'pages/' } },
+  general: { label: 'general', storageLocation: { defaultstore: 'pages/' } },
+  system: { label: 'system', storageLocation: { defaultstore: 'pages/' } },
   documentation: { label: 'documentation', storageLocation: { defaultstore: 'pages/' } },
-  developer:     { label: 'developer' }
+  developer: { label: 'developer' }
 };
 
 /** The system principal's job, as the boot seed and Sync run. */
@@ -77,18 +77,18 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
         };
         return map[key] !== undefined ? map[key] : def;
       }),
-      getResolvedDataPath: vi.fn((key: string, def: unknown) =>
-        key === 'ngdpbase.page.provider.filesystem.storagedir' ? pagesDir : def
-      ),
+      getResolvedDataPath: vi.fn((key: string, def: unknown) => (key === 'ngdpbase.page.provider.filesystem.storagedir' ? pagesDir : def)),
       getInstanceDataFolder: vi.fn(() => instanceDir)
     };
     return {
       // #1815: the write door's deciders allow; seeding is the subject here.
-      getManager: vi.fn(withWriteDoorAllowing((name: string) => {
-        if (name === 'ConfigurationManager') return cm;
-        if (name === 'NotificationManager') return { notifyAdmins: notify };
-        return null;
-      }))
+      getManager: vi.fn(
+        withWriteDoorAllowing((name: string) => {
+          if (name === 'ConfigurationManager') return cm;
+          if (name === 'NotificationManager') return { notifyAdmins: notify };
+          return null;
+        })
+      )
     };
   };
 
@@ -176,10 +176,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     const provider = (pm as unknown as { provider: { isPageDeleted?: (u: string) => boolean } }).provider;
     provider.isPageDeleted = (u: string) => u === uuid(1);
 
-    const report = await pm.seedShippedPages(
-      { id: 'required-pages', label: 'required-pages', dir: requiredDir, stampKey: REQUIRED_SOURCE_HASH_KEY },
-      { origin: 'test', user: 'system' }
-    );
+    const report = await pm.seedShippedPages({ id: 'required-pages', label: 'required-pages', dir: requiredDir, stampKey: REQUIRED_SOURCE_HASH_KEY }, { origin: 'test', user: 'system' });
 
     expect(report.seeded).toEqual([]);
     expect(report.removed).toEqual(['Alpha']);
@@ -225,9 +222,16 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     const livePath = (n: number) => path.join(pagesDir, `${uuid(n)}.md`);
     /** A live copy written before stamps existed: same frontmatter as the source, no stamp. */
     const writeUnstampedLive = async (n: number, title: string, body: string) => {
-      await fse.writeFile(livePath(n), matter.stringify(body, {
-        title, uuid: uuid(n), slug: title.toLowerCase(), 'system-category': 'documentation', lastModified: '2026-01-01T00:00:00.000Z'
-      }));
+      await fse.writeFile(
+        livePath(n),
+        matter.stringify(body, {
+          title,
+          uuid: uuid(n),
+          slug: title.toLowerCase(),
+          'system-category': 'documentation',
+          lastModified: '2026-01-01T00:00:00.000Z'
+        })
+      );
     };
 
     test('a live page with no stamp whose text matches the source is stamped, keeping lastModified', async () => {
@@ -299,7 +303,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     });
   });
 
-  describe('#2255 shipped pages carry no access stamp; add-on pages are the add-on\'s', () => {
+  describe("#2255 shipped pages carry no access stamp; add-on pages are the add-on's", () => {
     const livePath = (n: number) => path.join(pagesDir, `${uuid(n)}.md`);
 
     test('a new required page is not stamped, and is authored by the system principal', async () => {
@@ -318,10 +322,17 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     test('a live required page with no access is left as it is', async () => {
       await writeSource(1, 'Alpha', 'documentation');
       const body = 'Body of Alpha.\n';
-      await fse.writeFile(livePath(1), matter.stringify(body, {
-        title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation',
-        lastModified: '2026-01-01T00:00:00.000Z', [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash(body)
-      }));
+      await fse.writeFile(
+        livePath(1),
+        matter.stringify(body, {
+          title: 'Alpha',
+          uuid: uuid(1),
+          slug: 'alpha',
+          'system-category': 'documentation',
+          lastModified: '2026-01-01T00:00:00.000Z',
+          [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash(body)
+        })
+      );
       const before = await fs.readFile(livePath(1), 'utf8');
 
       await boot();
@@ -329,12 +340,18 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
       expect(await fs.readFile(livePath(1), 'utf8')).toBe(before);
     });
 
-    describe('an add-on\'s pages', () => {
+    describe("an add-on's pages", () => {
       let addonDir: string;
       const writeAddonSource = async (n: number, title: string) => {
-        await fse.writeFile(path.join(addonDir, `${uuid(n)}.md`), matter.stringify(`Body of ${title}.\n`, {
-          title, uuid: uuid(n), slug: title.toLowerCase(), 'system-category': 'documentation'
-        }));
+        await fse.writeFile(
+          path.join(addonDir, `${uuid(n)}.md`),
+          matter.stringify(`Body of ${title}.\n`, {
+            title,
+            uuid: uuid(n),
+            slug: title.toLowerCase(),
+            'system-category': 'documentation'
+          })
+        );
       };
 
       beforeEach(async () => {
@@ -367,7 +384,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
         expect(matter(await fs.readFile(livePath(4), 'utf8')).data.author).toBe('urn:uuid:11111111-1111-4111-8111-111111111111');
       });
 
-      test('shippedAuthor from anyone but the system principal\'s job is ignored', async () => {
+      test("shippedAuthor from anyone but the system principal's job is ignored", async () => {
         const pm = await boot();
 
         await pm.savePage('Mine', 'Body.\n', { title: 'Mine', uuid: uuid(5), slug: 'mine', 'system-category': 'general' }, TEST_ACTOR, { skipValidation: true, shippedAuthor: 'addon:calendar' });
@@ -498,6 +515,170 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
       });
     });
 
+    describe.each([
+      ['a core page', () => ({ source: undefined, key: REQUIRED_SOURCE_HASH_KEY })],
+      ['an add-on page', () => ({ source: 'addon', key: 'addon-source-hash' })]
+    ])('#2389 slice 2 Keep edited version — %s', (_label, make) => {
+      let addonDir: string;
+      const sourceOf = (pm: PageManager) => (make().source === 'addon' ? pm.addonPagesSource('demo', addonDir) : pm.requiredPagesSource());
+      const srcDir = () => (make().source === 'addon' ? addonDir : requiredDir);
+      const writeShipped = (body: string) => fse.writeFile(path.join(srcDir(), `${uuid(1)}.md`), matter.stringify(`${body}\n`, { title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation' }));
+      const writeLive = (body: string, extra: Record<string, unknown> = {}) => fse.writeFile(path.join(pagesDir, `${uuid(1)}.md`), matter.stringify(`${body}\n`, { title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation', ...extra }));
+      const editedLive = () => writeLive('Edited here.', { 'user-modified': true, lastModified: '2026-10-01T00:00:00.000Z', [make().key]: pageSourceHash('Shipped v1.') });
+      const bootWithEditedPage = async () => {
+        await writeShipped('Shipped v1.');
+        const pm = await boot();
+        await editedLive();
+        await pm.refreshPageList();
+        await pm.refreshPageList();
+        return pm;
+      };
+
+      beforeEach(async () => {
+        addonDir = path.join(tmpDir, 'addon-pages');
+        await fse.ensureDir(addonDir);
+      });
+
+      test('keeping writes the three keys and leaves the body, the stamp and the flag alone', async () => {
+        const pm = await bootWithEditedPage();
+        const result = await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
+        expect(result).toEqual({ ok: true, kept: true });
+        const live = await liveOf(1);
+        expect(live.content).toContain('Edited here.');
+        expect(live.data['kept-edited']).toBe(true);
+        expect(live.data['kept-shipped-hash']).toBe(pageSourceHash('Shipped v1.'));
+        expect(live.data['kept-working-parts']).toEqual(['setting:slug=alpha', 'setting:system-category=documentation']);
+        expect(live.data['user-modified']).toBe(true);
+        expect(live.data[make().key]).toBe(pageSourceHash('Shipped v1.'));
+      });
+
+      test('keeping records the plugin calls of the shipped page the admin saw', async () => {
+        await fse.writeFile(path.join(srcDir(), `${uuid(1)}.md`), matter.stringify('Shipped v1.\n[{Calendar calendars=family}]\n', { title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation' }));
+        const pm = await boot();
+        await editedLive();
+        await pm.refreshPageList();
+        await pm.refreshPageList();
+        await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
+        expect((await liveOf(1)).data['kept-working-parts']).toContain('plugin:Calendar calendars="family"');
+      });
+
+      test('keeping writes no new version and keeps lastModified', async () => {
+        const pm = await bootWithEditedPage();
+        const filesOf = async (dir: string): Promise<string[]> => {
+          const out: string[] = [];
+          for (const entry of await fse.readdir(dir, { withFileTypes: true })) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) out.push(...(await filesOf(full)));
+            else out.push(path.relative(tmpDir, full));
+          }
+          return out.sort();
+        };
+        const before = (await liveOf(1)).data.lastModified;
+        const filesBefore = await filesOf(tmpDir);
+        await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
+        expect((await liveOf(1)).data.lastModified).toEqual(before);
+        // No new file anywhere (a version, a history entry) and no edit counted.
+        expect(await filesOf(tmpDir)).toEqual(filesBefore);
+        expect((await liveOf(1)).data['user-modified']).toBe(true);
+      });
+
+      test('a kept page whose text matches what shipped keeps its mark through a plain sync (R2)', async () => {
+        await writeShipped('Shipped v1.');
+        const pm = await boot();
+        const hash = pageSourceHash('Shipped v1.');
+        await writeLive('Shipped v1.', { [make().key]: hash, 'kept-edited': true, 'kept-shipped-hash': hash, 'kept-working-parts': ['setting:system-category=documentation'] });
+        await pm.refreshPageList();
+        await pm.refreshPageList();
+        const report = await pm.syncShippedPages(sourceOf(pm), [uuid(1)], {}, ADMIN);
+        expect(report.protected).toEqual([uuid(1)]);
+        expect(report.synced).toEqual([]);
+        const live = await liveOf(1);
+        expect(live.data['kept-edited']).toBe(true);
+        expect(live.data['kept-shipped-hash']).toBe(hash);
+        expect(live.data['kept-working-parts']).toEqual(['setting:system-category=documentation']);
+      });
+
+      test('keep writes the page it was asked about: a title that now belongs to another page is refused', async () => {
+        const pm = await bootWithEditedPage();
+        const before = await fse.readFile(path.join(pagesDir, `${uuid(1)}.md`), 'utf8');
+        vi.spyOn(pm, 'getPage').mockResolvedValue({ title: 'Alpha', content: 'Other.', metadata: { uuid: uuid(9), title: 'Alpha' } });
+        const result = await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
+        expect(result).toEqual({ ok: false, reason: 'not-on-site' });
+        expect(await fse.readFile(path.join(pagesDir, `${uuid(1)}.md`), 'utf8')).toBe(before);
+      });
+
+      test('keep applies only the three kept keys to the page as re-read, so a change made a moment earlier is not reverted', async () => {
+        const pm = await bootWithEditedPage();
+        const real = pm.getPage.bind(pm);
+        // Another admin changed the slug and the text after the first read.
+        vi.spyOn(pm, 'getPage').mockImplementation(async (...args: Parameters<typeof real>) => {
+          const page = await real(...args);
+          return page && { ...page, content: 'Fresher text.', metadata: { ...page.metadata, slug: 'fresher-slug' } };
+        });
+        const result = await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
+        expect(result).toEqual({ ok: true, kept: true });
+        const live = await liveOf(1);
+        expect(live.data.slug).toBe('fresher-slug');
+        expect(live.content).toContain('Fresher text.');
+        expect(live.data['kept-edited']).toBe(true);
+      });
+
+      test('unkeeping removes the three keys', async () => {
+        const pm = await bootWithEditedPage();
+        await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
+        const result = await pm.keepShippedPage(sourceOf(pm), uuid(1), false, ADMIN);
+        expect(result).toEqual({ ok: true, kept: false });
+        const live = await liveOf(1);
+        expect(live.data['kept-edited']).toBeUndefined();
+        expect(live.data['kept-shipped-hash']).toBeUndefined();
+        expect(live.data['kept-working-parts']).toBeUndefined();
+        expect(live.content).toContain('Edited here.');
+      });
+
+      test('ticking again rewrites the baseline from the current shipped page, which clears "needs your review"', async () => {
+        const pm = await bootWithEditedPage();
+        await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
+        await fse.writeFile(path.join(srcDir(), `${uuid(1)}.md`), matter.stringify('Shipped v2.\n[{Calendar}]\n', { title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation' }));
+        await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
+        const live = await liveOf(1);
+        expect(live.data['kept-shipped-hash']).toBe(pageSourceHash('Shipped v2.\n[{Calendar}]'));
+        expect(live.data['kept-working-parts']).toEqual(['plugin:Calendar', 'setting:slug=alpha', 'setting:system-category=documentation']);
+      });
+
+      test('a page the source does not ship, or the site does not hold, is refused and nothing is written', async () => {
+        const pm = await bootWithEditedPage();
+        expect(await pm.keepShippedPage(sourceOf(pm), uuid(9), true, ADMIN)).toEqual({ ok: false, reason: 'not-shipped' });
+        await fse.remove(path.join(pagesDir, `${uuid(1)}.md`));
+        await pm.refreshPageList();
+        await pm.refreshPageList();
+        expect(await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN)).toEqual({ ok: false, reason: 'not-on-site' });
+      });
+
+      test('Sync All leaves a kept page, whether or not a newer version shipped', async () => {
+        const pm = await bootWithEditedPage();
+        await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
+        await writeShipped('Shipped v2.');
+        const report = await pm.syncShippedPages(sourceOf(pm), [uuid(1)], {}, ADMIN);
+        expect(report.protected).toEqual([uuid(1)]);
+        expect(report.synced).toEqual([]);
+        expect((await liveOf(1)).content).toContain('Edited here.');
+      });
+
+      test('Use shipped version replaces a kept page and clears the kept keys and the flag', async () => {
+        const pm = await bootWithEditedPage();
+        await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
+        await writeShipped('Shipped v2.');
+        const report = await pm.syncShippedPages(sourceOf(pm), [uuid(1)], { force: true }, ADMIN);
+        expect(report.synced).toEqual([uuid(1)]);
+        const live = await liveOf(1);
+        expect(live.content).toContain('Shipped v2.');
+        expect(live.data['kept-edited']).toBeUndefined();
+        expect(live.data['kept-shipped-hash']).toBeUndefined();
+        expect(live.data['kept-working-parts']).toBeUndefined();
+        expect(live.data['user-modified']).toBeUndefined();
+      });
+    });
+
     test('brings back a page removed on the site — the recovery path (decision A)', async () => {
       await writeSource(1, 'Alpha', 'documentation');
       const pm = await boot();
@@ -572,16 +753,16 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
 
   test('a page with no uuid, or a duplicate uuid, is reported and the rest still seed', async () => {
     await writeSource(1, 'Alpha', 'documentation');
-    await fse.writeFile(
-      path.join(requiredDir, 'zz-copy-of-alpha.md'),
-      matter.stringify('Copy.\n', { title: 'Alpha Copy', uuid: uuid(1), slug: 'alpha-copy' })
-    );
+    await fse.writeFile(path.join(requiredDir, 'zz-copy-of-alpha.md'), matter.stringify('Copy.\n', { title: 'Alpha Copy', uuid: uuid(1), slug: 'alpha-copy' }));
     await fse.writeFile(path.join(requiredDir, 'no-uuid.md'), matter.stringify('x\n', { title: 'No Uuid', slug: 'no-uuid' }));
 
     await boot();
 
     expect(await liveFiles()).toEqual([`${uuid(1)}.md`]);
-    const warned = vi.mocked(logger.warn).mock.calls.map((c) => String(c[0])).join('\n');
+    const warned = vi
+      .mocked(logger.warn)
+      .mock.calls.map((c) => String(c[0]))
+      .join('\n');
     expect(warned).toContain('zz-copy-of-alpha.md');
     expect(warned).toContain('no-uuid.md');
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ title: 'Required pages not seeded' }));

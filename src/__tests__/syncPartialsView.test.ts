@@ -37,11 +37,30 @@ describe('#2389 _sync-status: the plain state words', () => {
     expect(statuses(await partial('_sync-status', { status: 'modified', syncState: 'both-changed', userModified: true }))).toEqual(['both-changed']);
   });
 
-  test('the labels are the design\'s words, and never Modified, Current or User Edited', async () => {
+  test("the labels are the design's words, and never Modified, Current or User Edited", async () => {
     expect(await label({ status: 'current', syncState: 'same-as-shipped', userModified: false })).toBe('Same as shipped');
     expect(await label({ status: 'modified', syncState: 'update-ready', userModified: false })).toBe('Update ready');
     expect(await label({ status: 'modified', syncState: 'edited-not-confirmed', userModified: true })).toBe('Edited here, not confirmed');
     expect(await label({ status: 'modified', syncState: 'both-changed', userModified: true })).toBe('Edited here, and a newer version is available');
+  });
+});
+
+describe('#2389 slice 2 _sync-status: the two kept states', () => {
+  const label = async (item: Record<string, unknown>) => (await partial('_sync-status', item)).body.textContent?.replace(/\s+/g, ' ').trim();
+
+  test('Kept for this site, and the quiet "newer version available" line only when one shipped', async () => {
+    const plain = { status: 'modified', syncState: 'kept-for-site', userModified: true };
+    expect(statuses(await partial('_sync-status', plain))).toEqual(['kept-for-site']);
+    expect(await label(plain)).toBe('Kept for this site');
+    expect(await label({ ...plain, newerAvailable: true })).toBe('Kept for this site A newer version is available');
+  });
+
+  test('Kept, needs your review, lists what the newer version changes', async () => {
+    const item = { status: 'modified', syncState: 'kept-needs-review', userModified: true, workingChanges: ['The shipped page now adds Calendar (calendars=family).'] };
+    expect(statuses(await partial('_sync-status', item))).toEqual(['kept-needs-review']);
+    const text = await label(item);
+    expect(text).toContain('Kept, needs your review');
+    expect(text).toContain('The shipped page now adds Calendar (calendars=family).');
   });
 });
 
@@ -139,5 +158,116 @@ describe('#1918 Admin → Required Pages draws shipped content through the parti
     expect(uses(required, '_sync-counts')).toBe(1);
     // #2414: one summary line per table, drawn by the same partial.
     expect(uses(required, '_sync-summary')).toBe(2);
+  });
+});
+
+describe('#2389 slice 2 Review dialog and kept badges: the words and the look the design asks for', () => {
+  const page = fs.readFileSync(path.join(VIEWS, 'admin-required-pages.ejs'), 'utf8');
+  const text = async (item: Record<string, unknown>) => (await partial('_sync-status', item)).body.textContent?.replace(/\s+/g, ' ').trim();
+
+  test('a kept page that needs review says what to do next', async () => {
+    const item = { status: 'modified', syncState: 'kept-needs-review', userModified: true, workingChanges: ['The shipped page now shows a page total.'] };
+    expect(await text(item)).toContain('Review it to decide whether to keep your version.');
+  });
+
+  test('the Kept for this site badge is not the cyan of the Review button', async () => {
+    const doc = await partial('_sync-status', { status: 'modified', syncState: 'kept-for-site', userModified: true });
+    const badge = doc.querySelector('[data-sync-status="kept-for-site"]');
+    expect(badge?.className).not.toMatch(/bg-info/);
+    expect(badge?.querySelector('i.fa-user-check')).not.toBeNull();
+  });
+
+  test('the dialog is titled Review, with the checkbox, the saved-at-once note and a darker note colour', () => {
+    expect(page).toContain('Keep edited version');
+    expect(page).not.toContain('Keep my version for this site');
+    expect(page).toContain('Saved as soon as you tick it.');
+    expect(page).toContain('#495057');
+    expect(page).toContain('`Review: ${title}`');
+    expect(page).toContain('Changes how the page works');
+  });
+
+  test('the note puts the saved-at-once line first and breaks into short lines', () => {
+    const start = page.indexOf('id="reviewKeepBox"');
+    const note = page.slice(start, page.indexOf('id="reviewKeepStatus"', start));
+    const lines = [...note.matchAll(/<span class="d-block[^"]*"[^>]*>([^<]+)<\/span>/g)].map((m) => m[1].trim());
+    expect(lines[0]).toBe('Saved as soon as you tick it.');
+    expect(lines.length).toBeGreaterThanOrEqual(3);
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(70);
+  });
+
+  test('the Kept for this site chip matches its row badge, and the Edited here chip says it also counts kept pages that need review', () => {
+    const chip = page.slice(page.indexOf('data-strip-count="kept"') - 120, page.indexOf('data-strip-count="kept"') + 60);
+    expect(chip).toContain('bg-light text-dark border border-secondary');
+    expect(chip).not.toContain('bg-info');
+    const edited = page.slice(page.indexOf('data-testid="count-edited-here"') - 140, page.indexOf('data-testid="count-edited-here"') + 260);
+    expect(edited).toContain('Kept, needs your review');
+  });
+
+  test('a page that needs review gets one button that keeps the version as it is, with a line saying what it does', () => {
+    expect(page).toContain('data-testid="review-keep-reviewed"');
+    expect(page).toContain("Keep edited version (I've reviewed this)");
+    expect(page).toContain("The newer version's changes will not be added.");
+    // Both rows (core and add-on) tell the dialog the page is in that state.
+    expect(page.match(/page\.syncState === 'kept-needs-review', page\.workingChanges \|\| \[\], page\.syncState === 'kept-needs-review'/g)?.length).toBe(2);
+    expect(page).toContain('async function showDiff(uuid, title, liveUuid = \'\', source = \'\', kept = false, workingChanges = [], needsReview = false)');
+  });
+
+  test('the unticked box has a border of at least 3:1 on the dialog background (#6c757d), like the list checkboxes', () => {
+    // Only the unticked box gets the grey border; a ticked box keeps the theme's own.
+    const input = page.match(/<input[^>]*id="reviewKeepCheck"[^>]*>/)?.[0] ?? '';
+    expect(input).not.toContain('border-color');
+    expect(page).toMatch(/#reviewKeepCheck:not\(:checked\)\s*\{[^}]*border-color:\s*#6c757d/i);
+  });
+
+  test('every kept page, not only one that needs review, opens with the already-kept note', () => {
+    expect(page).toContain("(source && kept) ? 'This page is already kept.");
+    expect(page).not.toContain("(source && needsReview) ? 'This page is already kept.");
+  });
+
+  test('the guides and the design doc name the box Keep edited version, never Keep my version, and give the border as at least 3:1', () => {
+    for (const file of ['docs/guides/addons-developer-guide.md', 'docs/planning/addons.md', 'docs/platform/addon-page-handling.md', 'docs/design/required-pages-sync-states.md']) {
+      expect(fs.readFileSync(path.join(ROOT, file), 'utf8')).not.toContain('Keep my version');
+    }
+    const design = fs.readFileSync(path.join(ROOT, 'docs/design/required-pages-sync-states.md'), 'utf8');
+    expect(design).toContain('at least 3:1');
+    expect(design).not.toContain('4.5:1');
+  });
+
+  test('the dialog uses one name for the action: the box and the button both say Keep edited version', () => {
+    expect(page).not.toContain('Keep my version');
+    const button = page.match(/id="reviewKeepAgainBtn"[^>]*>([^<]+)</)?.[1] ?? '';
+    expect(button).toBe("Keep edited version (I've reviewed this)");
+  });
+
+  test('a page that opens ticked is told it is already kept, and the note returns to the plain one after a save', () => {
+    expect(page).toContain('id="reviewKeepNote"');
+    expect(page).toContain('This page is already kept. Untick to stop keeping it (saved at once).');
+    const start = page.indexOf('function setupReviewKeep');
+    const body = page.slice(start, page.indexOf('document.getElementById(\'diffModal\')', start));
+    expect(body).toContain('reviewKeepNote');
+  });
+
+  test('the Keep edited version (I\'ve reviewed this) button is hidden as soon as a save changes the box', () => {
+    const start = page.indexOf('if (result.success)');
+    const success = page.slice(start, page.indexOf('return true;', start));
+    expect(success).toContain('again.hidden = true');
+  });
+
+  test('a refusal by the content rules is shown as one message, not wrapped in "Nothing was changed"', () => {
+    expect(page).toContain('result.contentRefused');
+  });
+
+  test('a failed save says what failed and what to do', () => {
+    expect(page).toContain('Your choice was not saved. Nothing was changed.');
+  });
+
+  test("the Review button's hover text offers only what the dialog offers", () => {
+    expect(page).toContain("choose whether to keep this site's version");
+    expect(page).not.toContain('or use the shipped one');
+  });
+
+  test('the page sentence points to Review, not to Diff', () => {
+    expect(page).not.toContain('open Diff, then Use shipped version');
+    expect(page).toContain('open Review');
   });
 });

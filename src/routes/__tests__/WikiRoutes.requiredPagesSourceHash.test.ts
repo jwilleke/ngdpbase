@@ -470,7 +470,7 @@ describe('#1871 Sync All Outdated counts only the pages it will sync', () => {
     expect(tableLine).toBe('1 needs a decision; Sync All has nothing to update');
     expect(tableLine).not.toContain('(0)');
     const summary = doc.querySelector('[data-testid="sync-summary"]')?.textContent?.replace(/\s+/g, ' ').trim();
-    expect(summary).toContain('To act on an edited page, open Diff, then Use shipped version.');
+    expect(summary).toContain('To act on an edited page, open Review, then tick Keep edited version, or press Use shipped version on its row.');
     expect(summary).not.toMatch(/\d/);
     // The count badges name the two kinds apart.
     const badge = (name: string) => doc.querySelector(`[data-testid="count-${name}"]`)?.textContent?.replace(/\s+/g, ' ').trim();

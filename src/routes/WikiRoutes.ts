@@ -38,9 +38,11 @@ import { Request, Response, Application, NextFunction } from 'express';
 import SchemaGenerator from '../utils/SchemaGenerator.js';
 import {
   shippedPageState,
+  keptInputs,
   type ShippedPageStateName,
   REQUIRED_SOURCE_HASH_KEY,
-  syncRowState
+  syncRowState,
+  withoutKeptMarks
 } from '../utils/addonPageSync.js';
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
@@ -513,6 +515,8 @@ interface IPageManager {
   /** #1503: only an administrator sets or changes a page's system-category */
   systemCategoryForWrite?(ctx: ActorContext, requested: unknown, current?: string | null, fallback?: string): Promise<{ ok: true; category: string | undefined; admin: boolean } | { ok: false; reason: string }>;
   syncShippedPages(source: ShippedPageSource, uuids: string[], options: { force?: boolean }, ctx: ActorContext): Promise<ShippedPageSyncReport>;
+  /** #2389 slice 2: Keep edited version. */
+  keepShippedPage: PageManagerClass['keepShippedPage'];
   /** At unlock (#1456): sealed pages move into their stores' own indexes. */
   adoptUserPageCatalog(ctx: ActorContext): Promise<number>;
   /** At unlock (#1457): `[Title]` becomes `[store/Title]` in this owner's stores. */
@@ -4745,7 +4749,7 @@ ${panes}
       // #2389: Sync All takes only Update ready. New pages keep their own button.
       page.bulkOutdated = page.syncState === 'update-ready';
       if (page.bulkOutdated) outdatedSyncable++;
-      else if (page.syncState === 'edited-not-confirmed' || page.syncState === 'both-changed') outdatedUserEdited++;
+      else if (page.syncState === 'edited-not-confirmed' || page.syncState === 'both-changed' || page.syncState === 'kept-needs-review') outdatedUserEdited++;
     }
     return { outdatedSyncable, outdatedUserEdited };
   }
@@ -4767,15 +4771,35 @@ ${panes}
     liveData: Record<string, unknown>,
     stampKey: string = REQUIRED_SOURCE_HASH_KEY
   ): ShippedPageStateName {
-    const stamp = liveData[stampKey];
-    return shippedPageState({
-      shippedBody: matter(sourceContent).content,
-      liveBody,
-      stamp: typeof stamp === 'string' ? stamp : undefined,
-      userModified: liveData['user-modified'] === true
-    }).state;
+    return WikiRoutes.shippedStateDetail(sourceContent, liveBody, liveData, stampKey).state;
   }
 
+  /**
+   * `shippedState` with what the kept states say (#2389 slice 2): whether a
+   * newer shipped version exists, and the plain-language list of plugin-call
+   * and behaviour changes that put a kept page in "needs your review".
+   *
+   * @param sourceContent - Raw source file contents
+   * @param liveBody - Body of the live copy
+   * @param liveData - Frontmatter of the live copy
+   * @param stampKey - The stamp's front-matter key
+   */
+  static shippedStateDetail(
+    sourceContent: string,
+    liveBody: string,
+    liveData: Record<string, unknown>,
+    stampKey: string = REQUIRED_SOURCE_HASH_KEY
+  ): { state: ShippedPageStateName; newerAvailable: boolean; workingChanges: string[] } {
+    const stamp = liveData[stampKey];
+    const shipped = matter(sourceContent, {});
+    return shippedPageState({
+      shippedBody: shipped.content,
+      liveBody,
+      stamp: typeof stamp === 'string' ? stamp : undefined,
+      userModified: liveData['user-modified'] === true,
+      ...keptInputs(liveData, { data: shipped.data, content: shipped.content })
+    });
+  }
 
   /**
    * Guard shared by the #946 slice-2 mutation endpoints.
@@ -13054,7 +13078,9 @@ ${panes}
               // `{}` skips gray-matter's cache, as the Required Pages Sync page does.
               const dst = matter(await fse.readFile(destPath, 'utf8'), {}) as { data: Record<string, unknown>; content: string };
               // #1395: the same status the Required Pages Sync page shows.
-              if (WikiRoutes.shippedState(src, dst.content, dst.data) !== 'same-as-shipped') requiredPagesSyncNeeded++;
+              const state = WikiRoutes.shippedState(src, dst.content, dst.data);
+              // A page kept for this site is a decision made, not work waiting (#2389).
+              if (state !== 'same-as-shipped' && state !== 'kept-for-site') requiredPagesSyncNeeded++;
             } catch {
               // Broken front matter in the live copy is Update ready (#2389): it needs a sync.
               requiredPagesSyncNeeded++;
@@ -15594,6 +15620,8 @@ ${panes}
         affectedLinks?: number;
         headerUnreadable?: boolean;
         bulkOutdated?: boolean;
+        newerAvailable?: boolean;
+        workingChanges?: string[];
       }> = [];
 
       // Pre-load all required-pages source contents for link-drift scanning
@@ -15634,6 +15662,8 @@ ${panes}
         let status: 'new' | 'modified' | 'current' | 'uuid-mismatch';
         let userModified = false;
         let syncState: ShippedPageStateName | undefined;
+        let newerAvailable = false;
+        let workingChanges: string[] = [];
         let liveUuid: string | undefined;
         let titleDrift = false;
         let liveTitle: string | undefined;
@@ -15684,7 +15714,7 @@ ${panes}
           // frontmatter is not compared — a save adds fields the source never
           // has (`created`), and a whole-file compare kept a synced page
           // 'modified' forever.
-          syncState = WikiRoutes.shippedState(sourceContent, destBody, destData);
+          ({ state: syncState, newerAvailable, workingChanges } = WikiRoutes.shippedStateDetail(sourceContent, destBody, destData));
           ({ status, userModified } = syncRowState(syncState));
 
           // Detect title drift: source title vs live title
@@ -15698,7 +15728,7 @@ ${panes}
           }
         }
 
-        comparison.push({ source: 'required-pages', uuid, title, slug, lastModified, status, userModified, syncState, liveUuid, titleDrift, liveTitle, affectedLinks });
+        comparison.push({ source: 'required-pages', uuid, title, slug, lastModified, status, userModified, syncState, newerAvailable, workingChanges, liveUuid, titleDrift, liveTitle, affectedLinks });
       }
 
       const statusOrder: Record<string, number> = { 'uuid-mismatch': 0, new: 1, modified: 2, current: 3 };
@@ -15710,6 +15740,7 @@ ${panes}
         modified: comparison.filter(p => p.status === 'modified').length,
         current: comparison.filter(p => p.status === 'current').length,
         titleDrift: comparison.filter(p => p.titleDrift).length,
+        kept: comparison.filter(p => p.syncState === 'kept-for-site').length,
         ...WikiRoutes.markBulkOutdated(comparison)
       };
 
@@ -15727,6 +15758,8 @@ ${panes}
         syncState?: ShippedPageStateName;
         headerUnreadable?: boolean;
         bulkOutdated?: boolean;
+        newerAvailable?: boolean;
+        workingChanges?: string[];
       }> = [];
 
       const addonsManager = this.engine.getManager('AddonsManager');
@@ -15779,6 +15812,8 @@ ${panes}
             let status: 'new' | 'modified' | 'current' | 'uuid-mismatch';
             let userModified = false;
             let syncState: ShippedPageStateName | undefined;
+            let newerAvailable = false;
+            let workingChanges: string[] = [];
             let liveUuid: string | undefined;
 
             if (!(await fse.pathExists(destPath))) {
@@ -15809,11 +15844,11 @@ ${panes}
               }
               // #2389: the same state function the core list and Sync read, with
               // the add-on stamp, so the screen and Sync cannot disagree.
-              syncState = WikiRoutes.shippedState(sourceContent, destParsed.content, destParsed.data, 'addon-source-hash');
+              ({ state: syncState, newerAvailable, workingChanges } = WikiRoutes.shippedStateDetail(sourceContent, destParsed.content, destParsed.data, 'addon-source-hash'));
               ({ status, userModified } = syncRowState(syncState));
             }
 
-            addonComparison.push({ source: `addon:${addonName}`, addonName, uuid, title, slug, lastModified, status, userModified, syncState, liveUuid });
+            addonComparison.push({ source: `addon:${addonName}`, addonName, uuid, title, slug, lastModified, status, userModified, syncState, newerAvailable, workingChanges, liveUuid });
           }
         }
         addonComparison.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
@@ -15824,6 +15859,7 @@ ${panes}
         new: addonComparison.filter(p => p.status === 'new').length,
         modified: addonComparison.filter(p => p.status === 'modified').length,
         current: addonComparison.filter(p => p.status === 'current').length,
+        kept: addonComparison.filter(p => p.syncState === 'kept-for-site').length,
         ...WikiRoutes.markBulkOutdated(addonComparison)
       };
 
@@ -15929,6 +15965,61 @@ ${panes}
       });
     }
     return found.sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  /**
+   * Keep, or stop keeping, this site's edited copy of a shipped page (#2389
+   * slice 2): `POST /admin/required-pages/keep` with
+   * `{ source, uuid, keep }`. `source` is `required-pages` or `addon:<name>`
+   * of an enabled add-on. Admin-only; the CSRF check is the app-wide one.
+   */
+  async adminKeepRequiredPage(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+        return res.status(403).json({ success: false, error: 'Only a site administrator can do this; ask one to sign in.' });
+      }
+      const body = (req.body ?? {}) as { source?: unknown; uuid?: unknown; keep?: unknown };
+      const { source: sourceId, uuid, keep } = body;
+      if (typeof uuid !== 'string' || !isSafePathSegment(uuid)) {
+        return res.status(400).json({ success: false, error: 'That page id is not valid. Nothing was changed. Reload the page and try again.' });
+      }
+      if (typeof keep !== 'boolean') {
+        return res.status(400).json({ success: false, error: 'Say whether to keep the page (true or false). Nothing was changed.' });
+      }
+      const pageManager = this.engine.getManager('PageManager');
+      let source: ShippedPageSource | undefined;
+      if (sourceId === 'required-pages') {
+        source = pageManager.requiredPagesSource();
+      } else if (typeof sourceId === 'string' && sourceId.startsWith('addon:')) {
+        const addonName = sourceId.slice('addon:'.length);
+        const dirs = this.engine.getManager('AddonsManager')?.getEnabledAddonPagesDirectories() ?? [];
+        const found = dirs.find((d: { name: string; pagesDir: string }) => d.name === addonName);
+        if (found) source = pageManager.addonPagesSource(found.name, found.pagesDir);
+      }
+      if (!source) {
+        return res.status(400).json({ success: false, error: 'That page is not from required pages or an enabled add-on. Nothing was changed.' });
+      }
+      const result = await pageManager.keepShippedPage(source, uuid, keep, currentUser);
+      if (!result.ok) {
+        const why = result.reason === 'not-shipped' ? 'This release does not ship that page' : 'This site does not have that page';
+        return res.status(404).json({ success: false, error: `${why}. Nothing was changed. Reload the page to see what is there now.` });
+      }
+      return res.json({ success: true, kept: result.kept });
+    } catch (err) {
+      if (err instanceof PageContentValidationError) {
+        // The page's text is refused by a content rule. Trying again cannot help.
+        logger.info(`[adminKeepRequiredPage] refused by the content rules: ${err.validationErrors.length} error(s)`);
+        return res.status(422).json({
+          success: false,
+          contentRefused: true,
+          error: "This page's text is refused by this site's content rules, so it cannot be kept. Trying again will not help; the text would have to change first."
+        });
+      }
+      logger.error('[adminKeepRequiredPage] failed:', err);
+      return res.status(500).json({ success: false, error: 'Could not save the choice. Nothing was changed. Try again, and check the server log if it repeats.' });
+    }
   }
 
   /**
@@ -16307,7 +16398,7 @@ ${panes}
 
       const parts: string[] = [];
       if (synced.length > 0) parts.push(`${synced.length} page${synced.length !== 1 ? 's' : ''} synced`);
-      if (protected_.length > 0) parts.push(`${protected_.length} skipped (user-edited — use Push to Source or diff first)`);
+      if (protected_.length > 0) parts.push(`${protected_.length} skipped (edited or kept on this site; open Review to decide)`);
       if (leftAloneCount > 0) parts.push(`${leftAloneCount} edited page${leftAloneCount !== 1 ? 's' : ''} left alone`);
       if (removedOrphans.length > 0) parts.push(`${removedOrphans.length} orphaned addon page${removedOrphans.length !== 1 ? 's' : ''} removed`);
       if (failed.length > 0) parts.push(`${failed.length} could not be saved: ${failed.map((f) => f.reason).join('; ')}`);
@@ -16380,7 +16471,8 @@ ${panes}
       const contentA: string = await fse.readFile(sourcePath, 'utf8');
       let contentB = '';
       if (await fse.pathExists(destPath)) {
-        contentB = await fse.readFile(destPath, 'utf8');
+        // The kept mark is not an edit; the dialog's diff leaves it out.
+        contentB = withoutKeptMarks(await fse.readFile(destPath, 'utf8'));
       }
 
       let titleA = uuid;
@@ -19159,6 +19251,10 @@ ${panes}
     );
     app.post('/admin/required-pages/sync', (req: Request, res: Response) =>
       this.adminSyncRequiredPages(req, res)
+    );
+    // #2389 slice 2: Keep edited version
+    app.post('/admin/required-pages/keep', (req: Request, res: Response) =>
+      this.adminKeepRequiredPage(req, res)
     );
     app.get('/admin/diff', (req: Request, res: Response) => this.adminDiff(req, res));
     app.get('/api/admin/diff', (req: Request, res: Response) => this.adminDiffApi(req, res));

@@ -75,7 +75,7 @@ addon release (npm tag)  ──▶ npm registry ─▶ Update on Admin → Add-o
 
 The two axes are independent and each pinned: the image tag moves core, the add-on's entry in `ngdpbase.addons.install` moves the add-on. The drift that caused #672 is gone.
 
-- __Addon page content__ never changes at restart. A newer add-on page shows as Update ready in Admin › Required Pages Sync, and Sync All applies it — see [`../addon-page-handling.md`](../addon-page-handling.md).
+- __Addon page content__ never changes at restart. A newer add-on page shows as Update ready in Admin › Required Pages Sync, and Sync All applies it (a page an admin kept for this site is never replaced) — see [`../addon-page-handling.md`](../addon-page-handling.md).
 - __Restart__ the instance after a redeploy so the in-memory caches and addon discovery re-run.
 
 ## Related

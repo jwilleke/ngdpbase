@@ -162,7 +162,7 @@ Who and when are not stored on the page. They are in the audit entry and page hi
 - __Guard:__ the same permission as the rest of the screen, `admin-system`, plus CSRF. Page-level permissions do not matter: the body is not touched.
 - __Survives syncs and upgrades.__ The editor's save carries forward all front-matter it does not manage (`WikiRoutes.savePage`, "step 1"), so editing a kept page keeps it kept. A normal Sync never touches a kept page: `syncShippedPages` without `force` protects every row except Update ready (and Same as shipped, which has nothing to change), using `shippedPageState`. A release upgrade replaces nothing on its own, and neither does start-up, for core or add-on pages (Q2), so nothing but an admin's Sync can reach a kept page.
 - __Undone__ by unticking the box and saving the choice (`keep: false` deletes the three keys), or by __Use shipped version__. `saveShippedPage` builds the page from the shipped front-matter, so the kept keys and `user-modified` are gone after it.
-- Ticking again after a "needs your review" flag rewrites `kept-shipped-hash` and `kept-working-parts` from the current shipped page. That is what clears the flag (D3).
+- Ticking again after a "needs your review" flag rewrites `kept-shipped-hash` and `kept-working-parts` from the current shipped page. That is what clears the flag (D3). The Review dialog offers it as one button, __Keep edited version (I've reviewed this)__, so an admin does not have to untick and tick.
 
 ## R3: release label
 
@@ -191,11 +191,11 @@ __False positives, and how they are avoided:__
 - Calls inside fenced code blocks and inline code, and escaped `[[{...}]`, are shown to a reader, not run. They are stripped before the scan, as the renderer does.
 - Variables `[{$name}]` are text substitution, not working parts, and the regex's `\w` does not match `$`.
 - Order does not matter (sorted), and neither does whitespace or parameter order.
-- Presentation-only parameters are ignored: `class`, `style`, `width`, `height`, `alt`. The list is one constant, kept short.
+- Presentation-only parameters are ignored: `class`, `style`, `width`, `height`, `align`, `color`, `size`, `border`. The list is one constant, `PRESENTATION_PARAMS`, kept short.
 - Body text between `[{Name}]` and `[{/Name}]` is wording. Only the opening call counts.
 - __A test makes a missing classification fail the build.__ It reads every front-matter key in `required-pages/` and in each add-on's `pages/` and fails if one is in neither list, so a new behaviour key cannot slip through as "wording".
 
-__Showing the change.__ "Kept, needs your review" lists the parts added, removed or changed, in plain words: "This page now calls Calendar with calendars=family." A kept page with only wording changes shows only "Newer version available (v5.45.0)".
+__Showing the change.__ "Kept, needs your review" lists the parts added, removed or changed, in plain words: "The shipped page now adds Calendar (calendars=family)." Known plugins read in plain words ("The shipped page now shows a page total."), a setting reads `The setting "audience" is now all (it was admin).` A kept page with only wording changes shows only "Newer version available (v5.45.0)".
 
 __Known limit.__ A page kept before this ships has no baseline, because nothing starts kept (R7). The first time an admin ticks the box, the baseline is written. No back-computation is needed.
 
@@ -208,7 +208,7 @@ Each table says its own numbers, in its own header, next to its own Sync All but
 - The line, the button and the count chips (the badges at the top of the page and the add-on header's) redraw after a sync, from that table's rows, so they match the toast before the page reloads.
 - The Source Modified column shows the date only (YYYY-MM-DD), and the Status column asks for 12rem, so the Actions column is not cut off at 1280px. The add-on header's chips are 12px.
 
-At the top of the page, one sentence with no number: "Sync All updates only pages marked Update ready. Pages edited on this site are never changed by Sync All. To act on an edited page, open Diff, then Use shipped version. A page whose header can't be read also shows as Update ready; updating it repairs it." When nothing differs from what shipped: "Everything matches what shipped."
+At the top of the page, one sentence with no number: "Sync All updates only pages marked Update ready. Pages edited on this site are never changed by Sync All. To act on an edited page, open Review, then tick Keep edited version, or press Use shipped version on its row. A page whose header can't be read also shows as Update ready; updating it repairs it." When nothing differs from what shipped: "Everything matches what shipped."
 
 A page whose header can't be read shows "Update ready" with a muted note under the badge, "Page header couldn't be read", and a tooltip that says updating the page repairs it.
 
@@ -274,7 +274,8 @@ State labels and the line under each. A page's release label goes after it: "You
 
 __Review dialog__ (the existing diff modal, extended). Title: "Review: *page name*". It shows the diff, and above it the list of working changes if there are any ("Changes how the page works"). Then:
 
-- Checkbox: __Keep edited version__. Help: "This site keeps its own version. Updates will not replace it. You will be told if a later release changes how this page works." Ticked at the start for a kept page.
+- Checkbox: __Keep edited version__. Help: "This site keeps its own version. Updates will not replace it. You will be told if a later release changes how this page works." Ticked at the start for a kept page, where the first help line reads "This page is already kept. Untick to stop keeping it (saved at once)." An unticked box has a #6c757d border, at least 3:1 on the dialog background.
+- For a page that reads Kept, needs your review, the dialog also shows one button, __Keep edited version (I've reviewed this)__, under the line "The newer version's changes will not be added." It saves exactly what ticking the box afresh saves (it rewrites the kept baseline from the shipped page), closes the dialog, and the row then reads Kept for this site. Without it the only way to clear the flag would be to untick and tick again, which nothing on screen says. The button hides after any save that changes the box.
 - For a page whose text matches what shipped but is flagged as edited (Q1), the dialog says "The text is the same as what shipped. Only the page's title or keywords were changed on this site." and shows those differences.
 - Buttons: __Save choice__, __Use shipped version__, __Cancel__.
 - __Use shipped version__ asks: "Replace the changes made to "*page name*" on this site with the shipped version? Your version stays in the page history." (existing Force Sync question, reworded). The button was "Force Sync".
@@ -321,6 +322,8 @@ Slice 4 touches different files from 1–3 and can be built in parallel. Slices 
 The slice plan still stands: four slices, same order, same dependencies. Only slice 1 grew, by the start-up change and the Q1 rule. Slice 4 is still independent of the rest.
 
 ## Decided
+
+- __Keep saves when the box is ticked (slice 2 build, 2026-11-19).__ The Review dialog has no Save choice or Cancel button. Ticking or unticking __Keep edited version__ saves at once and the dialog says so ("Saved as soon as you tick it."); __Use shipped version__ stays a button on the row. Closing the dialog reloads the list. Declined for now: a separate Save choice button, because a tick that needs a second click is easy to lose. Say if you want the buttons from the table above.
 
 Both questions the requirements left open were answered by Jim on 2026-11-14 and are built into the text above.
 

@@ -1,5 +1,6 @@
 import BaseSyntaxHandler, { InitializationContext, ParseContext } from './BaseSyntaxHandler.js';
 import logger from '../../utils/logger.js';
+import { PLUGIN_CALL_SOURCE, parsePluginParameters } from '../../utils/pluginCalls.js';
 
 /**
  * Plugin match information
@@ -80,7 +81,7 @@ class PluginSyntaxHandler extends BaseSyntaxHandler {
 
   constructor(engine: WikiEngine | null = null) {
     super(
-      /(?<!\[)\[\{(\w+)\s*([^}]*)\}\]/g, // Pattern: [{PluginName params}] — [[{ prefix is escape (not executed)
+      new RegExp(PLUGIN_CALL_SOURCE, 'g'), // Pattern: [{PluginName params}] — [[{ prefix is escape (not executed)
       90, // High priority - process before most other handlers
       {
         description: 'Enhanced JSPWiki-style plugin syntax handler with advanced parameter parsing',
@@ -338,42 +339,7 @@ class PluginSyntaxHandler extends BaseSyntaxHandler {
    * @returns Parsed parameters
    */
   private parsePluginParameters(paramString: string): Record<string, unknown> {
-    if (!paramString || !paramString.trim()) {
-      return {};
-    }
-
-    const params: Record<string, unknown> = {};
-    // Enhanced regex to handle quoted values with spaces, special characters, and escaped quotes
-    // Matches: key='value with \'escaped\' quotes' or key="value" or key=unquoted
-    // Note: [\w-]+ allows word characters and dashes (for param names like 'system-category')
-    const paramRegex = /([\w-]+)=(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|([^\s]+))/g;
-    let match: RegExpExecArray | null;
-
-    while ((match = paramRegex.exec(paramString)) !== null) {
-      const key = match[1];
-      let value = match[2] ?? match[3] ?? match[4] ?? '';
-
-      // Unescape escaped quotes in the value
-      if (match[2] || match[3]) {
-        value = value.replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-      }
-
-      // Try to parse as JSON for objects/arrays/primitives
-      try {
-        if (value.startsWith('{') || value.startsWith('[') ||
-            value === 'true' || value === 'false' ||
-            /^\d+(\.\d+)?$/.test(value)) { // Support decimal numbers
-          params[key] = JSON.parse(value);
-        } else {
-          params[key] = value;
-        }
-      } catch {
-        // If JSON parsing fails, use as string
-        params[key] = value;
-      }
-    }
-
-    return params;
+    return parsePluginParameters(paramString);
   }
 
   /**

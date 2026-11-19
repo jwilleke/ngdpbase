@@ -8,7 +8,10 @@
   loose name could be picked up from the screen by accident), with:
     status      'new' | 'modified' | 'current'
     syncState   'same-as-shipped' | 'update-ready' | 'edited-not-confirmed' |
-                'both-changed'; absent for a page that is not on the site yet
+                'both-changed' | 'kept-for-site' | 'kept-needs-review'; absent for a page that is not on the site yet
+    newerAvailable  kept-for-site only: a newer shipped version exists (wording only)
+    workingChanges  kept-needs-review only: plain sentences, what the shipped page
+                now does differently
     headerUnreadable  the live copy's header could not be read; it reads as
                 Update ready, and a note under the badge says why (#2414)
 %>
@@ -31,6 +34,28 @@
       title="This page was changed on this site, and a newer version also shipped. Sync All does not replace it.">
     <i class="fas fa-user-edit me-1"></i>Edited here, and a newer version is available
 </span>
+<% } else if (syncItem.syncState === 'kept-for-site') { %>
+<span class="badge bg-light text-dark border border-secondary text-wrap text-start lh-sm" data-sync-status="kept-for-site"
+      title="You chose to keep this page as edited on this site. Sync All does not replace it.">
+    <i class="fas fa-user-check me-1"></i>Kept for this site
+</span>
+<% if (syncItem.newerAvailable) { %>
+<small class="d-block text-muted" data-sync-note="newer-available"
+       title="A newer version came with this release. It changes the wording only, so nothing needs your attention.">A newer version is available</small>
+<% } %>
+<% } else if (syncItem.syncState === 'kept-needs-review') { %>
+<span class="badge bg-warning text-dark text-wrap text-start lh-sm" data-sync-status="kept-needs-review"
+      title="You kept this page as edited here, and the newer shipped version works differently. Sync All does not replace it.">
+    <i class="fas fa-user-check me-1"></i>Kept, needs your review
+</span>
+<% if (syncItem.workingChanges && syncItem.workingChanges.length) { %>
+<ul class="small text-muted mb-0 ps-3" data-sync-note="working-changes">
+<% syncItem.workingChanges.forEach(function (line) { %>
+    <li><%= line %></li>
+<% }) %>
+</ul>
+<small class="d-block text-muted" data-sync-note="review-next">Review it to decide whether to keep your version.</small>
+<% } %>
 <% } else if (syncItem.syncState === 'same-as-shipped') { %>
 <span class="badge bg-success" data-sync-status="same-as-shipped">Same as shipped</span>
 <% } %>
