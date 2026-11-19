@@ -173,4 +173,12 @@ describe('code extraction follows CommonMark (#1726)', () => {
     expect(html).toContain('<p>b]</p>');
     expect(html).not.toContain('placeholder');
   });
+
+  test('a footnote with several indented paragraphs renders as one block, as on master', async () => {
+    const html = await render('Text[^1] here.\n\n[^1]: first\n\n    second\n\n    third\n\nafter\n');
+
+    expect(html).not.toContain('placeholder');
+    expect(html.match(/<pre>/g)).toHaveLength(1);
+    expect(html).toContain('second\n\nthird');
+  });
 });
