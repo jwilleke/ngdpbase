@@ -4,7 +4,7 @@
  */
 import { describe, expect, test } from 'vitest';
 import matter from 'gray-matter';
-import { pageSourceHash, shippedPageState } from '../addonPageSync';
+import { pageSourceHash, shippedPageState, releaseText } from '../addonPageSync';
 
 describe('pageSourceHash', () => {
   test('is stable and trims — trailing-newline difference does not change the hash', () => {
@@ -66,5 +66,22 @@ describe('pageSourceHash — frontmatter independence (#972)', () => {
   test('a real body edit is still detected', () => {
     const edited = after.replace('USGS.', 'USGS and the Smithsonian.');
     expect(pageSourceHash(matter(edited).content)).not.toBe(pageSourceHash(matter(before).content));
+  });
+});
+
+describe('releaseText (#2389 slice 3)', () => {
+  test('gives the version without a leading v, whatever the case', () => {
+    expect(releaseText('5.45.0')).toBe('5.45.0');
+    expect(releaseText('v5.45.0')).toBe('5.45.0');
+    expect(releaseText('V5.45.0')).toBe('5.45.0');
+    expect(releaseText(' v2.3.0 ')).toBe('2.3.0');
+  });
+
+  test('a number is read as text', () => {
+    expect(releaseText(2)).toBe('2');
+  });
+
+  test('an unknown version gives nothing, so no label is written or shown', () => {
+    for (const value of [undefined, null, '', '  ', 'v', {}, []]) expect(releaseText(value)).toBeUndefined();
   });
 });

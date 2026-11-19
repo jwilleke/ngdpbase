@@ -1100,6 +1100,20 @@ describe('AddonsManager', () => {
       expect(pageManager.savePage).toHaveBeenCalledWith('Home', expect.stringContaining('Page content.'), expect.objectContaining({ uuid, addon: 'seed-addon' }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true, shippedAuthor: 'addon:seed-addon' });
     });
 
+    test('#2389 slice 3: a seeded page carries the add-on\'s own version as its release label', async () => {
+      const uuid = '550e8400-e29b-41d4-a716-446655440002';
+      await makeAddonWithSeedPages('seed-addon', [
+        { filename: 'home.md', uuid, slug: 'home', title: 'Home' }
+      ]);
+
+      const configManager = makeConfigManager({ enabledAddons: ['seed-addon'] });
+      const pageManager = makePageManager();
+      const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
+      await manager.initialize();
+
+      expect(pageManager.savePage).toHaveBeenCalledWith('Home', expect.any(String), expect.objectContaining({ uuid, 'addon-source-release': '1.0.0' }), expect.anything(), expect.anything());
+    });
+
     test('#908 B1: skips re-seed when UUID already exists under a different slug', async () => {
       // Seed page carries slug 'geohazardwatch-about' but its UUID is already
       // assigned to an existing page registered under slug 'about' (the addon
@@ -1128,12 +1142,13 @@ describe('AddonsManager', () => {
     const RESEED_UUID = '550e8400-e29b-41d4-a716-4466554400aa';
     // storedHashBody: pass null to simulate a LEGACY page (seeded before #920,
     // no addon-source-hash stamp).
-    const setupReseed = async ({ sourceBody, pageBody, storedHashBody, pageReseed }) => {
+    const setupReseed = async ({ sourceBody, pageBody, storedHashBody, pageReseed, release = null }) => {
       await makeAddonWithSeedPages('reseed-addon', [
         { filename: 'about.md', uuid: RESEED_UUID, slug: 'about', title: 'About', body: sourceBody }
       ]);
       const metadata = { slug: 'about', uuid: RESEED_UUID };
       if (storedHashBody !== null) metadata['addon-source-hash'] = bodyHash(storedHashBody);
+      if (release !== null) metadata['addon-source-release'] = release;
       const existingPage = { title: 'About', uuid: RESEED_UUID, content: pageBody, metadata };
       const configManager = makeConfigManager({ enabledAddons: ['reseed-addon'], pageReseed });
       const pageManager = makePageManager(['about'], { about: existingPage }, { [RESEED_UUID]: existingPage });
@@ -1189,7 +1204,7 @@ describe('AddonsManager', () => {
     });
 
     test('#920: no-op when the source is unchanged', async () => {
-      const pm = await setupReseed({ sourceBody: 'Same body', pageBody: 'Same body', storedHashBody: 'Same body', pageReseed: true });
+      const pm = await setupReseed({ sourceBody: 'Same body', pageBody: 'Same body', storedHashBody: 'Same body', pageReseed: true , release: '1.0.0' });
       expect(pm.savePage).not.toHaveBeenCalled();
     });
 

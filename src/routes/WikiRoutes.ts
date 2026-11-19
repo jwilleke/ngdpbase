@@ -41,6 +41,9 @@ import {
   keptInputs,
   type ShippedPageStateName,
   REQUIRED_SOURCE_HASH_KEY,
+  REQUIRED_SOURCE_RELEASE_KEY,
+  ADDON_SOURCE_RELEASE_KEY,
+  releaseText,
   syncRowState,
   withoutKeptMarks
 } from '../utils/addonPageSync.js';
@@ -15606,6 +15609,9 @@ ${panes}
 
       const validationManager = this.engine.getManager('ValidationManager');
 
+      // #2389 slice 3: the release that ships now, said once in the section header
+      const thisRelease = releaseText(configManager.getProperty('ngdpbase.version', ''));
+
       const comparison: Array<{
         source: string;
         uuid: string;
@@ -15623,6 +15629,8 @@ ${panes}
         bulkOutdated?: boolean;
         newerAvailable?: boolean;
         workingChanges?: string[];
+        copyRelease?: string;
+        copyEarlier?: boolean;
       }> = [];
 
       // Pre-load all required-pages source contents for link-drift scanning
@@ -15666,6 +15674,8 @@ ${panes}
         let newerAvailable = false;
         let workingChanges: string[] = [];
         let liveUuid: string | undefined;
+        let copyRelease: string | undefined;
+        let copyEarlier = false;
         let titleDrift = false;
         let liveTitle: string | undefined;
         let affectedLinks = 0;
@@ -15717,6 +15727,9 @@ ${panes}
           // 'modified' forever.
           ({ state: syncState, newerAvailable, workingChanges } = WikiRoutes.shippedStateDetail(sourceContent, destBody, destData));
           ({ status, userModified } = syncRowState(syncState));
+          // #2389 slice 3: the release label is display only; the body hash decides the state
+          copyRelease = releaseText(destData[REQUIRED_SOURCE_RELEASE_KEY]);
+          copyEarlier = !copyRelease && Boolean(thisRelease);
 
           // Detect title drift: source title vs live title
           const liveTitleRaw = (destData.title as string | undefined) || '';
@@ -15729,7 +15742,7 @@ ${panes}
           }
         }
 
-        comparison.push({ source: 'required-pages', uuid, title, slug, lastModified, status, userModified, syncState, newerAvailable, workingChanges, liveUuid, titleDrift, liveTitle, affectedLinks });
+        comparison.push({ source: 'required-pages', uuid, title, slug, lastModified, status, userModified, syncState, newerAvailable, workingChanges, liveUuid, titleDrift, liveTitle, affectedLinks, copyRelease, copyEarlier });
       }
 
       const statusOrder: Record<string, number> = { 'uuid-mismatch': 0, new: 1, modified: 2, current: 3 };
@@ -15761,9 +15774,13 @@ ${panes}
         bulkOutdated?: boolean;
         newerAvailable?: boolean;
         workingChanges?: string[];
+        copyRelease?: string;
+        copyEarlier?: boolean;
       }> = [];
 
       const addonsManager = this.engine.getManager('AddonsManager');
+      const addonReleaseOf = (name: string): string | undefined => releaseText(addonsManager?.getAddonVersion(name));
+      const addonReleases: Array<{ name: string; release: string }> = [];
       if (addonsManager) {
         const addonDirs = addonsManager.getEnabledAddonPagesDirectories();
         for (const { name: addonName, pagesDir } of addonDirs) {
@@ -15816,6 +15833,8 @@ ${panes}
             let newerAvailable = false;
             let workingChanges: string[] = [];
             let liveUuid: string | undefined;
+            let copyRelease: string | undefined;
+            let copyEarlier = false;
 
             if (!(await fse.pathExists(destPath))) {
               status = 'new';
@@ -15847,12 +15866,19 @@ ${panes}
               // the add-on stamp, so the screen and Sync cannot disagree.
               ({ state: syncState, newerAvailable, workingChanges } = WikiRoutes.shippedStateDetail(sourceContent, destParsed.content, destParsed.data, 'addon-source-hash'));
               ({ status, userModified } = syncRowState(syncState));
+              copyRelease = releaseText(destParsed.data[ADDON_SOURCE_RELEASE_KEY]);
+              copyEarlier = !copyRelease && Boolean(addonReleaseOf(addonName));
             }
 
-            addonComparison.push({ source: `addon:${addonName}`, addonName, uuid, title, slug, lastModified, status, userModified, syncState, newerAvailable, workingChanges, liveUuid });
+            addonComparison.push({ source: `addon:${addonName}`, addonName, uuid, title, slug, lastModified, status, userModified, syncState, newerAvailable, workingChanges, liveUuid, copyRelease, copyEarlier });
           }
         }
         addonComparison.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
+        // The add-ons that have rows, each with the version that ships now
+        for (const name of [...new Set(addonComparison.map((p) => p.addonName))]) {
+          const release = addonReleaseOf(name);
+          if (release) addonReleases.push({ name, release });
+        }
       }
 
       const addonCounts = {
@@ -15919,6 +15945,8 @@ ${panes}
         counts,
         addonComparison,
         addonCounts,
+        thisRelease,
+        addonReleases,
         orphanedAddonPages,
         declined,
         notInSource,
@@ -16317,6 +16345,8 @@ ${panes}
           delete parsed.data['user-modified'];
           // #1395: the stamp describes this instance's live copy, not the source.
           delete parsed.data[REQUIRED_SOURCE_HASH_KEY];
+          // #2389 slice 3: so is the release label; the source keeps none.
+          delete parsed.data[REQUIRED_SOURCE_RELEASE_KEY];
           const cleaned: string = matter.stringify(parsed.content, parsed.data);
           // page-door-ignore: the required-pages SOURCE copy, not a live page —
           // push-to-source writes the file this instance seeds FROM (#1395).
