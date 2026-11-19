@@ -169,3 +169,22 @@ export function syncRowState(state: ShippedPageStateName): SyncRowState {
     userModified: state === 'edited-not-confirmed' || state === 'both-changed' || state === 'kept-for-site' || state === 'kept-needs-review'
   };
 }
+
+/**
+ * A page file's text without the kept mark in its front-matter, for the diff the
+ * Review dialog shows: the admin ticked a box, they did not edit the page, so the
+ * three kept keys (and the list under `kept-working-parts`) stay out of it.
+ * Only the front-matter block is touched.
+ *
+ * @param raw - The whole file, front-matter and body
+ * @returns The same text without the kept-edited, kept-shipped-hash and kept-working-parts lines
+ */
+export function withoutKeptMarks(raw: string): string {
+  const match = /^(---\r?\n)([\s\S]*?)(\r?\n---)/.exec(raw);
+  if (!match) return raw;
+  const front = match[2]
+    .replace(/^kept-(?:edited|shipped-hash):[^\n]*(?:\n|$)/gm, '')
+    .replace(/^kept-working-parts:[^\n]*(?:\n(?:[ \t]+|-)[^\n]*)*(?:\n|$)/gm, '')
+    .replace(/\n$/, '');
+  return `${match[1]}${front}${match[3]}${raw.slice(match[0].length)}`;
+}

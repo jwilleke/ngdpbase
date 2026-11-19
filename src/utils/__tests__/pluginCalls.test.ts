@@ -90,20 +90,32 @@ describe('workingParts: each front-matter key is on the side R4 puts it', () => 
 });
 
 describe('describeWorkingChanges: plain words for the review list', () => {
-  test('an added call says what the page now calls, with its parameters', () => {
+  test('an added call says what the page now does, not which plugin it calls', () => {
     const before = parts('Text.');
-    const after = parts('Text.\n[{Calendar calendars=family}]');
-    expect(describeWorkingChanges(before, after)).toEqual(['This page now calls Calendar with calendars=family.']);
+    const after = parts('Text.\n[{TotalPagesPlugin}]');
+    expect(describeWorkingChanges(before, after)).toEqual(['The shipped page now shows a page total.']);
   });
 
-  test('a removed call says the page no longer calls it', () => {
-    expect(describeWorkingChanges(parts('[{Counter}]'), parts('Text.'))).toEqual(['This page no longer calls Counter.']);
+  test('a removed call says the shipped page no longer does it', () => {
+    expect(describeWorkingChanges(parts('[{Counter}]'), parts('Text.'))).toEqual(['The shipped page no longer counts things on the page.']);
   });
 
-  test('a changed setting is named', () => {
-    const text = describeWorkingChanges(parts('x', { audience: 'admin' }), parts('x', { audience: 'all' })).join(' ');
-    expect(text).toContain('audience');
-    expect(text).toContain('all');
+  test('a call with no plain description falls back to its name and parameters', () => {
+    expect(describeWorkingChanges(parts('Text.'), parts('Text.\n[{Widget mode=big}]'))).toEqual(['The shipped page now adds Widget (mode=big).']);
+    expect(describeWorkingChanges(parts('[{Widget}]'), parts('Text.'))).toEqual(['The shipped page no longer adds Widget.']);
+  });
+
+  test('no sentence names a plugin when a plain description exists', () => {
+    const text = describeWorkingChanges(parts('x'), parts('x [{TotalPagesPlugin}] [{ConfigAccessor key=a}]')).join(' ');
+    expect(text).not.toMatch(/Plugin|ConfigAccessor|calls/);
+  });
+
+  test('a changed setting is named, with the new and the old value', () => {
+    expect(describeWorkingChanges(parts('x', { audience: 'admin' }), parts('x', { audience: 'all' }))).toEqual(['The setting "audience" is now all (it was admin).']);
+  });
+
+  test('a removed setting says it is no longer set', () => {
+    expect(describeWorkingChanges(parts('x', { audience: 'admin' }), parts('x'))).toEqual(['The setting "audience" is no longer set.']);
   });
 
   test('nothing differs, nothing is listed', () => {

@@ -56,11 +56,11 @@ describe('#2389 slice 2 _sync-status: the two kept states', () => {
   });
 
   test('Kept, needs your review, lists what the newer version changes', async () => {
-    const item = { status: 'modified', syncState: 'kept-needs-review', userModified: true, workingChanges: ['This page now calls Calendar with calendars=family.'] };
+    const item = { status: 'modified', syncState: 'kept-needs-review', userModified: true, workingChanges: ['The shipped page now adds Calendar (calendars=family).'] };
     expect(statuses(await partial('_sync-status', item))).toEqual(['kept-needs-review']);
     const text = await label(item);
     expect(text).toContain('Kept, needs your review');
-    expect(text).toContain('This page now calls Calendar with calendars=family.');
+    expect(text).toContain('The shipped page now adds Calendar (calendars=family).');
   });
 });
 
@@ -158,5 +158,45 @@ describe('#1918 Admin → Required Pages draws shipped content through the parti
     expect(uses(required, '_sync-counts')).toBe(1);
     // #2414: one summary line per table, drawn by the same partial.
     expect(uses(required, '_sync-summary')).toBe(2);
+  });
+});
+
+describe('#2389 slice 2 Review dialog and kept badges: the words and the look the design asks for', () => {
+  const page = fs.readFileSync(path.join(VIEWS, 'admin-required-pages.ejs'), 'utf8');
+  const text = async (item: Record<string, unknown>) => (await partial('_sync-status', item)).body.textContent?.replace(/\s+/g, ' ').trim();
+
+  test('a kept page that needs review says what to do next', async () => {
+    const item = { status: 'modified', syncState: 'kept-needs-review', userModified: true, workingChanges: ['The shipped page now shows a page total.'] };
+    expect(await text(item)).toContain('Review it to decide whether to keep your version.');
+  });
+
+  test('the Kept for this site badge is not the cyan of the Review button', async () => {
+    const doc = await partial('_sync-status', { status: 'modified', syncState: 'kept-for-site', userModified: true });
+    const badge = doc.querySelector('[data-sync-status="kept-for-site"]');
+    expect(badge?.className).not.toMatch(/bg-info/);
+    expect(badge?.querySelector('i.fa-user-check')).not.toBeNull();
+  });
+
+  test('the dialog is titled Review, with the checkbox, the saved-at-once note and a darker note colour', () => {
+    expect(page).toContain('Keep edited version');
+    expect(page).not.toContain('Keep my version for this site');
+    expect(page).toContain('Saved as soon as you tick it.');
+    expect(page).toContain('#495057');
+    expect(page).toContain('`Review: ${title}`');
+    expect(page).toContain('Changes how the page works');
+  });
+
+  test('a failed save says what failed and what to do', () => {
+    expect(page).toContain('Your choice was not saved. Nothing was changed.');
+  });
+
+  test("the Review button's hover text offers only what the dialog offers", () => {
+    expect(page).toContain("choose whether to keep this site's version");
+    expect(page).not.toContain('or use the shipped one');
+  });
+
+  test('the page sentence points to Review, not to Diff', () => {
+    expect(page).not.toContain('open Diff, then Use shipped version');
+    expect(page).toContain('open Review');
   });
 });

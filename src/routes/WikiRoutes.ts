@@ -41,7 +41,8 @@ import {
   keptInputs,
   type ShippedPageStateName,
   REQUIRED_SOURCE_HASH_KEY,
-  syncRowState
+  syncRowState,
+  withoutKeptMarks
 } from '../utils/addonPageSync.js';
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
@@ -16461,7 +16462,8 @@ ${panes}
       const contentA: string = await fse.readFile(sourcePath, 'utf8');
       let contentB = '';
       if (await fse.pathExists(destPath)) {
-        contentB = await fse.readFile(destPath, 'utf8');
+        // The kept mark is not an edit; the dialog's diff leaves it out.
+        contentB = withoutKeptMarks(await fse.readFile(destPath, 'utf8'));
       }
 
       let titleA = uuid;

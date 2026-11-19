@@ -186,6 +186,55 @@ function multisetDiff(from: string[], to: string[]): { added: string[]; removed:
 }
 
 /**
+ * What a call does, in words a reader of the page would use, as a verb phrase
+ * in the base form ("show a page total"). Keyed by the plugin name in lower
+ * case, without a trailing "plugin". A call with no entry is described by its
+ * name instead.
+ */
+const PLAIN_CALLS: Record<string, string> = {
+  totalpages: 'show a page total',
+  configaccessor: 'show a site setting',
+  counter: 'count things on the page',
+  currenttime: 'show the date and time',
+  image: 'show an image',
+  index: 'list every page',
+  insert: 'show another page inside it',
+  location: 'show a map location',
+  recentchanges: 'list recent changes',
+  search: 'add a search box',
+  sessions: 'show who is signed in',
+  slideshow: 'show a slideshow',
+  pageslideshow: 'show a slideshow',
+  undefinedpages: 'list pages that are linked to but do not exist',
+  uptime: 'show how long the site has been running',
+  media: 'show media',
+  referringpages: 'list the pages that link to it',
+  comments: 'show comments',
+  marquee: 'show scrolling text',
+  attach: 'show attachments',
+  attachments: 'show attachments',
+  footnotes: 'list footnotes',
+  variables: 'show site variables',
+  tabs: 'show tabs',
+  tab: 'show tabs',
+  table: 'number table rows'
+};
+
+/** "show a page total" to "shows a page total". */
+function thirdPerson(phrase: string): string {
+  const space = phrase.indexOf(' ');
+  return space < 0 ? `${phrase}s` : `${phrase.slice(0, space)}s${phrase.slice(space)}`;
+}
+
+function plainCall(part: string, direction: 'added' | 'removed'): string {
+  const { name, params } = splitPlugin(part);
+  const phrase = PLAIN_CALLS[name.toLowerCase().replace(/plugin$/, '')];
+  if (phrase) return direction === 'added' ? `The shipped page now ${thirdPerson(phrase)}.` : `The shipped page no longer ${thirdPerson(phrase)}.`;
+  const shown = params ? `${name} (${params})` : name;
+  return direction === 'added' ? `The shipped page now adds ${shown}.` : `The shipped page no longer adds ${shown}.`;
+}
+
+/**
  * Plain sentences for what differs between two working-part lists.
  *
  * @param before - The parts recorded when the page was kept
@@ -201,25 +250,23 @@ export function describeWorkingChanges(before: string[], after: string[]): strin
 
   for (const part of added) {
     if (part.startsWith('plugin:')) {
-      const { name, params } = splitPlugin(part);
-      sentences.push(params ? `This page now calls ${name} with ${params}.` : `This page now calls ${name}.`);
+      sentences.push(plainCall(part, 'added'));
     } else {
       const key = settingKey(part);
       const old = removedSettings.get(key);
       if (old) {
         removedSettings.delete(key);
-        sentences.push(`This page now sets ${key} to ${settingValue(part)} (it was ${settingValue(old)}).`);
+        sentences.push(`The setting "${key}" is now ${settingValue(part)} (it was ${settingValue(old)}).`);
       } else {
-        sentences.push(`This page now sets ${key} to ${settingValue(part)}.`);
+        sentences.push(`The setting "${key}" is now ${settingValue(part)}.`);
       }
     }
   }
   for (const part of removed) {
     if (part.startsWith('plugin:')) {
-      const { name, params } = splitPlugin(part);
-      sentences.push(params ? `This page no longer calls ${name} with ${params}.` : `This page no longer calls ${name}.`);
+      sentences.push(plainCall(part, 'removed'));
     } else if (removedSettings.has(settingKey(part))) {
-      sentences.push(`This page no longer sets ${settingKey(part)}.`);
+      sentences.push(`The setting "${settingKey(part)}" is no longer set.`);
     }
   }
   return sentences;

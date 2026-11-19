@@ -200,7 +200,7 @@ describe('what the list reads from the kept mark (#2389 slice 2)', () => {
   test('a kept page whose shipped version now calls a plugin reads Kept, needs your review, and says what changed', () => {
     const r = WikiRoutes.shippedStateDetail(shipped('Shipped v2.\n[{Calendar calendars=family}]'), 'Edited here.', { ...stamped, ...keptMark(BEHAVIOUR) });
     expect(r.state).toBe('kept-needs-review');
-    expect(r.workingChanges).toEqual(['This page now calls Calendar with calendars=family.']);
+    expect(r.workingChanges).toEqual(['The shipped page now adds Calendar (calendars=family).']);
   });
 
   test('a kept page whose shipped version only changed wording reads Kept for this site with a newer version available', () => {

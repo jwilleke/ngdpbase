@@ -7,7 +7,7 @@
  * Sync read the stamp from the live front-matter, and the state must not
  * depend on which key it was under.
  */
-import { shippedPageState, pageSourceHash } from '../addonPageSync';
+import { shippedPageState, pageSourceHash, withoutKeptMarks } from '../addonPageSync';
 
 type Case = {
   name: string;
@@ -107,7 +107,7 @@ describe.each(['required-source-hash', 'addon-source-hash'])('shippedPageState, 
       shippedParts: ['plugin:Calendar calendars="family"']
     });
     expect(r.state).toBe('kept-needs-review');
-    expect(r.workingChanges).toEqual(['This page now calls Calendar with calendars=family.']);
+    expect(r.workingChanges).toEqual(['The shipped page now adds Calendar (calendars=family).']);
   });
 
   test('row 2: a removed working part counts too', () => {
@@ -150,5 +150,35 @@ describe.each(['required-source-hash', 'addon-source-hash'])('shippedPageState, 
     });
     expect(r.state).toBe('both-changed');
     expect(r.workingChanges).toEqual([]);
+  });
+});
+
+describe('withoutKeptMarks: the Review dialog diff leaves the kept mark out', () => {
+  const raw = [
+    '---',
+    'title: Alpha',
+    'kept-edited: true',
+    'kept-shipped-hash: abc123',
+    'kept-working-parts:',
+    '  - plugin:Calendar',
+    '  - setting:slug=alpha',
+    'slug: alpha',
+    '---',
+    'Body text.',
+    'kept-edited: not front-matter',
+    ''
+  ].join('\n');
+
+  test('removes the three keys and their list items from the front-matter', () => {
+    expect(withoutKeptMarks(raw)).toBe(['---', 'title: Alpha', 'slug: alpha', '---', 'Body text.', 'kept-edited: not front-matter', ''].join('\n'));
+  });
+
+  test('leaves a page with no kept mark exactly as it was', () => {
+    const plain = '---\ntitle: Alpha\n---\nBody.\n';
+    expect(withoutKeptMarks(plain)).toBe(plain);
+  });
+
+  test('also removes a list written without indentation', () => {
+    expect(withoutKeptMarks('---\nkept-working-parts:\n- a\n- b\ntitle: A\n---\nx\n')).toBe('---\ntitle: A\n---\nx\n');
   });
 });
