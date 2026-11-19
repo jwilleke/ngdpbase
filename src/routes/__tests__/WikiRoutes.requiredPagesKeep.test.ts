@@ -125,7 +125,7 @@ describe('POST /admin/required-pages/keep (#2389 slice 2)', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, kept: true }));
     const page = await ctx.read();
     expect(page.content.trim()).toBe('Edited here.');
-    expect(page.data).toMatchObject({ 'kept-edited': true, 'kept-shipped-hash': pageSourceHash('Shipped v1.'), 'kept-working-parts': ['setting:system-category=documentation'] });
+    expect(page.data).toMatchObject({ 'kept-edited': true, 'kept-shipped-hash': pageSourceHash('Shipped v1.'), 'kept-working-parts': ['setting:slug=welcome', 'setting:system-category=documentation'] });
   });
 
   test('keep: false removes them', async () => {
@@ -185,7 +185,7 @@ describe('POST /admin/required-pages/keep (#2389 slice 2)', () => {
 
 describe('what the list reads from the kept mark (#2389 slice 2)', () => {
   const stamped = { 'required-source-hash': pageSourceHash('Shipped v1.'), 'user-modified': true };
-  const BEHAVIOUR = ['setting:system-category=documentation'];
+  const BEHAVIOUR = ['setting:slug=welcome', 'setting:system-category=documentation'];
   const keptMark = (parts: string[]) => ({ 'kept-edited': true, 'kept-shipped-hash': pageSourceHash('Shipped v1.'), 'kept-working-parts': parts });
 
   test('an edited page that is kept reads Kept for this site', () => {

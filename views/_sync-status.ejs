@@ -35,7 +35,7 @@
     <i class="fas fa-user-edit me-1"></i>Edited here, and a newer version is available
 </span>
 <% } else if (syncItem.syncState === 'kept-for-site') { %>
-<span class="badge bg-info text-dark text-wrap text-start lh-sm" data-sync-status="kept-for-site"
+<span class="badge bg-light text-dark border border-secondary text-wrap text-start lh-sm" data-sync-status="kept-for-site"
       title="You chose to keep this page as edited on this site. Sync All does not replace it.">
     <i class="fas fa-user-check me-1"></i>Kept for this site
 </span>
@@ -54,6 +54,7 @@
     <li><%= line %></li>
 <% }) %>
 </ul>
+<small class="d-block text-muted" data-sync-note="review-next">Review it to decide whether to keep your version.</small>
 <% } %>
 <% } else if (syncItem.syncState === 'same-as-shipped') { %>
 <span class="badge bg-success" data-sync-status="same-as-shipped">Same as shipped</span>

@@ -322,6 +322,8 @@ The slice plan still stands: four slices, same order, same dependencies. Only sl
 
 ## Decided
 
+- __Keep saves when the box is ticked (slice 2 build, 2026-11-19).__ The Review dialog has no Save choice or Cancel button. Ticking or unticking __Keep edited version__ saves at once and the dialog says so ("Saved as soon as you tick it."); __Use shipped version__ stays a button on the row. Closing the dialog reloads the list. Declined for now: a separate Save choice button, because a tick that needs a second click is easy to lose. Say if you want the buttons from the table above.
+
 Both questions the requirements left open were answered by Jim on 2026-11-14 and are built into the text above.
 
 - __Q1: yes (2026-11-14).__ A required page saved with only its title or keywords changed, so its text still matches what shipped (`user-modified` set), is Edited here, not confirmed. It is never replaced without an admin. Declined: treating it as unchanged and letting Sync replace it. Built into: row 1 of the decision table (L = S and not U), the R7 upgrade path, the Review dialog text, the tests, and slice 1.

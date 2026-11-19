@@ -117,7 +117,7 @@ describe('#2414 each table says what needs a decision and what its Sync All upda
     const doc = new JSDOM(await renderPage(core, addon)).window.document;
 
     const top = text(doc.querySelector('[data-testid="sync-summary"]'));
-    expect(top).toContain('To act on an edited page, open Diff, then Use shipped version.');
+    expect(top).toContain('To act on an edited page, open Review, then tick Keep edited version, or press Use shipped version on its row.');
     expect(top).not.toMatch(/\d/);
     // The old combined figures: 8 = 6 + 2 update-ready, 4 = 3 + 1 edited.
     const page = text(doc.body) ?? '';

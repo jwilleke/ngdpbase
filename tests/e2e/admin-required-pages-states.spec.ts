@@ -16,6 +16,10 @@ import { instanceOrigin } from './fixtures/helpers';
  * before its shipped copy gained a plugin call.
  */
 
+// Defined by the page's own script, used inside page.evaluate below.
+declare const csrfFetch: (url: string, init: RequestInit) => Promise<Response>;
+declare const CSRF_TOKEN: string;
+
 test.use({ storageState: './tests/e2e/.auth/user.json' });
 
 const TITLE = 'Using Tokens';
@@ -74,12 +78,19 @@ test.describe.serial('Keep edited version (#2389)', () => {
     const before = await liveBody(page);
     expect(before).toContain(MARK);
 
-    const syncAll = page.getByTestId('sync-all-outdated');
-    if (await syncAll.isEnabled()) {
-      page.once('dialog', (dialog) => void dialog.accept());
-      await syncAll.click();
-      await page.waitForLoadState('domcontentloaded');
-    }
+    // Sync All's button is disabled when nothing is Update ready, so pressing it
+    // could not prove anything. Send the same request it sends, naming this page,
+    // and require the answer to be "protected".
+    const answer = await page.evaluate(async (uuid) => {
+      const response = await csrfFetch('/admin/required-pages/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+        body: JSON.stringify({ uuids: [uuid] })
+      });
+      return response.json();
+    }, UUID);
+    expect(answer.protected).toEqual([UUID]);
+    expect(answer.synced ?? []).toEqual([]);
     await page.goto('/admin/required-pages');
     await expect(row(page, UUID).locator('[data-sync-status="kept-for-site"]')).toBeVisible();
     expect(await liveBody(page)).toBe(before);
@@ -90,6 +101,6 @@ test.describe.serial('Keep edited version (#2389)', () => {
     await page.goto('/admin/required-pages');
     const kept = page.locator('tr', { hasText: REVIEW_TITLE }).first();
     await expect(kept.locator('[data-sync-status="kept-needs-review"]')).toBeVisible();
-    await expect(kept.locator('[data-sync-note="working-changes"] li').first()).toContainText(/calls/);
+    await expect(kept.locator('[data-sync-note="working-changes"] li').first()).toContainText(/The shipped page (now|no longer)/);
   });
 });
