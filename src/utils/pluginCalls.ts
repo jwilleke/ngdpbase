@@ -58,17 +58,24 @@ export function parsePluginParameters(paramString: string): Record<string, unkno
 /** Parameters that only change how a call looks, never what it does. */
 const PRESENTATION_PARAMS = new Set(['class', 'style', 'width', 'height', 'align', 'color', 'size', 'border']);
 
-/** Front-matter keys that change how a page behaves (access, kind, where it shows). */
+/**
+ * Front-matter keys that change how a page behaves (R4 of
+ * docs/design/required-pages-sync-states.md). The first ten are the ones R4
+ * names. The rest are behaviour keys R4 does not name; they stay here so a
+ * change to one is never passed off as wording.
+ */
 export const WORKING_FRONTMATTER_KEYS: string[] = [
   'system-category',
-  'system-keywords',
   'audience',
   'requires-setting',
-  'author-lock',
-  'addon',
-  'editor',
-  'acl',
+  'version',
+  'effective',
   'private',
+  'status',
+  'author-lock',
+  'slug',
+  'acl',
+  'addon',
   'isProtected',
   'pageType',
   'draft'
@@ -78,16 +85,15 @@ export const WORKING_FRONTMATTER_KEYS: string[] = [
 export const WORDING_FRONTMATTER_KEYS: string[] = [
   'title',
   'uuid',
-  'slug',
+  'description',
   'user-keywords',
   'userKeywords',
-  'description',
-  'lastModified',
+  'system-keywords',
   'author',
-  'version',
-  'effective',
+  'editor',
   'created',
   'createdAt',
+  'lastModified',
   'importedFrom',
   'importedAt',
   'user-modified',
