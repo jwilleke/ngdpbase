@@ -1115,7 +1115,10 @@ class PageManager extends BaseManager implements CatalogSource {
             userModified: liveMeta['user-modified'] === true,
             ...keptInputs(liveMeta, parsed)
           });
-          if (state !== 'update-ready' && state !== 'same-as-shipped') {
+          // A kept page whose text matches what shipped has nothing to replace, and
+          // rebuilding it from the shipped copy would drop the kept mark (R2).
+          const keptMark = liveMeta[KEPT_EDITED_KEY] === true;
+          if ((state !== 'update-ready' && state !== 'same-as-shipped') || (state === 'same-as-shipped' && keptMark)) {
             report.protected.push(uuid);
             continue;
           }
@@ -1178,11 +1181,20 @@ class PageManager extends BaseManager implements CatalogSource {
       delete meta[KEPT_WORKING_PARTS_KEY];
     }
     const title = typeof meta.title === 'string' && meta.title ? meta.title : String(shipped.data.title);
-    await this.savePage(title, live.content ?? '', meta, ctx, {
+    // The write is addressed by title, so check that the title still names this
+    // page, read again just before the write, and let the conflict check run.
+    const named = await this.getPage(title, ctx);
+    const namedUuid = typeof named?.metadata?.uuid === 'string' ? named.metadata.uuid.trim().toLowerCase() : '';
+    if (!named || namedUuid !== uuid.trim().toLowerCase()) return { ok: false, reason: 'not-on-site' };
+    const toWrite = { ...(named.metadata as Record<string, unknown>), ...meta };
+    if (!keep) {
+      delete toWrite[KEPT_EDITED_KEY];
+      delete toWrite[KEPT_SHIPPED_HASH_KEY];
+      delete toWrite[KEPT_WORKING_PARTS_KEY];
+    }
+    await this.savePage(title, named.content ?? '', toWrite, ctx, {
       rawFrontmatter: true,
       preserveLastModified: true,
-      skipValidation: true,
-      skipConflictCheck: true,
       audit: { op: 'edit' }
     });
     logger.info(`[PageManager] ${source.id} page ${uuid} ${keep ? 'kept' : 'no longer kept'} by ${actorOf(ctx).user}`);
