@@ -4,7 +4,7 @@
  * category policies do not give on general pages only; other policies are
  * reported, never rewritten.
  */
-import { migrateStoredPageWritePolicies, pageWritePoliciesToReview, pageWritePolicyFindings, policyFingerprint } from '../pageWritePolicies';
+import { migrateStoredPageWritePolicies, narrowedRoleWrites, withoutNarrowedWrites, pageWritePoliciesToReview, pageWritePolicyFindings, policyFingerprint } from '../pageWritePolicies';
 import type { Policy } from '../../types/Policy';
 
 const role = (value: string) => [{ type: 'role', value }];
@@ -133,5 +133,91 @@ describe('the fingerprint of a rule, and denies marked as checked (#2355)', () =
     expect(done.deny?.checked).toBe(true);
     const [changed] = pageWritePolicyFindings([deny], { 'no-docs': 'old' });
     expect(changed.deny?.checked).toBe(false);
+  });
+});
+
+describe('narrowedRoleWrites: page writes a site removed from a stored shipped role policy (#2270)', () => {
+  const editorAll = ['page-read', 'page-edit', 'page-delete', 'page-rename'];
+  const stored = (id: string, roleName: string, actions?: string[], extra: Record<string, unknown> = {}) =>
+    ({ id, effect: 'allow', subjects: role(roleName), resources: everyPage, ...(actions ? { actions } : {}), ...extra });
+
+  test('a copy holding every write the shipped policy had is not narrowed', () => {
+    expect(narrowedRoleWrites([stored('editor-permissions', 'editor', editorAll), stored('contributor-permissions', 'contributor', ['page-edit']), stored('demo-admin-access', 'demo-admin', ['page-edit'])])).toEqual([]);
+  });
+
+  test('each write the shipped policy had and the copy lacks is named, with its role and policy', () => {
+    expect(narrowedRoleWrites([stored('editor-permissions', 'editor', ['page-read', 'page-edit']), stored('contributor-permissions', 'contributor', ['page-read']), stored('demo-admin-access', 'demo-admin', ['page-edit'])])).toEqual([
+      { role: 'editor', action: 'page-delete', policyId: 'editor-permissions' },
+      { role: 'editor', action: 'page-rename', policyId: 'editor-permissions' },
+      { role: 'contributor', action: 'page-edit', policyId: 'contributor-permissions' }
+    ]);
+  });
+
+  test('a copy with no actions or a wildcard holds everything; a deny, an absent copy and a non-list are not narrowing', () => {
+    expect(narrowedRoleWrites([stored('editor-permissions', 'editor'), stored('contributor-permissions', 'contributor', ['*'])])).toEqual([]);
+    expect(narrowedRoleWrites([stored('editor-permissions', 'editor', [], { effect: 'deny' })])).toEqual([]);
+    expect(narrowedRoleWrites([stored('my-own', 'editor', ['page-read'])])).toEqual([]);
+    expect(narrowedRoleWrites(undefined)).toEqual([]);
+    expect(narrowedRoleWrites('editor-permissions')).toEqual([]);
+  });
+
+  test('a copy whose resources are no longer every page is left to the site: it is reported elsewhere, not read as narrowed', () => {
+    expect(narrowedRoleWrites([stored('editor-permissions', 'editor', ['page-read'], { resources: [{ type: 'page', pattern: 'Notes*' }] })])).toEqual([]);
+  });
+
+  test('a list that holds a category policy was saved after #2255, when the role policies hold no page writes by design', () => {
+    expect(narrowedRoleWrites([stored('editor-permissions', 'editor', ['page-read']), { id: 'general-page-write', effect: 'allow', subjects: role('editor'), actions: ['page-edit'] }])).toEqual([]);
+  });
+});
+
+describe('withoutNarrowedWrites: the category policies leave out what the site removed (#2270)', () => {
+  const category = (extra: Record<string, unknown>) => ({ effect: 'allow', resources: [{ type: 'system-category', pattern: 'general' }], ...extra });
+  const narrowed = [
+    { role: 'editor', action: 'page-delete', policyId: 'editor-permissions' },
+    { role: 'editor', action: 'page-rename', policyId: 'editor-permissions' }
+  ];
+  const write = category({ id: 'general-page-write', subjects: [...role('admin'), ...role('editor')], actions: ['page-edit', 'page-delete', 'page-rename'] });
+
+  test('a policy naming the role and another is split: the other keeps all, the role keeps what the site kept', () => {
+    const { policies, applied } = withoutNarrowedWrites([write], narrowed, new Set());
+    expect(policies).toEqual([
+      { ...write, subjects: role('admin') },
+      { ...write, id: 'general-page-write-editor', subjects: role('editor'), actions: ['page-edit'] }
+    ]);
+    expect(applied).toEqual([
+      { role: 'editor', action: 'page-delete', policyId: 'editor-permissions', from: ['general-page-write'] },
+      { role: 'editor', action: 'page-rename', policyId: 'editor-permissions', from: ['general-page-write'] }
+    ]);
+  });
+
+  test('a policy that grants the role only what the site removed is dropped for it, and its condition travels with a split', () => {
+    const condition = { 'string-equal': [{ attributeid: 'resource:owner', datatype: 'string' }, { attributeid: 'subject:id', datatype: 'string' }] };
+    const own = category({ id: 'self-managed-author-write', subjects: role('editor'), actions: ['page-delete', 'page-rename'], condition });
+    expect(withoutNarrowedWrites([own], narrowed, new Set()).policies).toEqual([]);
+    const withEdit = { ...own, actions: ['page-edit', 'page-delete'] };
+    expect(withoutNarrowedWrites([withEdit], narrowed, new Set()).policies).toEqual([{ ...withEdit, id: 'self-managed-author-write-editor', actions: ['page-edit'] }]);
+  });
+
+  test('an add-on\'s category policy is read the same way', () => {
+    const journal = category({ id: 'journal-self-managed-author-write', subjects: role('editor'), resources: [{ type: 'system-category', pattern: 'journal' }], actions: ['page-edit', 'page-delete', 'page-rename'] });
+    expect(withoutNarrowedWrites([journal], narrowed, new Set()).applied.map((a) => a.from)).toEqual([['journal-self-managed-author-write'], ['journal-self-managed-author-write']]);
+  });
+
+  test('a policy the site stores itself, a deny, a policy on pages by name, other roles and other actions are left as they are', () => {
+    const list = [
+      write,
+      category({ id: 'mine', subjects: role('editor'), actions: ['page-delete'] }),
+      category({ id: 'no-delete', effect: 'deny', subjects: role('editor'), actions: ['page-delete'] }),
+      { id: 'by-name', effect: 'allow', subjects: role('editor'), resources: everyPage, actions: ['page-delete'] },
+      category({ id: 'other-role', subjects: role('contributor'), actions: ['page-delete'] }),
+      category({ id: 'pushed', subjects: role('editor'), actions: ['pushed-pages-delete', 'page-create'] })
+    ];
+    const { policies } = withoutNarrowedWrites(list, narrowed, new Set(['general-page-write', 'mine']));
+    expect(policies).toEqual(list);
+  });
+
+  test('nothing narrowed, or no list, changes nothing', () => {
+    expect(withoutNarrowedWrites([write], [], new Set())).toEqual({ policies: [write], applied: [] });
+    expect(withoutNarrowedWrites(undefined, narrowed, new Set())).toEqual({ policies: undefined, applied: [] });
   });
 });
