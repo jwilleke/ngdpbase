@@ -118,7 +118,7 @@ describe('POST /admin/required-pages/keep (#2389 slice 2)', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, kept: true }));
     const page = await ctx.read();
     expect(page.content.trim()).toBe('Edited here.');
-    expect(page.data).toMatchObject({ 'kept-edited': true, 'kept-shipped-hash': pageSourceHash('Shipped v1.'), 'kept-working-parts': [] });
+    expect(page.data).toMatchObject({ 'kept-edited': true, 'kept-shipped-hash': pageSourceHash('Shipped v1.'), 'kept-working-parts': ['setting:system-category=documentation'] });
   });
 
   test('keep: false removes them', async () => {
@@ -177,10 +177,11 @@ describe('POST /admin/required-pages/keep (#2389 slice 2)', () => {
 
 describe('what the list reads from the kept mark (#2389 slice 2)', () => {
   const stamped = { 'required-source-hash': pageSourceHash('Shipped v1.'), 'user-modified': true };
+  const BEHAVIOUR = ['setting:system-category=documentation'];
   const keptMark = (parts: string[]) => ({ 'kept-edited': true, 'kept-shipped-hash': pageSourceHash('Shipped v1.'), 'kept-working-parts': parts });
 
   test('an edited page that is kept reads Kept for this site', () => {
-    const r = WikiRoutes.shippedStateDetail(shipped('Shipped v1.'), 'Edited here.', { ...stamped, ...keptMark([]) });
+    const r = WikiRoutes.shippedStateDetail(shipped('Shipped v1.'), 'Edited here.', { ...stamped, ...keptMark(BEHAVIOUR) });
     expect(r.state).toBe('kept-for-site');
   });
 
@@ -189,19 +190,19 @@ describe('what the list reads from the kept mark (#2389 slice 2)', () => {
   });
 
   test('a kept page whose shipped version now calls a plugin reads Kept, needs your review, and says what changed', () => {
-    const r = WikiRoutes.shippedStateDetail(shipped('Shipped v2.\n[{Calendar calendars=family}]'), 'Edited here.', { ...stamped, ...keptMark([]) });
+    const r = WikiRoutes.shippedStateDetail(shipped('Shipped v2.\n[{Calendar calendars=family}]'), 'Edited here.', { ...stamped, ...keptMark(BEHAVIOUR) });
     expect(r.state).toBe('kept-needs-review');
     expect(r.workingChanges).toEqual(['This page now calls Calendar with calendars=family.']);
   });
 
   test('a kept page whose shipped version only changed wording reads Kept for this site with a newer version available', () => {
-    const r = WikiRoutes.shippedStateDetail(shipped('Shipped v2, reworded.'), 'Edited here.', { ...stamped, ...keptMark([]) });
+    const r = WikiRoutes.shippedStateDetail(shipped('Shipped v2, reworded.'), 'Edited here.', { ...stamped, ...keptMark(BEHAVIOUR) });
     expect(r.state).toBe('kept-for-site');
     expect(r.newerAvailable).toBe(true);
   });
 
   test('add-on pages go through the same call with their own stamp key', () => {
-    const r = WikiRoutes.shippedStateDetail(shipped('Shipped v1.'), 'Edited here.', { 'addon-source-hash': pageSourceHash('Shipped v1.'), 'user-modified': true, ...keptMark([]) }, 'addon-source-hash');
+    const r = WikiRoutes.shippedStateDetail(shipped('Shipped v1.'), 'Edited here.', { 'addon-source-hash': pageSourceHash('Shipped v1.'), 'user-modified': true, ...keptMark(BEHAVIOUR) }, 'addon-source-hash');
     expect(r.state).toBe('kept-for-site');
   });
 

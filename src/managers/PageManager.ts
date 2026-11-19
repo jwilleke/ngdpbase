@@ -6,7 +6,8 @@ import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { addonAudienceSlugs, audiencePrincipals } from '../utils/frontmatterAccess.js';
-import { shippedPageState, pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
+import { shippedPageState, keptInputs, pageSourceHash, REQUIRED_SOURCE_HASH_KEY, KEPT_EDITED_KEY, KEPT_SHIPPED_HASH_KEY, KEPT_WORKING_PARTS_KEY } from '../utils/addonPageSync.js';
+import { workingParts } from '../utils/pluginCalls.js';
 import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
@@ -1106,15 +1107,15 @@ class PageManager extends BaseManager implements CatalogSource {
           const stamp = liveMeta[source.stampKey];
           // #2389: the one state function the screen reads. Only Update ready
           // (and Same as shipped, which has nothing to change) goes on; a page
-          // edited here, or with no stamp, is protected.
+          // edited here, kept for this site, or with no stamp, is protected.
           const { state } = shippedPageState({
             shippedBody: parsed.content,
             liveBody: live.content ?? '',
             stamp: typeof stamp === 'string' ? stamp : undefined,
-            userModified: liveMeta['user-modified'] === true
+            userModified: liveMeta['user-modified'] === true,
+            ...keptInputs(liveMeta, parsed)
           });
-          const edited = state === 'edited-not-confirmed' || state === 'both-changed';
-          if (edited) {
+          if (state !== 'update-ready' && state !== 'same-as-shipped') {
             report.protected.push(uuid);
             continue;
           }
@@ -1131,6 +1132,72 @@ class PageManager extends BaseManager implements CatalogSource {
     }
     await record.save();
     return report;
+  }
+
+  /**
+   * Keep, or stop keeping, this site's edited copy of a shipped page (#2389
+   * slice 2, R2). A kept page is left alone by Sync All and is flagged for
+   * review only when the shipped page's plugin calls or behaviour settings
+   * change.
+   *
+   * Keeping writes `kept-edited`, `kept-shipped-hash` (the shipped text the
+   * admin saw) and `kept-working-parts` (its plugin calls and behaviour
+   * settings), and nothing else: the body, the stamp and `user-modified` stay,
+   * and the write is metadata-only so it makes no new version and leaves
+   * Recent Changes quiet. Keeping an already-kept page rewrites the baseline
+   * from the shipped page as it is now, which clears "needs your review".
+   *
+   * @param source - Where the shipped page comes from
+   * @param uuid - The shipped page's uuid
+   * @param keep - True to keep, false to remove the mark
+   * @param ctx - Who decided
+   * @returns `{ok:true, kept}`, or why nothing was written
+   */
+  async keepShippedPage(
+    source: ShippedPageSource,
+    uuid: string,
+    keep: boolean,
+    ctx: ActorContext
+  ): Promise<{ ok: true; kept: boolean } | { ok: false; reason: 'not-shipped' | 'not-on-site' }> {
+    if (!this.provider) {
+      throw new Error('PageManager: Provider not initialized');
+    }
+    const shipped = await this.readShippedPage(source, uuid);
+    if (!shipped) return { ok: false, reason: 'not-shipped' };
+    const live = await this.storeCopyByUUID(uuid, source, ctx);
+    if (!live) return { ok: false, reason: 'not-on-site' };
+
+    const meta = { ...((live.metadata ?? {}) as Record<string, unknown>) };
+    if (keep) {
+      meta[KEPT_EDITED_KEY] = true;
+      meta[KEPT_SHIPPED_HASH_KEY] = pageSourceHash(shipped.content);
+      meta[KEPT_WORKING_PARTS_KEY] = workingParts(shipped.content, shipped.data);
+    } else {
+      delete meta[KEPT_EDITED_KEY];
+      delete meta[KEPT_SHIPPED_HASH_KEY];
+      delete meta[KEPT_WORKING_PARTS_KEY];
+    }
+    const title = typeof meta.title === 'string' && meta.title ? meta.title : String(shipped.data.title);
+    await this.savePage(title, live.content ?? '', meta, ctx, {
+      rawFrontmatter: true,
+      preserveLastModified: true,
+      skipValidation: true,
+      skipConflictCheck: true,
+      audit: { op: 'edit' }
+    });
+    logger.info(`[PageManager] ${source.id} page ${uuid} ${keep ? 'kept' : 'no longer kept'} by ${actorOf(ctx).user}`);
+    return { ok: true, kept: keep };
+  }
+
+  /** One shipped page by uuid (first file wins, as in the seed), or null. */
+  private async readShippedPage(source: ShippedPageSource, uuid: string): Promise<{ data: Record<string, unknown>; content: string } | null> {
+    if (!(await fse.pathExists(source.dir))) return null;
+    const want = uuid.toLowerCase();
+    for (const file of (await fse.readdir(source.dir)).filter((f: string) => f.endsWith('.md')).sort()) {
+      const parsed = parsePageFrontmatter(await fse.readFile(path.join(source.dir, file), 'utf8'));
+      if (typeof parsed.data.uuid === 'string' && parsed.data.uuid.trim().toLowerCase() === want) return parsed;
+    }
+    return null;
   }
 
   /**

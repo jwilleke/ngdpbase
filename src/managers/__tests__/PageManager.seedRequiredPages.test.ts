@@ -524,7 +524,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
       const srcDir = () => (make().source === 'addon' ? addonDir : requiredDir);
       const writeShipped = (body: string) => fse.writeFile(path.join(srcDir(), `${uuid(1)}.md`), matter.stringify(`${body}\n`, { title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation' }));
       const writeLive = (body: string, extra: Record<string, unknown> = {}) => fse.writeFile(path.join(pagesDir, `${uuid(1)}.md`), matter.stringify(`${body}\n`, { title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation', ...extra }));
-      const editedLive = () => writeLive('Edited here.', { 'user-modified': true, [make().key]: pageSourceHash('Shipped v1.') });
+      const editedLive = () => writeLive('Edited here.', { 'user-modified': true, lastModified: '2026-10-01T00:00:00.000Z', [make().key]: pageSourceHash('Shipped v1.') });
       const bootWithEditedPage = async () => {
         await writeShipped('Shipped v1.');
         const pm = await boot();
@@ -547,7 +547,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
         expect(live.content).toContain('Edited here.');
         expect(live.data['kept-edited']).toBe(true);
         expect(live.data['kept-shipped-hash']).toBe(pageSourceHash('Shipped v1.'));
-        expect(live.data['kept-working-parts']).toEqual([]);
+        expect(live.data['kept-working-parts']).toEqual(['setting:system-category=documentation']);
         expect(live.data['user-modified']).toBe(true);
         expect(live.data[make().key]).toBe(pageSourceHash('Shipped v1.'));
       });
@@ -588,7 +588,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
         await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
         const live = await liveOf(1);
         expect(live.data['kept-shipped-hash']).toBe(pageSourceHash('Shipped v2.\n[{Calendar}]'));
-        expect(live.data['kept-working-parts']).toEqual(['plugin:Calendar']);
+        expect(live.data['kept-working-parts']).toEqual(['plugin:Calendar', 'setting:system-category=documentation']);
       });
 
       test('a page the source does not ship, or the site does not hold, is refused and nothing is written', async () => {
