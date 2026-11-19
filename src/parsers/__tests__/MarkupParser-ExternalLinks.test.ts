@@ -9,6 +9,7 @@
 
 import MarkupParser from '../MarkupParser';
 import { createMarkdownConverter } from '../../rendering/markdownConverter';
+import { normalizeExistingPageToNcm } from '../../converters/ncm/index';
 
 const engine = {
   getManager: (name: string) => {
@@ -67,5 +68,33 @@ describe('external links through the parser (#1492)', () => {
     expect(wiki.target).toBeUndefined();
     expect(wiki.class).toContain('wikipage');
     expect(await render('[r](/view/HomePage)')).toBe('<p><a href="/view/HomePage">r</a></p>\n');
+  });
+});
+
+// A GFM table is converted to the JSPWiki `||`/`|` form on import. Its cells are
+// resolved by appendWikiNodes, not by markdown-it, so a CommonMark link kept as
+// written must still become a link there.
+describe('external links in an imported table (#1492)', () => {
+  const external = 'class="wiki-link external-link" target="_blank" rel="noopener noreferrer"';
+  const cell = (html: string, n: number): string => html.match(/<td\b[^>]*>([\s\S]*?)<\/td>/g)?.[n] ?? '';
+
+  test('a cell holding only a CommonMark link renders a link', async () => {
+    const converted = normalizeExistingPageToNcm('| Name | Link |\n|---|---|\n| A | [site](https://x.com) |\n').content;
+    expect(converted).toContain('[site](https://x.com)');
+    const html = await render(converted);
+    expect(cell(html, 1)).toContain(`<a href="https://x.com" ${external}>site</a>`);
+    expect(html).not.toContain('[site](https://x.com)');
+  });
+
+  test('a cell with bold text and a link renders both', async () => {
+    const html = await render('%%table-striped\n|| A ||\n|**b** [s](https://x.com)|\n/%');
+    expect(html).toContain('<strong>b</strong>');
+    expect(html).toContain(`<a href="https://x.com" ${external}>s</a>`);
+  });
+
+  test('a cell with a link and a wiki link renders both', async () => {
+    const html = await render('%%table-striped\n|| A ||\n|[s](https://x.com) [HomePage]|\n/%');
+    expect(html).toContain(`<a href="https://x.com" ${external}>s</a>`);
+    expect(html).toContain('HomePage');
   });
 });
