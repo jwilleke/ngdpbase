@@ -143,7 +143,7 @@ Originally considered giving domain addons their own page type/class. __Leaning 
 
 Seeding is skip-if-exists, matched by UUID first (survives slug rename, #908) then slug. Operator edits are never clobbered. `ngdpbase.addons.page-reseed` is retired (#2389): start-up never replaces a page. A newer source shows as Update ready in Required Pages Sync, and Sync All applies it only to a page nobody edited here.
 
-So __editing a seeded page silently opts it out of all future upstream content updates__ — it reads Edited here, not confirmed, and Sync All skips it thereafter; only an admin's Use shipped version replaces it. An admin can also tick __Keep my version for this site__ in the Review dialog: the page reads Kept for this site, and moves to Kept, needs your review if its plugin calls or behaviour settings change later.
+So __editing a seeded page silently opts it out of all future upstream content updates__ — it reads Edited here, not confirmed, and Sync All skips it thereafter; only an admin's Use shipped version replaces it. An admin can also tick __Keep edited version__ in the Review dialog: the page reads Kept for this site, and moves to Kept, needs your review if its plugin calls or behaviour settings change later.
 
 Admin-only editing narrows this to a small, informed audience, which makes it far more defensible. `shippedPageState` is shared by the Required Pages Sync admin surface and Sync (#931, #2389), so the screen and Sync agree on state — that surface is the natural place to warn "editing this stops future addon updates".
 

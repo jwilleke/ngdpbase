@@ -18,6 +18,9 @@
     [data-sync-count] { font-size: .75rem; }
     /* A date stays on one line ("2026-10-14" no longer breaks after the month). */
     [data-col="source-modified"] { white-space: nowrap; }
+    /* The unticked Review-dialog box: the theme's #dee2e6 border is 1.24:1 on the
+       dialog's light background. A ticked box keeps the theme's own. */
+    #reviewKeepCheck:not(:checked) { border-color: #6c757d; }
 </style>
 
 <div class="container mt-4">
@@ -621,7 +624,7 @@
                     </div>
                     <div id="reviewKeepBox" class="px-3 py-2 border-bottom bg-light" hidden>
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="reviewKeepCheck" data-testid="review-keep" style="border-color: #6c757d;">
+                            <input class="form-check-input" type="checkbox" id="reviewKeepCheck" data-testid="review-keep">
                             <label class="form-check-label" for="reviewKeepCheck">Keep edited version</label>
                         </div>
                         <small class="d-block" style="color: #495057;">
@@ -685,7 +688,7 @@ function setupReviewKeep(source, uuid, kept, needsReview) {
     // A box that opens ticked is already saved, so the note says what unticking does.
     const note = document.getElementById('reviewKeepNote');
     const plainNote = 'Saved as soon as you tick it.';
-    note.textContent = (source && needsReview) ? 'This page is already kept. Untick to stop keeping it (saved at once).' : plainNote;
+    note.textContent = (source && kept) ? 'This page is already kept. Untick to stop keeping it (saved at once).' : plainNote;
     const setStatus = (color, text) => {
         status.className = 'small d-block';
         status.style.color = color;
