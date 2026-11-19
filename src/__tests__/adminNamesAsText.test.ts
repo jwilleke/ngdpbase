@@ -110,8 +110,10 @@ describe('admin row buttons hand recorded names to the script as text', () => {
   it('Required Pages acts on the page by its exact title', () => {
     const page = { uuid: 'u-1', liveUuid: 'u-2', title: NAME, source: 'core', status: 'uuid-mismatch', userModified: true };
     const { win } = runPage('admin-required-pages.ejs', {
-      counts: {}, comparison: [page], notInSource: [], addonComparison: [], declined: [], orphanedAddonPages: []
+      counts: {}, comparison: [page], notInSource: [], addonComparison: [], declined: [], orphanedAddonPages: [], canPushToSource: true
     });
+    // Push to Source asks first (#2389 slice 4); this test is about the name it passes on.
+    win.confirm = () => true;
     const diffs = spy(win, 'showDiff');
     const adopts = spy(win, 'adoptUuidOne');
     const declines = spy(win, 'declineOne');

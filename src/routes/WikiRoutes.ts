@@ -44,6 +44,7 @@ import {
   syncRowState,
   withoutKeptMarks
 } from '../utils/addonPageSync.js';
+import { isSourceCheckout } from '../utils/sourceCheckout.js';
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
@@ -15921,6 +15922,8 @@ ${panes}
         orphanedAddonPages,
         declined,
         notInSource,
+        // #2389 slice 4: Push to Source only makes sense where required-pages/ is committed.
+        canPushToSource: isSourceCheckout(requiredDirResolved),
         csrfToken: req.session.csrfToken,
         successMessage: req.query.success || null,
         errorMessage: req.query.error || null
@@ -16094,6 +16097,12 @@ ${panes}
       ];
       if (fileIds.some((id) => typeof id !== 'string' || !isSafePathSegment(id))) {
         return res.status(400).json({ success: false, error: 'A page id is not valid. Nothing was changed.' });
+      }
+
+      // #2389 slice 4: an installed site has no shipped copy anyone commits, so a
+      // push would be lost at the next upgrade. Refused whole, like a bad id.
+      if (pushToSourceUuids.length > 0 && !isSourceCheckout(requiredDirResolved)) {
+        return res.status(403).json({ success: false, error: 'This site is not running from a source checkout, so there is no shipped copy to change. Nothing was changed.' });
       }
 
       await fse.ensureDir(pagesDirResolved);

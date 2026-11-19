@@ -396,6 +396,8 @@ describe('Required Pages Sync status — body and source-hash stamp (#1395)', ()
       page('edited body', `${REQUIRED_SOURCE_HASH_KEY}: abc\nuser-modified: true\n`),
       'utf8'
     );
+    // #2389 slice 4: Push to Source works only from a source checkout.
+    await fs.mkdir(path.join(dirs.root, '.git'));
     const { routes, pageManager } = await makeRoutes(dirs);
     await reload(pageManager);
 
