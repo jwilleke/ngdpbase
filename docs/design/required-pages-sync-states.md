@@ -191,11 +191,11 @@ __False positives, and how they are avoided:__
 - Calls inside fenced code blocks and inline code, and escaped `[[{...}]`, are shown to a reader, not run. They are stripped before the scan, as the renderer does.
 - Variables `[{$name}]` are text substitution, not working parts, and the regex's `\w` does not match `$`.
 - Order does not matter (sorted), and neither does whitespace or parameter order.
-- Presentation-only parameters are ignored: `class`, `style`, `width`, `height`, `alt`. The list is one constant, kept short.
+- Presentation-only parameters are ignored: `class`, `style`, `width`, `height`, `align`, `color`, `size`, `border`. The list is one constant, `PRESENTATION_PARAMS`, kept short.
 - Body text between `[{Name}]` and `[{/Name}]` is wording. Only the opening call counts.
 - __A test makes a missing classification fail the build.__ It reads every front-matter key in `required-pages/` and in each add-on's `pages/` and fails if one is in neither list, so a new behaviour key cannot slip through as "wording".
 
-__Showing the change.__ "Kept, needs your review" lists the parts added, removed or changed, in plain words: "This page now calls Calendar with calendars=family." A kept page with only wording changes shows only "Newer version available (v5.45.0)".
+__Showing the change.__ "Kept, needs your review" lists the parts added, removed or changed, in plain words: "The shipped page now adds Calendar (calendars=family)." Known plugins read in plain words ("The shipped page now shows a page total."), a setting reads `The setting "audience" is now all (it was admin).` A kept page with only wording changes shows only "Newer version available (v5.45.0)".
 
 __Known limit.__ A page kept before this ships has no baseline, because nothing starts kept (R7). The first time an admin ticks the box, the baseline is written. No back-computation is needed.
 

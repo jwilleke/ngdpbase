@@ -90,7 +90,8 @@ test.describe.serial('Keep edited version (#2389)', () => {
       return response.json();
     }, UUID);
     expect(answer.protected).toEqual([UUID]);
-    expect(answer.synced ?? []).toEqual([]);
+    expect(answer.synced).toBe(0);
+    expect(answer.uuids).toEqual([]);
     await page.goto('/admin/required-pages');
     await expect(row(page, UUID).locator('[data-sync-status="kept-for-site"]')).toBeVisible();
     expect(await liveBody(page)).toBe(before);

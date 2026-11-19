@@ -15978,7 +15978,7 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
-        return res.status(403).json({ success: false, error: 'Access denied. Keeping an edited page needs an administrator.' });
+        return res.status(403).json({ success: false, error: 'Only a site administrator can do this; ask one to sign in.' });
       }
       const body = (req.body ?? {}) as { source?: unknown; uuid?: unknown; keep?: unknown };
       const { source: sourceId, uuid, keep } = body;
@@ -16389,7 +16389,7 @@ ${panes}
 
       const parts: string[] = [];
       if (synced.length > 0) parts.push(`${synced.length} page${synced.length !== 1 ? 's' : ''} synced`);
-      if (protected_.length > 0) parts.push(`${protected_.length} skipped (user-edited — use Push to Source or diff first)`);
+      if (protected_.length > 0) parts.push(`${protected_.length} skipped (edited or kept on this site; open Review to decide)`);
       if (leftAloneCount > 0) parts.push(`${leftAloneCount} edited page${leftAloneCount !== 1 ? 's' : ''} left alone`);
       if (removedOrphans.length > 0) parts.push(`${removedOrphans.length} orphaned addon page${removedOrphans.length !== 1 ? 's' : ''} removed`);
       if (failed.length > 0) parts.push(`${failed.length} could not be saved: ${failed.map((f) => f.reason).join('; ')}`);

@@ -186,6 +186,23 @@ describe('#2389 slice 2 Review dialog and kept badges: the words and the look th
     expect(page).toContain('Changes how the page works');
   });
 
+  test('the note puts the saved-at-once line first and breaks into short lines', () => {
+    const start = page.indexOf('id="reviewKeepBox"');
+    const note = page.slice(start, page.indexOf('id="reviewKeepStatus"', start));
+    const lines = [...note.matchAll(/<span class="d-block[^"]*">([^<]+)<\/span>/g)].map((m) => m[1].trim());
+    expect(lines[0]).toBe('Saved as soon as you tick it.');
+    expect(lines.length).toBeGreaterThanOrEqual(3);
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(70);
+  });
+
+  test('the Kept for this site chip matches its row badge, and the Edited here chip says it also counts kept pages that need review', () => {
+    const chip = page.slice(page.indexOf('data-strip-count="kept"') - 120, page.indexOf('data-strip-count="kept"') + 60);
+    expect(chip).toContain('bg-light text-dark border border-secondary');
+    expect(chip).not.toContain('bg-info');
+    const edited = page.slice(page.indexOf('data-testid="count-edited-here"') - 140, page.indexOf('data-testid="count-edited-here"') + 260);
+    expect(edited).toContain('Kept, needs your review');
+  });
+
   test('a failed save says what failed and what to do', () => {
     expect(page).toContain('Your choice was not saved. Nothing was changed.');
   });

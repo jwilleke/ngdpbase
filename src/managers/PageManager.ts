@@ -1170,24 +1170,20 @@ class PageManager extends BaseManager implements CatalogSource {
     const live = await this.storeCopyByUUID(uuid, source, ctx);
     if (!live) return { ok: false, reason: 'not-on-site' };
 
-    const meta = { ...((live.metadata ?? {}) as Record<string, unknown>) };
-    if (keep) {
-      meta[KEPT_EDITED_KEY] = true;
-      meta[KEPT_SHIPPED_HASH_KEY] = pageSourceHash(shipped.content);
-      meta[KEPT_WORKING_PARTS_KEY] = workingParts(shipped.content, shipped.data);
-    } else {
-      delete meta[KEPT_EDITED_KEY];
-      delete meta[KEPT_SHIPPED_HASH_KEY];
-      delete meta[KEPT_WORKING_PARTS_KEY];
-    }
-    const title = typeof meta.title === 'string' && meta.title ? meta.title : String(shipped.data.title);
+    const title = typeof live.metadata?.title === 'string' && live.metadata.title ? live.metadata.title : String(shipped.data.title);
     // The write is addressed by title, so check that the title still names this
     // page, read again just before the write, and let the conflict check run.
     const named = await this.getPage(title, ctx);
     const namedUuid = typeof named?.metadata?.uuid === 'string' ? named.metadata.uuid.trim().toLowerCase() : '';
     if (!named || namedUuid !== uuid.trim().toLowerCase()) return { ok: false, reason: 'not-on-site' };
-    const toWrite = { ...(named.metadata as Record<string, unknown>), ...meta };
-    if (!keep) {
+    // Start from the page as just re-read and change only the three kept keys, so
+    // nothing another admin changed a moment ago is written back.
+    const toWrite = { ...(named.metadata as Record<string, unknown>) };
+    if (keep) {
+      toWrite[KEPT_EDITED_KEY] = true;
+      toWrite[KEPT_SHIPPED_HASH_KEY] = pageSourceHash(shipped.content);
+      toWrite[KEPT_WORKING_PARTS_KEY] = workingParts(shipped.content, shipped.data);
+    } else {
       delete toWrite[KEPT_EDITED_KEY];
       delete toWrite[KEPT_SHIPPED_HASH_KEY];
       delete toWrite[KEPT_WORKING_PARTS_KEY];

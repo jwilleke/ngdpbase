@@ -108,11 +108,12 @@
                 <span class="badge bg-warning text-dark fs-6 px-3 py-2" data-testid="count-update-ready" data-strip-count="update-ready">
                     <i class="fas fa-edit me-1"></i> <%= counts.outdatedSyncable %> Update ready
                 </span>
-                <span class="badge bg-secondary fs-6 px-3 py-2" data-testid="count-edited-here" data-strip-count="edited-here">
+                <span class="badge bg-secondary fs-6 px-3 py-2" data-testid="count-edited-here" data-strip-count="edited-here"
+                      title="Pages edited on this site, including kept pages that read Kept, needs your review.">
                     <i class="fas fa-user-edit me-1"></i> <%= counts.outdatedUserEdited %> Edited here
                 </span>
                 <% if (counts.kept > 0) { %>
-                <span class="badge bg-info text-dark fs-6 px-3 py-2" data-strip-count="kept">
+                <span class="badge bg-light text-dark border border-secondary fs-6 px-3 py-2" data-strip-count="kept">
                     <i class="fas fa-user-check me-1"></i> <%= counts.kept %> Kept for this site
                 </span>
                 <% } %>
@@ -623,7 +624,11 @@
                             <input class="form-check-input" type="checkbox" id="reviewKeepCheck" data-testid="review-keep">
                             <label class="form-check-label" for="reviewKeepCheck">Keep edited version</label>
                         </div>
-                        <small class="d-block" style="color: #495057;">This site keeps its own version. Updates will not replace it. You will be told if a later release changes how this page works. Saved as soon as you tick it.</small>
+                        <small class="d-block" style="color: #495057;">
+                            <span class="d-block">Saved as soon as you tick it.</span>
+                            <span class="d-block">This site keeps its own version, and updates will not replace it.</span>
+                            <span class="d-block">You will be told if a later release changes how the page works.</span>
+                        </small>
                         <small id="reviewKeepStatus" class="d-block" role="status"></small>
                     </div>
                     <div id="modalDiffContainer" class="p-3">
