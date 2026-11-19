@@ -173,7 +173,7 @@ describe('MarkupParser - Merge Pipeline (Phase 3)', () => {
       const result = await parser.parseWithDOMExtraction(content, context);
 
       // Markdown link
-      expect(result).toContain('<a href="https://google.com">Google</a>');
+      expect(result).toContain('<a href="https://google.com" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">Google</a>');
 
       // Wiki link
       expect(result).toContain('HomePage');

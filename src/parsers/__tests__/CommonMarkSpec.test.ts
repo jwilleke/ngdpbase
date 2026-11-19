@@ -13,7 +13,8 @@
  * `fallback` profile, which is not what a reader sees. Comparison ignores what
  * is serialisation rather than meaning: `<hr />` against `<hr>`, whitespace
  * between tags, `&#160;` and `&quot;` against the characters they stand for,
- * and the `id` our heading anchors add (R2). The spec writes a
+ * the `id` our heading anchors add (R2), and the class, target and rel an
+ * absolute http(s) link gains (#1492). The spec writes a
  * tab as `→`; it is turned back into a tab, as the spec's own runner does.
  */
 
@@ -86,6 +87,8 @@ const EXCEPTIONS: Record<number, keyof typeof REASONS> = Object.fromEntries(([
 
 const tabs = (s: string): string => s.replace(/\u2192/g, '\t');
 const normalise = (html: string): string => html
+  // An external link opens in a new tab (#1492): ours alone, not the spec's.
+  .replace(/ class="wiki-link external-link" target="_blank" rel="noopener noreferrer"/g, '')
   .replace(/(<h[1-6])\s+id="[^"]*"/g, '$1')
   // The same character written two ways: an entity or the character itself.
   .replace(/&#160;/g, '\u00a0')

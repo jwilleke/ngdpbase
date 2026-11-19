@@ -61,9 +61,9 @@ describe('ImportManager.importFromUrl', () => {
     expect(savePage).toHaveBeenCalledTimes(1);
     const [title, content, metadata] = savePage.mock.calls[0] as [string, string, Record<string, unknown>];
     expect(title).toBe('Lists');
-    // The NCM normalizer ran: the CommonMark link is in NCM's JSPWiki form.
-    expect(content).toContain('[the docs|https://example.org/docs');
-    expect(content).not.toContain('](https://example.org/docs)');
+    // The NCM normalizer ran: the external link stays CommonMark, the house form (#1492).
+    expect(content).toContain('[the docs](https://example.org/docs)');
+    expect(content).not.toContain('[the docs|https://example.org/docs');
     expect(metadata).toMatchObject({
       author: 'importer',
       editor: 'importer',

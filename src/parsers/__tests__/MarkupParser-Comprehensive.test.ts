@@ -133,8 +133,8 @@ describe('WikiDocument DOM Pipeline - Comprehensive Integration', () => {
       const content = '[Google](https://google.com) and [GitHub](https://github.com)';
       const result = await parser.parseWithDOMExtraction(content, context);
 
-      expect(result).toContain('<a href="https://google.com">Google</a>');
-      expect(result).toContain('<a href="https://github.com">GitHub</a>');
+      expect(result).toContain('<a href="https://google.com" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">Google</a>');
+      expect(result).toContain('<a href="https://github.com" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">GitHub</a>');
     });
 
     test('markdown tables', async () => {
@@ -391,7 +391,7 @@ You are on: [{$pagename}]`;
       expect(result).toContain('HomePage');
 
       // Markdown links
-      expect(result).toContain('<a href="https://google.com">Google</a>');
+      expect(result).toContain('<a href="https://google.com" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">Google</a>');
 
       // Escaped JSPWiki
       expect(result).toContain('[{$var}]'); // Literal
