@@ -208,7 +208,7 @@ Each table says its own numbers, in its own header, next to its own Sync All but
 - The line, the button and the count chips (the badges at the top of the page and the add-on header's) redraw after a sync, from that table's rows, so they match the toast before the page reloads.
 - The Source Modified column shows the date only (YYYY-MM-DD), and the Status column asks for 12rem, so the Actions column is not cut off at 1280px. The add-on header's chips are 12px.
 
-At the top of the page, one sentence with no number: "Sync All updates only pages marked Update ready. Pages edited on this site are never changed by Sync All. To act on an edited page, open Diff, then Use shipped version. A page whose header can't be read also shows as Update ready; updating it repairs it." When nothing differs from what shipped: "Everything matches what shipped."
+At the top of the page, one sentence with no number: "Sync All updates only pages marked Update ready. Pages edited on this site are never changed by Sync All. To act on an edited page, open Review, then tick Keep edited version, or press Use shipped version on its row. A page whose header can't be read also shows as Update ready; updating it repairs it." When nothing differs from what shipped: "Everything matches what shipped."
 
 A page whose header can't be read shows "Update ready" with a muted note under the badge, "Page header couldn't be read", and a tooltip that says updating the page repairs it.
 
