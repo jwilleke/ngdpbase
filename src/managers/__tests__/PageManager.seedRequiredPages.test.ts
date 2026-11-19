@@ -547,7 +547,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
         expect(live.content).toContain('Edited here.');
         expect(live.data['kept-edited']).toBe(true);
         expect(live.data['kept-shipped-hash']).toBe(pageSourceHash('Shipped v1.'));
-        expect(live.data['kept-working-parts']).toEqual(['setting:system-category=documentation']);
+        expect(live.data['kept-working-parts']).toEqual(['setting:slug=alpha', 'setting:system-category=documentation']);
         expect(live.data['user-modified']).toBe(true);
         expect(live.data[make().key]).toBe(pageSourceHash('Shipped v1.'));
       });
@@ -564,9 +564,47 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
 
       test('keeping writes no new version and keeps lastModified', async () => {
         const pm = await bootWithEditedPage();
+        const filesOf = async (dir: string): Promise<string[]> => {
+          const out: string[] = [];
+          for (const entry of await fse.readdir(dir, { withFileTypes: true })) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) out.push(...(await filesOf(full)));
+            else out.push(path.relative(tmpDir, full));
+          }
+          return out.sort();
+        };
         const before = (await liveOf(1)).data.lastModified;
+        const filesBefore = await filesOf(tmpDir);
         await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
         expect((await liveOf(1)).data.lastModified).toEqual(before);
+        // No new file anywhere (a version, a history entry) and no edit counted.
+        expect(await filesOf(tmpDir)).toEqual(filesBefore);
+        expect((await liveOf(1)).data['user-modified']).toBe(true);
+      });
+
+      test('a kept page whose text matches what shipped keeps its mark through a plain sync (R2)', async () => {
+        await writeShipped('Shipped v1.');
+        const pm = await boot();
+        const hash = pageSourceHash('Shipped v1.');
+        await writeLive('Shipped v1.', { [make().key]: hash, 'kept-edited': true, 'kept-shipped-hash': hash, 'kept-working-parts': ['setting:system-category=documentation'] });
+        await pm.refreshPageList();
+        await pm.refreshPageList();
+        const report = await pm.syncShippedPages(sourceOf(pm), [uuid(1)], {}, ADMIN);
+        expect(report.protected).toEqual([uuid(1)]);
+        expect(report.synced).toEqual([]);
+        const live = await liveOf(1);
+        expect(live.data['kept-edited']).toBe(true);
+        expect(live.data['kept-shipped-hash']).toBe(hash);
+        expect(live.data['kept-working-parts']).toEqual(['setting:system-category=documentation']);
+      });
+
+      test('keep writes the page it was asked about: a title that now belongs to another page is refused', async () => {
+        const pm = await bootWithEditedPage();
+        const before = await fse.readFile(path.join(pagesDir, `${uuid(1)}.md`), 'utf8');
+        vi.spyOn(pm, 'getPage').mockResolvedValue({ title: 'Alpha', content: 'Other.', metadata: { uuid: uuid(9), title: 'Alpha' } });
+        const result = await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
+        expect(result).toEqual({ ok: false, reason: 'not-on-site' });
+        expect(await fse.readFile(path.join(pagesDir, `${uuid(1)}.md`), 'utf8')).toBe(before);
       });
 
       test('unkeeping removes the three keys', async () => {
@@ -588,7 +626,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
         await pm.keepShippedPage(sourceOf(pm), uuid(1), true, ADMIN);
         const live = await liveOf(1);
         expect(live.data['kept-shipped-hash']).toBe(pageSourceHash('Shipped v2.\n[{Calendar}]'));
-        expect(live.data['kept-working-parts']).toEqual(['plugin:Calendar', 'setting:system-category=documentation']);
+        expect(live.data['kept-working-parts']).toEqual(['plugin:Calendar', 'setting:slug=alpha', 'setting:system-category=documentation']);
       });
 
       test('a page the source does not ship, or the site does not hold, is refused and nothing is written', async () => {
