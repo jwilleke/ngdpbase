@@ -621,17 +621,17 @@
                     </div>
                     <div id="reviewKeepBox" class="px-3 py-2 border-bottom bg-light" hidden>
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="reviewKeepCheck" data-testid="review-keep">
+                            <input class="form-check-input" type="checkbox" id="reviewKeepCheck" data-testid="review-keep" style="border-color: #6c757d;">
                             <label class="form-check-label" for="reviewKeepCheck">Keep edited version</label>
                         </div>
                         <small class="d-block" style="color: #495057;">
-                            <span class="d-block">Saved as soon as you tick it.</span>
+                            <span class="d-block" id="reviewKeepNote">Saved as soon as you tick it.</span>
                             <span class="d-block">This site keeps its own version, and updates will not replace it.</span>
                             <span class="d-block">You will be told if a later release changes how the page works.</span>
                         </small>
                         <div id="reviewKeepAgain" class="mt-2" hidden>
                             <small class="d-block" style="color: #495057;">The newer version's changes will not be added.</small>
-                            <button type="button" class="btn btn-sm btn-primary mt-1" id="reviewKeepAgainBtn" data-testid="review-keep-reviewed">Keep my version (I've reviewed this)</button>
+                            <button type="button" class="btn btn-sm btn-primary mt-1" id="reviewKeepAgainBtn" data-testid="review-keep-reviewed">Keep edited version (I've reviewed this)</button>
                         </div>
                         <small id="reviewKeepStatus" class="d-block" role="status"></small>
                     </div>
@@ -666,8 +666,8 @@ let currentDiffString = null;
 let diffModal = null;
 let reviewKeepChanged = false;
 
-// #2389: the Review dialog is the diff modal, with a "Keep my version for this
-// site" checkbox for a page edited on this site. Ticking it saves at once.
+// #2389: the Review dialog is the diff modal, with a "Keep edited version"
+// checkbox for a page edited on this site. Ticking it saves at once.
 function setupReviewKeep(source, uuid, kept, needsReview) {
     const box = document.getElementById('reviewKeepBox');
     const check = document.getElementById('reviewKeepCheck');
@@ -682,6 +682,10 @@ function setupReviewKeep(source, uuid, kept, needsReview) {
     // what the admin has now seen, is the same save as ticking the box afresh.
     again.hidden = !(source && needsReview);
     againBtn.disabled = false;
+    // A box that opens ticked is already saved, so the note says what unticking does.
+    const note = document.getElementById('reviewKeepNote');
+    const plainNote = 'Saved as soon as you tick it.';
+    note.textContent = (source && needsReview) ? 'This page is already kept. Untick to stop keeping it (saved at once).' : plainNote;
     const setStatus = (color, text) => {
         status.className = 'small d-block';
         status.style.color = color;
@@ -701,6 +705,10 @@ function setupReviewKeep(source, uuid, kept, needsReview) {
             const result = await response.json();
             if (result.success) {
                 reviewKeepChanged = true;
+                // Ticking again rewrote the baseline and unticking dropped the mark,
+                // so either way the keep-again button has nothing left to do.
+                again.hidden = true;
+                note.textContent = plainNote;
                 setStatus('#146c43', result.kept ? 'Kept for this site.' : 'No longer kept. Sync can replace this page again when you choose.');
                 return true;
             }
@@ -721,7 +729,6 @@ function setupReviewKeep(source, uuid, kept, needsReview) {
     };
     againBtn.onclick = async () => {
         if (await save(true)) {
-            again.hidden = true;
             // Closing the dialog reloads the list, where the row now reads Kept for this site.
             setTimeout(() => diffModal.hide(), 900);
         }

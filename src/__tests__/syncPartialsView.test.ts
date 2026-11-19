@@ -189,7 +189,7 @@ describe('#2389 slice 2 Review dialog and kept badges: the words and the look th
   test('the note puts the saved-at-once line first and breaks into short lines', () => {
     const start = page.indexOf('id="reviewKeepBox"');
     const note = page.slice(start, page.indexOf('id="reviewKeepStatus"', start));
-    const lines = [...note.matchAll(/<span class="d-block[^"]*">([^<]+)<\/span>/g)].map((m) => m[1].trim());
+    const lines = [...note.matchAll(/<span class="d-block[^"]*"[^>]*>([^<]+)<\/span>/g)].map((m) => m[1].trim());
     expect(lines[0]).toBe('Saved as soon as you tick it.');
     expect(lines.length).toBeGreaterThanOrEqual(3);
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(70);
@@ -232,9 +232,9 @@ describe('#2389 slice 2 Review dialog and kept badges: the words and the look th
   });
 
   test('the Keep edited version (I\'ve reviewed this) button is hidden as soon as a save changes the box', () => {
-    const start = page.indexOf('check.onchange');
-    const handler = page.slice(start, page.indexOf('againBtn.onclick', start));
-    expect(handler).toContain('again.hidden = true');
+    const start = page.indexOf('if (result.success)');
+    const success = page.slice(start, page.indexOf('return true;', start));
+    expect(success).toContain('again.hidden = true');
   });
 
   test('a refusal by the content rules is shown as one message, not wrapped in "Nothing was changed"', () => {
