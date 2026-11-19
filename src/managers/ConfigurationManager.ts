@@ -12,7 +12,13 @@ import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
 import { configFilePaths, enabledEntries, installCompletePath, mergeArrays, readConfigFilesSync } from '../utils/configFiles.js';
-import { migrateStoredPageWritePolicies } from '../utils/pageWritePolicies.js';
+import {
+  migrateStoredPageWritePolicies,
+  narrowedRoleWrites,
+  withoutNarrowedWrites,
+  type AppliedNarrowing,
+  type NarrowedWrite
+} from '../utils/pageWritePolicies.js';
 import { legacyStoreKeys, legacyStoreKeysReason } from '../utils/legacyStoreKeys.js';
 import { mergeConfigWithAddons, type AddonDefaults } from '../utils/addonConfigLayer.js';
 import type { AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
@@ -31,6 +37,9 @@ import {
   splitAddonsPath,
   resolveAddonSlug
 } from '../utils/addonsPathResolver.js';
+
+/** The access policies setting, where the shipped role and category policies and a site's stored copies meet. */
+const POLICIES_KEY = 'ngdpbase.access.policies';
 
 interface ConfigManagerBackupData extends BackupData {
   customConfig: Partial<WikiConfig> | null;
@@ -461,6 +470,10 @@ class ConfigurationManager extends BaseManager {
     // ngdpbase.filters.* namespace, same shape and for the same reason.
     this.migrateLegacyFilterNamespace();
 
+    // #2270: what the site removed from its stored role policies, read before the
+    // migration below rewrites them; applied to the category policies after the merge.
+    const narrowed = narrowedRoleWrites(this.customConfig?.[POLICIES_KEY]);
+
     // #2255: a stored copy of a shipped role policy loses the page writes it
     // held on every page; they now come from the category policies.
     this.migrateStoredPageWritePolicies();
@@ -477,6 +490,7 @@ class ConfigurationManager extends BaseManager {
     // #1860: so is ngdpbase.addons.<slug>.database, kept apart from the merge.
     const { merged, declared, addons, problems, refused, databases, siteCritical } = mergeConfigWithAddons(this.defaultConfig, this.customConfig, process.cwd(), this.instanceDataFolder);
     this.mergedConfig = merged;
+    this.applyNarrowedRoleWrites(narrowed);
     this.declaredConfig = declared;
     this.addonLayers = addons;
     this.systemCategoryProblems = problems;
@@ -513,6 +527,29 @@ class ConfigurationManager extends BaseManager {
   /** Each `pageWritePolicyMigration` line in plain words, for the needs-attention entry. */
   pageWritePolicyMigrationShown: Record<string, string> = {};
 
+  /** Page writes the site removed from its stored role policies and the category policies leave out for it (#2270); the "After updating" item reads it. */
+  narrowedRoleWrites: AppliedNarrowing[] = [];
+
+  /**
+   * #2270: take the page writes a site removed from a stored role policy out of the shipped and add-on
+   * category policies in the merged list, for that role only. In memory only; the site's file is not written.
+   * One warning per narrowed role policy. Policies the site stores itself are left as stored.
+   */
+  private applyNarrowedRoleWrites(narrowed: NarrowedWrite[]): void {
+    this.narrowedRoleWrites = [];
+    if (!this.mergedConfig || narrowed.length === 0) return;
+    const stored = this.customConfig?.[POLICIES_KEY];
+    const keep = new Set(Array.isArray(stored) ? (stored as Array<{ id?: unknown }>).map((p) => p?.id).filter((id): id is string => typeof id === 'string') : []);
+    const { policies, applied } = withoutNarrowedWrites(this.mergedConfig[POLICIES_KEY], narrowed, keep);
+    if (applied.length === 0) return;
+    this.mergedConfig[POLICIES_KEY] = policies;
+    this.narrowedRoleWrites = applied;
+    for (const policyId of new Set(applied.map((a) => a.policyId))) {
+      const mine = applied.filter((a) => a.policyId === policyId);
+      logger.warn(`[config] '${policyId}' in custom config lacks ${mine.map((a) => a.action).join(', ')}, which the shipped one had; the category policies no longer give ${mine[0].role} ${mine.length === 1 ? 'it' : 'them'} (${[...new Set(mine.flatMap((a) => a.from))].join(', ')}). Save the policy list in Admin → Configuration to store the change`);
+    }
+  }
+
   /**
    * #2255: before the merge, rewrite the custom layer's stored copies of the
    * shipped role policies whose page writes moved to the category policies
@@ -520,7 +557,7 @@ class ConfigurationManager extends BaseManager {
    * migrations here; one warning per policy changed.
    */
   private migrateStoredPageWritePolicies(): void {
-    const key = 'ngdpbase.access.policies';
+    const key = POLICIES_KEY;
     if (!this.customConfig || !(key in this.customConfig)) return;
     const { policies, report } = migrateStoredPageWritePolicies(this.customConfig[key]);
     if (report.rewritten.length === 0) return;
@@ -941,6 +978,8 @@ class ConfigurationManager extends BaseManager {
       this.mergedConfig[key] = value === undefined
         ? declared
         : Array.isArray(declared) && Array.isArray(value) ? mergeArrays(declared, value) : value;
+      // #2270: the same narrowing a restart would apply, so what is in force is what a restart merges.
+      if (key === POLICIES_KEY) this.applyNarrowedRoleWrites(narrowedRoleWrites(value));
       this.revision++;
     }
 

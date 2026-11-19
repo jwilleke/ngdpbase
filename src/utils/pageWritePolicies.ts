@@ -23,6 +23,13 @@
  *   other than admin, and every deny policy (a deny now overrides an allow), is reported and left as it is: it is the site's
  *   own choice.
  *
+ * A stored role policy may also have lost a page write the shipped one had: a
+ * site narrowed `editor-permissions` before #2255 to take away delete and rename.
+ * The shipped category policies are merged in by id, so they would give the
+ * write back. `narrowedRoleWrites` finds what the site took away and
+ * `withoutNarrowedWrites` leaves it out of the category policies that were not
+ * stored (#2270).
+ *
  * Pure: the caller logs and reports. The site's file is not rewritten; saving
  * the policy list from the configuration editor writes the migrated list.
  */
@@ -69,6 +76,23 @@ const MOVED: Readonly<Record<string, readonly string[]>> = {
   'contributor-permissions': ['page-edit'],
   'demo-admin-access': ['page-edit']
 };
+
+/**
+ * The role each narrowable shipped policy names. Admin is left out: an administrator who
+ * lost a page write by editing `admin-full-access` is not something this repairs.
+ */
+const ROLE_OF: Readonly<Record<string, string>> = {
+  'editor-permissions': 'editor',
+  'contributor-permissions': 'contributor',
+  'demo-admin-access': 'demo-admin'
+};
+
+/**
+ * The shipped category policies that came with #2255 and carry the role writes. A stored list that holds
+ * one was saved on a release that has them (the editor saves the whole list), and its role policies then
+ * hold no page writes by design, so it says nothing about what the site narrowed.
+ */
+const CATEGORY_POLICY_IDS: readonly string[] = ['general-page-write', 'general-page-edit'];
 
 /** What the migration did and found, one sentence each. */
 export interface PageWritePolicyReport {
@@ -130,6 +154,91 @@ export function migrateStoredPageWritePolicies(policies: unknown): { policies: u
     report.shown[line] = `The saved rule '${policy.id}' let its roles change every page, which the site now handles with its page category rules, so it was changed for this run only${extra.length > 0 ? `; what the category rules do not cover is kept for general pages in a new rule, '${policy.id}-page-write'` : ''}. Save the policy list in Admin → Configuration to keep the change.`;
   }
   return { policies: out, report };
+}
+
+/** A page write a site removed from its stored copy of a shipped role policy (#2270). */
+export interface NarrowedWrite {
+  role: string;
+  action: string;
+  /** The stored role policy that lacks it. */
+  policyId: string;
+}
+
+/** A {@link NarrowedWrite} that was left out of at least one category policy, and which ones. */
+export interface AppliedNarrowing extends NarrowedWrite {
+  from: string[];
+}
+
+/**
+ * Page writes the site's stored copies of the shipped role policies lack that the shipped ones had (the
+ * `MOVED` table), read from `stored` as the site saved it, before the #2255 migration rewrites it. A copy
+ * that holds `*` or lists no actions holds everything; one that no longer covers every page is the site's
+ * own choice and is reported elsewhere. A list that holds a shipped category policy was saved after #2255 and
+ * is not read at all (`CATEGORY_POLICY_IDS`).
+ */
+export function narrowedRoleWrites(stored: unknown): NarrowedWrite[] {
+  if (!Array.isArray(stored)) return [];
+  const list = (stored as unknown[]).filter((p): p is Policy => !!p && typeof p === 'object' && typeof (p as Policy).id === 'string');
+  if (list.some((p) => CATEGORY_POLICY_IDS.includes(p.id))) return [];
+  const out: NarrowedWrite[] = [];
+  for (const [policyId, role] of Object.entries(ROLE_OF)) {
+    const policy = list.find((p) => p.id === policyId);
+    if (!policy || policy.effect === 'deny') continue;
+    const resources = policy.resources ?? [];
+    if (resources.length > 0 && !isPageStar(policy)) continue;
+    const held = policy.actions ?? [];
+    if (held.length === 0 || held.includes('*')) continue;
+    for (const action of MOVED[policyId]) {
+      if (!held.includes(action)) out.push({ role, action, policyId });
+    }
+  }
+  return out;
+}
+
+/**
+ * `policies` (the merged list) with each narrowed write left out for its role in every allow policy that
+ * covers system categories only and is not in `keep` (the ids the site stored itself: those replace the shipped
+ * ones whole and are the site's word). A policy naming the role and others is split: the others keep it
+ * unchanged and the role gets `<id>-<role>` with what the site kept, or nothing when nothing is left. Returns
+ * the list to use in place of the input, which is not changed, and each narrowing that took something out.
+ */
+export function withoutNarrowedWrites(policies: unknown, narrowed: readonly NarrowedWrite[], keep: ReadonlySet<string>): { policies: unknown; applied: AppliedNarrowing[] } {
+  if (!Array.isArray(policies) || narrowed.length === 0) return { policies, applied: [] };
+  const applied = new Map<string, AppliedNarrowing>();
+  const out: unknown[] = [];
+  for (const entry of policies as unknown[]) {
+    const policy = entry as Policy;
+    const resources = policy && typeof policy === 'object' ? (policy.resources ?? []) : [];
+    const covered = policy && typeof policy === 'object' && typeof policy.id === 'string' && !keep.has(policy.id) && policy.effect !== 'deny' && resources.length > 0 && resources.every((r) => r.type === 'system-category');
+    if (!covered) {
+      out.push(entry);
+      continue;
+    }
+    const actions = policy.actions ?? [];
+    const rest: NonNullable<Policy['subjects']> = [];
+    const split: Policy[] = [];
+    for (const subject of policy.subjects ?? []) {
+      const dropped = subject.type === 'role' ? narrowed.filter((n) => n.role === subject.value && actions.includes(n.action)) : [];
+      if (dropped.length === 0) {
+        rest.push(subject);
+        continue;
+      }
+      for (const n of dropped) {
+        const key = `${n.policyId}/${n.action}`;
+        const seen = applied.get(key) ?? { ...n, from: [] };
+        if (!seen.from.includes(policy.id)) seen.from.push(policy.id);
+        applied.set(key, seen);
+      }
+      const left = actions.filter((a) => !dropped.some((n) => n.action === a));
+      if (left.length > 0) split.push({ ...policy, id: `${policy.id}-${subject.value}`, subjects: [subject], actions: left });
+    }
+    if (split.length === 0 && rest.length === (policy.subjects ?? []).length) out.push(entry);
+    else {
+      if (rest.length > 0) out.push({ ...policy, subjects: rest });
+      out.push(...split);
+    }
+  }
+  return { policies: out, applied: [...applied.values()] };
 }
 
 /**
