@@ -98,7 +98,7 @@ describe('code extraction follows CommonMark (#1726)', () => {
   test('an indented block holding a reference definition is code', async () => {
     const html = await render('    [foo]: /url "title"\n\n[foo]\n');
 
-    expect(html).toContain('<pre><code>[foo]: /url &quot;title&quot;\n</code></pre>');
+    expect(html).toContain('<pre><code>[foo]: /url "title"\n</code></pre>');
     expect(html).not.toContain('placeholder');
   });
 

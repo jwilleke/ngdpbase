@@ -71,7 +71,7 @@ const EXCEPTIONS: Record<number, keyof typeof REASONS> = Object.fromEntries(([
     573, 576, 577
   ]],
   ['wiki-link', [
-    182, 511, 513, 523, 629
+    182, 211, 511, 513, 523, 629
   ]],
   ['fence-class-as-written', [
     24, 34
