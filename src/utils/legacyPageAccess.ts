@@ -10,12 +10,27 @@
  * Pure, so the page manager and the policy information point read it the same way.
  */
 
-/** What a leftover `access:` once limited. */
-export interface AccessLimits {
-  /** Who could read the page (a `view` list) */
-  read: boolean;
-  /** Who could do anything else to it: edit, delete, rename */
-  change: boolean;
+/**
+ * What a leftover `access:` limited, in the words an administrator reads, in a
+ * fixed order. `view` and `read` are reading; `edit` is changing; an action
+ * this list does not know is "use".
+ */
+export type AccessLimits = LimitedAction[];
+export type LimitedAction = 'read' | 'change' | 'create' | 'delete' | 'rename' | 'upload' | 'export' | 'use';
+
+const ACTION_ORDER: LimitedAction[] = ['read', 'change', 'create', 'delete', 'rename', 'upload', 'export', 'use'];
+const ACTION_WORDS: Record<string, LimitedAction> = {
+  view: 'read', read: 'read', edit: 'change', create: 'create', delete: 'delete', rename: 'rename', upload: 'upload', export: 'export'
+};
+
+/**
+ * A page's system-category as the policies read it: trimmed and lowercased,
+ * and the site's default when it names none. One reading for the policy code
+ * and this list, so the install-stamp exemption cannot disagree with it.
+ */
+export function normalizeSystemCategory(raw: unknown, fallback: string | undefined): string {
+  if (typeof raw === 'string' && raw.trim()) return raw.trim().toLowerCase();
+  return fallback?.toLowerCase() ?? 'general';
 }
 
 /** The stamp install wrote on shipped pages outside `general` (#971, #1411): exactly `{ edit: [admin] }`. */
@@ -26,16 +41,15 @@ export function isInstallAccessStamp(access: unknown): boolean {
     && Array.isArray(entries[0][1]) && entries[0][1].length === 1 && entries[0][1][0] === 'admin';
 }
 
-/** What an `access:` value limited: a non-empty list is a limit, an empty list or a non-object states none. */
+/** What an `access:` value limited: each action with a non-empty list. An empty list or a non-object states none. */
 export function legacyAccessLimits(access: unknown): AccessLimits {
-  const limits: AccessLimits = { read: false, change: false };
-  if (!access || typeof access !== 'object' || Array.isArray(access)) return limits;
+  if (!access || typeof access !== 'object' || Array.isArray(access)) return [];
+  const found = new Set<LimitedAction>();
   for (const [action, list] of Object.entries(access as Record<string, unknown>)) {
     if (!Array.isArray(list) || list.length === 0) continue;
-    if (action === 'view') limits.read = true;
-    else limits.change = true;
+    found.add(Object.hasOwn(ACTION_WORDS, action) ? ACTION_WORDS[action] : 'use');
   }
-  return limits;
+  return ACTION_ORDER.filter((word) => found.has(word));
 }
 
 /**
@@ -47,15 +61,17 @@ export function legacyAccessLimits(access: unknown): AccessLimits {
  *
  * @param metadata - the page's frontmatter
  * @param shipped - whether the page is a copy of a page install ships
+ * @param defaultCategory - the site's category for a page that names none (`general` when omitted)
  */
 export function limitsLeftByUpgrade(
   metadata: { access?: unknown; 'system-category'?: unknown } | null | undefined,
-  shipped: boolean
+  shipped: boolean,
+  defaultCategory?: string
 ): AccessLimits | null {
   const access = metadata?.access;
   if (access === undefined) return null;
-  const category = typeof metadata?.['system-category'] === 'string' ? metadata['system-category'].toLowerCase() : undefined;
+  const category = normalizeSystemCategory(metadata?.['system-category'], defaultCategory);
   if (shipped && category !== 'general' && isInstallAccessStamp(access)) return null;
   const limits = legacyAccessLimits(access);
-  return limits.read || limits.change ? limits : null;
+  return limits.length > 0 ? limits : null;
 }

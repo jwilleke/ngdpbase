@@ -32,7 +32,7 @@ import type { PageFrontmatter } from '../types/Page.js';
 import { shareCoversPage, shareCoversResource, type ShareGrant } from '../types/Share.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { audienceExcludes, audiencePrincipals, decideFrontmatterAccess, namesAddonPrincipal } from '../utils/frontmatterAccess.js';
-import { isInstallAccessStamp } from '../utils/legacyPageAccess.js';
+import { isInstallAccessStamp, normalizeSystemCategory } from '../utils/legacyPageAccess.js';
 import { hiddenByFeature } from '../utils/pageFeature.js';
 import { REQUIRED_SETTINGS_HELP } from '../utils/requiredSettings.js';
 
@@ -1447,10 +1447,8 @@ class PolicyInformationPoint extends BaseManager {
   private pageCategory(pageName: string, metadata: PageFrontmatter): string | undefined {
     const named = parsePrivatePageName(pageName);
     if (named && isSharedFolderOwner(named.owner)) return 'shared';
-    const raw = metadata['system-category'];
-    if (typeof raw === 'string' && raw.trim()) return raw.trim().toLowerCase();
     const validation = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager');
-    return validation?.getDefaultSystemCategory?.()?.toLowerCase() ?? 'general';
+    return normalizeSystemCategory(metadata['system-category'], validation?.getDefaultSystemCategory?.());
   }
 
   /**

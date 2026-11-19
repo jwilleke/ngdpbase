@@ -10,7 +10,7 @@ import { shippedPageState, keptInputs, pageSourceHash, REQUIRED_SOURCE_HASH_KEY,
 import { workingParts } from '../utils/pluginCalls.js';
 import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import { limitsLeftByUpgrade, type AccessLimits } from '../utils/legacyPageAccess.js';
-import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
+import BaseManager, { BackupData, type ManagerStats, type ManagerStatus } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import { PageProvider, ProviderInfo, RecentChangesOptions, RecentChangeEntry, GetPagesByCreatorOptions, PagesScanOptions, StoreDeletedEntry, StoreRestoreResult } from '../types/Provider.js';
@@ -744,8 +744,6 @@ class PageManager extends BaseManager implements CatalogSource {
       throw error;
     }
 
-    // #2269: before the vault check, so a vault that is down is the one reported if both apply.
-    await this.reportLegacyAccessLimits().catch((err: unknown) => logger.warn('📄 Could not check pages for access limits that no longer apply (#2269):', err));
     await this.reportUnsealedVaults(configManager);
 
     // Slice 4 of #755 (#772) — register as a CatalogSource so CatalogManager
@@ -3030,7 +3028,6 @@ class PageManager extends BaseManager implements CatalogSource {
     if (this.legacyAccessPages.has(saved.uuid || saved.name) || (enrichedMetadata as { access?: unknown }).access !== undefined) {
       try {
         await this.noteLegacyAccess(saved.name, saved.uuid, enrichedMetadata);
-        this.publishLegacyAccess();
       } catch (err) {
         logger.warn('📄 Could not check the saved page for an access limit that no longer applies (#2269):', err);
       }
@@ -3617,7 +3614,7 @@ class PageManager extends BaseManager implements CatalogSource {
         previousName
       });
       // #2269: a deleted page is no longer on the list of leftover `access:` limits.
-      if (this.legacyAccessPages.delete(before.uuid || previousName)) this.publishLegacyAccess();
+      this.legacyAccessPages.delete(before.uuid || previousName);
     }
     return deleted;
   }
@@ -4257,9 +4254,6 @@ class PageManager extends BaseManager implements CatalogSource {
   /** Pages whose `access:` limit no longer applies (#2269), by uuid (name when it has none). */
   private readonly legacyAccessPages = new Map<string, { title: string; limits: AccessLimits; hidden: boolean }>();
 
-  /** The headline last put on the dashboard for {@link legacyAccessPages}, so only it is taken back. */
-  private legacyAccessReason: string | null = null;
-
   /**
    * Note, or forget, one page's leftover `access:` limit (#2269).
    *
@@ -4270,39 +4264,49 @@ class PageManager extends BaseManager implements CatalogSource {
   private async noteLegacyAccess(title: string, uuid: string | undefined, metadata: Partial<PageFrontmatter> | null | undefined, shipped?: boolean): Promise<void> {
     const key = uuid || title;
     const vault = parsePrivatePageName(title);
+    const defaultCategory = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager')?.getDefaultSystemCategory?.();
     const limits = vault || metadata?.access === undefined ? null
-      : limitsLeftByUpgrade(metadata, shipped ?? (uuid ? await this.isShippedPageCopy(uuid) : false));
-    if (limits) this.legacyAccessPages.set(key, { title, limits, hidden: (metadata as { private?: unknown }).private === true });
+      : limitsLeftByUpgrade(metadata, shipped ?? (uuid ? await this.isShippedPageCopy(uuid) : false), defaultCategory);
+    // The same test the sitemap uses: a flag written as the string 'true' is private too.
+    const priv = (metadata as { private?: unknown } | null | undefined)?.private;
+    if (limits) this.legacyAccessPages.set(key, { title, limits, hidden: priv === true || priv === 'true' });
     else this.legacyAccessPages.delete(key);
   }
 
-  /** Put the list of {@link legacyAccessPages} on the dashboard, or take it back when it is empty (#2269). */
-  private publishLegacyAccess(): void {
+  /**
+   * The leftover-limit notice for Admin → needs attention (#2269), read live
+   * each time the dashboard draws, so it has no status slot to share: a vault
+   * outage, an authorship report or a save cannot replace it, and it cannot
+   * replace them. Empty when no page is listed. `Engine.getDegradedManagers`
+   * reads every manager's list.
+   */
+  getAttentionItems(): ManagerStatus[] {
     const total = this.legacyAccessPages.size;
-    if (total === 0) {
-      if (this.legacyAccessReason) this.markReadyIfDegradedBy(this.legacyAccessReason);
-      this.legacyAccessReason = null;
-      return;
-    }
+    if (total === 0) return [];
     const one = total === 1;
-    const reason = `${total} ${one ? 'page has' : 'pages have'} a limit on who can read or change ${one ? 'it' : 'them'} that the site no longer applies, so ${one ? 'it follows' : 'they follow'} the site's access rules instead. Open ${one ? 'the page' : 'each page'} and set its Audience or Author Lock to limit it again, or ask whoever runs the server to add an access rule.`;
     const named = [...this.legacyAccessPages.values()].filter((p) => !p.hidden).sort((a, b) => a.title.localeCompare(b.title));
-    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title, limits }) => `${title}: limited who could ${[limits.read ? 'read' : '', limits.change ? 'change' : ''].filter(Boolean).join(' and ')} it`);
+    const open = named.length > 0
+      ? `Open ${named.length === 1 ? 'the page' : 'each page'} named below and set its Audience or Author Lock to limit it again, or ask whoever runs the server to add an access rule.`
+      : 'Ask whoever runs the server to add an access rule.';
+    const reason = `${total} ${one ? 'page has' : 'pages have'} a limit on who can use ${one ? 'it' : 'them'} that the site no longer applies, so ${one ? 'it follows' : 'they follow'} the site's access rules instead. ${open}`;
+    const words = (limits: AccessLimits): string => (limits.length > 1 ? `${limits.slice(0, -1).join(', ')} and ${limits[limits.length - 1]}` : limits[0]);
+    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title, limits }) => `${title}: limited who could ${words(limits)} it`);
     const more = named.length - details.length;
     if (more > 0) details.push(`and ${more} more ${more === 1 ? 'page' : 'pages'}`);
     const hidden = total - named.length;
-    if (hidden > 0) details.push(`${hidden} private ${hidden === 1 ? 'page' : 'pages'} (not named here): limited who could read or change ${hidden === 1 ? 'it' : 'them'}`);
-    this.legacyAccessReason = reason;
-    this.markNeedsAttention(reason, undefined, { details });
+    if (hidden > 0) details.push(`${hidden} private ${hidden === 1 ? 'page' : 'pages'} (not named here), each limited who could use ${hidden === 1 ? 'it' : 'them'}: ask each page's owner to open it and set its Audience or Author Lock to limit it again.`);
+    return [{ state: 'degraded', kind: 'attention', reason, details }];
   }
 
   /**
-   * At start (#2269): list in Admin → needs attention every page whose stored
-   * `access:` limited who could read or change it before #2255 stopped
-   * reading it, so the administrator can move each limit to the page's
-   * Audience or Author Lock. The stamp install wrote on shipped pages outside
-   * `general` is not a limit and is left out. Save and delete keep the list
-   * current.
+   * Once required pages and add-on pages are seeded (#2269): list in Admin →
+   * needs attention every page whose stored `access:` limited who could read
+   * or change it before #2255 stopped reading it, so the administrator can
+   * move each limit to the page's Audience or Author Lock. The stamp install
+   * wrote on shipped pages outside `general` is not a limit and is left out;
+   * it is judged against the seeded-pages record, which seeding fills, so this
+   * runs after it (`WikiEngine.initializeAddons`). Save and delete keep the
+   * list current. The list is read through {@link getAttentionItems}.
    *
    * @returns How many pages are listed
    */
@@ -4316,7 +4320,6 @@ class PageManager extends BaseManager implements CatalogSource {
     if (this.legacyAccessPages.size > 0) {
       logger.warn(`[PageManager] ${this.legacyAccessPages.size} page(s) still carry an 'access' limit that is no longer read; they are listed in Admin → needs attention (#2269)`);
     }
-    this.publishLegacyAccess();
     return this.legacyAccessPages.size;
   }
 
