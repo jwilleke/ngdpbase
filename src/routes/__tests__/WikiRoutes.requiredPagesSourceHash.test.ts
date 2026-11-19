@@ -397,6 +397,8 @@ describe('Required Pages Sync status — body and source-hash stamp (#1395)', ()
       page('edited body', `${REQUIRED_SOURCE_HASH_KEY}: abc\nuser-modified: true\n`),
       'utf8'
     );
+    // #2389 slice 4: Push to Source works only from a source checkout.
+    await fs.mkdir(path.join(dirs.root, '.git'));
     const { routes, pageManager } = await makeRoutes(dirs);
     await reload(pageManager);
 
@@ -414,6 +416,8 @@ describe('Required Pages Sync status — body and source-hash stamp (#1395)', ()
       page('edited body', `${REQUIRED_SOURCE_HASH_KEY}: abc\nrequired-source-release: 5.43.0\nuser-modified: true\n`),
       'utf8'
     );
+    // #2389 slice 4: Push to Source works only from a source checkout.
+    await fs.mkdir(path.join(dirs.root, '.git'));
     const { routes, pageManager } = await makeRoutes(dirs);
     await reload(pageManager);
 
@@ -469,7 +473,7 @@ describe('#1871 Sync All Outdated counts only the pages it will sync', () => {
     const data = res.render.mock.calls[0][1] as Record<string, unknown> & {
       counts: { new: number; modified: number; outdatedSyncable: number; outdatedUserEdited: number };
     };
-    const html = await ejs.renderFile(path.join(VIEWS, 'admin-required-pages.ejs'), { ...data, locals: {} }, { includer });
+    const html = await ejs.renderFile(path.join(VIEWS, 'admin-required-pages.ejs'), { ...data }, { includer });
     return { data, doc: new JSDOM(html).window.document };
   }
 

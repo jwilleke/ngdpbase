@@ -77,15 +77,19 @@
                             <div class="col-md-6">
                                 <h6 class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i>At risk of overwrite</h6>
                                 <ul class="mb-0">
+                                    <% if (locals.canPushToSource) { %>
                                     <li>Files written via <strong>Push to Source</strong> exist only in the local <code>required-pages/</code> directory. A <code>git pull</code> or product upgrade will overwrite them. They are not in the repository unless manually committed and pushed by a contributor.</li>
+                                    <% } %>
                                     <li>Live pages that were never edited in the wiki UI show as <strong>Update ready</strong> when a new product version ships updated source content, and Sync All replaces them. Nothing replaces a page at start-up.</li>
                                 </ul>
                             </div>
                         </div>
+                        <% if (locals.canPushToSource) { %>
                         <div class="alert alert-warning mt-3 mb-0 py-2">
                             <i class="fas fa-info-circle me-1"></i>
                             <strong>Best practice:</strong> Customize required pages in the wiki UI (sets <code>user-modified</code>) rather than via Push to Source. Push to Source is only durable if someone with repository access subsequently commits and pushes the file.
                         </div>
+                        <% } %>
                     </div>
                 </div>
             </div>
@@ -292,9 +296,10 @@
                                         <% if (page.status !== 'current' && page.status !== 'uuid-mismatch') { %>
                                         <%- include('_sync-button', { syncItem: { status: page.status, userModified: page.userModified, id: page.uuid, name: page.title } }) %>
                                         <% } %>
-                                        <% if (page.userModified || page.titleDrift) { %>
+                                        <% if (locals.canPushToSource && (page.userModified || page.titleDrift)) { %>
                                         <button class="btn btn-sm btn-outline-warning"
                                                 data-row-action="pushToSourceOne" data-row-args="<%= JSON.stringify([page.uuid, page.title].map(v => v ?? '')) %>"
+                                                data-confirm="Make this site's text the version every release ships?"
                                                 title="Push live edits back to required-pages/ source">
                                             <i class="fas fa-upload"></i> Push to Source
                                         </button>
@@ -327,8 +332,8 @@
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-code-branch me-2 text-warning"></i>Not in GitHub Yet (<%= notInSource.length %>)</h5>
                     <small class="text-muted">These pages have a <strong>system</strong> or <strong>documentation</strong> category, so they belong in the
-                        required-pages set every install gets — but they are not in it. For each: push it to the source folder (a person then commits it),
-                        change its category if it is not meant to ship, or delete it.</small>
+                        required-pages set every install gets — but they are not in it. For each: <% if (locals.canPushToSource) { %>push it to the source folder (a person then commits it),
+                        <% } %>change its category if it is not meant to ship, or delete it.</small>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
@@ -353,11 +358,14 @@
                                     <td><%= page.author || '—' %></td>
                                     <td><small><%= page.lastModified ? page.lastModified.slice(0, 10) : '—' %></small></td>
                                     <td>
+                                        <% if (locals.canPushToSource) { %>
                                         <button class="btn btn-sm btn-outline-primary"
                                                 data-row-action="pushToSourceOne" data-row-args="<%= JSON.stringify([page.uuid, page.title].map(v => v ?? '')) %>"
+                                                data-confirm="Make this site's text the version every release ships?"
                                                 title="Copy the live page into the required-pages source folder (not committed)">
                                             <i class="fas fa-upload"></i> Push to source
                                         </button>
+                                        <% } %>
                                         <a href="/edit/<%= encodeURIComponent(page.title) %>" class="btn btn-sm btn-outline-secondary"
                                            title="Change the category, or delete the page">
                                             <i class="fas fa-edit"></i> Edit
@@ -879,6 +887,7 @@ const ROW_ACTIONS = ['showDiff', 'adoptUuidOne', 'reconcileOne', 'declineOne', '
 document.addEventListener('click', function (e) {
     const button = e.target.closest('button[data-row-action]');
     if (!button || !ROW_ACTIONS.includes(button.dataset.rowAction)) return;
+    if (button.dataset.confirm && !confirm(button.dataset.confirm)) return;
     void window[button.dataset.rowAction](...JSON.parse(button.dataset.rowArgs));
 });
 
@@ -1169,13 +1178,6 @@ async function doAdoptUuid(items, statusMsg) {
 }
 
 async function pushToSourceOne(uuid, title) {
-    if (!confirm(
-        `Push live edits for "${title}" back to required-pages/ source?\n\n` +
-        `⚠ This only updates the LOCAL filesystem.\n\n` +
-        `It does NOT commit or push to the repository. A git pull or product upgrade will overwrite this file and your changes will be lost unless a contributor manually commits and pushes it.\n\n` +
-        `For durable customization, edit the page in the wiki UI instead — that sets user-modified and protects it from auto-sync overwrites.\n\n` +
-        `Continue?`
-    )) return;
     showToast(`Pushing "${title}" to source…`);
     try {
         const response = await csrfFetch('/admin/required-pages/sync', {

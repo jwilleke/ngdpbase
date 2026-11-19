@@ -80,10 +80,10 @@ async function renderPage(core: Row[], addon: Row[]): Promise<string> {
       orphanedAddonPages: [],
       declined: [],
       notInSource: [],
+      canPushToSource: false,
       csrfToken: 'tok',
       successMessage: null,
-      errorMessage: null,
-      locals: {}
+      errorMessage: null
     },
     { includer }
   );

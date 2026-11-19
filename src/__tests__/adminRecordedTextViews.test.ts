@@ -183,7 +183,7 @@ describe('Admin → Keywords', () => {
 
 describe('Admin → Required Pages', () => {
   test('a diff error is shown as text', async () => {
-    const win = runPage('admin-required-pages.ejs', { counts: {}, comparison: [] }, () => ({ json: { success: false, error: MARKUP } }));
+    const win = runPage('admin-required-pages.ejs', { counts: {}, comparison: [], canPushToSource: false }, () => ({ json: { success: false, error: MARKUP } }));
     (win.showDiff as (uuid: string, title: string) => Promise<void>)('u1', 'T');
     const box = byId(win, 'modalDiffContainer');
     await vi.waitFor(() => expect(box.querySelector('.alert-danger')).not.toBeNull());

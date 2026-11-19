@@ -9,6 +9,11 @@ import { instanceOrigin } from './fixtures/helpers';
  * Sync All leaves its text alone. It puts the page back at the end (Use shipped
  * version), so the instance ends as it began.
  *
+ * Push to Source (slice 4) is hidden and refused on an installed site. The
+ * instance under test usually runs from a source checkout, so that case runs
+ * only when E2E_INSTALLED_SITE=true says the instance has no .git beside its
+ * required-pages folder.
+ *
  * "Kept, needs your review" needs a shipped page whose plugin calls differ from
  * the ones recorded when it was kept. A run cannot change the shipped folder of
  * the instance under test, so that case runs only when the instance was set up
@@ -26,6 +31,7 @@ const TITLE = 'Using Tokens';
 const UUID = '02c9bbc8-97ef-4595-be3a-bdab3fff724d';
 const MARK = 'Our office hours for questions about this page are Tuesdays at 10am.';
 const REVIEW_TITLE = process.env.E2E_KEPT_REVIEW_TITLE;
+const INSTALLED_SITE = process.env.E2E_INSTALLED_SITE === 'true';
 
 const row = (page: Page, uuid: string) => page.locator(`tr[data-uuid="${uuid}"]`).first();
 
@@ -103,5 +109,25 @@ test.describe.serial('Keep edited version (#2389)', () => {
     const kept = page.locator('tr', { hasText: REVIEW_TITLE }).first();
     await expect(kept.locator('[data-sync-status="kept-needs-review"]')).toBeVisible();
     await expect(kept.locator('[data-sync-note="working-changes"] li').first()).toContainText(/The shipped page (now|no longer)/);
+  });
+});
+
+test.describe('Push to Source on an installed site (#2389 slice 4)', () => {
+  test.skip(!INSTALLED_SITE, 'set E2E_INSTALLED_SITE=true when the instance has no .git beside required-pages/');
+
+  test('no Push to Source button is shown, and a direct request is refused', async ({ page }) => {
+    await page.goto('/admin/required-pages');
+    await expect(page.locator('[data-row-action="pushToSourceOne"]')).toHaveCount(0);
+
+    const answer = await page.evaluate(async (uuid) => {
+      const response = await csrfFetch('/admin/required-pages/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+        body: JSON.stringify({ pushToSource: [uuid] })
+      });
+      return { status: response.status, body: await response.json() };
+    }, UUID);
+    expect(answer.status).toBe(403);
+    expect(answer.body.error).toBe('This site is not running from a source checkout, so there is no shipped copy to change. Nothing was changed.');
   });
 });

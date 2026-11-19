@@ -122,7 +122,7 @@ async function render(dirs: Awaited<ReturnType<typeof makeDirs>>, withAddon = fa
   };
   const includer = (original: string): { template: string } | undefined =>
     original === 'header' || original === 'footer' ? { template: '<!-- stub -->' } : undefined;
-  const html = await ejs.renderFile(path.join(VIEWS, 'admin-required-pages.ejs'), { ...data, locals: {} }, { includer });
+  const html = await ejs.renderFile(path.join(VIEWS, 'admin-required-pages.ejs'), { ...data }, { includer });
   return { data, doc: new JSDOM(html).window.document, pageManager: holder.pageManager };
 }
 
