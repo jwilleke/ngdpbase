@@ -213,8 +213,24 @@ describe('#2389 slice 2 Review dialog and kept badges: the words and the look th
   });
 
   test('the unticked box has a border of at least 3:1 on the dialog background (#6c757d), like the list checkboxes', () => {
+    // Only the unticked box gets the grey border; a ticked box keeps the theme's own.
     const input = page.match(/<input[^>]*id="reviewKeepCheck"[^>]*>/)?.[0] ?? '';
-    expect(input).toMatch(/border-color:\s*#6c757d/i);
+    expect(input).not.toContain('border-color');
+    expect(page).toMatch(/#reviewKeepCheck:not\(:checked\)\s*\{[^}]*border-color:\s*#6c757d/i);
+  });
+
+  test('every kept page, not only one that needs review, opens with the already-kept note', () => {
+    expect(page).toContain("(source && kept) ? 'This page is already kept.");
+    expect(page).not.toContain("(source && needsReview) ? 'This page is already kept.");
+  });
+
+  test('the guides and the design doc name the box Keep edited version, never Keep my version, and give the border as at least 3:1', () => {
+    for (const file of ['docs/guides/addons-developer-guide.md', 'docs/planning/addons.md', 'docs/platform/addon-page-handling.md', 'docs/design/required-pages-sync-states.md']) {
+      expect(fs.readFileSync(path.join(ROOT, file), 'utf8')).not.toContain('Keep my version');
+    }
+    const design = fs.readFileSync(path.join(ROOT, 'docs/design/required-pages-sync-states.md'), 'utf8');
+    expect(design).toContain('at least 3:1');
+    expect(design).not.toContain('4.5:1');
   });
 
   test('the dialog uses one name for the action: the box and the button both say Keep edited version', () => {
