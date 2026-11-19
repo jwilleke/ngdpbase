@@ -13,7 +13,7 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import matter from 'gray-matter';
 import WikiRoutes from '../WikiRoutes';
-import PageManager from '../../managers/PageManager';
+import PageManager, { PageContentValidationError } from '../../managers/PageManager';
 import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../../utils/addonPageSync';
 import { ALLOWING_PIP, ALLOWING_PDP } from '../../__tests__/__fixtures__/pageWriteDoor';
 
@@ -116,6 +116,20 @@ describe('POST /admin/required-pages/keep (#2389 slice 2)', () => {
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Only a site administrator can do this; ask one to sign in.' });
     expect((await ctx.read()).data['kept-edited']).toBeUndefined();
+  });
+
+  test('a page the content rules refuse is a 422 with one message that says trying again will not help', async () => {
+    ctx = await setup();
+    await edited(ctx);
+    vi.spyOn(ctx.pageManager, 'keepShippedPage').mockRejectedValue(new PageContentValidationError('Welcome', [{ rule: 'no-raw-br', message: 'raw br', severity: 'error' } as never]));
+    const res = createMockRes();
+    await ctx.routes.adminKeepRequiredPage(createMockReq({ source: 'required-pages', uuid: UUID, keep: true }), res);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      contentRefused: true,
+      error: "This page's text is refused by this site's content rules, so it cannot be kept. Trying again will not help; the text would have to change first."
+    });
   });
 
   test('keep: true writes the three keys and no body change', async () => {

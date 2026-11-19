@@ -203,6 +203,19 @@ describe('#2389 slice 2 Review dialog and kept badges: the words and the look th
     expect(edited).toContain('Kept, needs your review');
   });
 
+  test('a page that needs review gets one button that keeps the version as it is, with a line saying what it does', () => {
+    expect(page).toContain('data-testid="review-keep-reviewed"');
+    expect(page).toContain("Keep my version (I've reviewed this)");
+    expect(page).toContain("The newer version's changes will not be added.");
+    // Both rows (core and add-on) tell the dialog the page is in that state.
+    expect(page.match(/page\.syncState === 'kept-needs-review', page\.workingChanges \|\| \[\], page\.syncState === 'kept-needs-review'/g)?.length).toBe(2);
+    expect(page).toContain('async function showDiff(uuid, title, liveUuid = \'\', source = \'\', kept = false, workingChanges = [], needsReview = false)');
+  });
+
+  test('a refusal by the content rules is shown as one message, not wrapped in "Nothing was changed"', () => {
+    expect(page).toContain('result.contentRefused');
+  });
+
   test('a failed save says what failed and what to do', () => {
     expect(page).toContain('Your choice was not saved. Nothing was changed.');
   });
