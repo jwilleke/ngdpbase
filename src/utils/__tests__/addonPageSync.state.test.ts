@@ -44,7 +44,7 @@ describe.each(['required-source-hash', 'addon-source-hash'])('shippedPageState w
     return shippedPageState({
       shippedBody: c.shipped,
       liveBody: c.live,
-      stamp: typeof frontmatter[stampKey] === 'string' ? (frontmatter[stampKey]) : undefined,
+      stamp: typeof frontmatter[stampKey] === 'string' ? frontmatter[stampKey] : undefined,
       userModified: frontmatter['user-modified'] === true
     }).state;
   };
@@ -55,5 +55,100 @@ describe.each(['required-source-hash', 'addon-source-hash'])('shippedPageState w
 
   test('a trailing newline is not a difference', () => {
     expect(stateOf({ name: '', shipped: 'v1\n', live: 'v1', stampedBody: 'v1', state: '' })).toBe('same-as-shipped');
+  });
+});
+
+/**
+ * Rows 2 and 3 (#2389, slice 2): a page the admin chose to keep. K is the kept
+ * mark, W is "the shipped page's working parts differ from the parts recorded
+ * when it was kept". A kept page is checked after row 1 and before E and C.
+ */
+describe.each(['required-source-hash', 'addon-source-hash'])('shippedPageState, kept pages, with the %s stamp (#2389 slice 2)', (stampKey) => {
+  const kept = (over: { shipped: string; live: string; stampedBody?: string; userModified?: boolean; keptShippedBody?: string; keptParts?: string[]; shippedParts?: string[] }) => {
+    const frontmatter: Record<string, unknown> = {};
+    if (over.stampedBody !== undefined) frontmatter[stampKey] = pageSourceHash(over.stampedBody);
+    return shippedPageState({
+      shippedBody: over.shipped,
+      liveBody: over.live,
+      stamp: typeof frontmatter[stampKey] === 'string' ? frontmatter[stampKey] : undefined,
+      userModified: over.userModified === true,
+      kept: true,
+      keptShippedHash: pageSourceHash(over.keptShippedBody ?? 'v1'),
+      keptParts: over.keptParts ?? [],
+      shippedParts: over.shippedParts ?? []
+    });
+  };
+
+  test('row 3: edited and kept, nothing new in how the shipped page works', () => {
+    const r = kept({ shipped: 'v1', live: 'edited', stampedBody: 'v1', userModified: true });
+    expect(r.state).toBe('kept-for-site');
+    expect(r.newerAvailable).toBe(false);
+    expect(r.workingChanges).toEqual([]);
+  });
+
+  test('row 3: a newer wording-only shipped version is only "newer available"', () => {
+    const r = kept({ shipped: 'v2', live: 'edited', stampedBody: 'v1', userModified: true, keptShippedBody: 'v1' });
+    expect(r.state).toBe('kept-for-site');
+    expect(r.newerAvailable).toBe(true);
+  });
+
+  test('row 3 beats rows 4 and 5: kept, edited and shipped changed is not Both changed', () => {
+    expect(kept({ shipped: 'v2', live: 'edited', stampedBody: 'v1' }).state).toBe('kept-for-site');
+    expect(kept({ shipped: 'v1', live: 'edited' }).state).toBe('kept-for-site');
+  });
+
+  test('row 2: the shipped page now has a working part the kept one did not', () => {
+    const r = kept({
+      shipped: 'v2',
+      live: 'edited',
+      stampedBody: 'v1',
+      userModified: true,
+      keptParts: [],
+      shippedParts: ['plugin:Calendar calendars="family"']
+    });
+    expect(r.state).toBe('kept-needs-review');
+    expect(r.workingChanges).toEqual(['This page now calls Calendar with calendars=family.']);
+  });
+
+  test('row 2: a removed working part counts too', () => {
+    const r = kept({ shipped: 'v2', live: 'edited', userModified: true, keptParts: ['plugin:Counter'], shippedParts: [] });
+    expect(r.state).toBe('kept-needs-review');
+  });
+
+  test('a kept page with no recorded baseline is never flagged for a change it cannot name', () => {
+    const r = shippedPageState({
+      shippedBody: 'v2',
+      liveBody: 'edited',
+      stamp: pageSourceHash('v1'),
+      userModified: true,
+      kept: true,
+      keptShippedHash: undefined,
+      keptParts: undefined,
+      shippedParts: ['plugin:Calendar']
+    });
+    expect(r.state).toBe('kept-for-site');
+  });
+
+  test('row 1 comes first: kept, text equals shipped, not flagged, is Same as shipped', () => {
+    expect(kept({ shipped: 'v1', live: 'v1', stampedBody: 'v1' }).state).toBe('same-as-shipped');
+  });
+
+  test('kept, text equals shipped, flagged, is Kept for this site', () => {
+    expect(kept({ shipped: 'v1', live: 'v1', stampedBody: 'v1', userModified: true }).state).toBe('kept-for-site');
+  });
+
+  test('without the kept mark the same inputs read as before', () => {
+    const r = shippedPageState({
+      shippedBody: 'v2',
+      liveBody: 'edited',
+      stamp: pageSourceHash('v1'),
+      userModified: true,
+      kept: false,
+      keptShippedHash: pageSourceHash('v1'),
+      keptParts: [],
+      shippedParts: ['plugin:Calendar']
+    });
+    expect(r.state).toBe('both-changed');
+    expect(r.workingChanges).toEqual([]);
   });
 });

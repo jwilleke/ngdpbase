@@ -37,11 +37,30 @@ describe('#2389 _sync-status: the plain state words', () => {
     expect(statuses(await partial('_sync-status', { status: 'modified', syncState: 'both-changed', userModified: true }))).toEqual(['both-changed']);
   });
 
-  test('the labels are the design\'s words, and never Modified, Current or User Edited', async () => {
+  test("the labels are the design's words, and never Modified, Current or User Edited", async () => {
     expect(await label({ status: 'current', syncState: 'same-as-shipped', userModified: false })).toBe('Same as shipped');
     expect(await label({ status: 'modified', syncState: 'update-ready', userModified: false })).toBe('Update ready');
     expect(await label({ status: 'modified', syncState: 'edited-not-confirmed', userModified: true })).toBe('Edited here, not confirmed');
     expect(await label({ status: 'modified', syncState: 'both-changed', userModified: true })).toBe('Edited here, and a newer version is available');
+  });
+});
+
+describe('#2389 slice 2 _sync-status: the two kept states', () => {
+  const label = async (item: Record<string, unknown>) => (await partial('_sync-status', item)).body.textContent?.replace(/\s+/g, ' ').trim();
+
+  test('Kept for this site, and the quiet "newer version available" line only when one shipped', async () => {
+    const plain = { status: 'modified', syncState: 'kept-for-site', userModified: true };
+    expect(statuses(await partial('_sync-status', plain))).toEqual(['kept-for-site']);
+    expect(await label(plain)).toBe('Kept for this site');
+    expect(await label({ ...plain, newerAvailable: true })).toBe('Kept for this site A newer version is available');
+  });
+
+  test('Kept, needs your review, lists what the newer version changes', async () => {
+    const item = { status: 'modified', syncState: 'kept-needs-review', userModified: true, workingChanges: ['This page now calls Calendar with calendars=family.'] };
+    expect(statuses(await partial('_sync-status', item))).toEqual(['kept-needs-review']);
+    const text = await label(item);
+    expect(text).toContain('Kept, needs your review');
+    expect(text).toContain('This page now calls Calendar with calendars=family.');
   });
 });
 
