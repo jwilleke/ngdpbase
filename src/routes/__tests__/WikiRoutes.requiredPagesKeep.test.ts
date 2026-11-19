@@ -114,6 +114,7 @@ describe('POST /admin/required-pages/keep (#2389 slice 2)', () => {
     const res = createMockRes();
     await ctx.routes.adminKeepRequiredPage(createMockReq({ source: 'required-pages', uuid: UUID, keep: true }), res);
     expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Only a site administrator can do this; ask one to sign in.' });
     expect((await ctx.read()).data['kept-edited']).toBeUndefined();
   });
 
@@ -169,6 +170,16 @@ describe('POST /admin/required-pages/keep (#2389 slice 2)', () => {
     const res = createMockRes();
     await ctx.routes.adminKeepRequiredPage(createMockReq({ source: 'required-pages', uuid: 'deadbeef-0000-0000-0000-000000000000', keep: true }), res);
     expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test('the Sync All message for a kept page says it was edited or kept, not "use Push to Source"', async () => {
+    ctx = await setup();
+    await edited(ctx);
+    await ctx.routes.adminKeepRequiredPage(createMockReq({ source: 'required-pages', uuid: UUID, keep: true }), createMockRes());
+    const res = createMockRes();
+    await ctx.routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID] }), res);
+    const message = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0].message as string;
+    expect(message).toBe('1 skipped (edited or kept on this site; open Review to decide)');
   });
 
   test('Sync All with a forged uuid list that names a kept page changes nothing for it', async () => {
