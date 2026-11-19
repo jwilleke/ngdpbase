@@ -7,16 +7,16 @@ import { normalizeExistingPageToNcm, NCM_VERSION } from '../ncm/index';
 import matter from 'gray-matter';
 
 describe('normalizeExistingPageToNcm', () => {
-  test('existing page with CommonMark links → NCM forms + ncmVersion stamped', () => {
+  test('existing page: external CommonMark link kept, relative link → NCM form, ncmVersion stamped', () => {
     const raw = '---\ntitle: Old Page\nslug: old-page\n---\n' +
       'See [Docs](https://example.com/docs) and [Home](StartPage).\n';
     const r = normalizeExistingPageToNcm(raw);
-    expect(r.content).toContain('[Docs|https://example.com/docs|target="_blank"]');
+    expect(r.content).toContain('[Docs](https://example.com/docs)');
     expect(r.content).toContain('[Home|StartPage]');
     const fm = matter(r.content);
     expect(fm.data.title).toBe('Old Page');
     expect(fm.data.ncmVersion).toBe(r.ncmVersion);
-    expect(r.warnings.some(w => w.kind === 'link-externalized')).toBe(true);
+    expect(r.warnings.some(w => w.kind === 'link-externalized')).toBe(false);
   });
 
   test('idempotent — converting an already-NCM page is byte-identical', () => {

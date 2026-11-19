@@ -238,14 +238,14 @@ describe('brackets inside a Markdown link\'s text (#1708)', () => {
 
   // Expected HTML from the CommonMark spec (0.31.2, links: balanced brackets in link text).
   test.each([
-    ['[a [b] c](https://example.com/x)', '<a href="https://example.com/x">a [b] c</a>'],
+    ['[a [b] c](https://example.com/x)', '<a href="https://example.com/x" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">a [b] c</a>'],
     ['[link [foo [bar]]](/uri)', '<a href="/uri">link [foo [bar]]</a>'],
-    ['[see [HomePage] here](https://example.com/y)', '<a href="https://example.com/y">see [HomePage] here</a>']
+    ['[see [HomePage] here](https://example.com/y)', '<a href="https://example.com/y" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">see [HomePage] here</a>']
   ])('%s renders as one link', async (input, expected) => {
     const html = await render(input);
 
     expect(html).toContain(expected);
-    expect(html).not.toContain('wiki-link');
+    expect(html).not.toMatch(/wikipage|redlink/);
   });
 
   test('an image inside link text stays an image', async () => {
@@ -260,7 +260,7 @@ describe('brackets inside a Markdown link\'s text (#1708)', () => {
     const html = await render('[HomePage] and [a [b] c](https://example.com/x)');
 
     expect(html).toContain('wiki-link');
-    expect(html).toContain('<a href="https://example.com/x">a [b] c</a>');
+    expect(html).toContain('<a href="https://example.com/x" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">a [b] c</a>');
   });
 
   test('bracket groups not followed by ( are not link text', async () => {
@@ -305,10 +305,10 @@ describe('reference links (#1491)', () => {
       '[markdown-it]: https://github.com/markdown-it/markdown-it'
     ].join('\n'));
 
-    expect(html).toContain('<a href="https://spec.commonmark.org" title="CommonMark spec">the spec</a>');
-    expect(html).toContain('<a href="https://github.com/markdown-it/markdown-it">markdown-it</a>');
-    expect(html).toContain('<a href="https://spec.commonmark.org" title="CommonMark spec">CM</a>');
-    expect(html).not.toContain('wiki-link');
+    expect(html).toContain('<a href="https://spec.commonmark.org" title="CommonMark spec" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">the spec</a>');
+    expect(html).toContain('<a href="https://github.com/markdown-it/markdown-it" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">markdown-it</a>');
+    expect(html).toContain('<a href="https://spec.commonmark.org" title="CommonMark spec" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">CM</a>');
+    expect(html).not.toMatch(/wikipage|redlink/);
     expect(html).not.toContain('[cm]:');
   });
 
@@ -341,7 +341,7 @@ describe('reference links (#1491)', () => {
   test('[x] [cm] with a space is a wiki link and a shortcut reference, not a full reference', async () => {
     const html = await render('[x] [cm] here\n\n[cm]: https://example.com');
 
-    expect(html).toContain('<a href="https://example.com">cm</a>');
+    expect(html).toContain('<a href="https://example.com" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">cm</a>');
     expect(html).toContain('data-target="x"');
   });
 });

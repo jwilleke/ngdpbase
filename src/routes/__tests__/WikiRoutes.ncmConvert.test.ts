@@ -63,7 +63,7 @@ describe('#1127 convert-to-NCM is gated on the page edit ACL', () => {
     const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
     expect(payload.success).toBe(true);
     expect(payload.changed).toBe(true);
-    expect(String(payload.proposed)).toContain('[the docs|https://example.org/docs');
+    expect(String(payload.proposed)).toContain('[the docs](https://example.org/docs)');
   });
 
   test('a caller without page-edit is refused, admin-system not required', async () => {
