@@ -73,7 +73,8 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
           'ngdpbase.page.provider': 'filesystemprovider',
           'ngdpbase.page.provider.filesystem.storagedir': pagesDir,
           'ngdpbase.page.provider.filesystem.requiredpagesdir': requiredDir,
-          'ngdpbase.system-category': SYSTEM_CATEGORIES
+          'ngdpbase.system-category': SYSTEM_CATEGORIES,
+          'ngdpbase.version': '5.45.0'
         };
         return map[key] !== undefined ? map[key] : def;
       }),
@@ -86,6 +87,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
         withWriteDoorAllowing((name: string) => {
           if (name === 'ConfigurationManager') return cm;
           if (name === 'NotificationManager') return { notifyAdmins: notify };
+          if (name === 'AddonsManager') return { getAddonVersion: (slug: string) => (slug === 'demo' ? '2.3.0' : undefined) };
           return null;
         })
       )
@@ -274,6 +276,121 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     });
   });
 
+  describe('#2389 slice 3 release label', () => {
+    const ADMIN = { origin: 'test', user: 'admin' } as never;
+    const livePath = (n: number) => path.join(pagesDir, `${uuid(n)}.md`);
+    const meta = { title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation' };
+    const writeLive = (body: string, extra: Record<string, unknown>) => fse.writeFile(livePath(1), matter.stringify(body, { ...meta, lastModified: '2026-01-01T00:00:00.000Z', ...extra }));
+    const readLive = async () => matter(await fs.readFile(livePath(1), 'utf8'));
+
+    test('a page seeded new carries the ngdpbase version as its release', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await boot();
+      expect((await readLive()).data['required-source-release']).toBe('5.45.0');
+    });
+
+    test('an add-on page carries that add-on\'s own version, under its own key', async () => {
+      const addonDir = path.join(tmpDir, 'addon-pages');
+      await fse.ensureDir(addonDir);
+      await fse.writeFile(path.join(addonDir, 'help.md'), matter.stringify('Addon help.\n', { title: 'Alpha', uuid: uuid(1), slug: 'alpha' }));
+      const pm = await boot();
+      await pm.syncShippedPages(pm.addonPagesSource('demo', addonDir), [uuid(1)], {}, ADMIN);
+      const live = await readLive();
+      expect(live.data['addon-source-release']).toBe('2.3.0');
+      expect(live.data['required-source-release']).toBeUndefined();
+    });
+
+    test('an add-on whose version is unknown gets no label rather than a wrong one', async () => {
+      const addonDir = path.join(tmpDir, 'addon-pages');
+      await fse.ensureDir(addonDir);
+      await fse.writeFile(path.join(addonDir, 'help.md'), matter.stringify('Addon help.\n', { title: 'Alpha', uuid: uuid(1), slug: 'alpha' }));
+      const pm = await boot();
+      await pm.syncShippedPages(pm.addonPagesSource('other', addonDir), [uuid(1)], {}, ADMIN);
+      expect((await readLive()).data['addon-source-release']).toBeUndefined();
+    });
+
+    test('Sync replaces an older label with the current release', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      const pm = await boot();
+      await writeLive('Old body.\n', { [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash('Old body.\n'), 'required-source-release': '5.43.0' });
+      await pm.refreshPageList();
+      await pm.syncShippedPages(pm.requiredPagesSource(), [uuid(1)], {}, ADMIN);
+      expect((await readLive()).data['required-source-release']).toBe('5.45.0');
+    });
+
+    test('a stamped page that already matches the shipped text is backfilled, keeping lastModified and its text', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await writeLive('Body of Alpha.\n', { [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash('Body of Alpha.\n') });
+      await boot();
+      const live = await readLive();
+      expect(live.data['required-source-release']).toBe('5.45.0');
+      expect(live.content).toBe('Body of Alpha.\n');
+      expect(new Date(live.data.lastModified as string).toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    });
+
+    test('an unstamped page that matches gets its stamp and its label together', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await writeLive('Body of Alpha.\n', {});
+      await boot();
+      const live = await readLive();
+      expect(live.data[REQUIRED_SOURCE_HASH_KEY]).toBe(pageSourceHash('Body of Alpha.\n'));
+      expect(live.data['required-source-release']).toBe('5.45.0');
+    });
+
+    test('a stamped page that is behind the shipped text gets no label, so the row says an earlier release', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await writeLive('Older body.\n', { [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash('Older body.\n') });
+      await boot();
+      const live = await readLive();
+      expect(live.data['required-source-release']).toBeUndefined();
+      expect(live.content).toBe('Older body.\n');
+    });
+
+    test('a page that is relabelled is read again, so a later step sees the new label', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await writeLive('Body of Alpha.\n', { [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash('Body of Alpha.\n'), 'required-source-release': '5.43.0' });
+      const pm = new PageManager(makeEngine());
+      await pm.initialize();
+      await pm.refreshPageList();
+      const seen: unknown[] = [];
+      await pm.seedShippedPages({ ...pm.requiredPagesSource(), onPresent: async (page) => { seen.push((page.metadata as Record<string, unknown>)['required-source-release']); } }, { origin: 'test', user: 'system' });
+      expect(seen).toEqual(['5.45.0']);
+    });
+
+    test('the label write keeps the editor, user-modified and the kept mark', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await writeLive('Body of Alpha.\n', {
+        [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash('Body of Alpha.\n'),
+        editor: 'alice',
+        'user-modified': true,
+        'kept-edited': true,
+        'kept-shipped-hash': pageSourceHash('Older shipped.\n'),
+        'kept-working-parts': ['x']
+      });
+      await boot();
+      const live = (await readLive()).data;
+      expect(live['required-source-release']).toBe('5.45.0');
+      expect(live.editor).toBe('alice');
+      expect(live['user-modified']).toBe(true);
+      expect(live['kept-edited']).toBe(true);
+      expect(live['kept-shipped-hash']).toBe(pageSourceHash('Older shipped.\n'));
+      expect(live['kept-working-parts']).toEqual(['x']);
+    });
+
+    test('a backfilled label is written once: the next start-up changes nothing', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await writeLive('Body of Alpha.\n', { [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash('Body of Alpha.\n') });
+      await boot();
+      const before = await fs.readFile(livePath(1), 'utf8');
+      const pm = new PageManager(makeEngine());
+      await pm.initialize();
+      const saves = vi.spyOn(pm, 'savePage');
+      await pm.seedShippedPages(pm.requiredPagesSource(), { origin: 'test', user: 'system' });
+      expect(saves).not.toHaveBeenCalled();
+      expect(await fs.readFile(livePath(1), 'utf8')).toBe(before);
+    });
+  });
+
   describe('#1412 a site can decline a shipped page', () => {
     test('a declined page is not seeded and is not a failure', async () => {
       await writeSource(1, 'Alpha', 'documentation');
@@ -330,7 +447,9 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
           slug: 'alpha',
           'system-category': 'documentation',
           lastModified: '2026-01-01T00:00:00.000Z',
-          [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash(body)
+          [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash(body),
+          // already labelled for this release (#2389 slice 3), so nothing is written
+          'required-source-release': '5.45.0'
         })
       );
       const before = await fs.readFile(livePath(1), 'utf8');

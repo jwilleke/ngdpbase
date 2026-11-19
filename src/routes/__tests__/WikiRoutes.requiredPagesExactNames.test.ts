@@ -84,6 +84,7 @@ async function render(dirs: Awaited<ReturnType<typeof makeDirs>>, withAddon = fa
   const holder: { pageManager?: PageManager; validationManager?: ValidationManager } = {};
   const addonsManager = {
     getEnabledAddonPagesDirectories: () => [{ name: 'demo', pagesDir: dirs.addonPagesDir }],
+    getAddonVersion: () => undefined,
     findOrphanedAddonPages: async () => []
   };
   const engine = {

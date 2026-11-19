@@ -14,10 +14,10 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
     <div class="alert alert-warning d-flex align-items-center mb-3" role="alert">
         <i class="fas fa-exclamation-triangle me-2 flex-shrink-0"></i>
         <div>
-            <strong>Shipped page:</strong> This page is a copy of a page that ships with the release (<code>required-pages/</code>) or with an add-on.
-            Your changes will be overwritten the next time an admin runs a Required Pages Sync.
-            To make edits permanent, push them back to the source from
-            <a href="/admin/required-pages" class="alert-link">Admin &rsaquo; Required Pages Sync</a>.
+            <strong>This page came with the software.</strong> Your changes stay on this site: an update will not replace them.
+            An admin will see this page in the list at
+            <a href="/admin/required-pages" class="alert-link">Admin &rsaquo; Required Pages Sync</a>
+            and confirm that the change was meant. If it was a mistake, the admin can put the original back.
         </div>
     </div>
     <% } %>

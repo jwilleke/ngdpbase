@@ -175,7 +175,7 @@ Display only. The content hash still decides the state.
 
 - __Written__ wherever the stamp is written: `PageManager.saveShippedPage` (start-up seeding of a new page, Sync All, a row's Update, Use shipped). Add-on pages go through the same function (`addonPagesSource`), and the old add-on reseed branch that wrote the stamp itself is gone (Q2). One helper returns `{ stampKey, releaseKey, release }` per source.
 - __Backfilled__ for pages already on a site: `backfillShippedPageStamp` already runs for present pages. It also writes the label when the page is Same as shipped (its body equals the shipped body, so the release it matches is the current one). A stamped page that is behind gets no label, and the screen says "an earlier release".
-- __Shown__ as "Your copy: v5.43.0 · This release: v5.45.0", or "Your copy: an earlier release" when there is no label. No commit hash.
+- __Shown__ on each row as "Your copy: v5.43.0", or "Your copy: an earlier release" when there is no label, on one line that breaks nowhere. The shipped release is said once in each section header ("This release: v5.45.0"; for add-ons, one name and version each), not on every row. No commit hash.
 
 ## R4: detecting a working change
 
@@ -261,7 +261,7 @@ Replaces `views/_basicEditor.ejs` lines 14–21 (text for a person who is not a 
 
 ## Plain-language text
 
-State labels and the line under each. A page's release label goes after it: "Your copy: v5.43.0 · This release: v5.45.0".
+State labels and the line under each. A page's release label goes after it: "Your copy: v5.43.0". Each section header says "This release: v5.45.0" once.
 
 | State | Label | Line under the label | Buttons |
 | --- | --- | --- | --- |
@@ -314,7 +314,7 @@ Four slices, in build order. Each can ship alone, and the screen is never left h
 
 1. __The state function and the safe defaults__ (R1 minus the kept mark, R7, R5's rule). `shippedPageState` without K and W. Core list, add-on list and `syncShippedPages` all call it. The four states that need no new data (Same as shipped, Update ready, Edited here not confirmed, Both changed) show with the new labels, and the summary line and Sync All use it. No-stamp pages stop being replaced, and a `user-modified` page with unchanged text reads Edited here, not confirmed (Q1). __The add-on start-up reseed is removed in this slice (Q2):__ the replacing branch of `reconcileSeededAddonPage`, `lastReseedCount`, and the `page-reseed` flag's effect, with the retirement warning and the four docs that describe the flag. It belongs here, not later, because the slice makes the add-on rows' Update button and Sync All the only way to update an add-on page. Removing the reseed any later would leave two paths that can replace an add-on page, and slice 1's own promise (Sync All is the only thing that changes an Update ready page) would be untrue for add-ons. Unit and route tests, written red first (see Tests). *Verified when:* a page never edited with a changed shipped body shows Update ready and Sync All updates it; an edited page shows Edited here, not confirmed and Sync All leaves it; a page saved with only its title changed shows Edited here, not confirmed; a changed add-on page is not replaced by a restart, shows Update ready, and is replaced by Sync All.
 2. __Keep edited version__ (R2, R4, rows 2 and 3). The keep route, the three front-matter keys, the Review dialog with the checkbox, `pluginCalls.ts` and `workingParts`, and the two kept states with the review list. *Verified when:* tick Keep, see Kept for this site, Sync All leaves it; change a plugin call in the shipped page, see Kept, needs your review.
-3. __Release label and editor banner__ (R3, R8). The release keys, written with the stamp and backfilled, shown on the rows. The new banner. *Verified when:* a row shows "Your copy: v… · This release: v…"; editing Request access shows the new banner.
+3. __Release label and editor banner__ (R3, R8). The release keys, written with the stamp and backfilled, shown on the rows. The new banner. *Verified when:* a row shows "Your copy: v…" and each section header shows "This release: v…" once; editing Request access shows the new banner.
 4. __Push to Source on source checkouts only__ (R6). `isSourceCheckout`, the hidden buttons, the 403, the confirm. Independent of the others, so it can go first if Jim wants The Fairways cleaned up sooner. *Verified when:* on an installed site there is no Push to Source button and a direct request is refused.
 
 Slice 4 touches different files from 1–3 and can be built in parallel. Slices 1 → 2 → 3 are in order: 2 needs the state function, and 3 shows a label on rows that 1 defines.

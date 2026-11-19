@@ -68,6 +68,7 @@ import { isAtLeast } from '../utils/version.js';
 import { buildAddonHost, type AddonHost } from '../utils/addonHost.js';
 import { ConsentRequiredError } from '../types/Consent.js';
 import { addonProblemSubject } from '../utils/addonConfigLayer.js';
+import { releaseText } from '../utils/addonPageSync.js';
 import { addonAuthor, sameUsername } from '../utils/username.js';
 import type NotificationManager from './NotificationManager.js';
 
@@ -1505,6 +1506,9 @@ class AddonsManager extends BaseManager {
       label: `${addonName}/pages`,
       dir: addonPagesDir,
       stampKey: 'addon-source-hash',
+      // #2389 slice 3: the release label is this add-on's own version
+      releaseKey: 'addon-source-release',
+      release: releaseText(this.getAddonVersion(addonName)),
       extraMetadata: (data) => {
         const seedCategory = data['system-category'] ?? 'addon';
         return {

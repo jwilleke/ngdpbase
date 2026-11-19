@@ -99,6 +99,8 @@ export const WORDING_FRONTMATTER_KEYS: string[] = [
   'user-modified',
   'required-source-hash',
   'addon-source-hash',
+  'required-source-release',
+  'addon-source-release',
   'kept-edited',
   'kept-shipped-hash',
   'kept-working-parts'
