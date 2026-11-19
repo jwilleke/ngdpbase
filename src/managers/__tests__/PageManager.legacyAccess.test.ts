@@ -10,6 +10,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import PageManager from '../PageManager';
+import { formatPrivatePageName } from '../../utils/privateStorePath';
 import { SeededShippedPages } from '../../utils/seededShippedPages';
 import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
@@ -117,7 +118,7 @@ describe('PageManager lists pages whose access: limit no longer applies (#2269)'
   test('a private page is counted but its title stays off the list; a vault page is not counted', async () => {
     const h = await harness([
       page('Secret Plans', 'u1', { 'system-category': 'general', private: true, access: { view: ['editor'] } }),
-      page('alice/notes/Vault Page', 'u2', { 'system-category': 'general', access: { view: ['editor'] } }),
+      page(formatPrivatePageName('alice', 'notes', 'Vault Page'), 'u2', { 'system-category': 'general', access: { view: ['editor'] } }),
       page('Open Page', 'u3', { 'system-category': 'general', access: { view: ['editor'] } })
     ]);
     expect(await h.manager.reportLegacyAccessLimits()).toBe(2);
@@ -126,6 +127,18 @@ describe('PageManager lists pages whose access: limit no longer applies (#2269)'
     expect(text).not.toContain('Vault Page');
     expect(text).toContain('Open Page');
     expect(h.status().details?.join(' ')).toMatch(/1 private page/);
+  });
+
+  test('names the first 50 pages A to Z and counts the rest, so a long list stays readable', async () => {
+    const pages = Array.from({ length: 53 }, (_, i) => page(`Page ${String(i).padStart(2, '0')}`, `u${i}`, { 'system-category': 'general', access: { view: ['editor'] } }));
+    const h = await harness(pages);
+    expect(await h.manager.reportLegacyAccessLimits()).toBe(53);
+    expect(h.status().reason).toMatch(/^53 pages have /);
+    const details = h.status().details ?? [];
+    expect(details).toHaveLength(51);
+    expect(details[0]).toContain('Page 00');
+    expect(details[49]).toContain('Page 49');
+    expect(details[50]).toMatch(/3 more pages/);
   });
 
   test('the text is plain: no issue numbers, file paths or log pointers', async () => {
