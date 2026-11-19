@@ -16008,6 +16008,15 @@ ${panes}
       }
       return res.json({ success: true, kept: result.kept });
     } catch (err) {
+      if (err instanceof PageContentValidationError) {
+        // The page's text is refused by a content rule. Trying again cannot help.
+        logger.info(`[adminKeepRequiredPage] refused by the content rules: ${err.validationErrors.length} error(s)`);
+        return res.status(422).json({
+          success: false,
+          contentRefused: true,
+          error: "This page's text is refused by this site's content rules, so it cannot be kept. Trying again will not help; the text would have to change first."
+        });
+      }
       logger.error('[adminKeepRequiredPage] failed:', err);
       return res.status(500).json({ success: false, error: 'Could not save the choice. Nothing was changed. Try again, and check the server log if it repeats.' });
     }

@@ -253,7 +253,7 @@
                                         <% if (page.status === 'modified') { %>
                                         <% var reviewable = ['edited-not-confirmed', 'both-changed', 'kept-for-site', 'kept-needs-review'].includes(page.syncState); %>
                                         <button class="btn btn-sm <%= page.syncState === 'kept-needs-review' ? 'btn-warning' : 'btn-outline-info' %>"
-                                                data-row-action="showDiff" data-row-args="<%= JSON.stringify([page.uuid, page.title, '', reviewable ? page.source : '', page.syncState === 'kept-for-site' || page.syncState === 'kept-needs-review', page.workingChanges || []].map(v => v ?? '')) %>"
+                                                data-row-action="showDiff" data-row-args="<%= JSON.stringify([page.uuid, page.title, '', reviewable ? page.source : '', page.syncState === 'kept-for-site' || page.syncState === 'kept-needs-review', page.workingChanges || [], page.syncState === 'kept-needs-review'].map(v => v ?? '')) %>"
                                                 <% if (reviewable) { %>title="See what differs, and choose whether to keep this site's version"<% } %>>
                                             <i class="fas fa-code-branch"></i> <%= reviewable ? 'Review' : 'Diff' %>
                                         </button>
@@ -443,7 +443,7 @@
                                         <% if (page.status === 'modified') { %>
                                         <% var reviewable = ['edited-not-confirmed', 'both-changed', 'kept-for-site', 'kept-needs-review'].includes(page.syncState); %>
                                         <button class="btn btn-sm <%= page.syncState === 'kept-needs-review' ? 'btn-warning' : 'btn-outline-info' %>"
-                                                data-row-action="showDiff" data-row-args="<%= JSON.stringify([page.uuid, page.title, '', reviewable ? page.source : '', page.syncState === 'kept-for-site' || page.syncState === 'kept-needs-review', page.workingChanges || []].map(v => v ?? '')) %>"
+                                                data-row-action="showDiff" data-row-args="<%= JSON.stringify([page.uuid, page.title, '', reviewable ? page.source : '', page.syncState === 'kept-for-site' || page.syncState === 'kept-needs-review', page.workingChanges || [], page.syncState === 'kept-needs-review'].map(v => v ?? '')) %>"
                                                 <% if (reviewable) { %>title="See what differs, and choose whether to keep this site's version"<% } %>>
                                             <i class="fas fa-code-branch"></i> <%= reviewable ? 'Review' : 'Diff' %>
                                         </button>
@@ -629,6 +629,10 @@
                             <span class="d-block">This site keeps its own version, and updates will not replace it.</span>
                             <span class="d-block">You will be told if a later release changes how the page works.</span>
                         </small>
+                        <div id="reviewKeepAgain" class="mt-2" hidden>
+                            <small class="d-block" style="color: #495057;">The newer version's changes will not be added.</small>
+                            <button type="button" class="btn btn-sm btn-primary mt-1" id="reviewKeepAgainBtn" data-testid="review-keep-reviewed">Keep my version (I've reviewed this)</button>
+                        </div>
                         <small id="reviewKeepStatus" class="d-block" role="status"></small>
                     </div>
                     <div id="modalDiffContainer" class="p-3">
@@ -664,44 +668,62 @@ let reviewKeepChanged = false;
 
 // #2389: the Review dialog is the diff modal, with a "Keep my version for this
 // site" checkbox for a page edited on this site. Ticking it saves at once.
-function setupReviewKeep(source, uuid, kept) {
+function setupReviewKeep(source, uuid, kept, needsReview) {
     const box = document.getElementById('reviewKeepBox');
     const check = document.getElementById('reviewKeepCheck');
     const status = document.getElementById('reviewKeepStatus');
+    const again = document.getElementById('reviewKeepAgain');
+    const againBtn = document.getElementById('reviewKeepAgainBtn');
     reviewKeepChanged = false;
     status.textContent = '';
     box.hidden = !source;
     check.checked = !!kept;
-    check.onchange = async () => {
-        check.disabled = true;
+    // A page that needs review is already kept. Keeping it again, which rewrites
+    // what the admin has now seen, is the same save as ticking the box afresh.
+    again.hidden = !(source && needsReview);
+    againBtn.disabled = false;
+    const setStatus = (color, text) => {
         status.className = 'small d-block';
-        status.style.color = '#495057';
-        status.textContent = 'Saving…';
+        status.style.color = color;
+        status.textContent = text;
+    };
+    // Saves the choice. Returns true when it was saved.
+    const save = async (keep) => {
+        check.disabled = true;
+        againBtn.disabled = true;
+        setStatus('#495057', 'Saving…');
         try {
             const response = await csrfFetch('/admin/required-pages/keep', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
-                body: JSON.stringify({ source, uuid, keep: check.checked })
+                body: JSON.stringify({ source, uuid, keep })
             });
             const result = await response.json();
             if (result.success) {
                 reviewKeepChanged = true;
-                status.className = 'small d-block';
-                status.style.color = '#146c43';
-                status.textContent = result.kept ? 'Kept for this site.' : 'No longer kept. Sync can replace this page again when you choose.';
-            } else {
-                check.checked = !check.checked;
-                status.className = 'small d-block';
-                status.style.color = '#b02a37';
-                status.textContent = `Your choice was not saved. Nothing was changed. ${result.error || 'Reload the page and try again.'}`;
+                setStatus('#146c43', result.kept ? 'Kept for this site.' : 'No longer kept. Sync can replace this page again when you choose.');
+                return true;
             }
+            // A refusal by the content rules already says everything: one message.
+            setStatus('#b02a37', result.contentRefused
+                ? result.error
+                : `Your choice was not saved. Nothing was changed. ${result.error || 'Reload the page and try again.'}`);
         } catch (err) {
-            check.checked = !check.checked;
-            status.className = 'small d-block';
-                status.style.color = '#b02a37';
-            status.textContent = `Your choice was not saved. Nothing was changed. The server could not be reached (${err.message}). Check your connection and try again.`;
+            setStatus('#b02a37', `Your choice was not saved. Nothing was changed. The server could not be reached (${err.message}). Check your connection and try again.`);
         } finally {
             check.disabled = false;
+            againBtn.disabled = false;
+        }
+        return false;
+    };
+    check.onchange = async () => {
+        if (!(await save(check.checked))) check.checked = !check.checked;
+    };
+    againBtn.onclick = async () => {
+        if (await save(true)) {
+            again.hidden = true;
+            // Closing the dialog reloads the list, where the row now reads Kept for this site.
+            setTimeout(() => diffModal.hide(), 900);
         }
     };
 }
@@ -710,8 +732,8 @@ document.getElementById('diffModal').addEventListener('hidden.bs.modal', () => {
     if (reviewKeepChanged) location.reload();
 });
 
-async function showDiff(uuid, title, liveUuid = '', source = '', kept = false, workingChanges = []) {
-    setupReviewKeep(source, uuid, kept);
+async function showDiff(uuid, title, liveUuid = '', source = '', kept = false, workingChanges = [], needsReview = false) {
+    setupReviewKeep(source, uuid, kept, needsReview);
     document.getElementById('diffModalTitle').textContent = source ? `Review: ${title}` : `${title}: source vs live`;
     const workingBox = document.getElementById('reviewWorkingBox');
     const workingList = document.getElementById('reviewWorkingList');

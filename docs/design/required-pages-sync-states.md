@@ -162,7 +162,7 @@ Who and when are not stored on the page. They are in the audit entry and page hi
 - __Guard:__ the same permission as the rest of the screen, `admin-system`, plus CSRF. Page-level permissions do not matter: the body is not touched.
 - __Survives syncs and upgrades.__ The editor's save carries forward all front-matter it does not manage (`WikiRoutes.savePage`, "step 1"), so editing a kept page keeps it kept. A normal Sync never touches a kept page: `syncShippedPages` without `force` protects every row except Update ready (and Same as shipped, which has nothing to change), using `shippedPageState`. A release upgrade replaces nothing on its own, and neither does start-up, for core or add-on pages (Q2), so nothing but an admin's Sync can reach a kept page.
 - __Undone__ by unticking the box and saving the choice (`keep: false` deletes the three keys), or by __Use shipped version__. `saveShippedPage` builds the page from the shipped front-matter, so the kept keys and `user-modified` are gone after it.
-- Ticking again after a "needs your review" flag rewrites `kept-shipped-hash` and `kept-working-parts` from the current shipped page. That is what clears the flag (D3).
+- Ticking again after a "needs your review" flag rewrites `kept-shipped-hash` and `kept-working-parts` from the current shipped page. That is what clears the flag (D3). The Review dialog offers it as one button, __Keep my version (I've reviewed this)__, so an admin does not have to untick and tick.
 
 ## R3: release label
 
@@ -275,6 +275,7 @@ State labels and the line under each. A page's release label goes after it: "You
 __Review dialog__ (the existing diff modal, extended). Title: "Review: *page name*". It shows the diff, and above it the list of working changes if there are any ("Changes how the page works"). Then:
 
 - Checkbox: __Keep edited version__. Help: "This site keeps its own version. Updates will not replace it. You will be told if a later release changes how this page works." Ticked at the start for a kept page.
+- For a page that reads Kept, needs your review, the dialog also shows one button, __Keep my version (I've reviewed this)__, under the line "The newer version's changes will not be added." It saves exactly what ticking the box afresh saves (it rewrites the kept baseline from the shipped page), closes the dialog, and the row then reads Kept for this site. Without it the only way to clear the flag would be to untick and tick again, which nothing on screen says.
 - For a page whose text matches what shipped but is flagged as edited (Q1), the dialog says "The text is the same as what shipped. Only the page's title or keywords were changed on this site." and shows those differences.
 - Buttons: __Save choice__, __Use shipped version__, __Cancel__.
 - __Use shipped version__ asks: "Replace the changes made to "*page name*" on this site with the shipped version? Your version stays in the page history." (existing Force Sync question, reworded). The button was "Force Sync".
