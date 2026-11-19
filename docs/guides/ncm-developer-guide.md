@@ -49,7 +49,7 @@ The author-facing summary of what renders, and the house style NCM output follow
 | Style blocks | `%%class … /%` blocks, `%%(css) … /%` inline | `MarkupParser`, `JSPWikiPreprocessor` |
 | Section links | `[Text\|Page#section=Heading Text]`; heading IDs come from the plain heading text (`SectionUtils.headingSlug`) | `LinkParser`, `DOMLinkHandler` |
 | __Tables__ | __Up-convert (NCM v2).__ GFM pipe tables are rewritten on normalization to the rich JSPWiki canonical form — `\|\|Header\|\|`/`\|cell\|` rows wrapped in the configured style blocks (default `%%table-fit`/`-bordered`/`-striped`/`-hover`/`sortable`), giving imported tables fit/border/zebra/hover + client-side sorting. Style classes are operator-configurable via `ngdpbase.markdown.ncm.table.default-classes` (set `[]` for no wrapper). Up-convert only — there is no down-convert. Idempotent: the styled form has no GFM separator row, so re-normalizing converts nothing. Existing JSPWiki tables in a body are never matched/re-wrapped. *(v1 left both forms as passthrough; the v1→v2 profile bump is applied to new normalizations only — existing pages migrate explicitly, never silently on read.)* | `src/converters/ncm/tables.ts`, `JSPWikiPreprocessor`, `public/js/tableSort.js` |
-| __Links__ | JSPWiki form (see §2.4): internal `[Display\|PageName]`, external `[Display\|https://url\|target="_blank"]`, InterWiki `[Display\|Site:Ref]` — __not__ CommonMark `[text](url)` | `LinkParserHandler` |
+| __Links__ | Internal `[Display\|PageName]`, InterWiki `[Display\|Site:Ref]` (JSPWiki forms, see §2.4); external __CommonMark `[text](https://url)`__ is the house form, rendered with `target="_blank"`, `rel="noopener noreferrer"` and the `wiki-link external-link` classes. The stored `[Display\|https://url\|target="_blank"]` form keeps rendering the same ([#1492](https://github.com/jwilleke/ngdpbase/issues/1492)) | `LinkParserHandler`, `externalLinksInNewTab` in `src/rendering/markdownConverter.ts` |
 | __Footnotes__ | `[^id]` reference + `[^id]: text` definition (single- and multi-paragraph). __Conversion transfers definitions to the sidecar footnote list__ ([#1125](https://github.com/jwilleke/ngdpbase/issues/1125)): the convert-existing path moves `[^id]: text` into `FootnoteManager` records (id preserved verbatim — refs must keep resolving), leaves the refs in the body, and appends `[{FootnotesPlugin}]` when absent. A colliding sidecar id keeps the body definition and warns. On a page whose footnotes are turned off (its own `footnotes: false`, or its system-category's, [#1951](https://github.com/jwilleke/ngdpbase/issues/1951)) nothing moves: the definitions stay in the body, with a `footnotes-off` warning. The extraction (`src/converters/ncm/footnotes.ts`) is pure; the sidecar write happens in `PageManager.completeNcmConversion` through `FootnoteManager.transferFromContent`, on every path, when the page has a uuid (#1486). | `FootnoteManager`, `FootnotesPlugin`, `MarkupParser` footnote extraction |
 | __Embedded images__ | `![alt](attachment-ref)` — image downloaded and stored as an attachment; the source URL / `data:` URI is replaced with the local attachment ref. Remote images are localized by Convert to NCM only (preview shows it, apply stores it); file import, ingest and MCP leave them as links today. A file import's own image files are uploaded by the importer | `AttachmentManager.localizeRemoteImages`, `ImportManager.importPageAttachments()` |
 | Plugins / variables | `[{PluginName param='…'}]`, `[{$variable}]` | `PluginManager`, `VariableManager` |
@@ -83,15 +83,18 @@ Transcoding/re-encoding fetched images (decode-bomb defense, EXIF/payload stripp
 
 ### 2.4 Links (internal vs external)
 
-NCM uses the existing `LinkParserHandler` JSPWiki forms — __not__ CommonMark `[text](url)`:
+External links are written as CommonMark `[text](url)`; internal and InterWiki links use the `LinkParserHandler` JSPWiki forms ([#1492](https://github.com/jwilleke/ngdpbase/issues/1492)):
 
 | Kind | NCM form | Render behaviour |
 |---|---|---|
 | Internal (wiki) | `[Display\|PageName]` (or `[PageName]`) | resolves to `/view/<page>`; red-link if absent |
-| External | `[Display\|https://example.com\|target="_blank"]` | new tab; renderer adds `rel="noopener noreferrer"` |
+| External | `[Display](https://example.com)` | new tab; `class="wiki-link external-link"`, `target="_blank"`, `rel="noopener noreferrer"` |
+| External, stored form | `[Display\|https://example.com\|target="_blank"]` | renders the same link; still valid, never rewritten |
 | InterWiki | `[Display\|Wikipedia:Article]` | expands via `ngdpbase.interwiki.*` |
 
-Normalizer rules: absolute `http(s)://` target → external form (`target="_blank"`); a target resolving to a wiki page → `[Display|PageName]` (never hardcode `/view/…`); `[{$pagename}]` etc. are variables, not links; bare URLs auto-link but the explicit external form is preferred so `target`/`rel` apply.
+The renderer adds the external attributes to every absolute `http(s)` link markdown-it renders in the `page` and `fallback` profiles (`externalLinksInNewTab`, `src/rendering/markdownConverter.ts`): CommonMark inline links, reference links and `<https://…>` autolinks. Relative, protocol-relative, `mailto:` and `#anchor` links are left as markdown-it writes them, and the `untrusted` profile (comments) is unchanged. The href is exactly what markdown-it produced: escaped as before, and `javascript:` is still not a link. Bare web addresses in text are not links yet (`linkify` stays off, [#1492](https://github.com/jwilleke/ngdpbase/issues/1492)); write `[text](url)` or `<url>`.
+
+Normalizer rules: an absolute `http(s)://` link is kept as written (no rewrite, no `link-externalized` warning — the kind stays in `NcmWarningKind` for stored reports); a relative `[text](Page)` becomes `[text|Page]`; a target resolving to a wiki page → `[Display|PageName]` (never hardcode `/view/…`); other schemes (`mailto:`, `ftp:`) are left alone; `[{$pagename}]` etc. are variables, not links.
 
 ## 3. The normalizer contract
 
@@ -101,13 +104,13 @@ NCM extends the __existing__ `IContentConverter` registry — no parallel system
 |---|---|
 | `normalizeToNcm` | Normalize content in a registered source format (HTML, JSPWiki, raw Markdown, JSON-via-#501) to NCM. |
 | `normalizeExistingPageToNcm` | Convert an already-stored page to NCM (the "convert existing page" / MCP path). |
-| `normalizeLinks` | §2.4 link normalization (matches only `[…](…)`, never `\|\|`/`%%`). |
+| `normalizeLinks` | §2.4 link normalization: relative `[…](Page)` → `[…\|Page]`; absolute and other-scheme links untouched (matches only `[…](…)`, never `\|\|`/`%%`). |
 | `localizeNcmImages` | §2.2 image→attachment localization. |
 | `ncmToConversionResult` | Bridge NCM warnings → the `ConversionResult` contract (lossless). |
 | `formatDroppedPlaceholder` / `isDroppedPlaceholderLine` | Build / recognise the §3.3 placeholder. |
 | `src/converters/ncm/fix/` (`runFixes`, `FIX_STEPS`) | The Markdown fix steps (§3.5). Not re-exported by the NCM barrel; `PageManager.normalizePageContent` imports them from `fix/index.ts`. |
 
-- __Structured warnings.__ `ConversionResult.warnings` is `Array<{ kind: string; detail: string }>`. `kind` is a stable code (`NcmWarningKind`: `html-dropped`, `img-attached`, `img-rejected`, `link-externalized`, `placeholder-inserted`, `converter-note`, `source-unsupported`), and `detail` carries the specifics (the dropped tag; for a rejected image `adhost`, `fetch`, `decode`, `type` (the sniff found no allowed raster), `size` or `store`, then its source) — the basis of the conversion metrics (__#738__) and of §3.1 determinism (enum > prose).
+- __Structured warnings.__ `ConversionResult.warnings` is `Array<{ kind: string; detail: string }>`. `kind` is a stable code (`NcmWarningKind`: `html-dropped`, `img-attached`, `img-rejected`, `link-externalized` (no longer emitted since [#1492](https://github.com/jwilleke/ngdpbase/issues/1492); kept so stored reports still read), `placeholder-inserted`, `converter-note`, `source-unsupported`), and `detail` carries the specifics (the dropped tag; for a rejected image `adhost`, `fetch`, `decode`, `type` (the sniff found no allowed raster), `size` or `store`, then its source) — the basis of the conversion metrics (__#738__) and of §3.1 determinism (enum > prose).
 - __`ncmVersion` stamp.__ The normalizer writes integer `ncmVersion` to frontmatter (__current value: `NCM_VERSION = 2`__ — v2 added the §2.1 GFM-table up-convert). Idempotent within a version. A profile change bumps the version; existing pages are re-normalized __only__ via an explicit, opt-in migration — __never__ silently on read/edit. Protects versioned-page git history and gives provenance for free.
 - __Interactive single-item ops (single-page import, convert-existing-page) preview-and-confirm before write__ — the user sees exactly what will change/drop, then confirms. Never a silent in-place rewrite of authored content.
 - __Bulk import, #685 ingestion, MCP__ cannot gate on a human → they rely on structured `warnings[]` + the in-body placeholder (§3.3) __plus__ a `NotificationManager.addNotification(...)` summary surfaced in `/admin/notifications` as the durable signal.

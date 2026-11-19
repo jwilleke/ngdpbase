@@ -35,9 +35,9 @@ const CONTINUATION = /^(?: {4,}|\t)(.*)$/;
 const MD_LINK_ONLY = /^\[([^\]]+)\]\((https?:[^)\s]+)\)$/;
 /**
  * Definition text that is exactly an NCM/JSPWiki external link —
- * `[Display|https://url|target="_blank"]`. The link normalizer runs before
- * footnote extraction in the convert pipeline, so a markdown-link definition
- * arrives here already in this form.
+ * `[Display|https://url|target="_blank"]`, the stored form. A markdown-link
+ * definition (`MD_LINK_ONLY`) is kept as written by the link normalizer
+ * (#1492), so both arrive here.
  */
 const NCM_LINK_ONLY = /^\[([^|\]]+)\|(https?:[^|\]\s]+)(?:\|[^\]]*)?\]$/;
 /** Definition text that is exactly a bare URL. */
