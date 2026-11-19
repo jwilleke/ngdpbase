@@ -1394,7 +1394,14 @@ class MarkupParser extends BaseManager {
       let inList = false;
       while (li < inputLines.length) {
         const here = inputLines[li];
-        if (prevBlank && !inList && /^(?: {4}|\t)/.test(here) && here.trim() !== '') {
+        // A footnote body written under `[^id]:` is that footnote's, not code.
+        const isIndentedBlock = (): boolean => {
+          if (!prevBlank || inList || !/^(?: {4}|\t)/.test(here) || here.trim() === '') return false;
+          let k = outputLines.length - 1;
+          while (k >= 0 && outputLines[k].trim() === '') k--;
+          return !(k >= 0 && /^\[\^[^\]\s]+\]:/.test(outputLines[k]));
+        };
+        if (isIndentedBlock()) {
           const startLine = li;
           const block: string[] = [];
           while (li < inputLines.length && (inputLines[li].trim() === '' || /^(?: {4}|\t)/.test(inputLines[li]))) {
@@ -1482,7 +1489,8 @@ class MarkupParser extends BaseManager {
           // Keep the fence's indent on the placeholder so an indented block
           // stays inside the list item it was written in.
           const placeholder = `<span data-jspwiki-placeholder="${uuid}-${id - 1}"></span>`;
-          const afterQuote = /^[ \t]*>/.test(outputLines[outputLines.length - 1] ?? '');
+          // Four spaces in, `~~~` would read as text; that shape never joined the quote.
+          const afterQuote = marker.length < 4 && /^[ \t]*>/.test(outputLines[outputLines.length - 1] ?? '');
           if (afterQuote) {
             // #1726: a bare placeholder line after a quote is that quote's lazy
             // continuation, which pulled the block into the quote. A fence
