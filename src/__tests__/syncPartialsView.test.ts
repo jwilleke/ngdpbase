@@ -205,11 +205,36 @@ describe('#2389 slice 2 Review dialog and kept badges: the words and the look th
 
   test('a page that needs review gets one button that keeps the version as it is, with a line saying what it does', () => {
     expect(page).toContain('data-testid="review-keep-reviewed"');
-    expect(page).toContain("Keep my version (I've reviewed this)");
+    expect(page).toContain("Keep edited version (I've reviewed this)");
     expect(page).toContain("The newer version's changes will not be added.");
     // Both rows (core and add-on) tell the dialog the page is in that state.
     expect(page.match(/page\.syncState === 'kept-needs-review', page\.workingChanges \|\| \[\], page\.syncState === 'kept-needs-review'/g)?.length).toBe(2);
     expect(page).toContain('async function showDiff(uuid, title, liveUuid = \'\', source = \'\', kept = false, workingChanges = [], needsReview = false)');
+  });
+
+  test('the unticked box has a border of at least 3:1 on the dialog background (#6c757d), like the list checkboxes', () => {
+    const input = page.match(/<input[^>]*id="reviewKeepCheck"[^>]*>/)?.[0] ?? '';
+    expect(input).toMatch(/border-color:\s*#6c757d/i);
+  });
+
+  test('the dialog uses one name for the action: the box and the button both say Keep edited version', () => {
+    expect(page).not.toContain('Keep my version');
+    const button = page.match(/id="reviewKeepAgainBtn"[^>]*>([^<]+)</)?.[1] ?? '';
+    expect(button).toBe("Keep edited version (I've reviewed this)");
+  });
+
+  test('a page that opens ticked is told it is already kept, and the note returns to the plain one after a save', () => {
+    expect(page).toContain('id="reviewKeepNote"');
+    expect(page).toContain('This page is already kept. Untick to stop keeping it (saved at once).');
+    const start = page.indexOf('function setupReviewKeep');
+    const body = page.slice(start, page.indexOf('document.getElementById(\'diffModal\')', start));
+    expect(body).toContain('reviewKeepNote');
+  });
+
+  test('the Keep edited version (I\'ve reviewed this) button is hidden as soon as a save changes the box', () => {
+    const start = page.indexOf('check.onchange');
+    const handler = page.slice(start, page.indexOf('againBtn.onclick', start));
+    expect(handler).toContain('again.hidden = true');
   });
 
   test('a refusal by the content rules is shown as one message, not wrapped in "Nothing was changed"', () => {
