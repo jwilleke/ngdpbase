@@ -87,8 +87,9 @@ const EXCEPTIONS: Record<number, keyof typeof REASONS> = Object.fromEntries(([
 
 const tabs = (s: string): string => s.replace(/\u2192/g, '\t');
 const normalise = (html: string): string => html
-  // An external link opens in a new tab (#1492): ours alone, not the spec's.
-  .replace(/ class="wiki-link external-link" target="_blank" rel="noopener noreferrer"/g, '')
+  // An absolute http(s) link opens in a new tab (#1492): ours alone, not the
+  // spec's. Only there: the same attributes on any other link are a failure.
+  .replace(/(<a href="https?:\/\/[^"]*"(?: title="[^"]*")?) class="wiki-link external-link" target="_blank" rel="noopener noreferrer"/g, '$1')
   .replace(/(<h[1-6])\s+id="[^"]*"/g, '$1')
   // The same character written two ways: an entity or the character itself.
   .replace(/&#160;/g, '\u00a0')

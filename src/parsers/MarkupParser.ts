@@ -2192,7 +2192,10 @@ class MarkupParser extends BaseManager {
     const wikiPattern = /`([^`\n]+)`|\[\[\{([^}]*)\}\]|\[\{\$(\w+)\}\]|\[\{([A-Za-z]\w*[^}]*)\}\]|\[([^\]]*)\](?!\()|<span data-jspwiki-placeholder="([^"]*)"><\/span>/g;
 
     if (!wikiPattern.test(content)) {
-      if (lineBreaks) appendText(content);
+      // A table cell that reaches here has a `[` but no wiki syntax, such as a
+      // CommonMark link `[t](https://…)` (#1492): it takes the inline Markdown
+      // rules like the rest of the cell, not a literal text node.
+      if (lineBreaks || inlineMarkdown) appendText(content);
       else node.textContent = this.decodeTextEntities(content);
       return;
     }
