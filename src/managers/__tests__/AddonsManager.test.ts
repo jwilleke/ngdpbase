@@ -1100,6 +1100,20 @@ describe('AddonsManager', () => {
       expect(pageManager.savePage).toHaveBeenCalledWith('Home', expect.stringContaining('Page content.'), expect.objectContaining({ uuid, addon: 'seed-addon' }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true, shippedAuthor: 'addon:seed-addon' });
     });
 
+    test('#2389 slice 3: a seeded page carries the add-on\'s own version as its release label', async () => {
+      const uuid = '550e8400-e29b-41d4-a716-446655440002';
+      await makeAddonWithSeedPages('seed-addon', [
+        { filename: 'home.md', uuid, slug: 'home', title: 'Home' }
+      ]);
+
+      const configManager = makeConfigManager({ enabledAddons: ['seed-addon'] });
+      const pageManager = makePageManager();
+      const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
+      await manager.initialize();
+
+      expect(pageManager.savePage).toHaveBeenCalledWith('Home', expect.any(String), expect.objectContaining({ uuid, 'addon-source-release': '1.0.0' }), expect.anything(), expect.anything());
+    });
+
     test('#908 B1: skips re-seed when UUID already exists under a different slug', async () => {
       // Seed page carries slug 'geohazardwatch-about' but its UUID is already
       // assigned to an existing page registered under slug 'about' (the addon

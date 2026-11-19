@@ -271,3 +271,70 @@ describe('#2389 slice 2 Review dialog and kept badges: the words and the look th
     expect(page).toContain('open Review');
   });
 });
+
+describe('#2389 slice 3 _sync-status: the release label', () => {
+  const text = async (item: Record<string, unknown>) => (await partial('_sync-status', item)).body.textContent?.replace(/\s+/g, ' ').trim();
+  const base = { status: 'modified', syncState: 'update-ready', userModified: false };
+
+  test('shows both releases, with a v in front of each number', async () => {
+    expect(await text({ ...base, copyRelease: '5.43.0', thisRelease: '5.45.0' })).toContain('Your copy: v5.43.0 · This release: v5.45.0');
+  });
+
+  test('a copy with no label says an earlier release', async () => {
+    expect(await text({ ...base, thisRelease: '5.45.0' })).toContain('Your copy: an earlier release · This release: v5.45.0');
+  });
+
+  test('when this release is not known, only the copy is shown', async () => {
+    const out = await text({ ...base, copyRelease: '5.43.0' });
+    expect(out).toContain('Your copy: v5.43.0');
+    expect(out).not.toContain('This release');
+  });
+
+  test('it shows on every state of a page that is on the site', async () => {
+    for (const syncState of ['same-as-shipped', 'update-ready', 'edited-not-confirmed', 'both-changed', 'kept-for-site', 'kept-needs-review']) {
+      expect(await text({ status: 'modified', syncState, userModified: false, copyRelease: '5.43.0', thisRelease: '5.45.0' })).toContain('Your copy: v5.43.0 · This release: v5.45.0');
+    }
+  });
+
+  test('a page that is not on the site yet has no copy to label', async () => {
+    expect(await text({ status: 'new', userModified: false, thisRelease: '5.45.0' })).not.toContain('Your copy');
+  });
+
+  test('the release text is escaped', async () => {
+    const doc = await partial('_sync-status', { ...base, copyRelease: '<b>x</b>', thisRelease: '5.45.0' });
+    expect(doc.querySelector('b')).toBeNull();
+  });
+
+  test('both lists hand the release to the status cell', () => {
+    const view = fs.readFileSync(path.join(VIEWS, 'admin-required-pages.ejs'), 'utf8');
+    expect(view.match(/copyRelease: page\.copyRelease, thisRelease: page\.thisRelease/g)).toHaveLength(2);
+  });
+});
+
+describe('#2389 slice 3 the editor banner for a page that came with the software', () => {
+  const editor = fs.readFileSync(path.join(VIEWS, '_basicEditor.ejs'), 'utf8');
+  const banner = editor.match(/<% if \(typeof isRequiredPage[\s\S]*?<% \} %>/)?.[0] ?? '';
+  const shown = (isRequiredPage: boolean) => new JSDOM(`<body>${ejs.render(banner, { isRequiredPage })}</body>`).window.document;
+
+  test('says the design\'s words and nothing else', () => {
+    expect(shown(true).body.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'This page came with the software. Your changes stay on this site: an update will not replace them. ' +
+      'An admin will see this page in the list at Admin › Required Pages Sync and confirm that the change was meant. ' +
+      'If it was a mistake, the admin can put the original back.'
+    );
+  });
+
+  test('links to Required Pages Sync', () => {
+    expect(shown(true).querySelector('a')?.getAttribute('href')).toBe('/admin/required-pages');
+  });
+
+  test('is not drawn for an ordinary page', () => {
+    expect(shown(false).body.textContent?.trim()).toBe('');
+  });
+
+  test('has no file path, and no word saying changes will be overwritten', () => {
+    const words = shown(true).body.textContent ?? '';
+    expect(words).not.toContain('required-pages/');
+    expect(words).not.toMatch(/overwritten|Shipped page/);
+  });
+});
