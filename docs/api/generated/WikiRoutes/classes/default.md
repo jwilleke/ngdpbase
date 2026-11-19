@@ -6475,37 +6475,6 @@ files sealed.
 
 ***
 
-### myTakeoutImport()
-
-> __myTakeoutImport__(`req`, `res`): `Promise`\<`void` \| `Response`\<`any`, `Record`\<`string`, `any`\>\>\>
-
-Defined in: src/routes/WikiRoutes.ts:11033
-
-POST /my/takeout/import — a takeout handed back into one of the
-requester's own stores (#1472). Multipart, one file field `archive`.
-
-Held in memory and never written to disk: the archive is decrypted data.
-The size cap is the operator's (`ngdpbase.stores.import.maxsize`) and caps
-both the upload and what it unpacks to, since both are in memory at once.
-Answers JSON: the page posts it with `csrfFetch`, because the CSRF check
-runs before a multipart body is parsed and could not see a form field.
-
-#### Parameters
-
-##### req
-
-`Request`
-
-##### res
-
-`Response`
-
-#### Returns
-
-`Promise`\<`void` \| `Response`\<`any`, `Record`\<`string`, `any`\>\>\>
-
-***
-
 ### myTakeoutPage()
 
 > __myTakeoutPage__(`req`, `res`): `Promise`\<`void` \| `Response`\<`any`, `Record`\<`string`, `any`\>\>\>

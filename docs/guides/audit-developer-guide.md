@@ -112,5 +112,4 @@ At boot the log says which provider loaded and whether the posture changed since
 
 ## Known gaps
 
-- [#2118](https://github.com/jwilleke/ngdpbase/issues/2118) — `store-import` has two writers while the old takeout door is kept. `POST /my/takeout/import` records it in the route (`WikiRoutes.myTakeoutImport`, `src/routes/WikiRoutes.ts`) with `auditWho`, not in the door with `actorOf(ctx)`, and its record differs from the engine's: `bytes` is the archive's size there and the unpacked size on the engine, and only the engine's carries `owner`, `ownerUser`, `runId` and `leftOut`.
 - [#1825](https://github.com/jwilleke/ngdpbase/issues/1825) — `enforceDeny` records a refusal when the caller passes the resource, including `metadata.owner` ([#1823](https://github.com/jwilleke/ngdpbase/issues/1823)). A capability refusal with no resource still leaves no audit record. Most reads (`page-read`, `asset-read`, `vault-proxy`) are switched off by default. An allow of an add-on record is still the add-on's own event, recorded by its manager. A role cannot be given everyone's records of a type that declares `owner`; obligations such as emergency access are not built.

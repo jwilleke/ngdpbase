@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes
 
+- A takeout is now imported only through `/import` with the private-store receiver. `POST /my/takeout/import` is gone, and so is the setting `ngdpbase.stores.import.maxsize`: a site that set it can delete it, and the upload cap is `ngdpbase.import.engine.upload-max-bytes`. A zip may now hold 10,000 entries (`ngdpbase.import.engine.zip-max-entries`), not 65,535 (#2187).
 - A CSV export of an add-on's list now writes every row, whatever `max-items` and `max-bytes` say. Nothing to change in configuration. One new setting: `ngdpbase.display.line-length` (`short` or `full`, default `full`). Sites on the Fairways theme keep short lines until their own config says otherwise.
 
 ### Fixed
@@ -20,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - __#2399__ — each person can choose short lines or full width in Profile → User Preferences → Line Length, and each site sets the default with `ngdpbase.display.line-length`. Signed-out visitors see the site's setting. Pictures follow the text width. A theme sets how wide "short" is with `--ngdp-short-measure`, default `36em`; Fairways sets `32em`, as before.
+
+### Removed
+
+- `POST /my/takeout/import`, with `ImportManager.importOwnStoreTakeout` and `src/utils/privateStoreImport.ts`. The download page now links to `/import?receiver=core.private-store`, which does the same job through the import engine (#2187, #2118).
 
 ### Planned
 

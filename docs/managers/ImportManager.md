@@ -1,6 +1,6 @@
 ---
 name: ImportManager
-description: The ICE engine — imports through shims into receivers' own doors; the folder, URL and takeout imports
+description: The ICE engine — imports through shims into receivers' own doors; the folder and URL imports
 dateModified: '2026-10-29'
 category: managers
 code: src/managers/ImportManager.ts
@@ -8,7 +8,7 @@ code: src/managers/ImportManager.ts
 
 # ImportManager
 
-ImportManager is the ICE engine ([#1979](https://github.com/jwilleke/ngdpbase/issues/1979)): one core manager that brings data in through format-specific __shims__ and hands the results to __receivers__. The design and its decisions are [ice-planing.md](../planning/ice-planing.md); this page is the reference for what is built. It also still holds the admin folder import, the URL import and the private-store takeout import.
+ImportManager is the ICE engine ([#1979](https://github.com/jwilleke/ngdpbase/issues/1979)): one core manager that brings data in through format-specific __shims__ and hands the results to __receivers__. The design and its decisions are [ice-planing.md](../planning/ice-planing.md); this page is the reference for what is built. It also still holds the admin folder import and the URL import. The private-store takeout import is on the engine (`core.takeout` into `core.private-store`; the old `POST /my/takeout/import` door was retired in [#2187](https://github.com/jwilleke/ngdpbase/issues/2187)).
 
 ## The engine
 
@@ -150,7 +150,7 @@ Unchanged for the user using it: preview, import (streamed), conflict policy, at
 - [#2061](https://github.com/jwilleke/ngdpbase/issues/2061): only a keep at upload (`keepsEncrypted`) carries an `OriginalKeep`; a receiver that keeps in the run into an unencrypted vault of its own still meets the site's allow-list. An original kept through `core.files` is an ordinary attachment, shown inline (sandboxed) like any other.
 
 - [#2120](https://github.com/jwilleke/ngdpbase/issues/2120): an add-on's list is an export source ([#2174](https://github.com/jwilleke/ngdpbase/issues/2174)). A sealed vault's page is read with the request's key, and it exports that way. An export source for a list of many sealed things will need the same care, reading in the request. Made files live in memory and are gone after a restart.
-- [#1979](https://github.com/jwilleke/ngdpbase/issues/1979): the takeout import and the admin URL import (`importFromUrl`) are not on the engine yet. Feeds are ([#2109](https://github.com/jwilleke/ngdpbase/issues/2109)).
+- [#1979](https://github.com/jwilleke/ngdpbase/issues/1979): the admin URL import (`importFromUrl`) is not on the engine yet. Feeds are ([#2109](https://github.com/jwilleke/ngdpbase/issues/2109)).
 - [#2109](https://github.com/jwilleke/ngdpbase/issues/2109): a URL source has no schedule of its own: its owner's background job decides when to run it (the feeds add-on's `feeds.poll`). A run with a URL source is a scope's file per fetch, so the ledger keeps one entry per distinct response body (capped at `ledger-max-entries`) and, for a per-item shim, one key per item version seen.
 - [#2110](https://github.com/jwilleke/ngdpbase/issues/2110): "Your recent imports" lists what the ledger records, so a file skipped as noise or as unchanged, one too large, and an archive that could not be unpacked are shown only on the live run's status. Entries under a caller's narrower scope (an add-on's own source id passed as `scope`) are not listed. `core.files` has no `linkFor` yet (whether a user may read an attachment is decided in the attachment route, not in a manager), so a stored file is not linked. An original kept at upload shows as failed, "not imported yet", until its run records the result.
 - [#2110](https://github.com/jwilleke/ngdpbase/issues/2110): only the engine and `/import` are guarded for confidential file names. A confidential receiver's own code (an add-on's `receive` and `keepOriginal`) must not log them either; the guard does not reach add-on code outside this repository.
