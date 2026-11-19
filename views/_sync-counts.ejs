@@ -7,7 +7,9 @@
     syncCounts  { new?, outdatedSyncable, outdatedUserEdited, current }; `new` is
                 drawn only when given (a list that never has new items omits it).
                 outdatedSyncable counts the pages marked Update ready,
-                outdatedUserEdited the pages edited on this site
+                outdatedUserEdited the pages that need a decision (edited on this
+                site, or kept and needing review); `kept` (optional) the pages
+                kept for this site, drawn only when above 0
 
   One named object, not loose locals: an include also sees its parent's data,
   so a loose name could be picked up from the screen by accident.
@@ -15,4 +17,5 @@
 <% if (typeof syncCounts.new === 'number') { %><span class="badge bg-primary" data-sync-count="new"><%= syncCounts.new %> New</span><% } %>
 <span class="badge bg-warning text-dark" data-sync-count="update-ready"><%= syncCounts.outdatedSyncable %> Update ready</span>
 <span class="badge bg-secondary" data-sync-count="edited-here"><%= syncCounts.outdatedUserEdited %> Edited here</span>
+<% if (syncCounts.kept > 0) { %><span class="badge bg-info text-dark" data-sync-count="kept"><%= syncCounts.kept %> Kept for this site</span><% } %>
 <span class="badge bg-success" data-sync-count="current"><%= syncCounts.current %> Same as shipped</span>

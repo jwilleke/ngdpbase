@@ -111,6 +111,11 @@
                 <span class="badge bg-secondary fs-6 px-3 py-2" data-testid="count-edited-here" data-strip-count="edited-here">
                     <i class="fas fa-user-edit me-1"></i> <%= counts.outdatedUserEdited %> Edited here
                 </span>
+                <% if (counts.kept > 0) { %>
+                <span class="badge bg-info text-dark fs-6 px-3 py-2" data-strip-count="kept">
+                    <i class="fas fa-user-check me-1"></i> <%= counts.kept %> Kept for this site
+                </span>
+                <% } %>
                 <span class="badge bg-success fs-6 px-3 py-2" data-strip-count="current">
                     <i class="fas fa-check me-1"></i> <%= counts.current %> Same as shipped
                 </span>
@@ -209,7 +214,7 @@
                             </thead>
                             <tbody>
                                 <% comparison.forEach(page => { %>
-                                <tr data-uuid="<%= page.uuid %>" data-status="<%= page.status %>" data-live-uuid="<%= page.liveUuid || '' %>" data-user-modified="<%= page.userModified ? 'true' : 'false' %>" data-bulk-outdated="<%= page.bulkOutdated ? 'true' : 'false' %>">
+                                <tr data-uuid="<%= page.uuid %>" data-status="<%= page.status %>" data-live-uuid="<%= page.liveUuid || '' %>" data-user-modified="<%= page.userModified ? 'true' : 'false' %>" data-needs-decision="<%= page.userModified && page.syncState !== 'kept-for-site' ? 'true' : 'false' %>" data-kept="<%= page.syncState === 'kept-for-site' || page.syncState === 'kept-needs-review' ? 'true' : 'false' %>" data-bulk-outdated="<%= page.bulkOutdated ? 'true' : 'false' %>">
                                     <td>
                                         <% if (page.status !== 'current') { %>
                                         <input type="checkbox" class="page-checkbox" value="<%= page.uuid %>">
@@ -239,15 +244,17 @@
                                             </span>
                                             <br><small class="text-muted font-monospace">live: <%= page.liveUuid %></small>
                                         <% } else { %>
-                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable } }) %>
+                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable, newerAvailable: page.newerAvailable, workingChanges: page.workingChanges } }) %>
                                         <% } %>
                                     </td>
                                     <td data-col="source-modified"><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>
                                     <td>
                                         <% if (page.status === 'modified') { %>
-                                        <button class="btn btn-sm btn-outline-info"
-                                                data-row-action="showDiff" data-row-args="<%= JSON.stringify([page.uuid, page.title].map(v => v ?? '')) %>">
-                                            <i class="fas fa-code-branch"></i> Diff
+                                        <% var reviewable = ['edited-not-confirmed', 'both-changed', 'kept-for-site', 'kept-needs-review'].includes(page.syncState); %>
+                                        <button class="btn btn-sm <%= page.syncState === 'kept-needs-review' ? 'btn-warning' : 'btn-outline-info' %>"
+                                                data-row-action="showDiff" data-row-args="<%= JSON.stringify([page.uuid, page.title, '', reviewable ? page.source : '', page.syncState === 'kept-for-site' || page.syncState === 'kept-needs-review'].map(v => v ?? '')) %>"
+                                                <% if (reviewable) { %>title="See what differs, and choose to keep this site's version or use the shipped one"<% } %>>
+                                            <i class="fas fa-code-branch"></i> <%= reviewable ? 'Review' : 'Diff' %>
                                         </button>
                                         <% } %>
                                         <% if (page.status === 'uuid-mismatch') { %>
@@ -407,6 +414,8 @@
                                 <% addonComparison.forEach(page => { %>
                                 <tr data-uuid="<%= page.uuid %>" data-status="<%= page.status %>"
                                     data-user-modified="<%= page.userModified ? 'true' : 'false' %>"
+                                    data-needs-decision="<%= page.userModified && page.syncState !== 'kept-for-site' ? 'true' : 'false' %>"
+                                    data-kept="<%= page.syncState === 'kept-for-site' || page.syncState === 'kept-needs-review' ? 'true' : 'false' %>"
                                     data-bulk-outdated="<%= page.bulkOutdated ? 'true' : 'false' %>"
                                     class="addon-row">
                                     <td>
@@ -425,15 +434,17 @@
                                             <span class="badge bg-danger">UUID Mismatch</span>
                                             <br><small class="text-muted">live: <span class="font-monospace"><%= page.liveUuid %></span></small>
                                         <% } else { %>
-                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable } }) %>
+                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable, newerAvailable: page.newerAvailable, workingChanges: page.workingChanges } }) %>
                                         <% } %>
                                     </td>
                                     <td data-col="source-modified"><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>
                                     <td>
                                         <% if (page.status === 'modified') { %>
-                                        <button class="btn btn-sm btn-outline-info"
-                                                data-row-action="showDiff" data-row-args="<%= JSON.stringify([page.uuid, page.title].map(v => v ?? '')) %>">
-                                            <i class="fas fa-code-branch"></i> Diff
+                                        <% var reviewable = ['edited-not-confirmed', 'both-changed', 'kept-for-site', 'kept-needs-review'].includes(page.syncState); %>
+                                        <button class="btn btn-sm <%= page.syncState === 'kept-needs-review' ? 'btn-warning' : 'btn-outline-info' %>"
+                                                data-row-action="showDiff" data-row-args="<%= JSON.stringify([page.uuid, page.title, '', reviewable ? page.source : '', page.syncState === 'kept-for-site' || page.syncState === 'kept-needs-review'].map(v => v ?? '')) %>"
+                                                <% if (reviewable) { %>title="See what differs, and choose to keep this site's version or use the shipped one"<% } %>>
+                                            <i class="fas fa-code-branch"></i> <%= reviewable ? 'Review' : 'Diff' %>
                                         </button>
                                         <% } %>
                                         <% if (page.status === 'uuid-mismatch') { %>
@@ -603,6 +614,14 @@
                             <i class="fas fa-external-link-alt me-1"></i>Open full page
                         </a>
                     </div>
+                    <div id="reviewKeepBox" class="px-3 py-2 border-bottom bg-light" hidden>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="reviewKeepCheck" data-testid="review-keep">
+                            <label class="form-check-label" for="reviewKeepCheck">Keep my version for this site</label>
+                        </div>
+                        <small class="text-muted d-block">Sync All will leave this page alone. You are asked again only if a newer shipped version changes what the page does.</small>
+                        <small id="reviewKeepStatus" class="d-block" role="status"></small>
+                    </div>
                     <div id="modalDiffContainer" class="p-3">
                         <div class="text-center py-4 text-muted">
                             <i class="fas fa-spinner fa-spin fa-2x"></i>
@@ -632,8 +651,54 @@
 const CSRF_TOKEN = '<%= csrfToken %>';
 let currentDiffString = null;
 let diffModal = null;
+let reviewKeepChanged = false;
 
-async function showDiff(uuid, title, liveUuid = '') {
+// #2389: the Review dialog is the diff modal, with a "Keep my version for this
+// site" checkbox for a page edited on this site. Ticking it saves at once.
+function setupReviewKeep(source, uuid, kept) {
+    const box = document.getElementById('reviewKeepBox');
+    const check = document.getElementById('reviewKeepCheck');
+    const status = document.getElementById('reviewKeepStatus');
+    reviewKeepChanged = false;
+    status.textContent = '';
+    box.hidden = !source;
+    check.checked = !!kept;
+    check.onchange = async () => {
+        check.disabled = true;
+        status.className = 'small d-block text-muted';
+        status.textContent = 'Saving…';
+        try {
+            const response = await csrfFetch('/admin/required-pages/keep', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+                body: JSON.stringify({ source, uuid, keep: check.checked })
+            });
+            const result = await response.json();
+            if (result.success) {
+                reviewKeepChanged = true;
+                status.className = 'small d-block text-success';
+                status.textContent = result.kept ? 'Kept for this site.' : 'No longer kept. Sync can replace this page again when you choose.';
+            } else {
+                check.checked = !check.checked;
+                status.className = 'small d-block text-danger';
+                status.textContent = result.error;
+            }
+        } catch (err) {
+            check.checked = !check.checked;
+            status.className = 'small d-block text-danger';
+            status.textContent = `Network error: ${err.message}. Nothing was changed. Try again.`;
+        } finally {
+            check.disabled = false;
+        }
+    };
+}
+
+document.getElementById('diffModal').addEventListener('hidden.bs.modal', () => {
+    if (reviewKeepChanged) location.reload();
+});
+
+async function showDiff(uuid, title, liveUuid = '', source = '', kept = false) {
+    setupReviewKeep(source, uuid, kept);
     document.getElementById('diffModalTitle').textContent = `${title}: source vs live`;
     const fullPageParams = new URLSearchParams({ uuid, source: 'required' });
     if (liveUuid) fullPageParams.set('liveUuid', liveUuid);
@@ -815,7 +880,7 @@ async function postSync(body, statusMsg) {
 function refreshSyncSummary(tableSelector, summaryTestId, buttonTestId) {
     const rows = Array.from(document.querySelectorAll(`${tableSelector} tr[data-status]`))
         .filter(row => row.dataset.status !== 'current');
-    const need = rows.filter(row => row.dataset.userModified === 'true').length;
+    const need = rows.filter(row => row.dataset.needsDecision === 'true').length;
     const update = rows.filter(row => row.dataset.bulkOutdated === 'true').length;
     const line = document.querySelector(`[data-testid="${summaryTestId}"]`);
     if (line) {
@@ -832,7 +897,7 @@ function refreshSyncSummary(tableSelector, summaryTestId, buttonTestId) {
 
 // The count chips (the line of badges above the tables and the add-on header's)
 // follow the rows too, so they match the toast before the page reloads.
-const SYNC_CHIP_LABELS = { 'new': 'New', 'update-ready': 'Update ready', 'edited-here': 'Edited here', 'current': 'Same as shipped' };
+const SYNC_CHIP_LABELS = { 'new': 'New', 'update-ready': 'Update ready', 'edited-here': 'Edited here', 'kept': 'Kept for this site', 'current': 'Same as shipped' };
 
 function refreshSyncChips(tableSelector, chipSelector) {
     const rows = Array.from(document.querySelectorAll(`${tableSelector} tr[data-status]`));
@@ -840,7 +905,8 @@ function refreshSyncChips(tableSelector, chipSelector) {
     const counts = {
         'new': rows.filter(row => row.dataset.status === 'new').length,
         'update-ready': open.filter(row => row.dataset.bulkOutdated === 'true').length,
-        'edited-here': open.filter(row => row.dataset.userModified === 'true').length,
+        'edited-here': open.filter(row => row.dataset.needsDecision === 'true').length,
+        'kept': open.filter(row => row.dataset.kept === 'true' && row.dataset.needsDecision !== 'true').length,
         'current': rows.length - open.length
     };
     document.querySelectorAll(chipSelector).forEach(chip => {

@@ -189,8 +189,8 @@ function multisetDiff(from: string[], to: string[]): { added: string[]; removed:
 export function describeWorkingChanges(before: string[], after: string[]): string[] {
   const { added, removed } = multisetDiff(before, after);
   const sentences: string[] = [];
-  const settingKey = (p: string) => p.slice('setting:'.length).split('=')[0];
-  const settingValue = (p: string) => p.slice('setting:'.length).split('=').slice(1).join('=');
+  const settingKey = (p: string): string => p.slice('setting:'.length).split('=')[0];
+  const settingValue = (p: string): string => p.slice('setting:'.length).split('=').slice(1).join('=');
   const removedSettings = new Map(removed.filter((p) => p.startsWith('setting:')).map((p) => [settingKey(p), p]));
 
   for (const part of added) {

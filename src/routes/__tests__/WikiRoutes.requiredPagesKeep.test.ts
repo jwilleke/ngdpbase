@@ -45,6 +45,12 @@ const createMockRes = () => ({
 const shipped = (body: string, uuid = UUID, title = 'Welcome') => matter.stringify(`${body}\n`, { title, uuid, slug: title.toLowerCase(), 'system-category': 'documentation' });
 const live = (body: string, extra: Record<string, unknown>, uuid = UUID, title = 'Welcome') => matter.stringify(`${body}\n`, { title, uuid, slug: title.toLowerCase(), 'system-category': 'documentation', ...extra });
 
+/** The page list reads the folder at start-up and on refresh; a file written after boot needs two refreshes, as in PageManager's own tests. */
+async function refresh(c: { pageManager: PageManager }) {
+  await c.pageManager.refreshPageList();
+  await c.pageManager.refreshPageList();
+}
+
 async function setup(opts: { permit?: boolean } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ngdpbase-keep-'));
   const dirs = {
@@ -99,6 +105,7 @@ describe('POST /admin/required-pages/keep (#2389 slice 2)', () => {
   const edited = async (c: typeof ctx) => {
     await fs.writeFile(path.join(c.dirs.requiredDir, `${UUID}.md`), shipped('Shipped v1.'), 'utf8');
     await fs.writeFile(path.join(c.dirs.pagesDir, `${UUID}.md`), live('Edited here.', { 'user-modified': true, [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash('Shipped v1.') }), 'utf8');
+    await refresh(c);
   };
 
   test('without admin-system it is refused with 403 and nothing is written', async () => {
@@ -135,6 +142,7 @@ describe('POST /admin/required-pages/keep (#2389 slice 2)', () => {
     ctx = await setup();
     await fs.writeFile(path.join(ctx.dirs.addonDir, 'welcome-addon.md'), shipped('Addon v1.', ADDON_UUID, 'Addon Welcome'), 'utf8');
     await fs.writeFile(path.join(ctx.dirs.pagesDir, `${ADDON_UUID}.md`), live('Edited addon.', { 'user-modified': true, 'addon-source-hash': pageSourceHash('Addon v1.') }, ADDON_UUID, 'Addon Welcome'), 'utf8');
+    await refresh(ctx);
     const res = createMockRes();
     await ctx.routes.adminKeepRequiredPage(createMockReq({ source: 'addon:demo', uuid: ADDON_UUID, keep: true }), res);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, kept: true }));
