@@ -87,4 +87,32 @@ describe('code extraction follows CommonMark (#1726)', () => {
     expect(html).toContain('[Inline: [{Image src=\'a.png\'}] and `code` here.]');
     expect(html).not.toContain('placeholder');
   });
+
+  test('an indented code block holding a fence is code, not a fence', async () => {
+    const html = await render('    ```\n    aaa\n    ```\n');
+
+    expect(html).toContain('<pre><code>```\naaa\n```\n</code></pre>');
+    expect(html).not.toContain('placeholder');
+  });
+
+  test('an indented block holding a reference definition is code', async () => {
+    const html = await render('    [foo]: /url "title"\n\n[foo]\n');
+
+    expect(html).toContain('<pre><code>[foo]: /url &quot;title&quot;\n</code></pre>');
+    expect(html).not.toContain('placeholder');
+  });
+
+  test('a fence after a quote inside a list item stays in the item', async () => {
+    const html = await render('- a\n  > b\n  ```\n  c\n  ```\n- d\n');
+
+    expect(html).toMatch(/<li>a\s*<blockquote>\s*<p>b<\/p>\s*<\/blockquote>\s*<pre><code>c\n<\/code><\/pre>\s*<\/li>\s*<li>d<\/li>/);
+    expect(html).not.toContain('placeholder');
+  });
+
+  test('a code span inside link brackets leaves no placeholder', async () => {
+    const html = await render('[foo`][ref]`\n\n[ref]: /uri\n');
+
+    expect(html).toContain('<p>[foo<code>][ref]</code></p>');
+    expect(html).not.toContain('placeholder');
+  });
 });
