@@ -100,6 +100,7 @@ async function makeRoutes(dirs: { requiredDir: string; pagesDir: string; instanc
       if (name === 'AddonsManager' && dirs.addonPagesDir) {
         return {
           getEnabledAddonPagesDirectories: () => [{ name: 'demo', pagesDir: dirs.addonPagesDir }],
+          getAddonVersion: () => undefined,
           findOrphanedAddonPages: async () => []
         };
       }

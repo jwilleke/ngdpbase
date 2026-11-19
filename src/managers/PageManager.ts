@@ -6,7 +6,7 @@ import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { addonAudienceSlugs, audiencePrincipals } from '../utils/frontmatterAccess.js';
-import { shippedPageState, keptInputs, pageSourceHash, REQUIRED_SOURCE_HASH_KEY, REQUIRED_SOURCE_RELEASE_KEY, ADDON_SOURCE_RELEASE_KEY, KEPT_EDITED_KEY, KEPT_SHIPPED_HASH_KEY, KEPT_WORKING_PARTS_KEY } from '../utils/addonPageSync.js';
+import { shippedPageState, keptInputs, pageSourceHash, REQUIRED_SOURCE_HASH_KEY, REQUIRED_SOURCE_RELEASE_KEY, releaseText, ADDON_SOURCE_RELEASE_KEY, KEPT_EDITED_KEY, KEPT_SHIPPED_HASH_KEY, KEPT_WORKING_PARTS_KEY } from '../utils/addonPageSync.js';
 import { workingParts } from '../utils/pluginCalls.js';
 import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
@@ -522,13 +522,6 @@ interface ProviderConstructor {
 /**
  * A folder of pages ngdpbase ships, for `PageManager.seedShippedPages` (#1405).
  */
-/** A release label as text, or undefined when the version is unknown (#2389 slice 3) */
-function releaseLabelOf(version: unknown): string | undefined {
-  if (typeof version !== 'string' && typeof version !== 'number') return undefined;
-  const text = String(version).trim().replace(/^v/i, '');
-  return text.length > 0 ? text : undefined;
-}
-
 export interface ShippedPageSource {
   /** Key in the site's seeded-pages record: `required-pages`, or `addon:<name>` */
   id: string;
@@ -1311,7 +1304,7 @@ class PageManager extends BaseManager implements CatalogSource {
       dir,
       stampKey: REQUIRED_SOURCE_HASH_KEY,
       releaseKey: REQUIRED_SOURCE_RELEASE_KEY,
-      release: releaseLabelOf(configManager.getProperty('ngdpbase.version', '')),
+      release: releaseText(configManager.getProperty('ngdpbase.version', '')),
       exclude: (data) => {
         const category = data['system-category'];
         return typeof category === 'string' && neverStored.has(category)
@@ -1430,7 +1423,7 @@ class PageManager extends BaseManager implements CatalogSource {
       dir: pagesDir,
       stampKey: 'addon-source-hash',
       releaseKey: ADDON_SOURCE_RELEASE_KEY,
-      release: releaseLabelOf(this.engine.getManager<{ getAddonVersion?(slug: string): string | undefined }>('AddonsManager')?.getAddonVersion?.(addonName)),
+      release: releaseText(this.engine.getManager<{ getAddonVersion?(slug: string): string | undefined }>('AddonsManager')?.getAddonVersion?.(addonName)),
       extraMetadata: (data) => ({
         addon: addonName,
         'system-category': data['system-category'] ?? 'addon'
@@ -1449,7 +1442,7 @@ class PageManager extends BaseManager implements CatalogSource {
    * A metadata-only save: no version is written for the unchanged body
    * (#1407), and `lastModified` is kept so Recent Changes stays quiet.
    *
-   * @returns True when the page was stamped
+   * @returns True when the page was written (stamped or labelled), so its copy should be read again
    */
   private async backfillShippedPageStamp(
     source: ShippedPageSource,
@@ -1472,11 +1465,13 @@ class PageManager extends BaseManager implements CatalogSource {
       // that is behind gets none: the screen says "an earlier release".
       if (!matches || !source.releaseKey || !source.release || meta[source.releaseKey] === source.release) return false;
       try {
-        await this.savePage(title, live.content ?? '', { ...meta, ...label }, ctx, { skipValidation: true, preserveLastModified: true });
+        await this.savePage(title, live.content ?? '', { ...meta, ...label }, ctx, { skipValidation: true, preserveLastModified: true, preserveEditor: true });
+        // The caller reads the page again, so a step that follows sees the label
+        return true;
       } catch (err) {
         logger.warn(`[PageManager] Could not label '${title}' from ${source.label}:`, err);
+        return false;
       }
-      return false;
     }
     if (!matches) {
       report.unstamped.push(title);

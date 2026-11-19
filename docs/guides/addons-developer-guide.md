@@ -1149,7 +1149,7 @@ If `{uuid}.md` already exists in the instance pages directory, the seed file is 
 | `addon-source-category` | the category applied | So a later source change can be told from an operator edit |
 | `access` | the category default | Only when the source does not set `access` |
 | `addon-source-hash` | hash of the body | What the reseed comparison uses |
-| `addon-source-release` | the add-on's version | Written with the stamp, and added to a stamped page whose text matches the source. Display only: Required Pages Sync shows it as "Your copy: v1.2.0 · This release: v1.3.0" |
+| `addon-source-release` | the add-on's version | Written with the stamp, and added to a stamped page whose text matches the source. Display only: Required Pages Sync shows it on the row as "Your copy: v1.2.0", with the add-on's current version once in the section header ("This release: demo v1.3.0") |
 
 #### A uuid the site already holds
 

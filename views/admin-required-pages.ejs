@@ -6,6 +6,9 @@
        the column is narrow, so the Actions column is never cut off. */
     #pagesTable td:last-child .btn,
     #addonPagesTable td:last-child .btn { white-space: nowrap; }
+    /* Diff, Update and open stay on one line, so a row is no taller than its text.
+       The UUID Mismatch row has four buttons and keeps flowing to a second line. */
+    [data-col="actions"]:not([data-wrap]) { white-space: nowrap; }
     /* The theme's .btn-outline-primary sets its own padding and beats btn-sm, so
        Update (and Sync) stood 35px tall beside 31px Diff. One size for every
        row button. */
@@ -176,6 +179,9 @@
                 <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div>
                         <h5 class="mb-0"><i class="fas fa-file-alt"></i> Source Pages</h5>
+                        <% if (typeof thisRelease !== 'undefined' && thisRelease) { %>
+                        <small class="d-block text-muted" data-sync-note="this-release">This release: v<%= thisRelease %></small>
+                        <% } %>
                         <small class="text-muted"><%- include('_sync-summary', { syncSummary: { counts: counts, testId: 'core-sync-summary' } }) %></small>
                     </div>
                     <div class="d-flex flex-wrap gap-1">
@@ -248,11 +254,11 @@
                                             </span>
                                             <br><small class="text-muted font-monospace">live: <%= page.liveUuid %></small>
                                         <% } else { %>
-                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable, newerAvailable: page.newerAvailable, workingChanges: page.workingChanges, copyRelease: page.copyRelease, thisRelease: page.thisRelease } }) %>
+                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable, newerAvailable: page.newerAvailable, workingChanges: page.workingChanges, copyRelease: page.copyRelease, copyEarlier: page.copyEarlier } }) %>
                                         <% } %>
                                     </td>
                                     <td data-col="source-modified"><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>
-                                    <td>
+                                    <td data-col="actions"<%- page.status === 'uuid-mismatch' ? ' data-wrap="true"' : '' %>>
                                         <% if (page.status === 'modified') { %>
                                         <% var reviewable = ['edited-not-confirmed', 'both-changed', 'kept-for-site', 'kept-needs-review'].includes(page.syncState); %>
                                         <button class="btn btn-sm <%= page.syncState === 'kept-needs-review' ? 'btn-warning' : 'btn-outline-info' %>"
@@ -376,6 +382,9 @@
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <div>
                         <h5 class="mb-0"><i class="fas fa-puzzle-piece me-2"></i>Addon Pages</h5>
+                        <% if (typeof addonReleases !== 'undefined' && addonReleases.length) { %>
+                        <small class="d-block text-muted" data-sync-note="this-release">This release: <%= addonReleases.map(function (a) { return a.name + ' v' + a.release; }).join(', ') %></small>
+                        <% } %>
                         <small class="text-muted">Pages shipped with enabled addons —
                             <%- include('_sync-counts', { syncCounts: addonCounts }) %>
                         </small>
@@ -438,11 +447,11 @@
                                             <span class="badge bg-danger">UUID Mismatch</span>
                                             <br><small class="text-muted">live: <span class="font-monospace"><%= page.liveUuid %></span></small>
                                         <% } else { %>
-                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable, newerAvailable: page.newerAvailable, workingChanges: page.workingChanges, copyRelease: page.copyRelease, thisRelease: page.thisRelease } }) %>
+                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable, newerAvailable: page.newerAvailable, workingChanges: page.workingChanges, copyRelease: page.copyRelease, copyEarlier: page.copyEarlier } }) %>
                                         <% } %>
                                     </td>
                                     <td data-col="source-modified"><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>
-                                    <td>
+                                    <td data-col="actions"<%- page.status === 'uuid-mismatch' ? ' data-wrap="true"' : '' %>>
                                         <% if (page.status === 'modified') { %>
                                         <% var reviewable = ['edited-not-confirmed', 'both-changed', 'kept-for-site', 'kept-needs-review'].includes(page.syncState); %>
                                         <button class="btn btn-sm <%= page.syncState === 'kept-needs-review' ? 'btn-warning' : 'btn-outline-info' %>"

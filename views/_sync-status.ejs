@@ -16,7 +16,9 @@
                 Update ready, and a note under the badge says why (#2414)
     copyRelease   the release this site's copy matches, without a "v"; absent for a copy
                 that is behind (#2389 slice 3). Display only: the text decides the state
-    thisRelease   the release that ships now (ngdpbase's or the add-on's), without a "v"
+    copyEarlier   the copy has no release label and the shipped release is known: the
+                row says "an earlier release". This release itself is said once in
+                each section header of the screen, not here
 %>
 <% if (syncItem.status === 'new') { %>
 <span class="badge bg-primary" data-sync-status="new">New</span>
@@ -62,6 +64,6 @@
 <% } else if (syncItem.syncState === 'same-as-shipped') { %>
 <span class="badge bg-success" data-sync-status="same-as-shipped">Same as shipped</span>
 <% } %>
-<% if (syncItem.status !== 'new' && syncItem.syncState && (syncItem.copyRelease || syncItem.thisRelease)) { %>
-<small class="d-block text-muted" data-sync-note="release">Your copy: <%= syncItem.copyRelease ? 'v' + syncItem.copyRelease : 'an earlier release' %><% if (syncItem.thisRelease) { %> · This release: v<%= syncItem.thisRelease %><% } %></small>
+<% if (syncItem.status !== 'new' && syncItem.syncState && (syncItem.copyRelease || syncItem.copyEarlier)) { %>
+<small class="d-block text-muted text-nowrap" data-sync-note="release">Your copy: <%= syncItem.copyRelease ? 'v' + syncItem.copyRelease : 'an earlier release' %></small>
 <% } %>

@@ -37,6 +37,19 @@ export const REQUIRED_SOURCE_RELEASE_KEY = 'required-source-release';
 export const ADDON_SOURCE_RELEASE_KEY = 'addon-source-release';
 
 /**
+ * A release as text, without a leading "v" (#2389 slice 3). The one place a
+ * version is read for the label, whether it is written, compared or shown.
+ *
+ * @param version - A version from config, a package or front matter
+ * @returns The text, or undefined when the version is not known
+ */
+export function releaseText(version: unknown): string | undefined {
+  if (typeof version !== 'string' && typeof version !== 'number') return undefined;
+  const text = String(version).trim().replace(/^v/i, '');
+  return text.length > 0 ? text : undefined;
+}
+
+/**
  * The state of a shipped page that exists on the site (#2389, slice 1): the one
  * answer the core list, the add-on list and `PageManager.syncShippedPages` all
  * read, from docs/design/required-pages-sync-states.md.
