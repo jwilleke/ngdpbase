@@ -248,7 +248,7 @@
                                             </span>
                                             <br><small class="text-muted font-monospace">live: <%= page.liveUuid %></small>
                                         <% } else { %>
-                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable, newerAvailable: page.newerAvailable, workingChanges: page.workingChanges } }) %>
+                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable, newerAvailable: page.newerAvailable, workingChanges: page.workingChanges, copyRelease: page.copyRelease, thisRelease: page.thisRelease } }) %>
                                         <% } %>
                                     </td>
                                     <td data-col="source-modified"><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>
@@ -438,7 +438,7 @@
                                             <span class="badge bg-danger">UUID Mismatch</span>
                                             <br><small class="text-muted">live: <span class="font-monospace"><%= page.liveUuid %></span></small>
                                         <% } else { %>
-                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable, newerAvailable: page.newerAvailable, workingChanges: page.workingChanges } }) %>
+                                            <%- include('_sync-status', { syncItem: { status: page.status, syncState: page.syncState, userModified: page.userModified, headerUnreadable: page.headerUnreadable, newerAvailable: page.newerAvailable, workingChanges: page.workingChanges, copyRelease: page.copyRelease, thisRelease: page.thisRelease } }) %>
                                         <% } %>
                                     </td>
                                     <td data-col="source-modified"><small class="text-muted"><%= page.lastModified ? String(page.lastModified).slice(0, 10) : '—' %></small></td>

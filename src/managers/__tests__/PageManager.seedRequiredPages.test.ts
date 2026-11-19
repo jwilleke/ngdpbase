@@ -416,7 +416,9 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
           slug: 'alpha',
           'system-category': 'documentation',
           lastModified: '2026-01-01T00:00:00.000Z',
-          [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash(body)
+          [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash(body),
+          // already labelled for this release (#2389 slice 3), so nothing is written
+          'required-source-release': '5.45.0'
         })
       );
       const before = await fs.readFile(livePath(1), 'utf8');

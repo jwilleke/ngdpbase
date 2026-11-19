@@ -6,7 +6,7 @@ import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { addonAudienceSlugs, audiencePrincipals } from '../utils/frontmatterAccess.js';
-import { shippedPageState, keptInputs, pageSourceHash, REQUIRED_SOURCE_HASH_KEY, KEPT_EDITED_KEY, KEPT_SHIPPED_HASH_KEY, KEPT_WORKING_PARTS_KEY } from '../utils/addonPageSync.js';
+import { shippedPageState, keptInputs, pageSourceHash, REQUIRED_SOURCE_HASH_KEY, REQUIRED_SOURCE_RELEASE_KEY, ADDON_SOURCE_RELEASE_KEY, KEPT_EDITED_KEY, KEPT_SHIPPED_HASH_KEY, KEPT_WORKING_PARTS_KEY } from '../utils/addonPageSync.js';
 import { workingParts } from '../utils/pluginCalls.js';
 import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
@@ -522,6 +522,13 @@ interface ProviderConstructor {
 /**
  * A folder of pages ngdpbase ships, for `PageManager.seedShippedPages` (#1405).
  */
+/** A release label as text, or undefined when the version is unknown (#2389 slice 3) */
+function releaseLabelOf(version: unknown): string | undefined {
+  if (typeof version !== 'string' && typeof version !== 'number') return undefined;
+  const text = String(version).trim().replace(/^v/i, '');
+  return text.length > 0 ? text : undefined;
+}
+
 export interface ShippedPageSource {
   /** Key in the site's seeded-pages record: `required-pages`, or `addon:<name>` */
   id: string;
@@ -531,6 +538,10 @@ export interface ShippedPageSource {
   dir: string;
   /** Frontmatter key for the stamped body hash (`required-source-hash`, `addon-source-hash`) */
   stampKey: string;
+  /** Frontmatter key for the release label (`required-source-release`, `addon-source-release`) (#2389) */
+  releaseKey?: string;
+  /** The release this source ships: the ngdpbase version, or the add-on's. Absent when unknown, and then no label is written */
+  release?: string;
   /** Reason to never seed a page, or undefined to seed it */
   exclude?: (data: Record<string, unknown>) => string | undefined;
   /** Metadata the source adds to every page it writes (e.g. `addon`, a default category) */
@@ -1299,6 +1310,8 @@ class PageManager extends BaseManager implements CatalogSource {
       label: 'required-pages',
       dir,
       stampKey: REQUIRED_SOURCE_HASH_KEY,
+      releaseKey: REQUIRED_SOURCE_RELEASE_KEY,
+      release: releaseLabelOf(configManager.getProperty('ngdpbase.version', '')),
       exclude: (data) => {
         const category = data['system-category'];
         return typeof category === 'string' && neverStored.has(category)
@@ -1416,6 +1429,8 @@ class PageManager extends BaseManager implements CatalogSource {
       label: `${addonName}/pages`,
       dir: pagesDir,
       stampKey: 'addon-source-hash',
+      releaseKey: ADDON_SOURCE_RELEASE_KEY,
+      release: releaseLabelOf(this.engine.getManager<{ getAddonVersion?(slug: string): string | undefined }>('AddonsManager')?.getAddonVersion?.(addonName)),
       extraMetadata: (data) => ({
         addon: addonName,
         'system-category': data['system-category'] ?? 'addon'
@@ -1445,11 +1460,25 @@ class PageManager extends BaseManager implements CatalogSource {
   ): Promise<boolean> {
     const meta = (live.metadata ?? {}) as Record<string, unknown>;
     const stamp = meta[source.stampKey];
-    if (typeof stamp === 'string' && stamp.length > 0) return false;
-
     const title = typeof meta.title === 'string' && meta.title ? meta.title : String(parsed.data.title);
     const sourceHash = pageSourceHash(parsed.content);
-    if (pageSourceHash(live.content ?? '') !== sourceHash) {
+    const matches = pageSourceHash(live.content ?? '') === sourceHash;
+    const label = source.releaseKey && source.release ? { [source.releaseKey]: source.release } : {};
+    const stamped = typeof stamp === 'string' && stamp.length > 0;
+
+    if (stamped) {
+      // #2389 slice 3: a stamped page whose text is the shipped text gets the
+      // release label, or the current one when it holds an older label. A page
+      // that is behind gets none: the screen says "an earlier release".
+      if (!matches || !source.releaseKey || !source.release || meta[source.releaseKey] === source.release) return false;
+      try {
+        await this.savePage(title, live.content ?? '', { ...meta, ...label }, ctx, { skipValidation: true, preserveLastModified: true });
+      } catch (err) {
+        logger.warn(`[PageManager] Could not label '${title}' from ${source.label}:`, err);
+      }
+      return false;
+    }
+    if (!matches) {
       report.unstamped.push(title);
       return false;
     }
@@ -1457,7 +1486,7 @@ class PageManager extends BaseManager implements CatalogSource {
       await this.savePage(
         title,
         live.content ?? '',
-        { ...meta, [source.stampKey]: sourceHash },
+        { ...meta, [source.stampKey]: sourceHash, ...label },
         ctx,
         { skipValidation: true, preserveLastModified: true }
       );
@@ -1501,6 +1530,7 @@ class PageManager extends BaseManager implements CatalogSource {
       uuid,
       title,
       [source.stampKey]: pageSourceHash(parsed.content),
+      ...(source.releaseKey && source.release ? { [source.releaseKey]: source.release } : {}),
       editor: systemPrincipalOf(this.engine)
     };
     delete metadata['user-modified'];

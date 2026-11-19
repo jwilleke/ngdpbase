@@ -57,6 +57,8 @@ Purging a trash entry whose uuid is also a live page removes only the trash file
 
 Every seeded page carries an __`addon-source-hash`__ in frontmatter — the trimmed SHA-256 of the body it was seeded or last synced with. __Start-up never replaces a page the site already holds.__ It adds pages that are not on the site yet, stamps a page that already matches the source ([#1408](https://github.com/jwilleke/ngdpbase/issues/1408)), and fixes metadata (category drift, author) without touching the text. A newer addon page reaches the site only through __Required Pages Sync__.
 
+The stamp is written with a release label ([#2389](https://github.com/jwilleke/ngdpbase/issues/2389), slice 3): `addon-source-release` holds the add-on's version, and core pages carry `required-source-release` with the ngdpbase version. A stamped page whose text matches the source gets the label at boot, once (a metadata-only save that keeps `lastModified`). A stamped page that is behind gets none. The label is display only: Required Pages Sync shows "Your copy: v… · This release: v…", or "an earlier release" for a copy with no label, and the text hash alone decides the state.
+
 The state of each page is one function, `shippedPageState()` in `src/utils/addonPageSync.ts`, the same for core and addon pages ([#2389](https://github.com/jwilleke/ngdpbase/issues/2389)):
 
 | State | Meaning | Sync All |

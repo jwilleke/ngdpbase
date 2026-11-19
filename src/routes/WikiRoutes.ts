@@ -4775,6 +4775,18 @@ ${panes}
   }
 
   /**
+   * A release label as text for a row (#2389 slice 3): a string or number from
+   * front matter or config, without a leading "v", or undefined when unknown.
+   *
+   * @param value - The stored or configured version
+   */
+  static releaseText(value: unknown): string | undefined {
+    if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+    const text = String(value).trim().replace(/^v/i, '');
+    return text.length > 0 ? text : undefined;
+  }
+
+  /**
    * `shippedState` with what the kept states say (#2389 slice 2): whether a
    * newer shipped version exists, and the plain-language list of plugin-call
    * and behaviour changes that put a kept page in "needs your review".
@@ -15622,6 +15634,8 @@ ${panes}
         bulkOutdated?: boolean;
         newerAvailable?: boolean;
         workingChanges?: string[];
+        copyRelease?: string;
+        thisRelease?: string;
       }> = [];
 
       // Pre-load all required-pages source contents for link-drift scanning
@@ -15665,6 +15679,8 @@ ${panes}
         let newerAvailable = false;
         let workingChanges: string[] = [];
         let liveUuid: string | undefined;
+        let copyRelease: string | undefined;
+        let thisRelease: string | undefined;
         let titleDrift = false;
         let liveTitle: string | undefined;
         let affectedLinks = 0;
@@ -15716,6 +15732,9 @@ ${panes}
           // 'modified' forever.
           ({ state: syncState, newerAvailable, workingChanges } = WikiRoutes.shippedStateDetail(sourceContent, destBody, destData));
           ({ status, userModified } = syncRowState(syncState));
+          // #2389 slice 3: the release label is display only; the body hash decides the state
+          copyRelease = WikiRoutes.releaseText(destData['required-source-release']);
+          thisRelease = WikiRoutes.releaseText(configManager.getProperty('ngdpbase.version', ''));
 
           // Detect title drift: source title vs live title
           const liveTitleRaw = (destData.title as string | undefined) || '';
@@ -15728,7 +15747,7 @@ ${panes}
           }
         }
 
-        comparison.push({ source: 'required-pages', uuid, title, slug, lastModified, status, userModified, syncState, newerAvailable, workingChanges, liveUuid, titleDrift, liveTitle, affectedLinks });
+        comparison.push({ source: 'required-pages', uuid, title, slug, lastModified, status, userModified, syncState, newerAvailable, workingChanges, liveUuid, titleDrift, liveTitle, affectedLinks, copyRelease, thisRelease });
       }
 
       const statusOrder: Record<string, number> = { 'uuid-mismatch': 0, new: 1, modified: 2, current: 3 };
@@ -15760,6 +15779,8 @@ ${panes}
         bulkOutdated?: boolean;
         newerAvailable?: boolean;
         workingChanges?: string[];
+        copyRelease?: string;
+        thisRelease?: string;
       }> = [];
 
       const addonsManager = this.engine.getManager('AddonsManager');
@@ -15815,6 +15836,8 @@ ${panes}
             let newerAvailable = false;
             let workingChanges: string[] = [];
             let liveUuid: string | undefined;
+            let copyRelease: string | undefined;
+            let thisRelease: string | undefined;
 
             if (!(await fse.pathExists(destPath))) {
               status = 'new';
@@ -15846,9 +15869,11 @@ ${panes}
               // the add-on stamp, so the screen and Sync cannot disagree.
               ({ state: syncState, newerAvailable, workingChanges } = WikiRoutes.shippedStateDetail(sourceContent, destParsed.content, destParsed.data, 'addon-source-hash'));
               ({ status, userModified } = syncRowState(syncState));
+              copyRelease = WikiRoutes.releaseText(destParsed.data['addon-source-release']);
+              thisRelease = WikiRoutes.releaseText(addonsManager.getAddonVersion(addonName));
             }
 
-            addonComparison.push({ source: `addon:${addonName}`, addonName, uuid, title, slug, lastModified, status, userModified, syncState, newerAvailable, workingChanges, liveUuid });
+            addonComparison.push({ source: `addon:${addonName}`, addonName, uuid, title, slug, lastModified, status, userModified, syncState, newerAvailable, workingChanges, liveUuid, copyRelease, thisRelease });
           }
         }
         addonComparison.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);

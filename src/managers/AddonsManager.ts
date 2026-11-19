@@ -1505,6 +1505,9 @@ class AddonsManager extends BaseManager {
       label: `${addonName}/pages`,
       dir: addonPagesDir,
       stampKey: 'addon-source-hash',
+      // #2389 slice 3: the release label is this add-on's own version
+      releaseKey: 'addon-source-release',
+      release: this.getAddonVersion(addonName),
       extraMetadata: (data) => {
         const seedCategory = data['system-category'] ?? 'addon';
         return {
