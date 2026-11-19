@@ -164,6 +164,10 @@ describe('Push to Source only from a source checkout (#2389 slice 4)', () => {
       expect(page.querySelectorAll('[data-row-action="pushToSourceOne"]')).toHaveLength(0);
       expect(page.querySelector('#notInSourceTable')).not.toBeNull();
       expect(page.body.textContent).not.toMatch(/push to source/i);
+      // The Not in GitHub Yet card no longer tells the admin to push, only to change the category or delete.
+      const card = page.querySelector('#notInSourceCard')?.textContent?.replace(/\s+/g, ' ') ?? '';
+      expect(card).not.toContain('push it to the source folder');
+      expect(card).toContain('change its category if it is not meant to ship, or delete it.');
     });
   });
 
@@ -186,6 +190,7 @@ describe('Push to Source only from a source checkout (#2389 slice 4)', () => {
       expect(buttons).toHaveLength(2);
       expect(page.querySelector('#pagesTable [data-row-action="pushToSourceOne"]')).not.toBeNull();
       expect(page.querySelector('#notInSourceTable [data-row-action="pushToSourceOne"]')).not.toBeNull();
+      expect(page.querySelector('#notInSourceCard')?.textContent?.replace(/\s+/g, ' ')).toContain('push it to the source folder');
     });
 
     test('each button asks the one-line question first, and no second prompt follows it', async () => {
