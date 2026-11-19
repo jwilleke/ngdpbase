@@ -109,13 +109,14 @@ async function setup(opts: { checkout: boolean }) {
   return { dirs, routes };
 }
 
-async function renderList(ctx: Awaited<ReturnType<typeof setup>>) {
+async function renderList(ctx: Awaited<ReturnType<typeof setup>>, drop: string[] = []) {
   const res = createMockRes();
   await ctx.routes.adminRequiredPages(createMockReq(), res);
-  const data = res.render.mock.calls[0][1] as Record<string, unknown>;
+  const data = { ...(res.render.mock.calls[0][1] as Record<string, unknown>) };
+  for (const key of drop) delete data[key];
   const includer = (original: string): { template: string } | undefined =>
     original === 'header' || original === 'footer' ? { template: '<!-- stub -->' } : undefined;
-  const html = await ejs.renderFile(path.join(VIEWS, 'admin-required-pages.ejs'), { ...data, locals: {} }, { includer });
+  const html = await ejs.renderFile(path.join(VIEWS, 'admin-required-pages.ejs'), { ...data }, { includer });
   return { data, html, doc: new JSDOM(html).window.document };
 }
 
@@ -168,6 +169,16 @@ describe('Push to Source only from a source checkout (#2389 slice 4)', () => {
       const card = page.querySelector('#notInSourceCard')?.textContent?.replace(/\s+/g, ' ') ?? '';
       expect(card).not.toContain('push it to the source folder');
       expect(card).toContain('change its category if it is not meant to ship, or delete it.');
+    });
+  });
+
+  describe('when the caller does not say whether it can push', () => {
+    test('a render without canPushToSource draws no Push to Source, even on a checkout with an edited page', async () => {
+      ctx = await setup({ checkout: true });
+      const { doc: page } = await renderList(ctx, ['canPushToSource']);
+      expect(page.querySelectorAll('[data-row-action="pushToSourceOne"]')).toHaveLength(0);
+      expect(page.body.textContent).not.toMatch(/push to source/i);
+      expect(page.querySelector('#notInSourceCard')?.textContent).not.toContain('push it to the source folder');
     });
   });
 

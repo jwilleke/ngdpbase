@@ -115,7 +115,7 @@ test.describe.serial('Keep edited version (#2389)', () => {
 test.describe('Push to Source on an installed site (#2389 slice 4)', () => {
   test.skip(!INSTALLED_SITE, 'set E2E_INSTALLED_SITE=true when the instance has no .git beside required-pages/');
 
-  test('no Push to Source button is shown, and a direct request is refused with nothing written', async ({ page }) => {
+  test('no Push to Source button is shown, and a direct request is refused', async ({ page }) => {
     await page.goto('/admin/required-pages');
     await expect(page.locator('[data-row-action="pushToSourceOne"]')).toHaveCount(0);
 
