@@ -1392,16 +1392,11 @@ class MarkupParser extends BaseManager {
       // fence or a `[link]` written in it is code, not markup.
       let prevBlank = true;
       let inList = false;
+      let inFootnote = false;
       while (li < inputLines.length) {
         const here = inputLines[li];
         // A footnote body written under `[^id]:` is that footnote's, not code.
-        const isIndentedBlock = (): boolean => {
-          if (!prevBlank || inList || !/^(?: {4}|\t)/.test(here) || here.trim() === '') return false;
-          let k = outputLines.length - 1;
-          while (k >= 0 && outputLines[k].trim() === '') k--;
-          return !(k >= 0 && /^\[\^[^\]\s]+\]:/.test(outputLines[k]));
-        };
-        if (isIndentedBlock()) {
+        if (prevBlank && !inList && !inFootnote && /^(?: {4}|\t)/.test(here) && here.trim() !== '') {
           const startLine = li;
           const block: string[] = [];
           while (li < inputLines.length && (inputLines[li].trim() === '' || /^(?: {4}|\t)/.test(inputLines[li]))) {
@@ -1433,6 +1428,8 @@ class MarkupParser extends BaseManager {
           prevBlank = false;
           if (/^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]/.test(here)) inList = true;
           else if (!/^[ \t]/.test(here)) inList = false;
+          if (/^\[\^[^\]\s]+\]:/.test(here)) inFootnote = true;
+          else if (!/^[ \t]/.test(here)) inFootnote = false;
         }
         // #1335: a fence may be indented — a code block inside a list item sits
         // at the item's content indent — and may have a space before its
