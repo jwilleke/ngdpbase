@@ -346,6 +346,37 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
       expect(live.content).toBe('Older body.\n');
     });
 
+    test('a page that is relabelled is read again, so a later step sees the new label', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await writeLive('Body of Alpha.\n', { [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash('Body of Alpha.\n'), 'required-source-release': '5.43.0' });
+      const pm = new PageManager(makeEngine());
+      await pm.initialize();
+      await pm.refreshPageList();
+      const seen: unknown[] = [];
+      await pm.seedShippedPages({ ...pm.requiredPagesSource(), onPresent: async (page) => { seen.push((page.metadata as Record<string, unknown>)['required-source-release']); } }, { origin: 'test', user: 'system' });
+      expect(seen).toEqual(['5.45.0']);
+    });
+
+    test('the label write keeps the editor, user-modified and the kept mark', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await writeLive('Body of Alpha.\n', {
+        [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash('Body of Alpha.\n'),
+        editor: 'alice',
+        'user-modified': true,
+        'kept-edited': true,
+        'kept-shipped-hash': pageSourceHash('Older shipped.\n'),
+        'kept-working-parts': ['x']
+      });
+      await boot();
+      const live = (await readLive()).data;
+      expect(live['required-source-release']).toBe('5.45.0');
+      expect(live.editor).toBe('alice');
+      expect(live['user-modified']).toBe(true);
+      expect(live['kept-edited']).toBe(true);
+      expect(live['kept-shipped-hash']).toBe(pageSourceHash('Older shipped.\n'));
+      expect(live['kept-working-parts']).toEqual(['x']);
+    });
+
     test('a backfilled label is written once: the next start-up changes nothing', async () => {
       await writeSource(1, 'Alpha', 'documentation');
       await writeLive('Body of Alpha.\n', { [REQUIRED_SOURCE_HASH_KEY]: pageSourceHash('Body of Alpha.\n') });

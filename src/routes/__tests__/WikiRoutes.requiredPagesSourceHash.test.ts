@@ -405,6 +405,23 @@ describe('Required Pages Sync status — body and source-hash stamp (#1395)', ()
     expect(source).toContain('edited body');
     expect(source).not.toContain(REQUIRED_SOURCE_HASH_KEY);
   });
+
+  test('push to source does not copy the release label into the source file either (#2389 slice 3)', async () => {
+    await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('old source body'), 'utf8');
+    await fs.writeFile(
+      path.join(dirs.pagesDir, `${UUID}.md`),
+      page('edited body', `${REQUIRED_SOURCE_HASH_KEY}: abc\nrequired-source-release: 5.43.0\nuser-modified: true\n`),
+      'utf8'
+    );
+    const { routes, pageManager } = await makeRoutes(dirs);
+    await reload(pageManager);
+
+    await routes.adminSyncRequiredPages(createMockReq({ pushToSource: [UUID] }), createMockRes());
+
+    const source = await fs.readFile(path.join(dirs.requiredDir, `${UUID}.md`), 'utf8');
+    expect(source).toContain('edited body');
+    expect(source).not.toContain('required-source-release');
+  });
 });
 
 /**

@@ -31,8 +31,8 @@ const res = () => ({ status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnT
 
 const doc = (uuid: string, slug: string, body: string, extra = '') => `---\ntitle: ${slug}\nuuid: ${uuid}\nslug: ${slug}\n${extra}---\n${body}\n`;
 
-type Row = { uuid: string; copyRelease?: string; thisRelease?: string };
-type ListData = { comparison: Row[]; addonComparison: Row[] } & Record<string, unknown>;
+type Row = { uuid: string; copyRelease?: string; copyEarlier?: boolean };
+type ListData = { comparison: Row[]; addonComparison: Row[]; thisRelease?: string; addonReleases?: Array<{ name: string; release: string }> } & Record<string, unknown>;
 
 describe('#2389 slice 3 Required Pages Sync rows carry the release label', () => {
   let root: string;
@@ -109,28 +109,44 @@ describe('#2389 slice 3 Required Pages Sync rows carry the release label', () =>
     return (row?.textContent ?? '').replace(/\s+/g, ' ');
   };
 
-  test('a core page: the label on the copy, and the installed ngdpbase version', async () => {
+  const count = (html: string, needle: string) => html.split(needle).length - 1;
+
+  test('a core page: the row shows the copy\'s release, the section header shows the installed one', async () => {
     await fs.writeFile(path.join(requiredDir, `${CORE_UUID}.md`), doc(CORE_UUID, 'corepage', 'new body'), 'utf8');
     await fs.writeFile(path.join(pagesDir, `${CORE_UUID}.md`), doc(CORE_UUID, 'corepage', 'old body', `${REQUIRED_SOURCE_HASH_KEY}: ${pageSourceHash('old body')}\nrequired-source-release: 5.43.0\n`), 'utf8');
     const { data, html } = await list();
-    expect(data.comparison.find((r) => r.uuid === CORE_UUID)).toMatchObject({ copyRelease: '5.43.0', thisRelease: '5.45.0' });
-    expect(cellText(html, CORE_UUID)).toContain('Your copy: v5.43.0 · This release: v5.45.0');
+    expect(data.comparison.find((r) => r.uuid === CORE_UUID)).toMatchObject({ copyRelease: '5.43.0' });
+    expect(data.thisRelease).toBe('5.45.0');
+    expect(cellText(html, CORE_UUID)).toContain('Your copy: v5.43.0');
+    expect(cellText(html, CORE_UUID)).not.toContain('This release');
+  });
+
+  test('"This release" is said once for the core section', async () => {
+    await fs.writeFile(path.join(requiredDir, `${CORE_UUID}.md`), doc(CORE_UUID, 'corepage', 'new body'), 'utf8');
+    await fs.writeFile(path.join(pagesDir, `${CORE_UUID}.md`), doc(CORE_UUID, 'corepage', 'old body', `${REQUIRED_SOURCE_HASH_KEY}: ${pageSourceHash('old body')}\nrequired-source-release: 5.43.0\n`), 'utf8');
+    const { html } = await list();
+    expect(count(html, 'This release: v5.45.0')).toBe(1);
   });
 
   test('a core page with no label reads "an earlier release"', async () => {
     await fs.writeFile(path.join(requiredDir, `${CORE_UUID}.md`), doc(CORE_UUID, 'corepage', 'new body'), 'utf8');
     await fs.writeFile(path.join(pagesDir, `${CORE_UUID}.md`), doc(CORE_UUID, 'corepage', 'old body', `${REQUIRED_SOURCE_HASH_KEY}: ${pageSourceHash('old body')}\n`), 'utf8');
     const { data, html } = await list();
-    expect(data.comparison.find((r) => r.uuid === CORE_UUID)?.copyRelease).toBeUndefined();
-    expect(cellText(html, CORE_UUID)).toContain('Your copy: an earlier release · This release: v5.45.0');
+    const row = data.comparison.find((r) => r.uuid === CORE_UUID);
+    expect(row?.copyRelease).toBeUndefined();
+    expect(row?.copyEarlier).toBe(true);
+    expect(cellText(html, CORE_UUID)).toContain('Your copy: an earlier release');
   });
 
-  test('an add-on page: its own keys and its own version, never the ngdpbase version', async () => {
+  test('an add-on page: its own key and its own version in the header, never the ngdpbase version', async () => {
     await fs.writeFile(path.join(addonDir, 'demo-page.md'), doc(ADDON_UUID, 'addonpage', 'new body'), 'utf8');
     await fs.writeFile(path.join(pagesDir, `${ADDON_UUID}.md`), doc(ADDON_UUID, 'addonpage', 'old body', `addon-source-hash: ${pageSourceHash('old body')}\naddon-source-release: 2.2.0\nrequired-source-release: 9.9.9\n`), 'utf8');
     const { data, html } = await list();
-    expect(data.addonComparison.find((r) => r.uuid === ADDON_UUID)).toMatchObject({ copyRelease: '2.2.0', thisRelease: '2.3.0' });
-    expect(cellText(html, ADDON_UUID)).toContain('Your copy: v2.2.0 · This release: v2.3.0');
+    expect(data.addonComparison.find((r) => r.uuid === ADDON_UUID)).toMatchObject({ copyRelease: '2.2.0' });
+    expect(data.addonReleases).toEqual([{ name: 'demo', release: '2.3.0' }]);
+    expect(cellText(html, ADDON_UUID)).toContain('Your copy: v2.2.0');
+    expect(cellText(html, ADDON_UUID)).not.toContain('This release');
+    expect(count(html, 'This release: demo v2.3.0')).toBe(1);
   });
 
   test('a page not on the site yet has no copy to label', async () => {

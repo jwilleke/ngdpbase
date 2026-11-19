@@ -276,38 +276,52 @@ describe('#2389 slice 3 _sync-status: the release label', () => {
   const text = async (item: Record<string, unknown>) => (await partial('_sync-status', item)).body.textContent?.replace(/\s+/g, ' ').trim();
   const base = { status: 'modified', syncState: 'update-ready', userModified: false };
 
-  test('shows both releases, with a v in front of each number', async () => {
-    expect(await text({ ...base, copyRelease: '5.43.0', thisRelease: '5.45.0' })).toContain('Your copy: v5.43.0 · This release: v5.45.0');
+  test('shows the copy\'s release, with a v in front of the number', async () => {
+    expect(await text({ ...base, copyRelease: '5.43.0' })).toContain('Your copy: v5.43.0');
   });
 
-  test('a copy with no label says an earlier release', async () => {
-    expect(await text({ ...base, thisRelease: '5.45.0' })).toContain('Your copy: an earlier release · This release: v5.45.0');
+  test('a copy with no label, behind a known release, says an earlier release', async () => {
+    expect(await text({ ...base, copyEarlier: true })).toContain('Your copy: an earlier release');
   });
 
-  test('when this release is not known, only the copy is shown', async () => {
-    const out = await text({ ...base, copyRelease: '5.43.0' });
-    expect(out).toContain('Your copy: v5.43.0');
-    expect(out).not.toContain('This release');
+  test('a row never carries "This release": that is said once in the section header', async () => {
+    expect(await text({ ...base, copyRelease: '5.43.0', thisRelease: '5.45.0' })).not.toContain('This release');
+    expect(await text({ ...base, copyEarlier: true })).not.toContain('This release');
+  });
+
+  test('with nothing known, no line is shown', async () => {
+    expect(await text(base)).not.toContain('Your copy');
   });
 
   test('it shows on every state of a page that is on the site', async () => {
     for (const syncState of ['same-as-shipped', 'update-ready', 'edited-not-confirmed', 'both-changed', 'kept-for-site', 'kept-needs-review']) {
-      expect(await text({ status: 'modified', syncState, userModified: false, copyRelease: '5.43.0', thisRelease: '5.45.0' })).toContain('Your copy: v5.43.0 · This release: v5.45.0');
+      expect(await text({ status: 'modified', syncState, userModified: false, copyRelease: '5.43.0' })).toContain('Your copy: v5.43.0');
     }
   });
 
   test('a page that is not on the site yet has no copy to label', async () => {
-    expect(await text({ status: 'new', userModified: false, thisRelease: '5.45.0' })).not.toContain('Your copy');
+    expect(await text({ status: 'new', userModified: false, copyEarlier: true, copyRelease: '5.43.0' })).not.toContain('Your copy');
   });
 
   test('the release text is escaped', async () => {
-    const doc = await partial('_sync-status', { ...base, copyRelease: '<b>x</b>', thisRelease: '5.45.0' });
+    const doc = await partial('_sync-status', { ...base, copyRelease: '<b>x</b>' });
     expect(doc.querySelector('b')).toBeNull();
   });
 
-  test('both lists hand the release to the status cell', () => {
+  test('the line stays on one line, so a row does not grow', async () => {
+    const doc = await partial('_sync-status', { ...base, copyRelease: '5.43.0' });
+    expect(doc.querySelector('[data-sync-note="release"]')?.classList.contains('text-nowrap')).toBe(true);
+  });
+
+  test('both lists hand the copy\'s release to the status cell, and not this release', () => {
     const view = fs.readFileSync(path.join(VIEWS, 'admin-required-pages.ejs'), 'utf8');
-    expect(view.match(/copyRelease: page\.copyRelease, thisRelease: page\.thisRelease/g)).toHaveLength(2);
+    expect(view.match(/copyRelease: page\.copyRelease, copyEarlier: page\.copyEarlier/g)).toHaveLength(2);
+    expect(view).not.toContain('thisRelease: page.thisRelease');
+  });
+
+  test('each section header says this release once', () => {
+    const view = fs.readFileSync(path.join(VIEWS, 'admin-required-pages.ejs'), 'utf8');
+    expect(view.match(/data-sync-note="this-release"/g)).toHaveLength(2);
   });
 });
 
