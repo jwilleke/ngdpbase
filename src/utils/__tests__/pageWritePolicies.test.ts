@@ -165,6 +165,30 @@ describe('narrowedRoleWrites: page writes a site removed from a stored shipped r
     expect(narrowedRoleWrites([stored('editor-permissions', 'editor', ['page-read'], { resources: [{ type: 'page', pattern: 'Notes*' }] })])).toEqual([]);
   });
 
+  test('a list in which no shipped role copy holds a write on every page was already through the #2255 migration, so what it lacks says nothing about the site', () => {
+    expect(narrowedRoleWrites([stored('editor-permissions', 'editor', ['page-read']), stored('contributor-permissions', 'contributor', ['page-read']), stored('demo-admin-access', 'demo-admin', ['page-read'])])).toEqual([]);
+    expect(narrowedRoleWrites([stored('contributor-permissions', 'contributor', ['page-read'])])).toEqual([]);
+  });
+
+  test('a copy that still holds a write shows the list is as the site saved it, so another copy lacking its writes is narrowed', () => {
+    expect(narrowedRoleWrites([stored('editor-permissions', 'editor', ['page-read']), stored('admin-full-access', 'admin', ['page-edit'])])).toEqual([
+      { role: 'editor', action: 'page-edit', policyId: 'editor-permissions' },
+      { role: 'editor', action: 'page-delete', policyId: 'editor-permissions' },
+      { role: 'editor', action: 'page-rename', policyId: 'editor-permissions' }
+    ]);
+  });
+
+  test('two copies with one id: the last is the one the merge keeps, so it is the one read', () => {
+    const full = stored('editor-permissions', 'editor', editorAll);
+    const narrower = stored('editor-permissions', 'editor', ['page-read', 'page-edit']);
+    expect(narrowedRoleWrites([full, narrower]).map((n) => n.action)).toEqual(['page-delete', 'page-rename']);
+    expect(narrowedRoleWrites([narrower, full])).toEqual([]);
+  });
+
+  test('a hand-edited copy with actions or resources that are not lists does not throw', () => {
+    expect(() => narrowedRoleWrites([{ id: 'editor-permissions', effect: 'allow', resources: 'page:*', actions: 'page-read' }, { id: 'demo-admin-access', resources: [null], actions: [null] }, null, 7])).not.toThrow();
+  });
+
   test('a list that holds a category policy was saved after #2255, when the role policies hold no page writes by design', () => {
     expect(narrowedRoleWrites([stored('editor-permissions', 'editor', ['page-read']), { id: 'general-page-write', effect: 'allow', subjects: role('editor'), actions: ['page-edit'] }])).toEqual([]);
   });
@@ -214,6 +238,20 @@ describe('withoutNarrowedWrites: the category policies leave out what the site r
     ];
     const { policies } = withoutNarrowedWrites(list, narrowed, new Set(['general-page-write', 'mine']));
     expect(policies).toEqual(list);
+  });
+
+  test('the id given to a split is one nothing else in the list has', () => {
+    const taken = category({ id: 'general-page-write-editor', subjects: role('editor'), actions: ['page-read'] });
+    const ids = (withoutNarrowedWrites([write, taken], narrowed, new Set(['general-page-write-editor'])).policies as Array<{ id: string }>).map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toContain('general-page-write-editor');
+    expect(ids).toHaveLength(3);
+  });
+
+  test('a policy with resources, subjects or actions that are not lists is left as it is and does not throw', () => {
+    const bad = [{ id: 'x', effect: 'allow', resources: 'system-category', subjects: 'editor', actions: 'page-delete' }, { id: 'y', effect: 'allow', resources: [null], subjects: [null], actions: [null] }, null, 'z'];
+    expect(() => withoutNarrowedWrites([...bad, write], narrowed, new Set())).not.toThrow();
+    expect((withoutNarrowedWrites([...bad, write], narrowed, new Set()).policies as unknown[]).slice(0, 4)).toEqual(bad);
   });
 
   test('nothing narrowed, or no list, changes nothing', () => {

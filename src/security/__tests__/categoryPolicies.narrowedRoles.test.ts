@@ -61,6 +61,13 @@ describe('a narrowed role policy stays narrowed after the category policies arri
   async function boot(stored?: Policy[]): Promise<void> {
     await fs.ensureDir(path.join(tempDir, 'data', 'config'));
     await fs.writeJson(customFile(), stored ? { [KEY]: stored } : {});
+    await start();
+  }
+
+  /** A restart: the file as the last save left it. */
+  const restart = (): Promise<void> => start();
+
+  async function start(): Promise<void> {
     cm = new ConfigurationManager({ getManager: vi.fn() });
     await cm.initialize();
     const managers: Record<string, unknown> = {
@@ -208,6 +215,95 @@ describe('a narrowed role policy stays narrowed after the category policies arri
     test('no stored policies at all: the shipped ones, nothing reported', async () => {
       await boot();
       for (const action of ['edit', 'delete', 'rename']) expect(await may(editor, action, meta('general'))).toBe(true);
+      expect(await items()).toEqual([]);
+    });
+  });
+
+  describe('every writer of the custom file, then a restart (#2270 review)', () => {
+    const own = (id: string): Policy => ({ id, name: id, effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'shared-folder', pattern: 'docs' }], actions: ['shared-folder-read'] });
+    /** What each shipped writer hands `setProperty`: the site's own list as `getCustomProperty` returns it, plus its entry. */
+    const writers: Array<[string, () => Promise<void>]> = [
+      ['another setting', () => cm.setProperty('ngdpbase.application-name', 'Other', ctx)],
+      ['the Shared folders screen', () => cm.setProperty(KEY, [...(cm.getCustomProperty(KEY) as Policy[]), own('shared-folder-docs-read')], ctx)],
+      ['the "Let administrators edit these pages" button', () => cm.setProperty(KEY, [...(cm.getCustomProperty(KEY) as Policy[]), own('administrators-change-uneditable-pages')], ctx)],
+      ['the Admin editor', () => cm.setProperty(KEY, cm.getProperty(KEY) as Policy[], ctx)]
+    ];
+    const everything = async (who: Array<[unknown, string, boolean]>) => {
+      for (const [subject, action, expected] of who) expect(`${(subject as { username: string }).username} ${action} ${await may(subject, action, meta('general'))}`).toBe(`${(subject as { username: string }).username} ${action} ${expected}`);
+    };
+
+    describe.each(writers)('a site that narrowed nothing, saved by %s', (_name, write) => {
+      const full = () => [savedBefore('admin-full-access', WRITES), savedBefore('editor-permissions', WRITES), savedBefore('contributor-permissions', ['page-edit']), savedBefore('demo-admin-access', ['page-edit'])];
+      const unchanged: Array<[unknown, string, boolean]> = [[editor, 'edit', true], [editor, 'delete', true], [editor, 'rename', true], [contributor, 'edit', true], [demoAdmin, 'edit', true]];
+
+      test('nobody loses a write, now or after a restart, and nothing is reported', async () => {
+        await boot(full());
+        await write();
+        await everything(unchanged);
+        expect(await items()).toEqual([]);
+        await restart();
+        await everything(unchanged);
+        expect(await may(editor, 'delete', meta('capture', 'erin'))).toBe(true);
+        expect(await items()).toEqual([]);
+        expect(cm.narrowedRoleWrites).toEqual([]);
+      });
+    });
+
+    describe.each(writers)('a site that narrowed the editor and the contributor, saved by %s', (_name, write) => {
+      const narrowed = () => [savedBefore('admin-full-access', WRITES), savedBefore('editor-permissions', WRITES, ['page-delete', 'page-rename']), savedBefore('contributor-permissions', ['page-edit'], ['page-edit']), savedBefore('demo-admin-access', ['page-edit'])];
+      const kept: Array<[unknown, string, boolean]> = [[editor, 'edit', true], [editor, 'delete', false], [editor, 'rename', false], [contributor, 'edit', false], [demoAdmin, 'edit', true], [admin, 'delete', true]];
+
+      test('they stay narrowed, now and after a restart, and the note is gone once the file holds it', async () => {
+        await boot(narrowed());
+        await write();
+        await everything(kept);
+        expect(await items()).toEqual([]);
+        await restart();
+        await everything(kept);
+        expect(await may(editor, 'delete', meta('capture', 'erin'))).toBe(false);
+        expect(await items()).toEqual([]);
+      });
+    });
+
+    test('a list another writer saved on 5.43 to 5.45 (copies with no writes, no category policies, nothing that shows it was narrowed) is not read as narrowed: editors keep their writes', async () => {
+      await boot([shippedPolicy('editor-permissions'), shippedPolicy('contributor-permissions'), shippedPolicy('demo-admin-access')]);
+      for (const action of ['edit', 'delete', 'rename']) expect(await may(editor, action, meta('general'))).toBe(true);
+      expect(await may(contributor, 'edit', meta('general'))).toBe(true);
+      expect(await items()).toEqual([]);
+    });
+
+    test('a file the site narrowed and nothing has saved since is read again at every start', async () => {
+      await boot([savedBefore('admin-full-access', WRITES), savedBefore('editor-permissions', WRITES, ['page-delete'])]);
+      await restart();
+      expect(await may(editor, 'delete', meta('general'))).toBe(false);
+      expect(await items()).toHaveLength(1);
+    });
+
+    test('a hand-edited policy that is not a list of rules does not stop a save, and what is in force is what was saved', async () => {
+      await boot([savedBefore('admin-full-access', WRITES), savedBefore('editor-permissions', WRITES, ['page-delete'])]);
+      const odd = { id: 'editor-permissions', effect: 'allow', resources: 'page', subjects: 'editor', actions: 'page-read' } as unknown as Policy;
+      await expect(cm.setProperty(KEY, [odd, ...(cm.getCustomProperty(KEY) as Policy[])], ctx)).resolves.toBeUndefined();
+      expect((await fs.readJson(customFile()))[KEY]).toEqual(cm.getCustomProperty(KEY));
+    });
+
+    test('a rule the site already has under the name a split would take does not leave two with one name', async () => {
+      const taken: Policy = { id: 'general-page-write-editor', name: 'mine', effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-read'] };
+      await boot([savedBefore('admin-full-access', WRITES), savedBefore('editor-permissions', WRITES, ['page-delete', 'page-rename']), taken]);
+      const ids = (cm.getProperty(KEY) as Policy[]).map((p) => p.id);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(await may(editor, 'delete', meta('general'))).toBe(false);
+    });
+
+    test('two copies of one rule in the file: the one the merge keeps is the one read', async () => {
+      await boot([savedBefore('editor-permissions', WRITES), savedBefore('editor-permissions', WRITES, ['page-delete', 'page-rename'])]);
+      expect(await may(editor, 'delete', meta('general'))).toBe(false);
+      expect(await items()).toHaveLength(1);
+    });
+
+    test('resetting the policy list to the shipped one ends the narrowing', async () => {
+      await boot([savedBefore('admin-full-access', WRITES), savedBefore('editor-permissions', WRITES, ['page-delete'])]);
+      await cm.setProperty(KEY, undefined, ctx);
+      expect(await may(editor, 'delete', meta('general'))).toBe(true);
       expect(await items()).toEqual([]);
     });
   });
