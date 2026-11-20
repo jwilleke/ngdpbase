@@ -118,7 +118,7 @@
   /**
    * Fill `root` from the draft under `key`, once. Returns true when a field was
    * filled. `opts.press` names the button to press again; `opts.noteIn` is the
-   * element the note goes at the top of (default `root`); `opts.label` says what it was for;
+   * element the note goes at the top of (default `root`), or `opts.noteAfter` the field it goes just below; `opts.label` says what it was for;
    * `opts.onRestore(root)` runs after a fill (to show a hidden form or its tab); `opts.skip` as for `keep`.
    */
   function restore(key, root, opts) {
@@ -156,8 +156,13 @@
     note.setAttribute('data-draft-note', '');
     note.textContent = 'What you typed' + (o.label ? ' for ' + o.label : '') + ' has been put back. Nothing has been sent yet.' +
       (o.press ? ' Press ' + o.press + ' again to finish.' : '');
-    var target = o.noteIn || root;
-    target.insertBefore(note, target.firstChild);
+    if (o.noteAfter && o.noteAfter.parentNode) {
+      note.className = 'alert alert-info py-2 small mt-2 mb-0';
+      o.noteAfter.parentNode.insertBefore(note, o.noteAfter.nextSibling);
+    } else {
+      var target = o.noteIn || root;
+      target.insertBefore(note, target.firstChild);
+    }
     if (typeof o.onRestore === 'function') o.onRestore(root);
     return true;
   }

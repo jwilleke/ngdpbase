@@ -57,7 +57,7 @@
    */
   function followReauth(data, beforeLeaving) {
     const to = data && data.reauth;
-    if (typeof to !== 'string' || !/^\/(?!\/)/.test(to)) return false;
+    if (typeof to !== 'string' || !/^\/(?![\/\\])/.test(to)) return false;
     if (typeof beforeLeaving === 'function') beforeLeaving();
     window.location.href = to;
     return true;

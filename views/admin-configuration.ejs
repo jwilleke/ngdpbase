@@ -367,7 +367,7 @@
                                                         </td>
                                                         <td>
                                                             <button type="submit" class="btn btn-sm btn-primary"<%- lockedUnless('config-manage') %>>
-                                                                <i class="fas fa-save" aria-hidden="true"></i><span class="visually-hidden">Save</span>
+                                                                <i class="fas fa-save me-1" aria-hidden="true"></i>Save
                                                             </button>
                                                         </form>
                                                     </td>
@@ -493,7 +493,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     document.querySelectorAll('form[action="/admin/configuration"]').forEach(function(form) {
         var options = draftOptions(form);
-        // The note goes in the form itself, next to the setting it is about.
+        // The note goes in the form itself, next to the setting it is about: under a row's value field, so the
+        // field stays level with the row's Save button; at the top of the Add property form.
+        if (draftKey(form) !== 'config:add') options.noteAfter = form.querySelector('[name="value"]');
         options.press = draftKey(form) === 'config:add' ? 'Add Property' : 'Save';
         options.onRestore = function() {
             // Show the tab the form is in, and the form.
