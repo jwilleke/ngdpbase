@@ -219,8 +219,12 @@ describe('bare web addresses (#2443)', () => {
     expect(html('~~https://a.com/x,~~')).toBe(`<p><del>${link('https://a.com/x')},</del></p>\n`);
   });
 
-  it('each match ends at the next strikethrough marker', () => {
+  it('each match reads only up to the next strikethrough marker, so a long line renders quickly', () => {
+    const long = 'http://a/~~'.repeat(Math.floor(100_000 / 11));
     for (const converter of [createMarkdownConverter('page'), createMarkdownConverter('untrusted')]) {
+      const started = performance.now();
+      converter.makeHtml(long);
+      expect(performance.now() - started).toBeLessThan(1000);
       const short = converter.makeHtml('http://a/~~http://b/~~');
       expect(short).toContain('<a href="http://a/"');
       expect(short).toContain('<del><a href="http://b/"');
