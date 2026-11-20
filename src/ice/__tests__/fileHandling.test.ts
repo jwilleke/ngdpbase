@@ -2,8 +2,8 @@
  * The ICE engine's own file handling (#1979): fingerprints, the noise filter,
  * and unpacking zips.
  */
-import { createHash } from 'node:crypto';
-import { packZip } from '../../utils/zipArchive';
+import { createHash, randomBytes } from 'node:crypto';
+import { packZip, ZipBudgetError } from '../../utils/zipArchive';
 import { expandUploads, fingerprint, isNoise, isZip, memberMediaType } from '../fileHandling';
 
 const NOISE = ['__MACOSX/', '.DS_Store', 'Thumbs.db', 'desktop.ini', '._*'];
@@ -90,6 +90,180 @@ describe('expandUploads', () => {
     const zip = await packZip([{ path: 'a', bytes: Buffer.alloc(10) }, { path: 'b', bytes: Buffer.alloc(10) }]);
     const { unreadable } = expandUploads([{ name: 'big.zip', bytes: zip }], { maxEntries: 1, maxTotalBytes: 1000 }, 3);
     expect(unreadable[0].message).toMatch(/exceeds the 1 allowed/);
+  });
+
+  describe('unpacked size is counted across the whole upload', () => {
+    const TOTAL = { maxEntries: 100, maxTotalBytes: 1000 };
+    /** A zip of one member of random bytes, so its stored size is about its real size. */
+    const zipOf = (name: string, size: number): Promise<Buffer> => packZip([{ path: name, bytes: randomBytes(size) }]);
+
+    test('each of several archives is under the total, and together they are over it: the upload is refused', async () => {
+      const a = await zipOf('a.bin', 400);
+      const b = await zipOf('b.bin', 400);
+      const c = await zipOf('c.bin', 400);
+      for (const one of [a, b, c]) expect(expandUploads([{ name: 'one.zip', bytes: one }], TOTAL, 3).files).toHaveLength(1);
+
+      const upload = [{ name: 'a.zip', bytes: a }, { name: 'b.zip', bytes: b }, { name: 'c.zip', bytes: c }];
+      expect(() => expandUploads(upload, TOTAL, 3)).toThrow(ZipBudgetError);
+      expect(() => expandUploads(upload, TOTAL, 3)).toThrow(/more than 1000 bytes in all/);
+    });
+
+    test('archives inside an archive are counted toward the same total', async () => {
+      const inner = await packZip([{ path: 'deep.bin', bytes: randomBytes(600) }]);
+      const outer = await packZip([{ path: 'inner.zip', bytes: inner }]);
+      // The outer's one member (the inner zip, ~700 bytes) and the inner's file (600 bytes): each under 1000, 1300 together.
+      expect(expandUploads([{ name: 'inner.zip', bytes: inner }], TOTAL, 3).files).toHaveLength(1);
+      expect(() => expandUploads([{ name: 'outer.zip', bytes: outer }], TOTAL, 3)).toThrow(ZipBudgetError);
+    });
+
+    describe('names count toward the total', () => {
+      test('a nested archive with a long name and many small files is refused', async () => {
+        const inner = await packZip(Array.from({ length: 500 }, (_, i) => ({ path: `f${i}`, bytes: Buffer.from('x') })));
+        const outer = await packZip([{ path: `${'n'.repeat(900)}.zip`, bytes: inner }]);
+        // The files hold 500 bytes and the archives about 50 KB, but the full name of each file is over 900 bytes.
+        const limits = { maxEntries: 1000, maxTotalBytes: 200_000 };
+        expect(() => expandUploads([{ name: 'outer.zip', bytes: outer }], limits, 3)).toThrow(/more than 200000 bytes in all/);
+      });
+
+      test('the same files under short names are unpacked', async () => {
+        const inner = await packZip(Array.from({ length: 500 }, (_, i) => ({ path: `f${i}`, bytes: Buffer.from('x') })));
+        const outer = await packZip([{ path: 'in.zip', bytes: inner }]);
+        const { files } = expandUploads([{ name: 'outer.zip', bytes: outer }], { maxEntries: 1000, maxTotalBytes: 200_000 }, 3);
+        expect(files).toHaveLength(500);
+        expect(files[0].name).toBe('outer.zip/in.zip/f0');
+      });
+
+      test('a member path over 1,024 bytes makes its archive unreadable, and the rest go on', async () => {
+        const long = await packZip([{ path: `${'p'.repeat(1030)}.txt`, bytes: Buffer.from('x') }]);
+        const { files, unreadable } = expandUploads([{ name: 'long.zip', bytes: long }, { name: 'ok.md', bytes: Buffer.from('# ok') }], { maxEntries: 10, maxTotalBytes: 100_000 }, 3);
+        expect(files.map(f => f.name)).toEqual(['ok.md']);
+        expect(unreadable).toEqual([{ name: 'long.zip', size: long.length, message: expect.stringMatching(/at most 1,024 bytes/) }]);
+      });
+    });
+
+    describe('members are counted across the whole upload', () => {
+      const LIMIT = { maxEntries: 5, maxTotalBytes: 1_000_000 };
+      /** A zip of `n` empty stored members, written directly: they cost no bytes, so only a count can bound them. */
+      const emptyMembersZip = (prefix: string, n: number): Buffer => {
+        const locals: Buffer[] = [];
+        const centrals: Buffer[] = [];
+        let offset = 0;
+        for (let i = 0; i < n; i++) {
+          const name = Buffer.from(`${prefix}${i}.txt`);
+          const local = Buffer.alloc(30);
+          local.writeUInt32LE(0x04034b50, 0);
+          local.writeUInt16LE(20, 4);
+          local.writeUInt16LE(name.length, 26);
+          const central = Buffer.alloc(46);
+          central.writeUInt32LE(0x02014b50, 0);
+          central.writeUInt16LE(20, 4);
+          central.writeUInt16LE(20, 6);
+          central.writeUInt16LE(name.length, 28);
+          central.writeUInt32LE(offset, 42);
+          locals.push(local, name);
+          centrals.push(central, name);
+          offset += local.length + name.length;
+        }
+        const centralSize = centrals.reduce((sum, c) => sum + c.length, 0);
+        const end = Buffer.alloc(22);
+        end.writeUInt32LE(0x06054b50, 0);
+        end.writeUInt16LE(n, 8);
+        end.writeUInt16LE(n, 10);
+        end.writeUInt32LE(centralSize, 12);
+        end.writeUInt32LE(offset, 16);
+        return Buffer.concat([...locals, ...centrals, end]);
+      };
+      /** A zip of `n` empty members: they cost no bytes, so only a count can bound them. */
+      const emptyZip = (prefix: string, n: number): Promise<Buffer> => packZip(Array.from({ length: n }, (_, i) => ({ path: `${prefix}${i}.txt`, bytes: Buffer.alloc(0) })));
+
+      test('archives that are each under the entry limit and together over it are refused as a whole', async () => {
+        const a = await emptyZip('a', 3);
+        const b = await emptyZip('b', 3);
+        expect(expandUploads([{ name: 'a.zip', bytes: a }], LIMIT, 3).files).toHaveLength(3);
+
+        const upload = [{ name: 'a.zip', bytes: a }, { name: 'b.zip', bytes: b }];
+        expect(() => expandUploads(upload, LIMIT, 3)).toThrow(ZipBudgetError);
+        expect(() => expandUploads(upload, LIMIT, 3)).toThrow(/more than 5 files in all/);
+      });
+
+      test('members of archives inside an archive are counted with the rest', async () => {
+        const outer = await packZip([
+          { path: 'one.zip', bytes: await emptyZip('a', 3) },
+          { path: 'two.zip', bytes: await emptyZip('b', 3) }
+        ]);
+        expect(() => expandUploads([{ name: 'outer.zip', bytes: outer }], LIMIT, 3)).toThrow(/more than 5 files in all/);
+      });
+
+      test('a count within the limit across several archives is unpacked', async () => {
+        const { files } = expandUploads([
+          { name: 'a.zip', bytes: await emptyZip('a', 2) },
+          { name: 'b.zip', bytes: await emptyZip('b', 2) }
+        ], LIMIT, 3);
+        expect(files).toHaveLength(4);
+      });
+
+      test('a very large number of members is returned without error', async () => {
+        // Written by hand: empty stored members, so building 135,000 of them takes no time.
+        const per = 45_000;
+        const outer = await packZip([
+          { path: 'one.zip', bytes: emptyMembersZip('a', per) },
+          { path: 'two.zip', bytes: emptyMembersZip('b', per) },
+          { path: 'three.zip', bytes: emptyMembersZip('c', per) }
+        ]);
+        const { files, unreadable } = expandUploads([{ name: 'outer.zip', bytes: outer }], { maxEntries: 1_000_000, maxTotalBytes: 100_000_000 }, 3);
+        expect(unreadable).toEqual([]);
+        expect(files).toHaveLength(3 * per);
+      });
+    });
+
+    test('plain files and archives under the total in one upload are unpacked as before', async () => {
+      const a = await zipOf('a.bin', 300);
+      const b = await zipOf('b.bin', 300);
+      const { files, unreadable } = expandUploads([
+        { name: 'note.md', bytes: randomBytes(5000) },
+        { name: 'a.zip', bytes: a },
+        { name: 'b.zip', bytes: b }
+      ], TOTAL, 3);
+      expect(unreadable).toEqual([]);
+      expect(files.map(f => f.name)).toEqual(['note.md', 'a.zip/a.bin', 'b.zip/b.bin']);
+    });
+
+    test('with innerZipsAsFiles, only the upload\'s own archives are unpacked, so only their members count', async () => {
+      const inner = await packZip([{ path: 'deep.bin', bytes: randomBytes(600) }]);
+      const outer = await packZip([{ path: 'inner.zip', bytes: inner }]);
+      const { files } = expandUploads([{ name: 'outer.zip', bytes: outer }], TOTAL, 3, { innerZipsAsFiles: true });
+      expect(files.map(f => f.name)).toEqual(['outer.zip/inner.zip']);
+    });
+
+    test('a member over the per-file cap is reported on its own, unread, and the rest of its archive goes on', async () => {
+      const archive = await packZip([{ path: 'ok.txt', bytes: Buffer.from('fine') }, { path: 'big.bin', bytes: Buffer.alloc(100) }]);
+      const central = archive.lastIndexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+      archive.writeUInt32LE(900, central + 24);   // declares 900 bytes; the data holds 100
+
+      const { files, unreadable } = expandUploads([{ name: 'x.zip', bytes: archive }], { ...TOTAL, maxFileBytes: 500 }, 3);
+      expect(files.map(f => f.name)).toEqual(['x.zip/ok.txt']);
+      expect(unreadable).toEqual([{ name: 'x.zip/big.bin', size: 900, message: 'larger than the 500 bytes allowed' }]);
+    });
+
+    test('the message for a member over the file limit says the limit in MB when it is whole MB', async () => {
+      const archive = await packZip([{ path: 'big.bin', bytes: Buffer.alloc(100) }]);
+      archive.writeUInt32LE(5 * 1024 * 1024, archive.lastIndexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02])) + 24);
+
+      const { unreadable } = expandUploads([{ name: 'x.zip', bytes: archive }], { maxEntries: 10, maxTotalBytes: 100 * 1024 * 1024, maxFileBytes: 1024 * 1024 }, 3);
+      expect(unreadable).toEqual([{ name: 'x.zip/big.bin', size: 5 * 1024 * 1024, message: 'larger than the 1 MB allowed' }]);
+    });
+
+    test('a member that understates its size makes its archive unreadable, and the other uploads go on', async () => {
+      const liar = await packZip([{ path: 'bomb.bin', bytes: Buffer.alloc(5 * 1024 * 1024) }]);
+      liar.writeUInt32LE(100, liar.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02])) + 24);
+
+      const { files, unreadable } = expandUploads([
+        { name: 'liar.zip', bytes: liar },
+        { name: 'ok.md', bytes: Buffer.from('# ok') }
+      ], { ...TOTAL, maxTotalBytes: 100_000, maxFileBytes: 500 }, 3);
+      expect(files.map(f => f.name)).toEqual(['ok.md']);
+      expect(unreadable).toEqual([{ name: 'liar.zip', size: liar.length, message: expect.stringMatching(/more than it declares/) }]);
+    });
   });
 
   test('a zip is known by its name or its media type', () => {

@@ -42,6 +42,8 @@ export type ZipEntry = {
 
 const MAX_UINT32 = 0xffffffff;
 const MAX_ENTRIES = 0xffff;
+/** The longest member path accepted, in UTF-8 bytes. */
+const MAX_PATH_BYTES = 1024;
 
 /** CRC-32 (IEEE), which every zip entry carries so an extractor can verify it. */
 const CRC_TABLE = (() => {
@@ -186,13 +188,42 @@ export async function packZip(entries: readonly ZipEntry[]): Promise<Buffer> {
   return Buffer.concat([...localChunks, ...centralChunks, end]);
 }
 
-/** Limits on what `readZip` will unpack, so an upload cannot exhaust memory. */
+/** Limits on what `readZip` will unpack. */
 export type ZipReadLimits = {
   /** Most members accepted. */
   maxEntries: number;
-  /** Most bytes accepted once everything is inflated. */
+  /** Most bytes accepted once everything is inflated, across all the archives sharing one {@link ZipBudget}. */
   maxTotalBytes: number;
+  /** Largest single member. A bigger one is not inflated: it is left out, and listed in `skipped`. */
+  maxFileBytes?: number;
 };
+
+/**
+ * What is left of the size and the number of members an upload may unpack to.
+ * One is shared by every archive in the upload, nested ones included. Each
+ * member takes its stated size from `remaining` before it is unpacked, and
+ * each archive takes its number of members from `entriesRemaining`.
+ */
+export type ZipBudget = {
+  remaining: number;
+  /** Members still allowed across the upload. Not counted when absent. */
+  entriesRemaining?: number;
+};
+
+/** The unpacked size, or the number of members, went over the budget. The upload is refused as a whole, not archive by archive. */
+export class ZipBudgetError extends Error {
+  constructor(readonly maxTotalBytes: number, readonly maxEntries?: number) {
+    super(maxEntries === undefined
+      ? `The files in this upload unpack to more than ${sizeWords(maxTotalBytes)} in all, so nothing was imported`
+      : `The archives in this upload hold more than ${maxEntries} files in all, so nothing was imported`);
+    this.name = 'ZipBudgetError';
+  }
+}
+
+/** A size as words: whole MB as `N MB`, anything else in bytes. */
+export function sizeWords(bytes: number): string {
+  return bytes >= 1024 * 1024 && bytes % (1024 * 1024) === 0 ? `${bytes / 1024 / 1024} MB` : `${bytes} bytes`;
+}
 
 /**
  * The files in a zip archive, as bytes in memory (#1472).
@@ -210,11 +241,33 @@ export type ZipReadLimits = {
  *   - encryption, zip64, split archives, and any method but stored and deflate;
  *   - a member whose inflated bytes do not match the size or CRC the archive
  *     declares for it;
- *   - more members, or more inflated bytes, than `limits` allow. Inflating is
- *     capped per member at what is left of the budget, so a small archive
- *     that expands enormously stops at the budget, not at the machine's memory.
+ *   - a member path over 1,024 bytes (UTF-8): the archive is unreadable;
+ *   - a stored member whose declared size differs from its stored length;
+ *   - members that share data: each member's data, from its local header
+ *     through its last stored byte, must be its own, so what is read for all
+ *     the members together never exceeds the archive's own length;
+ *   - more members in one archive than `limits` allow;
+ *   - more members than `budget` has left, counting every archive that shares
+ *     it, or more inflated bytes than it has left (a {@link ZipBudgetError}).
+ *     The budget is `maxTotalBytes` and `maxEntries` unless the caller passes
+ *     one to share across archives. An archive's members are counted when it
+ *     is opened. Each member's name counts too, charged with its size:
+ *     its path, plus `nameBytesBefore` bytes and a "/" for the names of the
+ *     archives that hold it. A member's declared size is checked against what is left, and
+ *     against `maxFileBytes`, and is charged to the budget, before anything is
+ *     inflated, whether or not the member then unpacks cleanly; inflating is
+ *     capped at that declared size, since a declared size can be wrong.
+ *
+ * A member over `maxFileBytes` is not an error: it is not inflated, and when
+ * the caller passes `skipped` it is listed there with its declared size.
  */
-export function readZip(archive: Buffer, limits: ZipReadLimits): ZipEntry[] {
+export function readZip(
+  archive: Buffer,
+  limits: ZipReadLimits,
+  budget: ZipBudget = { remaining: limits.maxTotalBytes, entriesRemaining: limits.maxEntries },
+  skipped?: Array<{ path: string; size: number }>,
+  nameBytesBefore = 0
+): ZipEntry[] {
   const eocd = findEndOfCentralDirectory(archive);
   if (eocd < 0) throw new Error('zipArchive: not a zip archive');
 
@@ -231,9 +284,17 @@ export function readZip(archive: Buffer, limits: ZipReadLimits): ZipEntry[] {
     throw new Error(`zipArchive: ${count} members exceeds the ${limits.maxEntries} allowed`);
   }
   if (centralOffset + centralSize > eocd) throw new Error('zipArchive: the central directory is truncated');
+  if (budget.entriesRemaining !== undefined) {
+    if (count > budget.entriesRemaining) throw new ZipBudgetError(limits.maxTotalBytes, limits.maxEntries);
+    budget.entriesRemaining -= count;
+  }
 
-  const entries: ZipEntry[] = [];
-  let budget = limits.maxTotalBytes;
+  // First every member's record is read and checked, and its stated size
+  // charged; only then is anything unpacked, so the data of every member is
+  // known to be its own before any of it is read.
+  type Pending = { path: string; method: number; crc: number; size: number; storedSize: number; dataStart: number; mtime: Date };
+  const pending: Pending[] = [];
+  const ranges: Array<{ start: number; end: number }> = [];
   let at = centralOffset;
 
   for (let i = 0; i < count; i++) {
@@ -270,9 +331,20 @@ export function readZip(archive: Buffer, limits: ZipReadLimits): ZipEntry[] {
     if (method !== 0 && method !== 8) {
       throw new Error(`zipArchive: "${clean}" uses compression method ${method}; only stored and deflate are supported`);
     }
-    if (size > budget) {
-      throw new Error(`zipArchive: the archive unpacks to more than the ${limits.maxTotalBytes} bytes allowed`);
+    // The member's full name is held for as long as the member is, so it counts
+    // too: its path, and the names of the archives that hold it and the "/"
+    // that joins them (`nameBytesBefore`).
+    const nameBytes = Buffer.byteLength(clean) + (nameBytesBefore > 0 ? nameBytesBefore + 1 : 0);
+    if (limits.maxFileBytes !== undefined && size > limits.maxFileBytes) {
+      if (nameBytes > budget.remaining) throw new ZipBudgetError(limits.maxTotalBytes);
+      budget.remaining -= nameBytes;
+      skipped?.push({ path: clean, size });
+      continue;
     }
+    // Charged here, before the member is unpacked, and not given back if it
+    // then fails its size or CRC check: what the archive states is what counts.
+    if (size + nameBytes > budget.remaining) throw new ZipBudgetError(limits.maxTotalBytes);
+    budget.remaining -= size + nameBytes;
 
     // The local header repeats the name and may carry a different extra
     // field, so the data starts where IT says, not where the central record
@@ -282,25 +354,42 @@ export function readZip(archive: Buffer, limits: ZipReadLimits): ZipEntry[] {
     }
     const dataStart = localOffset + 30 + archive.readUInt16LE(localOffset + 26) + archive.readUInt16LE(localOffset + 28);
     if (dataStart + storedSize > archive.length) throw new Error(`zipArchive: "${clean}" is truncated`);
-    const stored = archive.subarray(dataStart, dataStart + storedSize);
+    // A stored member is its data as it stands, so its two sizes are one.
+    if (method === 0 && storedSize !== size) {
+      throw new Error(`zipArchive: "${clean}" has a stored size that differs from its declared size`);
+    }
+
+    ranges.push({ start: localOffset, end: dataStart + storedSize });
+    pending.push({ path: clean, method, crc, size, storedSize, dataStart, mtime: fromDosDateTime(date, time) });
+  }
+
+  // Each member's data (its local header through its last stored byte) is its
+  // own: members may not share data, so what is read never exceeds the archive.
+  ranges.sort((a, b) => a.start - b.start);
+  for (let i = 1; i < ranges.length; i++) {
+    if (ranges[i].start < ranges[i - 1].end) throw new Error('zipArchive: members share data, which an archive may not');
+  }
+
+  const entries: ZipEntry[] = [];
+  for (const member of pending) {
+    const stored = archive.subarray(member.dataStart, member.dataStart + member.storedSize);
 
     let bytes: Buffer;
-    if (method === 0) {
+    if (member.method === 0) {
       bytes = Buffer.from(stored);
     } else {
       try {
         // One byte over the declared size, so an entry that lies about its
         // size is caught as a mismatch rather than silently truncated.
-        bytes = inflateRawSync(stored, { maxOutputLength: Math.min(budget, size) + 1 });
+        bytes = inflateRawSync(stored, { maxOutputLength: member.size + 1 });
       } catch {
-        throw new Error(`zipArchive: "${clean}" could not be inflated, or unpacks to more than it declares`);
+        throw new Error(`zipArchive: "${member.path}" could not be inflated, or unpacks to more than it declares`);
       }
     }
-    if (bytes.length !== size) throw new Error(`zipArchive: "${clean}" does not match its declared size`);
-    if (crc32(bytes) !== crc) throw new Error(`zipArchive: "${clean}" fails its CRC check`);
+    if (bytes.length !== member.size) throw new Error(`zipArchive: "${member.path}" does not match its declared size`);
+    if (crc32(bytes) !== member.crc) throw new Error(`zipArchive: "${member.path}" fails its CRC check`);
 
-    budget -= bytes.length;
-    entries.push({ path: clean, bytes, mtime: fromDosDateTime(date, time) });
+    entries.push({ path: member.path, bytes, mtime: member.mtime });
   }
 
   return entries;
@@ -332,7 +421,12 @@ function safeMemberPath(name: string): string | null {
   if (parts.includes('..')) throw new Error(`zipArchive: "${name}" climbs out of the archive`);
   if (parts.length === 0) return null;
   if (parts[0] === '__MACOSX' || parts[parts.length - 1] === '.DS_Store') return null;
-  return parts.join('/');
+  const clean = parts.join('/');
+  // Refused like the other paths that cannot be accepted: the archive is unreadable.
+  if (Buffer.byteLength(clean) > MAX_PATH_BYTES) {
+    throw new Error(`zipArchive: a member path may be at most ${MAX_PATH_BYTES.toLocaleString('en-US')} bytes`);
+  }
+  return clean;
 }
 
 /** The inverse of `dosDateTime`, in local time as the format stores it. */
