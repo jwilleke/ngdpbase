@@ -65,6 +65,21 @@ async function buildRenderer(engine: WikiEngine): Promise<ProfileRenderer | null
 }
 
 /**
+ * A bare address in a comment opens in a new tab like one in a page (#2443).
+ * The sanitiser drops `target` and `rel`, and the profile's attribute list is
+ * deliberately not widened for an author's own markup, so the two attributes
+ * are put back afterwards, and only on the exact tag the converter writes for
+ * a bare `http(s)` address: an `href` that already passed the filter, then the
+ * `wiki-link external-link` class. Links an author wrote stay as they were.
+ */
+function openBareAddressesInNewTab(html: string): string {
+  return html.replace(
+    /<a href="(https?:\/\/[^"]*)" class="wiki-link external-link">/g,
+    (_tag: string, href: string) => `<a href="${href}" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">`
+  );
+}
+
+/**
  * Render untrusted-author markdown (a comment) to safe HTML.
  *
  * @param formatters PluginManager's formatters (#1820); the fallback escapes with their escapeHtml
@@ -85,7 +100,7 @@ export async function renderUntrustedInline(formatters: PluginFormatters, markdo
     if (!renderer) return fallback();
 
     const html = renderer.converter.makeHtml(markdown);
-    return await renderer.filter.process(html, { pageName: 'untrusted-inline' });
+    return openBareAddressesInNewTab(await renderer.filter.process(html, { pageName: 'untrusted-inline' }));
   } catch (err) {
     logger.warn('[renderUntrustedInline] render failed, falling back to escaped text:', err);
     return fallback();

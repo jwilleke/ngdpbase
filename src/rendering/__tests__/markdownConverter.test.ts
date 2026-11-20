@@ -213,7 +213,7 @@ describe('bare web addresses (#2443)', () => {
 
   it('in a table cell the link ends where a placeholder begins', () => {
     expect(renderInlineMarkdown('https://a.com\uE0000\uE001')).toBe(`${link('https://a.com')}\uE0000\uE001`);
-    expect(renderInlineMarkdown('x \uE0001\uE001https://a.com')).toBe(`x \uE0001\uE001${link('https://a.com')}`);
+    expect(renderInlineMarkdown('x \uE0001\uE001 https://a.com')).toBe(`x \uE0001\uE001 ${link('https://a.com')}`);
   });
 });
 

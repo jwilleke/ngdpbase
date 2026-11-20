@@ -81,8 +81,11 @@ function ellipsisOnly(md: MarkdownIt): void {
   md.core.ruler.push('showdown_ellipsis', (state): void => {
     for (const blockToken of state.tokens) {
       if (blockToken.type !== 'inline' || !blockToken.children) continue;
+      let inBareAddress = false; // an address keeps its dots as written (#2443)
       for (const token of blockToken.children) {
-        if (token.type === 'text') token.content = token.content.replace(/\.{3}/g, '…');
+        if (token.type === 'link_open') inBareAddress = token.markup === 'linkify';
+        else if (token.type === 'link_close') inBareAddress = false;
+        else if (token.type === 'text' && !inBareAddress) token.content = token.content.replace(/\.{3}/g, '…');
       }
     }
   });
@@ -95,13 +98,16 @@ function ellipsisOnly(md: MarkdownIt): void {
  * Internal, relative, protocol-relative, mailto and anchor links are left as
  * markdown-it renders them. The href is untouched: markdown-it has already
  * normalised and escaped it, and refused `javascript:` and its kin.
+ *
+ * `bareOnly` (comments, #2443): only a link made from a bare address gets them;
+ * every link an author wrote in a comment renders as it always did.
  */
-function externalLinksInNewTab(md: MarkdownIt): void {
+function externalLinksInNewTab(md: MarkdownIt, bareOnly = false): void {
   const renderLinkOpen = md.renderer.rules.link_open
     ?? ((tokens, idx, options, _env, self): string => self.renderToken(tokens, idx, options));
   md.renderer.rules.link_open = (tokens, idx, options, env, self): string => {
     const token = tokens[idx];
-    if (/^https?:\/\//i.test(token.attrGet('href') ?? '')) {
+    if (/^https?:\/\//i.test(token.attrGet('href') ?? '') && (!bareOnly || token.markup === 'linkify')) {
       token.attrJoin('class', 'wiki-link external-link');
       token.attrSet('target', '_blank');
       token.attrSet('rel', 'noopener noreferrer');
@@ -110,16 +116,25 @@ function externalLinksInNewTab(md: MarkdownIt): void {
   };
 }
 
+/** Private-use sentinels a table cell wraps around a placeholder (JSPWikiPreprocessor). */
+const PLACEHOLDER_START = '\uE000';
+const PLACEHOLDER_END = '\uE001';
+
 /**
  * Bare web addresses become links (#2443), and only those. markdown-it's
  * linkify also links bare domains, mail addresses, `ftp:` and `//host` forms,
  * and links an address that follows a backslash. Domains, mail addresses and
- * the fuzzy forms are switched off at the source; a rule after `linkify` takes
- * back a link that is not `http(s)` and one written `\https://…`, which is
- * how an author keeps an address as text. The stored text is never changed.
+ * the fuzzy forms are switched off at the source; the inline `linkify` rule is
+ * switched off too, because it takes an address before emphasis can end and so
+ * swallows a closing `~~`; the core rule links the text left after inline
+ * parsing. A rule after it takes back a link that is not `http(s)` and one
+ * written `\https://…`, which is how an author keeps an address as text, and
+ * ends a link at a table cell's placeholder sentinels. The stored text is
+ * never changed.
  */
 function bareWebAddresses(md: MarkdownIt): void {
   md.linkify.set({ fuzzyLink: false, fuzzyEmail: false, fuzzyIP: false });
+  md.inline.ruler.disable('linkify');
   md.core.ruler.after('linkify', 'linkify_web_only', (state): void => {
     for (const block of state.tokens) {
       if (block.type !== 'inline' || !block.children) continue;
@@ -128,10 +143,23 @@ function bareWebAddresses(md: MarkdownIt): void {
         const open = kids[i];
         if (open.type !== 'link_open' || open.markup !== 'linkify') continue;
         const escaped = i > 0 && kids[i - 1].type === 'text' && kids[i - 1].content.endsWith('\\');
-        if (!escaped && /^https?:\/\//i.test(open.attrGet('href') ?? '')) continue;
-        // Unwrap: link_open, its text, link_close -> the text alone.
-        kids.splice(i + 2, 1);
-        kids.splice(i, 1);
+        if (escaped || !/^https?:\/\//i.test(open.attrGet('href') ?? '')) {
+          // Unwrap: link_open, its text, link_close -> the text alone.
+          kids.splice(i + 2, 1);
+          kids.splice(i, 1);
+          continue;
+        }
+        const text = kids[i + 1];
+        const cut = [text.content.indexOf(PLACEHOLDER_START), text.content.indexOf(PLACEHOLDER_END)]
+          .filter((n) => n > 0)
+          .sort((a, b) => a - b)[0];
+        if (cut === undefined) continue;
+        const rest = text.content.slice(cut);
+        text.content = text.content.slice(0, cut);
+        open.attrSet('href', md.normalizeLink(text.content));
+        const after = new state.Token('text', '', 0);
+        after.content = rest;
+        kids.splice(i + 3, 0, after);
       }
     }
   });
@@ -191,12 +219,12 @@ export function buildMarkdownIt(profile: MarkdownProfile): MarkdownIt {
   // is allowed is decided by the HTML policy (#1623), applied by the html
   // token renderers. `linkify` on for pages, not comments (#2443): a bare
   // http(s) address is a link; see bareWebAddresses.
-  const md = new MarkdownIt({ html: true, breaks: true, linkify: profile !== 'untrusted', typographer: false });
-  if (profile !== 'untrusted') bareWebAddresses(md);
+  const md = new MarkdownIt({ html: true, breaks: true, linkify: true, typographer: false });
+  bareWebAddresses(md);
   showdownFenceClasses(md);
   delForStrikethrough(md);
   ellipsisOnly(md);
-  if (profile !== 'untrusted') externalLinksInNewTab(md); // #1492; comments keep their own rules
+  externalLinksInNewTab(md, profile === 'untrusted'); // #1492; comments: bare addresses only (#2443)
 
   if (profile === 'page') {
     // Section links (#500) are a stored contract: the slug is headingSlug

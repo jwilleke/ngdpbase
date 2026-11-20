@@ -9,15 +9,16 @@
 Links the JSPWiki import left half-converted (#1492).
 
 The import turned `[text|url|target='_blank']` into Markdown by pieces, and
-on some pages the pieces were left glued together. Today they show as
-harmless text; once bare web addresses become links (`linkify`, #1492),
-each would become one long broken link. Three shapes, each unambiguous:
+on some pages the pieces were left glued together. Now that a bare web
+address renders as a link (#2443), each would show as one long broken link.
+Four shapes, each unambiguous:
 
 - `url(url)`, the same address twice, becomes `url`;
 - `url(url|target='_blank')`, the same address twice, becomes `url`;
 - `](url|target='_blank')`, a Markdown link whose destination kept the
     JSPWiki attribute, becomes `](url)` — every external link opens in a new
-    tab anyway (#1492).
+    tab anyway (#1492);
+- a wiki link split over two lines is joined back onto one (#2443, below).
 
 Deliberately narrow:
 
@@ -27,7 +28,13 @@ Deliberately narrow:
     then `url|target='_blank']`, #2443): the address and its closing `]`
     must be on the second line, nothing between the lines, and the first
     line must end inside an unclosed `[`. Anything less clear is left alone;
-- never inside code, an HTML block or an inline code span.
+- never inside code, an HTML block or an inline code span;
+- a line longer than 10,000 characters is left as it is, and an
+    address is matched up to 2,048 characters, so the cost of a
+    page grows with its size, not with the square of one line.
+
+One run does everything: a line made by a join is looked at again, for the
+next join and for the leftovers above, so a second run changes nothing.
 
 ## Variables
 
