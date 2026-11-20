@@ -238,6 +238,10 @@ function sizeWords(bytes: number): string {
  *   - encryption, zip64, split archives, and any method but stored and deflate;
  *   - a member whose inflated bytes do not match the size or CRC the archive
  *     declares for it;
+ *   - a stored member whose declared size differs from its stored length;
+ *   - members that share data: each member's data, from its local header
+ *     through its last stored byte, must be its own, so what is read for all
+ *     the members together never exceeds the archive's own length;
  *   - more members in one archive than `limits` allow;
  *   - more members than `budget` has left, counting every archive that shares
  *     it, or more inflated bytes than it has left (a {@link ZipBudgetError}).
@@ -278,7 +282,12 @@ export function readZip(
     budget.entriesRemaining -= count;
   }
 
-  const entries: ZipEntry[] = [];
+  // First every member's record is read and checked, and its stated size
+  // charged; only then is anything unpacked, so the data of every member is
+  // known to be its own before any of it is read.
+  type Pending = { path: string; method: number; crc: number; size: number; storedSize: number; dataStart: number; mtime: Date };
+  const pending: Pending[] = [];
+  const ranges: Array<{ start: number; end: number }> = [];
   let at = centralOffset;
 
   for (let i = 0; i < count; i++) {
@@ -332,24 +341,42 @@ export function readZip(
     }
     const dataStart = localOffset + 30 + archive.readUInt16LE(localOffset + 26) + archive.readUInt16LE(localOffset + 28);
     if (dataStart + storedSize > archive.length) throw new Error(`zipArchive: "${clean}" is truncated`);
-    const stored = archive.subarray(dataStart, dataStart + storedSize);
+    // A stored member is its data as it stands, so its two sizes are one.
+    if (method === 0 && storedSize !== size) {
+      throw new Error(`zipArchive: "${clean}" has a stored size that differs from its declared size`);
+    }
+
+    ranges.push({ start: localOffset, end: dataStart + storedSize });
+    pending.push({ path: clean, method, crc, size, storedSize, dataStart, mtime: fromDosDateTime(date, time) });
+  }
+
+  // Each member's data (its local header through its last stored byte) is its
+  // own: members may not share data, so what is read never exceeds the archive.
+  ranges.sort((a, b) => a.start - b.start);
+  for (let i = 1; i < ranges.length; i++) {
+    if (ranges[i].start < ranges[i - 1].end) throw new Error('zipArchive: members share data, which an archive may not');
+  }
+
+  const entries: ZipEntry[] = [];
+  for (const member of pending) {
+    const stored = archive.subarray(member.dataStart, member.dataStart + member.storedSize);
 
     let bytes: Buffer;
-    if (method === 0) {
+    if (member.method === 0) {
       bytes = Buffer.from(stored);
     } else {
       try {
         // One byte over the declared size, so an entry that lies about its
         // size is caught as a mismatch rather than silently truncated.
-        bytes = inflateRawSync(stored, { maxOutputLength: size + 1 });
+        bytes = inflateRawSync(stored, { maxOutputLength: member.size + 1 });
       } catch {
-        throw new Error(`zipArchive: "${clean}" could not be inflated, or unpacks to more than it declares`);
+        throw new Error(`zipArchive: "${member.path}" could not be inflated, or unpacks to more than it declares`);
       }
     }
-    if (bytes.length !== size) throw new Error(`zipArchive: "${clean}" does not match its declared size`);
-    if (crc32(bytes) !== crc) throw new Error(`zipArchive: "${clean}" fails its CRC check`);
+    if (bytes.length !== member.size) throw new Error(`zipArchive: "${member.path}" does not match its declared size`);
+    if (crc32(bytes) !== member.crc) throw new Error(`zipArchive: "${member.path}" fails its CRC check`);
 
-    entries.push({ path: clean, bytes, mtime: fromDosDateTime(date, time) });
+    entries.push({ path: member.path, bytes, mtime: member.mtime });
   }
 
   return entries;

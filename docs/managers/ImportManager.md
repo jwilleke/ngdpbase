@@ -82,6 +82,8 @@ The engine's own ledger (`src/ice/ledger.ts`), behind the `IceLedger` interface:
 
 ### Configuration
 
+A zip is checked before any of it is unpacked: each file's data must be its own (two files may not share data, so what is read never exceeds the archive's own length), and a stored file's stated size must equal its stored length. An archive that breaks either rule is reported as unreadable on its own, and the rest of the upload goes on.
+
 | Key | Default | |
 | --- | --- | --- |
 | `ngdpbase.import.engine.noise` | `__MACOSX/`, `.DS_Store`, `Thumbs.db`, `desktop.ini`, `._*` | `dir/` a directory segment; `x*` / `*x` a name prefix or suffix; else an exact name |
