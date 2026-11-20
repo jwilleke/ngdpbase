@@ -8,11 +8,24 @@ import {
   type EnvKeyMap,
   type PropertyDescription
 } from '../utils/configEnvKeys.js';
+import { isDeepStrictEqual } from 'node:util';
 import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
 import { configFilePaths, enabledEntries, installCompletePath, mergeArrays, readConfigFilesSync } from '../utils/configFiles.js';
-import { migrateStoredPageWritePolicies } from '../utils/pageWritePolicies.js';
+import {
+  migrateStoredPageWritePolicies,
+  NARROWED_WRITES_KEY,
+  narrowedRoleWrites,
+  narrowedWritesFromRecord,
+  clip,
+  readNarrowedWrites,
+  recordOfNarrowedWrites,
+  restoreNarrowedWrites,
+  withoutNarrowedWrites,
+  type AppliedNarrowing,
+  type NarrowedWrite
+} from '../utils/pageWritePolicies.js';
 import { legacyStoreKeys, legacyStoreKeysReason } from '../utils/legacyStoreKeys.js';
 import { mergeConfigWithAddons, type AddonDefaults } from '../utils/addonConfigLayer.js';
 import type { AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
@@ -31,6 +44,9 @@ import {
   splitAddonsPath,
   resolveAddonSlug
 } from '../utils/addonsPathResolver.js';
+
+/** The access policies setting, where the shipped role and category policies and a site's stored copies meet. */
+const POLICIES_KEY = 'ngdpbase.access.policies';
 
 interface ConfigManagerBackupData extends BackupData {
   customConfig: Partial<WikiConfig> | null;
@@ -461,6 +477,10 @@ class ConfigurationManager extends BaseManager {
     // ngdpbase.filters.* namespace, same shape and for the same reason.
     this.migrateLegacyFilterNamespace();
 
+    // #2270: what the site removed from its stored role policies, read before the
+    // migration below rewrites them; applied to the category policies after the merge.
+    const detected = narrowedRoleWrites(this.customConfig?.[POLICIES_KEY]);
+
     // #2255: a stored copy of a shipped role policy loses the page writes it
     // held on every page; they now come from the category policies.
     this.migrateStoredPageWritePolicies();
@@ -478,6 +498,7 @@ class ConfigurationManager extends BaseManager {
     const { merged, declared, addons, problems, refused, databases, siteCritical } = mergeConfigWithAddons(this.defaultConfig, this.customConfig, process.cwd(), this.instanceDataFolder);
     this.mergedConfig = merged;
     this.declaredConfig = declared;
+    this.applyNarrowedRoleWrites(detected);
     this.addonLayers = addons;
     this.systemCategoryProblems = problems;
     this.refusedAddons = refused;
@@ -513,6 +534,81 @@ class ConfigurationManager extends BaseManager {
   /** Each `pageWritePolicyMigration` line in plain words, for the needs-attention entry. */
   pageWritePolicyMigrationShown: Record<string, string> = {};
 
+  /** Page writes the site removed from its stored role policies and the category policies leave out for it (#2270); the "After updating" item reads it. */
+  narrowedRoleWrites: AppliedNarrowing[] = [];
+
+  /**
+   * What the removed page writes (#2270) did to the site's own rules, and what could not be read of them; the
+   * "After updating" item reads it. Worked out again at every start and every save of the policy list or the
+   * pairs, so it stays until the site changes what causes it.
+   */
+  narrowingNotes: { ownRules: Array<{ id: string; role: string; actions: string[] }>; unreadable: string[] } = { ownRules: [], unreadable: [] };
+
+  /**
+   * #2270: what a site removed from its stored role policies, as recorded in its own setting
+   * (`NARROWED_WRITES_KEY`) plus `detected`, read from the file before the migration rewrote it. All of it is
+   * left out of every category policy in force, for that role only, so a policy added later, and one the site
+   * edits or deletes in Admin, cannot give it back. A newly detected narrowing is put in the in-memory custom
+   * layer, so the next save of the file, whichever setting it is for, records it; until then it is shown in
+   * Admin → After updating and logged, one warning per narrowed role policy.
+   */
+  private applyNarrowedRoleWrites(detected: NarrowedWrite[]): void {
+    this.narrowedRoleWrites = [];
+    this.narrowingNotes = { ownRules: [], unreadable: [] };
+    if (!this.mergedConfig) return;
+    const read = readNarrowedWrites(this.customConfig?.[NARROWED_WRITES_KEY]);
+    for (const reason of read.skipped) logger.warn(`[config] ${NARROWED_WRITES_KEY}: ${reason}. It is ignored, so it narrows nothing`);
+    const recorded = read.pairs;
+    const same = (a: NarrowedWrite, b: NarrowedWrite): boolean => a.role === b.role && a.action === b.action;
+    const fresh = detected.filter((n) => !recorded.some((r) => same(r, n)));
+    const all = [...recorded, ...fresh];
+    this.narrowingNotes.unreadable = read.skipped;
+    if (all.length === 0) return;
+    const { policies, applied } = withoutNarrowedWrites(this.mergedConfig[POLICIES_KEY], all, new Set());
+    this.mergedConfig[POLICIES_KEY] = policies;
+    this.noteOwnRules(applied, true);
+    if (fresh.length === 0) return;
+    const record = recordOfNarrowedWrites(all);
+    this.customConfig = this.customConfig ?? {};
+    this.customConfig[NARROWED_WRITES_KEY] = record;
+    this.mergedConfig[NARROWED_WRITES_KEY] = record;
+    this.narrowedRoleWrites = applied.filter((a) => fresh.some((n) => same(n, a)));
+    for (const policyId of new Set(this.narrowedRoleWrites.map((a) => a.policyId))) {
+      const mine = this.narrowedRoleWrites.filter((a) => a.policyId === policyId);
+      logger.warn(`[config] '${policyId}' in custom config lacks ${mine.map((a) => a.action).join(', ')}, which the shipped one had; the category policies no longer give ${mine[0].role} ${mine.length === 1 ? 'it' : 'them'} (${[...new Set(mine.flatMap((a) => a.from))].map(clip).join(', ')}). Save any setting in Admin → Configuration to record the change`);
+    }
+  }
+
+  /**
+   * #2270: the site's own rules, those in its custom policy list that differ from the declared (shipped and
+   * add-on) ones, that grant a write the site removed from a role. They are left out like the shipped ones;
+   * this notes each, so the site can see why a rule of its own does nothing. `log` writes one warning per rule.
+   */
+  private noteOwnRules(applied: AppliedNarrowing[], log: boolean): void {
+    const custom = this.customConfig?.[POLICIES_KEY];
+    const declared = this.declaredConfig?.[POLICIES_KEY];
+    const idOf = (p: unknown): unknown => (p && typeof p === 'object' ? (p as { id?: unknown }).id : undefined);
+    const ownIds = new Set(
+      (Array.isArray(custom) ? (custom as unknown[]) : [])
+        .filter((p) => typeof idOf(p) === 'string' && !(Array.isArray(declared) && (declared as unknown[]).some((d) => isDeepStrictEqual(d, p))))
+        .map((p) => idOf(p) as string)
+    );
+    const byRule = new Map<string, Map<string, Set<string>>>();
+    for (const a of applied) {
+      for (const id of a.from.filter((f) => ownIds.has(f))) {
+        const roles = byRule.get(id) ?? new Map<string, Set<string>>();
+        roles.set(a.role, (roles.get(a.role) ?? new Set<string>()).add(a.action));
+        byRule.set(id, roles);
+      }
+    }
+    this.narrowingNotes.ownRules = [...byRule].flatMap(([id, roles]) => [...roles].map(([role, actions]) => ({ id, role, actions: [...actions] })));
+    if (!log) return;
+    for (const id of byRule.keys()) {
+      const mine = this.narrowingNotes.ownRules.filter((r) => r.id === id);
+      logger.warn(`[config] The site's own rule '${clip(id)}' grants ${mine.map((r) => `${r.role} ${r.actions.join(', ')}`).join('; ')}, which the site removed from that role's rules, so it is left out. To give it back, take the pair out of the removed page writes in Admin → Configuration`);
+    }
+  }
+
   /**
    * #2255: before the merge, rewrite the custom layer's stored copies of the
    * shipped role policies whose page writes moved to the category policies
@@ -520,7 +616,7 @@ class ConfigurationManager extends BaseManager {
    * migrations here; one warning per policy changed.
    */
   private migrateStoredPageWritePolicies(): void {
-    const key = 'ngdpbase.access.policies';
+    const key = POLICIES_KEY;
     if (!this.customConfig || !(key in this.customConfig)) return;
     const { policies, report } = migrateStoredPageWritePolicies(this.customConfig[key]);
     if (report.rewritten.length === 0) return;
@@ -932,22 +1028,50 @@ class ConfigurationManager extends BaseManager {
     // site's; `undefined` takes the key out of the custom file, so the layers
     // beneath are in force again (an empty list would replace them all).
     const declared = this.declaredConfig?.[key];
-    if (value === undefined) {
+    const mergedWith = (own: unknown): unknown => (Array.isArray(declared) && Array.isArray(own) ? mergeArrays(declared, own) : own);
+    // #2270: what the site removed is left out of the policies in force whenever either the policy list
+    // or the record of it changes, and is never stored in the policy list: a list posted back from the
+    // list in force is made into the list it was made from. All worked out here, before anything changes.
+    let stored: unknown = value;
+    let policiesInForce: unknown;
+    let applied: AppliedNarrowing[] | null = null;
+    if (key === POLICIES_KEY && value !== undefined) {
+      const pairs = narrowedWritesFromRecord(this.customConfig[NARROWED_WRITES_KEY]);
+      const own = this.customConfig[POLICIES_KEY];
+      stored = restoreNarrowedWrites(value, own === undefined ? declared : mergedWith(own), pairs);
+    }
+    let inForce: unknown = value === undefined ? declared : mergedWith(stored);
+    if (key === POLICIES_KEY) {
+      const narrowed = withoutNarrowedWrites(inForce, narrowedWritesFromRecord(this.customConfig[NARROWED_WRITES_KEY]), new Set());
+      inForce = narrowed.policies;
+      applied = narrowed.applied;
+    } else if (key === NARROWED_WRITES_KEY) {
+      const declaredPolicies = this.declaredConfig?.[POLICIES_KEY];
+      const own = this.customConfig[POLICIES_KEY];
+      const merged = Array.isArray(declaredPolicies) && Array.isArray(own) ? mergeArrays(declaredPolicies, own) : (own ?? declaredPolicies);
+      const narrowed = withoutNarrowedWrites(merged, narrowedWritesFromRecord(value), new Set());
+      policiesInForce = narrowed.policies;
+      applied = narrowed.applied;
+    }
+    if (stored === undefined) {
       delete this.customConfig[key];
     } else {
-      this.customConfig[key] = value;
+      this.customConfig[key] = stored;
     }
     if (this.mergedConfig) {
-      this.mergedConfig[key] = value === undefined
-        ? declared
-        : Array.isArray(declared) && Array.isArray(value) ? mergeArrays(declared, value) : value;
+      this.mergedConfig[key] = inForce;
+      if (key === NARROWED_WRITES_KEY) this.mergedConfig[POLICIES_KEY] = policiesInForce;
       this.revision++;
+    }
+    if (applied) {
+      this.narrowingNotes.unreadable = readNarrowedWrites(this.customConfig[NARROWED_WRITES_KEY]).skipped;
+      this.noteOwnRules(applied, true);
     }
 
     // Save to custom config file
     await this.saveCustomConfiguration();
 
-    await this.recordConfigChange(key, before, value, ctx);
+    await this.recordConfigChange(key, before, stored, ctx);
   }
 
   /**
@@ -1025,6 +1149,8 @@ class ConfigurationManager extends BaseManager {
     };
 
     await fs.writeJson(this.customConfigPath, configToSave, { spaces: 2 });
+    // #2270: what a site removed from its role policies is in the file now; nothing is left to update.
+    this.narrowedRoleWrites = [];
     // #1751: cached renders that read configuration (policies, roles, values shown) re-render.
     await this.engine.getManager<{ bump(topic: string): Promise<string> }>('CacheManager')?.bump(CONFIG_DATA_TOPIC);
   }
@@ -1555,6 +1681,8 @@ class ConfigurationManager extends BaseManager {
 
     this.customConfig = {};
     this.mergedConfig = { ...this.defaultConfig } as WikiConfig;
+    // #2270: the removed page writes are in the file that was just emptied, so the shipped rules apply again.
+    this.narrowingNotes = { ownRules: [], unreadable: [] };
     this.revision++;
     await this.saveCustomConfiguration();
   }
