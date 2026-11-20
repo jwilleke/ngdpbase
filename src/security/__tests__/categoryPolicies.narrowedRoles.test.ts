@@ -405,6 +405,174 @@ describe('a narrowed role policy stays narrowed after the category policies arri
     });
   });
 
+  describe('the stored list holds only the site\'s own changes, and the pairs are the one way back (#2270 re-review)', () => {
+    const narrowedEditor = () => [savedBefore('admin-full-access', WRITES), savedBefore('editor-permissions', WRITES, ['page-delete', 'page-rename'])];
+    const problems = () => [...validator.policyProblems(cm.getProperty(KEY)), ...validator.policyProblems(cm.getCustomProperty(KEY) ?? [])];
+    const ids = (list: unknown) => (list as Policy[]).map((p) => p.id);
+    /** What Admin → Configuration does with the policy row: shows the list in force and saves it back as the site's own. */
+    const adminSavesTheListInForce = () => cm.setProperty(KEY, cm.getProperty(KEY), ctx);
+    const everyWrite = async (allowed: boolean) => {
+      for (const action of ['delete', 'rename']) {
+        expect(await may(editor, action, meta('general')), `${action} on a general page`).toBe(allowed);
+        expect(await may(editor, action, meta('capture', 'erin')), `${action} on their own capture page`).toBe(allowed);
+        expect(await may(editor, action, meta('user-profile', 'erin')), `${action} on their own profile page`).toBe(allowed);
+      }
+    };
+
+    test('saving the list in force from Admin stores none of the narrowing: no split rule, and the category rules still name editors', async () => {
+      await boot(narrowedEditor());
+      await adminSavesTheListInForce();
+      const stored = (await fs.readJson(customFile()))[KEY] as Policy[];
+      expect(ids(stored).filter((id) => /-editor(-\d+)?$/.test(id))).toEqual([]);
+      const write = stored.find((p) => p.id === 'general-page-write');
+      expect(JSON.stringify(write?.subjects)).toContain('editor');
+      expect(problems()).toEqual([]);
+      await everyWrite(false);
+      await restart();
+      await everyWrite(false);
+    });
+
+    test('after an Admin save of the list in force, clearing the pairs gives back every narrowed write, on general, capture and profile pages, at once and after a restart', async () => {
+      await boot(narrowedEditor());
+      await adminSavesTheListInForce();
+      await cm.setProperty(NARROWED_KEY, [], ctx);
+      await everyWrite(true);
+      expect(problems()).toEqual([]);
+      await restart();
+      await everyWrite(true);
+      expect(problems()).toEqual([]);
+      expect(await items()).toEqual([]);
+    });
+
+    test('the same after a restart between the Admin save and the clearing', async () => {
+      await boot(narrowedEditor());
+      await adminSavesTheListInForce();
+      await restart();
+      await adminSavesTheListInForce();
+      await restart();
+      await cm.setProperty(NARROWED_KEY, [], ctx);
+      await everyWrite(true);
+      await restart();
+      await everyWrite(true);
+    });
+
+    test('taking out one of two pairs gives back that write only, after an Admin save', async () => {
+      await boot(narrowedEditor());
+      await adminSavesTheListInForce();
+      await cm.setProperty(NARROWED_KEY, [{ role: 'editor', action: 'page-rename' }], ctx);
+      expect(await may(editor, 'delete', meta('general'))).toBe(true);
+      expect(await may(editor, 'delete', meta('capture', 'erin'))).toBe(true);
+      expect(await may(editor, 'rename', meta('general'))).toBe(false);
+      expect(await may(editor, 'rename', meta('capture', 'erin'))).toBe(false);
+      await restart();
+      expect(await may(editor, 'delete', meta('capture', 'erin'))).toBe(true);
+      expect(await may(editor, 'rename', meta('capture', 'erin'))).toBe(false);
+    });
+
+    test('a rule the site adds on top of the list in force is kept in the file', async () => {
+      await boot(narrowedEditor());
+      const mine: Policy = { id: 'mine', name: 'mine', effect: 'allow', subjects: [{ type: 'role', value: 'contributor' }], resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-read'] };
+      await cm.setProperty(KEY, [...(cm.getProperty(KEY) as Policy[]), mine], ctx);
+      expect(ids((await fs.readJson(customFile()))[KEY])).toContain('mine');
+      expect(await may(editor, 'delete', meta('general'))).toBe(false);
+    });
+
+    describe('a rule of the site\'s own that grants a narrowed write', () => {
+      const mine: Policy = { id: 'my-editors-delete', name: 'my editors delete', effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-delete'] };
+
+      test('is still left out, is logged by name at every start, and has a note in Admin in plain words', async () => {
+        await boot(narrowedEditor());
+        await cm.setProperty(KEY, [...(cm.getProperty(KEY) as Policy[]), mine], ctx);
+        expect(await may(editor, 'delete', meta('general'))).toBe(false);
+        vi.clearAllMocks();
+        await restart();
+        expect(await may(editor, 'delete', meta('general'))).toBe(false);
+        expect(warnings().filter((w) => w.includes("'my-editors-delete'"))).toHaveLength(1);
+        const text = (await items()).join('\n');
+        expect(text).toContain("'my-editors-delete'");
+        expect(text).toMatch(/Editors/);
+        expect(text).toMatch(/delete/);
+        expect(text).not.toMatch(/#\d/);
+      });
+
+      test('is not deleted from the file when Admin saves the list in force', async () => {
+        await boot(narrowedEditor());
+        await cm.setProperty(KEY, [...(cm.getProperty(KEY) as Policy[]), mine], ctx);
+        await adminSavesTheListInForce();
+        expect(ids((await fs.readJson(customFile()))[KEY])).toContain('my-editors-delete');
+        await cm.setProperty(NARROWED_KEY, [], ctx);
+        expect(await may(editor, 'delete', meta('general'))).toBe(true);
+      });
+
+      test('says nothing when the site narrowed nothing', async () => {
+        await boot([savedBefore('admin-full-access', WRITES), savedBefore('editor-permissions', WRITES), mine]);
+        await restart();
+        expect(warnings().filter((w) => w.includes("'my-editors-delete'"))).toEqual([]);
+        expect(await items()).toEqual([]);
+      });
+    });
+
+    describe('a record that cannot be read', () => {
+      const bad = [{ role: 'editor', action: 'page-delete' }, { role: 'Editor', action: 'page-rename' }, 'x', null];
+      const withRecord = async (record: unknown) => {
+        await boot(narrowedEditor());
+        await cm.setProperty('ngdpbase.application-name', 'Other', ctx);
+        const file = await fs.readJson(customFile());
+        file[NARROWED_KEY] = record;
+        await fs.writeJson(customFile(), file);
+        vi.clearAllMocks();
+        await restart();
+      };
+
+      test('is logged once for each entry it skips, and the entries it can read still apply', async () => {
+        await withRecord(bad);
+        const mine = warnings().filter((w) => w.includes(NARROWED_KEY));
+        expect(mine).toHaveLength(3);
+        expect(mine.join('\n')).toMatch(/entry 2.*'Editor'/);
+        expect(await may(editor, 'delete', meta('general'))).toBe(false);
+        expect(await may(editor, 'rename', meta('general'))).toBe(true);
+      });
+
+      test('raises a note in Admin in plain words that says the entry is ignored and what to do', async () => {
+        await withRecord(bad);
+        const text = (await items()).join('\n');
+        expect(text).toMatch(/could not be read/);
+        expect(text).toMatch(/ignored/);
+        expect(text).toMatch(/Admin → Configuration/);
+        expect(text).not.toMatch(/#\d/);
+      });
+
+      test.each([
+        ['a string', 'editor:page-delete'],
+        ['an object', {}],
+        ['a misspelt write', [{ role: 'editor', action: 'page-delet' }]]
+      ])('%s is logged and noted, not silently read as empty', async (_name, record) => {
+        await withRecord(record);
+        expect(warnings().filter((w) => w.includes(NARROWED_KEY)).length).toBeGreaterThan(0);
+        expect((await items()).join('\n')).toMatch(/could not be read/);
+      });
+
+      test('a good record says nothing', async () => {
+        await boot(narrowedEditor());
+        await cm.setProperty('ngdpbase.application-name', 'Other', ctx);
+        vi.clearAllMocks();
+        await restart();
+        expect(warnings().filter((w) => w.includes(NARROWED_KEY))).toEqual([]);
+        expect(await items()).toEqual([]);
+      });
+    });
+
+    test('Reset to defaults clears the pairs and the shipped rules apply again, live and after a restart', async () => {
+      await boot(narrowedEditor());
+      await cm.setProperty('ngdpbase.application-name', 'Other', ctx);
+      await cm.resetToDefaults(ctx);
+      expect(await fs.readJson(customFile())).not.toHaveProperty([NARROWED_KEY]);
+      await everyWrite(true);
+      await restart();
+      await everyWrite(true);
+    });
+  });
+
   test('a list saved since the category policies shipped is not read as narrowed: its role policies hold no page writes by design', async () => {
     await boot([
       shippedPolicy('editor-permissions'),

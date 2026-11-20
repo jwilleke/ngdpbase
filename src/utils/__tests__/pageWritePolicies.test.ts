@@ -4,7 +4,7 @@
  * category policies do not give on general pages only; other policies are
  * reported, never rewritten.
  */
-import { migrateStoredPageWritePolicies, narrowedRoleWrites, withoutNarrowedWrites, pageWritePoliciesToReview, pageWritePolicyFindings, policyFingerprint } from '../pageWritePolicies';
+import { migrateStoredPageWritePolicies, narrowedRoleWrites, withoutNarrowedWrites, readNarrowedWrites, restoreNarrowedWrites, pageWritePoliciesToReview, pageWritePolicyFindings, policyFingerprint } from '../pageWritePolicies';
 import type { Policy } from '../../types/Policy';
 
 const role = (value: string) => [{ type: 'role', value }];
@@ -257,5 +257,110 @@ describe('withoutNarrowedWrites: the category policies leave out what the site r
   test('nothing narrowed, or no list, changes nothing', () => {
     expect(withoutNarrowedWrites([write], [], new Set())).toEqual({ policies: [write], applied: [] });
     expect(withoutNarrowedWrites(undefined, narrowed, new Set())).toEqual({ policies: undefined, applied: [] });
+  });
+});
+
+describe('readNarrowedWrites: what a hand-edited record says, and what is skipped and why (#2270 re-review)', () => {
+  test('a good list is read whole and nothing is skipped', () => {
+    const { pairs, skipped } = readNarrowedWrites([{ role: 'editor', action: 'page-delete' }, { role: 'contributor', action: 'page-edit' }]);
+    expect(pairs.map((p) => `${p.role}/${p.action}`)).toEqual(['editor/page-delete', 'contributor/page-edit']);
+    expect(skipped).toEqual([]);
+  });
+
+  test('no value and an empty list are fine: nothing was narrowed', () => {
+    expect(readNarrowedWrites(undefined)).toEqual({ pairs: [], skipped: [] });
+    expect(readNarrowedWrites([])).toEqual({ pairs: [], skipped: [] });
+  });
+
+  test.each([
+    ['a string', 'editor:page-delete'],
+    ['an object, not a list', {}],
+    ['a number', 7],
+    ['null', null]
+  ])('%s is one skipped value that says what a list looks like', (_name, value) => {
+    const { pairs, skipped } = readNarrowedWrites(value);
+    expect(pairs).toEqual([]);
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]).toMatch(/list/);
+    expect(skipped[0]).toContain('"role": "editor"');
+  });
+
+  test('each entry that cannot be read is skipped with its own reason, and the rest still count', () => {
+    const { pairs, skipped } = readNarrowedWrites([
+      { role: 'editor', action: 'page-delete' },
+      { role: 'Editor', action: 'page-delete' },
+      { role: 'editor', action: 'page-delet' },
+      { role: 'contributor', action: 'page-delete' },
+      null,
+      1,
+      'x',
+      { role: 'editor' }
+    ]);
+    expect(pairs.map((p) => `${p.role}/${p.action}`)).toEqual(['editor/page-delete']);
+    expect(skipped).toHaveLength(7);
+    expect(skipped[0]).toMatch(/entry 2.*'Editor'.*editor, contributor or demo-admin.*lower case/);
+    expect(skipped[1]).toMatch(/entry 3.*'page-delet'.*page-edit, page-delete or page-rename/);
+    expect(skipped[2]).toMatch(/entry 4.*contributor.*page-delete.*page-edit/);
+    expect(skipped.join(' ')).not.toMatch(/#\d/);
+  });
+
+  test('a pair named twice is not a problem', () => {
+    expect(readNarrowedWrites([{ role: 'editor', action: 'page-delete' }, { role: 'editor', action: 'page-delete' }]).skipped).toEqual([]);
+  });
+
+  test('a long value in a bad entry is cut short in the message', () => {
+    const { skipped } = readNarrowedWrites([{ role: 'x'.repeat(500), action: 'page-delete' }]);
+    expect(skipped[0].length).toBeLessThan(400);
+  });
+});
+
+describe('restoreNarrowedWrites: the stored list holds the site\'s own changes, never the effects of the narrowing (#2270 re-review)', () => {
+  const category = (extra: Record<string, unknown>) => ({ effect: 'allow', resources: [{ type: 'system-category', pattern: 'general' }], ...extra });
+  const narrowed = [
+    { role: 'editor', action: 'page-delete', policyId: 'editor-permissions' },
+    { role: 'editor', action: 'page-rename', policyId: 'editor-permissions' }
+  ];
+  const write = category({ id: 'general-page-write', subjects: [...role('admin'), ...role('editor')], actions: ['page-edit', 'page-delete', 'page-rename'] });
+  const own = category({ id: 'self-managed-author-write', subjects: role('editor'), actions: ['page-delete', 'page-rename'] });
+  const other = category({ id: 'other', subjects: role('contributor'), actions: ['page-edit'] });
+  const base = [write, own, other];
+  const inForce = () => withoutNarrowedWrites(base, narrowed, new Set()).policies;
+
+  test('the list in force, posted back whole, becomes the list it was made from', () => {
+    expect(inForce()).not.toEqual(base);
+    expect(restoreNarrowedWrites(inForce(), base, narrowed)).toEqual(base);
+  });
+
+  test('a policy narrowing removed whole is put back, so posting the list in force does not delete it', () => {
+    expect((inForce() as Array<{ id: string }>).map((p) => p.id)).not.toContain('self-managed-author-write');
+    expect((restoreNarrowedWrites(inForce(), base, narrowed) as Array<{ id: string }>).map((p) => p.id)).toContain('self-managed-author-write');
+  });
+
+  test('a rule the site adds to the list in force is kept, after what it was made from', () => {
+    const mine = category({ id: 'mine', subjects: role('contributor'), actions: ['page-read'] });
+    expect(restoreNarrowedWrites([...(inForce() as unknown[]), mine], base, narrowed)).toEqual([...base, mine]);
+  });
+
+  test('a rule the site deletes from the list in force stays deleted', () => {
+    const without = (inForce() as Array<{ id: string }>).filter((p) => p.id !== 'other');
+    expect((restoreNarrowedWrites(without, base, narrowed) as Array<{ id: string }>).map((p) => p.id)).not.toContain('other');
+  });
+
+  test('a rule the site edited is stored as edited, once, and not joined by the original', () => {
+    const edited = (inForce() as Array<Record<string, unknown>>).map((p) => (p.id === 'general-page-write' ? { ...p, name: 'edited' } : p));
+    const out = restoreNarrowedWrites(edited, base, narrowed) as Array<Record<string, unknown>>;
+    expect(out.filter((p) => p.id === 'general-page-write')).toHaveLength(1);
+    expect(out.find((p) => p.id === 'general-page-write')?.name).toBe('edited');
+  });
+
+  test('deleting every piece a rule was split into deletes the rule', () => {
+    const without = (inForce() as Array<{ id: string }>).filter((p) => !p.id.startsWith('general-page-write'));
+    expect((restoreNarrowedWrites(without, base, narrowed) as Array<{ id: string }>).map((p) => p.id)).not.toContain('general-page-write');
+  });
+
+  test('nothing narrowed, or no list, is returned as it is', () => {
+    expect(restoreNarrowedWrites(base, base, [])).toBe(base);
+    expect(restoreNarrowedWrites(undefined, base, narrowed)).toBeUndefined();
+    expect(restoreNarrowedWrites('x', base, narrowed)).toBe('x');
   });
 });
