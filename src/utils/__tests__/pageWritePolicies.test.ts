@@ -4,7 +4,7 @@
  * category policies do not give on general pages only; other policies are
  * reported, never rewritten.
  */
-import { migrateStoredPageWritePolicies, narrowedRoleWrites, withoutNarrowedWrites, readNarrowedWrites, restoreNarrowedWrites, pageWritePoliciesToReview, pageWritePolicyFindings, policyFingerprint } from '../pageWritePolicies';
+import { migrateStoredPageWritePolicies, narrowedRoleWrites, withoutNarrowedWrites, readNarrowedWrites, restoreNarrowedWrites, clip, pageWritePoliciesToReview, pageWritePolicyFindings, policyFingerprint } from '../pageWritePolicies';
 import type { Policy } from '../../types/Policy';
 
 const role = (value: string) => [{ type: 'role', value }];
@@ -362,5 +362,104 @@ describe('restoreNarrowedWrites: the stored list holds the site\'s own changes, 
     expect(restoreNarrowedWrites(base, base, [])).toBe(base);
     expect(restoreNarrowedWrites(undefined, base, narrowed)).toBeUndefined();
     expect(restoreNarrowedWrites('x', base, narrowed)).toBe('x');
+  });
+});
+
+describe('restoreNarrowedWrites: a piece is folded back only when it is posted as it was shown, and never takes or gives a write the site did not (#2270 re-review 3)', () => {
+  const category = (extra: Record<string, unknown>) => ({ effect: 'allow', resources: [{ type: 'system-category', pattern: 'general' }], ...extra });
+  const narrowed = [{ role: 'editor', action: 'page-delete', policyId: 'editor-permissions' }];
+  const catWrite = category({ id: 'cat-write', subjects: [...role('admin'), ...role('editor')], actions: ['page-edit', 'page-delete'] });
+  const base = [catWrite];
+  const inForce = (): Array<Record<string, unknown>> => withoutNarrowedWrites(base, narrowed, new Set()).policies as Array<Record<string, unknown>>;
+  const stored = (posted: unknown[]): Array<Record<string, any>> => restoreNarrowedWrites(posted, base, narrowed) as Array<Record<string, any>>;
+  const ids = (list: Array<Record<string, any>>): unknown[] => list.map((p) => p.id);
+  /** What an editor holds on the rule after the narrowing is applied to what was stored. */
+  const editorActions = (list: unknown): string[] =>
+    ((withoutNarrowedWrites(list, narrowed, new Set()).policies as Array<Record<string, any>>) ?? [])
+      .filter((p) => (p.subjects ?? []).some((s: { value: string }) => s.value === 'editor'))
+      .flatMap((p) => p.actions);
+  const editorActionsWithoutPairs = (list: unknown): string[] => (list as Array<Record<string, any>>).filter((p) => (p.subjects ?? []).some((s: { value: string }) => s.value === 'editor')).flatMap((p) => p.actions);
+
+  test('the rule is shown as two pieces: the base keeps admin, the editor piece keeps page-edit', () => {
+    expect(ids(inForce())).toEqual(['cat-write', 'cat-write-editor']);
+  });
+
+  test('the base piece renamed, the editor piece untouched: the editor is folded back onto the edited rule and keeps page-edit', () => {
+    const posted = inForce().map((p) => (p.id === 'cat-write' ? { ...p, name: 'renamed' } : p));
+    const out = stored(posted);
+    expect(ids(out)).toEqual(['cat-write']);
+    expect(out[0].name).toBe('renamed');
+    expect(JSON.stringify(out[0].subjects)).toContain('editor');
+    expect(editorActions(out)).toEqual(['page-edit']);
+    expect(editorActionsWithoutPairs(out)).toEqual(['page-edit', 'page-delete']);
+  });
+
+  test('a resource added to the base piece, the editor piece untouched: the editor keeps page-edit on the edited rule', () => {
+    const posted = inForce().map((p) => (p.id === 'cat-write' ? { ...p, resources: [...(p.resources as unknown[]), { type: 'system-category', pattern: 'user' }] } : p));
+    const out = stored(posted);
+    expect(ids(out)).toEqual(['cat-write']);
+    expect(JSON.stringify(out[0].resources)).toContain('user');
+    expect(editorActions(out)).toEqual(['page-edit']);
+  });
+
+  test('both pieces posted as shown: the original rule, and nothing else', () => {
+    expect(stored(inForce())).toEqual(base);
+  });
+
+  test('the editor piece deleted: it stays deleted and the original does not come back', () => {
+    const out = stored(inForce().filter((p) => p.id !== 'cat-write-editor'));
+    expect(ids(out)).toEqual(['cat-write']);
+    expect(JSON.stringify(out[0].subjects)).not.toContain('editor');
+    expect(editorActions(out)).toEqual([]);
+  });
+
+  test('the editor piece edited down to page-read: it is stored as posted, with no -editor-2 and no original', () => {
+    const posted = inForce().map((p) => (p.id === 'cat-write-editor' ? { ...p, actions: ['page-read'] } : p));
+    const out = stored(posted);
+    expect(out).toEqual(posted);
+    expect(ids(out)).toEqual(['cat-write', 'cat-write-editor']);
+    expect(editorActions(out)).toEqual(['page-read']);
+  });
+
+  test('the base piece deleted, the editor piece untouched: only the editor piece is stored, as posted', () => {
+    const out = stored(inForce().filter((p) => p.id !== 'cat-write'));
+    expect(out).toEqual(inForce().filter((p) => p.id === 'cat-write-editor'));
+  });
+
+  test('the base piece deleted and the editor piece edited: both are as posted', () => {
+    const posted = inForce().filter((p) => p.id !== 'cat-write').map((p) => ({ ...p, actions: ['page-read'] }));
+    expect(stored(posted)).toEqual(posted);
+  });
+
+  test('a rule with only the narrowed role: the piece posted unchanged is the original again', () => {
+    const solo = category({ id: 'solo', subjects: role('editor'), actions: ['page-edit', 'page-delete'] });
+    const soloBase = [solo];
+    const shown = withoutNarrowedWrites(soloBase, narrowed, new Set()).policies as unknown[];
+    expect(restoreNarrowedWrites(shown, soloBase, narrowed)).toEqual(soloBase);
+  });
+
+  test('two narrowed roles on one rule: one piece edited, the other unchanged, folds only the unchanged one', () => {
+    const both = [{ role: 'editor', action: 'page-delete', policyId: 'editor-permissions' }, { role: 'contributor', action: 'page-edit', policyId: 'contributor-permissions' }];
+    const rule = category({ id: 'multi', subjects: [...role('admin'), ...role('editor'), ...role('contributor')], actions: ['page-edit', 'page-delete'] });
+    const shown = withoutNarrowedWrites([rule], both, new Set()).policies as Array<Record<string, any>>;
+    const posted = shown.map((p) => (p.id === 'multi-contributor' ? { ...p, actions: ['page-read'] } : p));
+    const out = restoreNarrowedWrites(posted, [rule], both) as Array<Record<string, any>>;
+    expect(out.map((p) => p.id)).toEqual(['multi', 'multi-contributor']);
+    expect(out[0].subjects.map((s: { value: string }) => s.value)).toEqual(['admin', 'editor']);
+    expect(out[1].actions).toEqual(['page-read']);
+  });
+});
+
+describe('a value from a hand-edited file cannot forge a log line (#2270 re-review 3)', () => {
+  test('a newline or control character in a bad pair is replaced in the reason', () => {
+    const { skipped } = readNarrowedWrites([{ role: 'edi\ntor\r\u0007', action: 'page-delete' }, { role: 'editor', action: 'page-\u2028delet' }]);
+    expect(skipped).toHaveLength(2);
+    // eslint-disable-next-line no-control-regex -- the point is that no control character survives
+    for (const reason of skipped) expect(reason).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/);
+  });
+
+  test('clip is exported for rule ids and never keeps a line break', () => {
+    expect(clip('a\nb\u0000c')).toBe('a b c');
+    expect(clip('x'.repeat(100)).length).toBeLessThan(50);
   });
 });

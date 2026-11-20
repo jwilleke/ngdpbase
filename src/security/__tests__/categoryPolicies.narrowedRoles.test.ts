@@ -477,6 +477,39 @@ describe('a narrowed role policy stays narrowed after the category policies arri
       expect(await may(editor, 'delete', meta('general'))).toBe(false);
     });
 
+    test('renaming the General write rule in the list in force keeps page-edit for editors, now and after a restart, and clearing the pairs gives delete back', async () => {
+      await boot(narrowedEditor());
+      const shown = (cm.getProperty(KEY) as Policy[]).map((p) => (p.id === 'general-page-write' ? { ...p, name: 'General writes, renamed' } : p));
+      await cm.setProperty(KEY, shown, ctx);
+      const storedList = (await fs.readJson(customFile()))[KEY] as Policy[];
+      expect(storedList.find((p) => p.id === 'general-page-write')?.name).toBe('General writes, renamed');
+      expect(ids(storedList).filter((id) => /-editor(-\d+)?$/.test(id))).toEqual([]);
+      expect(await may(editor, 'edit', meta('general'))).toBe(true);
+      expect(await may(editor, 'delete', meta('general'))).toBe(false);
+      await restart();
+      expect(await may(editor, 'edit', meta('general'))).toBe(true);
+      expect(await may(editor, 'delete', meta('general'))).toBe(false);
+      await cm.setProperty(NARROWED_KEY, [], ctx);
+      await everyWrite(true);
+      expect(await may(editor, 'edit', meta('general'))).toBe(true);
+      expect(problems()).toEqual([]);
+    });
+
+    test('deleting the editor piece from the list in force, with the pairs still there, does not bring editors a write the site removed', async () => {
+      await boot(narrowedEditor());
+      const shown = (cm.getProperty(KEY) as Policy[]).filter((p) => p.id !== 'general-page-write-editor');
+      await cm.setProperty(KEY, shown, ctx);
+      expect(await may(editor, 'delete', meta('general'))).toBe(false);
+    });
+
+    test('a rule id with a line break in it cannot forge a log line', async () => {
+      const mine: Policy = { id: 'my-delete\nWARN forged line', name: 'mine', effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-delete'] };
+      await boot([...narrowedEditor(), mine]);
+      const lines = warnings().filter((w) => w.includes('my-delete'));
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) expect(line).not.toMatch(/[\r\n]/);
+    });
+
     describe('a rule of the site\'s own that grants a narrowed write', () => {
       const mine: Policy = { id: 'my-editors-delete', name: 'my editors delete', effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'system-category', pattern: 'general' }], actions: ['page-delete'] };
 
