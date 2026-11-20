@@ -32,6 +32,7 @@ import type { PageFrontmatter } from '../types/Page.js';
 import { shareCoversPage, shareCoversResource, type ShareGrant } from '../types/Share.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { audienceExcludes, audiencePrincipals, decideFrontmatterAccess, namesAddonPrincipal } from '../utils/frontmatterAccess.js';
+import { isInstallAccessStamp, normalizeSystemCategory } from '../utils/legacyPageAccess.js';
 import { hiddenByFeature } from '../utils/pageFeature.js';
 import { REQUIRED_SETTINGS_HELP } from '../utils/requiredSettings.js';
 
@@ -163,14 +164,6 @@ export interface PageAttributes {
 interface DeclaredAttribute {
   type?: string;
   from?: string;
-}
-
-/** The legacy `access:` stamp install wrote on shipped pages (#971, #1411); left on disk silently (#2255). */
-function isLegacyAccessStamp(access: unknown): boolean {
-  if (!access || typeof access !== 'object' || Array.isArray(access)) return false;
-  const entries = Object.entries(access as Record<string, unknown>);
-  return entries.length === 1 && entries[0][0] === 'edit'
-    && Array.isArray(entries[0][1]) && entries[0][1].length === 1 && entries[0][1][0] === 'admin';
 }
 
 /**
@@ -1454,10 +1447,8 @@ class PolicyInformationPoint extends BaseManager {
   private pageCategory(pageName: string, metadata: PageFrontmatter): string | undefined {
     const named = parsePrivatePageName(pageName);
     if (named && isSharedFolderOwner(named.owner)) return 'shared';
-    const raw = metadata['system-category'];
-    if (typeof raw === 'string' && raw.trim()) return raw.trim().toLowerCase();
     const validation = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager');
-    return validation?.getDefaultSystemCategory?.()?.toLowerCase() ?? 'general';
+    return normalizeSystemCategory(metadata['system-category'], validation?.getDefaultSystemCategory?.());
   }
 
   /**
@@ -1486,12 +1477,16 @@ class PolicyInformationPoint extends BaseManager {
 
   /**
    * `access:` frontmatter no longer has any effect (#2255). The stamp install
-   * wrote (`{ edit: [admin] }`) is left alone silently; any other value is
-   * someone's rule that is now ignored, so it is said once per page.
+   * wrote (`{ edit: [admin] }`) on a page outside `general` is left alone
+   * silently; any other value, the stamp on a general page included, is
+   * someone's rule that is now ignored, so it is said once per page. The
+   * administrator is told in Admin → needs attention by
+   * `PageManager.reportLegacyAccessLimits` (#2269).
    */
   private warnLegacyAccess(pageName: string, metadata: PageFrontmatter): void {
     const access = (metadata as Record<string, unknown>).access;
-    if (access === undefined || isLegacyAccessStamp(access) || this.warnedAccess.has(pageName)) return;
+    if (access === undefined || this.warnedAccess.has(pageName)) return;
+    if (isInstallAccessStamp(access) && this.pageCategory(pageName, metadata) !== 'general') return;
     this.warnedAccess.add(pageName);
     logger.warn(`[ACL] page '${pageName}' has an 'access' frontmatter field; it is no longer read and has no effect. Who may change a page is decided by its system-category and the policies (#2255). Use 'audience' or 'author-lock' to narrow it`);
   }

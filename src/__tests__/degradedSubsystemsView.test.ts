@@ -206,3 +206,37 @@ describe('#1946 Engine.getDegradedManagers carries each entry\'s kind', () => {
     expect(engine.getDegradedManagers()).toEqual([{ manager: 'Legacy', state: 'degraded', reason: 'x', kind: 'outage' }]);
   });
 });
+
+describe('#2269 Engine.getDegradedManagers also carries a manager\'s live attention items', () => {
+  class Listing extends BaseManager {
+    items: Array<{ state: 'degraded'; kind: 'attention'; reason: string; details?: string[] }> = [];
+    getAttentionItems() { return this.items; }
+  }
+
+  test('an item is reported as needs-attention beside the manager\'s own outage, and goes when the manager stops listing it', () => {
+    const engine = new Engine();
+    const stub = { getManager: () => null } as never;
+    const m = new Listing(stub);
+    m.items = [{ state: 'degraded', kind: 'attention', reason: '2 pages have a limit', details: ['A', 'B'] }];
+    (m as unknown as { markDegraded(r: string): void }).markDegraded('vault closed');
+    engine.registerManager('Listing', m);
+    const found = engine.getDegradedManagers();
+    expect(found.map((x) => [x.manager, x.kind, x.reason])).toEqual([
+      ['Listing', 'outage', 'vault closed'],
+      ['Listing', 'attention', '2 pages have a limit']
+    ]);
+    expect(found[1].details).toEqual(['A', 'B']);
+    m.items = [];
+    expect(engine.getDegradedManagers().map((x) => x.kind)).toEqual(['outage']);
+  });
+
+  test('a manager whose list cannot be read does not break the report', () => {
+    const engine = new Engine();
+    const stub = { getManager: () => null } as never;
+    const m = new Listing(stub);
+    m.getAttentionItems = () => { throw new Error('boom'); };
+    (m as unknown as { markDegraded(r: string): void }).markDegraded('vault closed');
+    engine.registerManager('Listing', m);
+    expect(engine.getDegradedManagers().map((x) => x.reason)).toEqual(['vault closed']);
+  });
+});
