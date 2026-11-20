@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+    <meta name="current-user" content="<%= typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated ? currentUser.username : '' %>">
     <title><% if (typeof pageName !== 'undefined' && pageName) { %><%= pageName %> | <% } %><%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %></title>
     <%# #886 — OpenGraph / Twitter card tags. Built by
         src/utils/buildSocialMeta.ts and populated by viewPage(); absent on
@@ -43,6 +44,7 @@
 
     <!-- CSRF token helpers (#663) — must load before any script that does fetch -->
     <script src="/js/csrf.js"></script>
+    <script src="/js/reauth-draft.js"></script>
 
     <!-- Trail dropdown storage and drawing (#2390) -->
     <script src="/js/nav-trail.js"></script>

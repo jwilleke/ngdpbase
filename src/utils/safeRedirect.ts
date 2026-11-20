@@ -20,6 +20,15 @@
 /** Where a rejected target sends the browser instead. */
 const FALLBACK = '/';
 
+/** True when `value` holds an ASCII control character (0x00–0x1f or 0x7f). */
+function hasControlCharacter(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
 /**
  * Return `target` when it is a same-site path, otherwise `/`.
  *
@@ -30,7 +39,7 @@ const FALLBACK = '/';
  *   - `https://evil.example`, `javascript:…`, `data:…` — any scheme
  *   - `/\evil.example`      — browsers normalise the backslash to `/`
  *   - `\\evil.example`, or anything not starting with `/`
- *   - a CR/LF, which would let a caller inject a second header
+ *   - any control character, raw or percent-encoded (tab, CR, LF, NUL, DEL, …)
  */
 export function safeRedirect(target: unknown): string {
   if (typeof target !== 'string') return FALLBACK;
@@ -38,8 +47,9 @@ export function safeRedirect(target: unknown): string {
   const value = target.trim();
   if (value === '') return FALLBACK;
 
-  // Header injection: a raw CR or LF in a Location value is never legitimate.
-  if (/[\r\n]/.test(value)) return FALLBACK;
+  // A control character (tab, CR, LF, NUL, DEL, …) is never legitimate in a
+  // return path, whether it arrives raw or percent-encoded.
+  if (hasControlCharacter(value) || /%(?:[01][0-9a-f]|7f)/i.test(value)) return FALLBACK;
 
   // Must be an absolute path on this site.
   if (!value.startsWith('/')) return FALLBACK;

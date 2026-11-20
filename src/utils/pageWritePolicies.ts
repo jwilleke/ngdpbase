@@ -23,10 +23,18 @@
  *   other than admin, and every deny policy (a deny now overrides an allow), is reported and left as it is: it is the site's
  *   own choice.
  *
+ * A stored role policy may also have lost a page write the shipped one had: a
+ * site narrowed `editor-permissions` before #2255 to take away delete and rename.
+ * The shipped category policies are merged in by id, so they would give the
+ * write back. `narrowedRoleWrites` finds what the site took away and
+ * `withoutNarrowedWrites` leaves it out of the category policies that were not
+ * stored (#2270).
+ *
  * Pure: the caller logs and reports. The site's file is not rewritten; saving
  * the policy list from the configuration editor writes the migrated list.
  */
 import { createHash } from 'crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { Policy } from '../types/Policy.js';
 
 /**
@@ -34,6 +42,13 @@ import type { Policy } from '../types/Policy.js';
  * the rule as it was then. A mark hides the dashboard item and is read by nothing that decides access.
  */
 export const CHECKED_DENIES_KEY = 'ngdpbase.access.checked-denies';
+
+/**
+ * Where the page writes a site removed from a role are recorded (#2270): a list of `{ role, action }`
+ * pairs. They are left out of every category policy in force, at every start and every save of the
+ * policy list, so a policy added later is narrowed too and nothing in the policy list stands for them.
+ */
+export const NARROWED_WRITES_KEY = 'ngdpbase.access.narrowed-role-writes';
 
 /** Where the "Mark as checked" button on the dashboard item posts (#2355). */
 export const DENY_CHECKED_ACTION = '/admin/access-policies/deny-checked';
@@ -69,6 +84,23 @@ const MOVED: Readonly<Record<string, readonly string[]>> = {
   'contributor-permissions': ['page-edit'],
   'demo-admin-access': ['page-edit']
 };
+
+/**
+ * The role each narrowable shipped policy names. Admin is left out: an administrator who
+ * lost a page write by editing `admin-full-access` is not something this repairs.
+ */
+const ROLE_OF: Readonly<Record<string, string>> = {
+  'editor-permissions': 'editor',
+  'contributor-permissions': 'contributor',
+  'demo-admin-access': 'demo-admin'
+};
+
+/**
+ * The shipped category policies that came with #2255 and carry the role writes. A stored list that holds
+ * one was saved on a release that has them (the editor saves the whole list), and its role policies then
+ * hold no page writes by design, so it says nothing about what the site narrowed.
+ */
+const CATEGORY_POLICY_IDS: readonly string[] = ['general-page-write', 'general-page-edit'];
 
 /** What the migration did and found, one sentence each. */
 export interface PageWritePolicyReport {
@@ -130,6 +162,303 @@ export function migrateStoredPageWritePolicies(policies: unknown): { policies: u
     report.shown[line] = `The saved rule '${policy.id}' let its roles change every page, which the site now handles with its page category rules, so it was changed for this run only${extra.length > 0 ? `; what the category rules do not cover is kept for general pages in a new rule, '${policy.id}-page-write'` : ''}. Save the policy list in Admin → Configuration to keep the change.`;
   }
   return { policies: out, report };
+}
+
+/** A page write a site removed from its stored copy of a shipped role policy (#2270). */
+export interface NarrowedWrite {
+  role: string;
+  action: string;
+  /** The stored role policy that lacks it. */
+  policyId: string;
+}
+
+/** A {@link NarrowedWrite} that was left out of at least one category policy, and which ones. */
+export interface AppliedNarrowing extends NarrowedWrite {
+  from: string[];
+}
+
+const PAIR_EXAMPLE = '{ "role": "editor", "action": "page-delete" }';
+
+/**
+ * A value from a hand-edited file for a message or a log line: line breaks and other control characters are
+ * replaced by a space (so a value cannot start a line of its own), it is cut short, and it never throws.
+ */
+export function clip(value: unknown): string {
+  let text: string;
+  try {
+    text = typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value));
+  } catch {
+    text = String(value);
+  }
+  // eslint-disable-next-line no-control-regex -- control characters are what is being removed
+  text = text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ');
+  return text.length > 40 ? `${text.slice(0, 40)}...` : text;
+}
+
+/**
+ * The pairs in the setting `NARROWED_WRITES_KEY` as narrowings, and one plain-words reason for each entry
+ * that cannot be read (a role other than the three whose shipped policies held a page write, in lower case;
+ * a write that role's shipped policy held). What is skipped does not narrow anything, so the caller says so:
+ * reading a damaged value as empty must not lift a permission reduction without a sign. A pair named twice
+ * counts once and is not a problem. No value at all is an empty list.
+ */
+export function readNarrowedWrites(record: unknown): { pairs: NarrowedWrite[]; skipped: string[] } {
+  if (record === undefined) return { pairs: [], skipped: [] };
+  if (!Array.isArray(record)) return { pairs: [], skipped: [`the value is not a list; it should be a list of pairs like ${PAIR_EXAMPLE}`] };
+  const policyOf = new Map(Object.entries(ROLE_OF).map(([policyId, role]) => [role, policyId]));
+  const roles = [...policyOf.keys()];
+  const or = (names: readonly string[]): string => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}`);
+  const seen = new Set<string>();
+  const pairs: NarrowedWrite[] = [];
+  const skipped: string[] = [];
+  (record as unknown[]).forEach((pair, i) => {
+    const at = `entry ${i + 1}`;
+    const { role, action } = (pair && typeof pair === 'object' && !Array.isArray(pair) ? pair : {}) as { role?: unknown; action?: unknown };
+    if (typeof role !== 'string' || typeof action !== 'string') {
+      skipped.push(`${at}: ${clip(pair)} is not a pair like ${PAIR_EXAMPLE}`);
+      return;
+    }
+    const policyId = policyOf.get(role);
+    if (!policyId) {
+      skipped.push(`${at}: '${clip(role)}' is not a role whose page writes can be removed; use ${or(roles)}, in lower case`);
+    } else if (!(PAGE_WRITES as readonly string[]).includes(action)) {
+      skipped.push(`${at}: '${clip(action)}' is not a page write; use ${or(PAGE_WRITES)}`);
+    } else if (!MOVED[policyId].includes(action)) {
+      skipped.push(`${at}: the shipped rules never gave ${role} '${action}'; for ${role} use ${or(MOVED[policyId])}`);
+    } else if (!seen.has(`${role}/${action}`)) {
+      seen.add(`${role}/${action}`);
+      pairs.push({ role, action, policyId });
+    }
+  });
+  return { pairs, skipped };
+}
+
+/** The pairs {@link readNarrowedWrites} can read; anything else in a hand-edited value does not narrow anything. */
+export function narrowedWritesFromRecord(record: unknown): NarrowedWrite[] {
+  return readNarrowedWrites(record).pairs;
+}
+
+/** The value to store in `NARROWED_WRITES_KEY` for these narrowings, in a fixed order. */
+export function recordOfNarrowedWrites(narrowed: readonly NarrowedWrite[]): Array<{ role: string; action: string }> {
+  return narrowedWritesFromRecord(narrowed.map(({ role, action }) => ({ role, action })))
+    .map(({ role, action }) => ({ role, action }))
+    .sort((a, b) => a.role.localeCompare(b.role) || a.action.localeCompare(b.action));
+}
+
+/** What a hand-edited list may hold where a list belongs: anything else reads as empty, so no input throws. */
+const listOf = <T>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+
+/** The entries of a stored list that are rules with an id; anything else is not read. */
+const rulesIn = (stored: unknown): Policy[] => listOf<unknown>(stored).filter((p): p is Policy => !!p && typeof p === 'object' && typeof (p as Policy).id === 'string');
+
+/** Whether the rule has a resource that is every page: the shape the old shipped role policies had their page writes in. */
+const coversEveryPage = (policy: Policy): boolean => listOf<{ type?: unknown; pattern?: unknown }>(policy.resources).some((r) => !!r && r.type === 'page' && r.pattern === '*');
+
+/** Whether `migrateStoredPageWritePolicies` would rewrite this rule: a shipped role copy that still holds a moved write on every page. */
+const holdsMovedWrites = (policy: Policy): boolean =>
+  Object.hasOwn(MOVED, policy.id) && policy.effect !== 'deny' && coversEveryPage(policy) && listOf<string>(policy.actions).some((a) => (PAGE_WRITES as readonly string[]).includes(a));
+
+/**
+ * Page writes the site's stored copies of the shipped role policies lack that the shipped ones had (the
+ * `MOVED` table), read from `stored` as the site saved it, before the #2255 migration rewrites it. A copy
+ * that holds `*` or lists no actions holds everything; one that no longer covers every page is the site's
+ * own choice and is reported elsewhere. When a rule appears twice the last is read, as the merge keeps it.
+ *
+ * Read only a list that is still as a release before #2255 saved it. Two things show it is not:
+ * - it holds a shipped category policy (`CATEGORY_POLICY_IDS`): the editor saved the whole list after #2255;
+ * - no shipped role copy in it holds a page write on every page. The migration strips every such write from
+ *   every such copy, and every write of the file (any setting saved, the Shared folders screen, a button)
+ *   stores the stripped list. A copy without the writes then says nothing about what the site did, and
+ *   nothing in the file can: a site that never narrowed and a site that did look the same. Such a list is
+ *   not read, so the roles keep what the category policies give them.
+ */
+export function narrowedRoleWrites(stored: unknown): NarrowedWrite[] {
+  const rules = rulesIn(stored);
+  if (rules.some((p) => CATEGORY_POLICY_IDS.includes(p.id))) return [];
+  if (!rules.some(holdsMovedWrites)) return [];
+  const kept = new Map(rules.map((p) => [p.id, p]));
+  const out: NarrowedWrite[] = [];
+  for (const [policyId, role] of Object.entries(ROLE_OF)) {
+    const policy = kept.get(policyId);
+    if (!policy || policy.effect === 'deny') continue;
+    if (listOf(policy.resources).length > 0 && !coversEveryPage(policy)) continue;
+    const held = listOf<string>(policy.actions);
+    if (held.length === 0 || held.includes('*')) continue;
+    for (const action of MOVED[policyId]) {
+      if (!held.includes(action)) out.push({ role, action, policyId });
+    }
+  }
+  return out;
+}
+
+/**
+ * `policies` (the merged list) with each narrowed write left out for its role in every allow policy that
+ * covers system categories only and is not in `keep` (the ids the site stored itself: those replace the shipped
+ * ones whole and are the site's word). A policy naming the role and others is split: the others keep it
+ * unchanged and the role gets `<id>-<role>` (suffixed until no policy in the list has the id) with what the
+ * site kept, or nothing when nothing is left. Returns the list to use in place of the input, which is not
+ * changed, and each narrowing that took something out. Entries that are not rules, and fields that are not
+ * lists, are left as they are.
+ */
+export function withoutNarrowedWrites(policies: unknown, narrowed: readonly NarrowedWrite[], keep: ReadonlySet<string>): { policies: unknown; applied: AppliedNarrowing[] } {
+  const { policies: out, applied } = narrowing(policies, narrowed, keep);
+  return { policies: out, applied };
+}
+
+/** A rule narrowing changed: what it was, and what is in force in its place (nothing when it was left with no subject). */
+interface Changed {
+  from: Policy;
+  to: Policy[];
+}
+
+function narrowing(policies: unknown, narrowed: readonly NarrowedWrite[], keep: ReadonlySet<string>): { policies: unknown; applied: AppliedNarrowing[]; changed: Changed[] } {
+  if (!Array.isArray(policies) || narrowed.length === 0) return { policies, applied: [], changed: [] };
+  const changed: Changed[] = [];
+  const applied = new Map<string, AppliedNarrowing>();
+  const used = new Set(rulesIn(policies).map((p) => p.id));
+  const out: unknown[] = [];
+  for (const entry of policies as unknown[]) {
+    const policy = entry as Policy;
+    const isRule = !!policy && typeof policy === 'object' && typeof policy.id === 'string';
+    const resources = isRule ? listOf<{ type?: unknown }>(policy.resources) : [];
+    const covered = isRule && !keep.has(policy.id) && policy.effect !== 'deny' && resources.length > 0 && resources.every((r) => !!r && r.type === 'system-category');
+    if (!covered) {
+      out.push(entry);
+      continue;
+    }
+    const actions = listOf<string>(policy.actions);
+    const subjects = listOf<NonNullable<Policy['subjects']>[number]>(policy.subjects);
+    const rest: NonNullable<Policy['subjects']> = [];
+    const split: Policy[] = [];
+    for (const subject of subjects) {
+      const dropped = subject && subject.type === 'role' ? narrowed.filter((n) => n.role === subject.value && actions.includes(n.action)) : [];
+      if (dropped.length === 0) {
+        rest.push(subject);
+        continue;
+      }
+      for (const n of dropped) {
+        const key = `${n.policyId}/${n.action}`;
+        const seen = applied.get(key) ?? { ...n, from: [] };
+        if (!seen.from.includes(policy.id)) seen.from.push(policy.id);
+        applied.set(key, seen);
+      }
+      const left = actions.filter((a) => !dropped.some((n) => n.action === a));
+      if (left.length > 0) {
+        let id = `${policy.id}-${subject.value}`;
+        for (let n = 2; used.has(id); n++) id = `${policy.id}-${subject.value}-${n}`;
+        used.add(id);
+        split.push({ ...policy, id, subjects: [subject], actions: left });
+      }
+    }
+    if (split.length === 0 && rest.length === subjects.length) out.push(entry);
+    else {
+      const to: Policy[] = [...(rest.length > 0 ? [{ ...policy, subjects: rest }] : []), ...split];
+      out.push(...to);
+      changed.push({ from: policy, to });
+    }
+  }
+  return { policies: out, applied: [...applied.values()], changed };
+}
+
+/** A rule as it is, without who it names and how it is labelled: what decides what it grants. */
+function withoutWhoAndLabel(rule: unknown): unknown {
+  if (!rule || typeof rule !== 'object') return rule;
+  const copy: Record<string, unknown> = { ...(rule as Record<string, unknown>) };
+  delete copy.subjects;
+  delete copy.name;
+  delete copy.description;
+  return copy;
+}
+
+/** True when `posted` is `original` apart from its subjects, name and description. */
+function sameApartFromWho(posted: unknown, original: Policy): boolean {
+  return isDeepStrictEqual(withoutWhoAndLabel(posted), withoutWhoAndLabel(original));
+}
+
+/**
+ * The list to store when `incoming` is the list in force (as Admin → Configuration shows it and saves it
+ * back, or as a writer read it with `getProperty`) with the site's changes on it: the same list without the
+ * effects of the narrowing, so the stored list holds only the site's own changes and clearing a pair gives
+ * the write back everywhere. `base` is the list the narrowing was applied to (the merged list before this
+ * save).
+ *
+ * A rule with a narrowed role is shown in two kinds of piece: the base piece, which keeps the rule's id and
+ * the other subjects, and one `<id>-<role>` piece for each narrowed role, with what the role kept. The rule
+ * is never to take a write the site did not remove, and never to give back one it removed or deleted, so:
+ * - a role piece posted exactly as shown is folded back onto the base piece when the base piece is still the
+ *   original apart from its subjects, name and description: the role's subject goes onto it and the role
+ *   piece is not stored. The narrowing at load takes the removed writes out again, and clearing the pairs
+ *   gives them back. A base piece edited in anything else (an action, a resource, a category, the effect)
+ *   is not folded onto: the narrowing only touches a rule whose resources are all system categories, so a
+ *   role folded onto, for example, a `page:*` resource would get the removed write back;
+ * - a role piece that was edited or deleted is not folded: it is stored as posted, or left out;
+ * - a base piece that was deleted, or whose id was changed, is not brought back: an unchanged role piece is
+ *   stored as posted, still narrowed at load.
+ * A rule with no base piece (every subject was a narrowed role) is the original again when its pieces are
+ * posted as shown. A rule narrowing removed whole, which the site could not see, is put back unless the
+ * list already holds a rule with its id. Every other entry is the site's own and is kept as it is. Put back
+ * rules go where they were in `base`.
+ */
+export function restoreNarrowedWrites(incoming: unknown, base: unknown, narrowed: readonly NarrowedWrite[]): unknown {
+  if (!Array.isArray(incoming) || narrowed.length === 0) return incoming;
+  const { changed } = narrowing(base, narrowed, new Set());
+  if (changed.length === 0) return incoming;
+  const baseIds = rulesIn(base).map((p) => p.id);
+  const rank = (id: unknown): number => {
+    const at = typeof id === 'string' ? baseIds.indexOf(id) : -1;
+    return at < 0 ? Infinity : at;
+  };
+  const idOf = (entry: unknown): unknown => (entry && typeof entry === 'object' ? (entry as Policy).id : undefined);
+  const entries = [...(incoming as unknown[])];
+  const folded = new Set<number>();
+  /** Where in `entries` each narrowed rule now lives, when a role piece was folded onto it. */
+  for (const { from, to } of changed) {
+    const hasBase = to[0]?.id === from.id;
+    const order = listOf<unknown>(from.subjects);
+    const position = (subject: unknown): number => order.findIndex((o) => isDeepStrictEqual(o, subject));
+    const fold = (at: number, subject: unknown): void => {
+      const rule = entries[at] as Policy;
+      const held = listOf<unknown>(rule.subjects);
+      if (held.some((h) => isDeepStrictEqual(h, subject))) return;
+      const place = held.findIndex((h) => position(h) < 0 || position(h) > position(subject));
+      const subjects = [...held];
+      subjects.splice(place < 0 ? subjects.length : place, 0, subject);
+      entries[at] = { ...rule, subjects };
+    };
+    let target = hasBase ? entries.findIndex((e, i) => !folded.has(i) && idOf(e) === from.id) : -1;
+    // Narrowing only touches a rule whose resources are all system categories, so a role piece folded onto a
+    // base that was edited (a page:* resource, another category or action, a deny) would no longer be
+    // narrowed. Fold only onto a base that is the original apart from who it names and how it is labelled.
+    if (hasBase && target >= 0 && !sameApartFromWho(entries[target], from)) target = -1;
+    if (!hasBase && entries.some((e) => idOf(e) === from.id)) continue;
+    for (const piece of to.slice(hasBase ? 1 : 0)) {
+      const at = entries.findIndex((e, i) => !folded.has(i) && i !== target && isDeepStrictEqual(e, piece));
+      if (at < 0) continue;
+      const subject = listOf<unknown>(piece.subjects)[0];
+      if (hasBase) {
+        if (target < 0) continue; // no base, or one that was edited: the role piece stays as posted
+        fold(target, subject);
+        folded.add(at);
+      } else if (target < 0) {
+        entries[at] = { ...structuredClone(from), subjects: [subject] };
+        target = at;
+      } else {
+        fold(target, subject);
+        folded.add(at);
+      }
+    }
+  }
+  const out: Array<{ entry: unknown; rank: number }> = [];
+  entries.forEach((entry, i) => {
+    if (!folded.has(i)) out.push({ entry, rank: rank(idOf(entry)) });
+  });
+  for (const { from, to } of changed) {
+    if (to.length > 0 || entries.some((e, i) => !folded.has(i) && idOf(e) === from.id)) continue;
+    const put = { entry: structuredClone(from), rank: rank(from.id) };
+    const before = out.findIndex((o) => o.rank > put.rank);
+    out.splice(before < 0 ? out.length : before, 0, put);
+  }
+  return out.map((o) => o.entry);
 }
 
 /**
