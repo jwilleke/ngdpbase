@@ -256,6 +256,14 @@ class Engine {
         // #1946: down unless the manager declared it needs attention; a failed one is always down.
         out.push({ manager: name, ...status, kind: status.state === 'degraded' && status.kind === 'attention' ? 'attention' : 'outage' });
       }
+      // #2269: a manager may also list things for an administrator to do that
+      // are read live, so they never share (or overwrite) its one status.
+      try {
+        const items = (manager as unknown as { getAttentionItems?: () => Array<import('../managers/BaseManager.js').ManagerStatus> }).getAttentionItems?.() ?? [];
+        for (const item of items) out.push({ manager: name, ...item, state: 'degraded', kind: 'attention' });
+      } catch {
+        // a list that cannot be read must not hide the rest of the report
+      }
     }
     return out;
   }
