@@ -198,8 +198,57 @@ describe('bare web addresses (#2443)', () => {
     }
   });
 
-  it('the untrusted profile (comments) is not changed', () => {
-    expect(createMarkdownConverter('untrusted').makeHtml('https://example.com')).toBe('<p>https://example.com</p>\n');
+  it('a struck-through address keeps the strikethrough and the address as written', () => {
+    expect(html('~~https://a.com~~')).toBe(`<p><del>${link('https://a.com')}</del></p>\n`);
+  });
+
+  it('a backslash before the address keeps it as text and the backslash shows', () => {
+    expect(html('\\https://a.com')).toBe('<p>\\https://a.com</p>\n');
+  });
+
+  it('three dots inside an address stay as written, in the text and the href', () => {
+    expect(html('https://a.com/a...b')).toBe(`<p>${link('https://a.com/a...b')}</p>\n`);
+    expect(html('Wait... https://a.com/a...b')).toContain('Wait…');
+  });
+
+  it('in a table cell the link ends where a placeholder begins', () => {
+    expect(renderInlineMarkdown('https://a.com\uE0000\uE001')).toBe(`${link('https://a.com')}\uE0000\uE001`);
+    expect(renderInlineMarkdown('x \uE0001\uE001https://a.com')).toBe(`x \uE0001\uE001${link('https://a.com')}`);
+  });
+});
+
+// #2443: comments link a bare address too, and nothing else about them changes.
+describe('bare web addresses in comments (#2443)', () => {
+  const untrusted = createMarkdownConverter('untrusted');
+  const external = 'class="wiki-link external-link" target="_blank" rel="noopener noreferrer"';
+
+  it('a bare http(s) address becomes an external link', () => {
+    expect(untrusted.makeHtml('see https://example.com/a')).toBe(
+      `<p>see <a href="https://example.com/a" ${external}>https://example.com/a</a></p>\n`
+    );
+    expect(untrusted.makeHtml('"https://example.com"')).toContain(`<a href="https://example.com" ${external}>`);
+  });
+
+  it('code and a backslash-escaped address stay text', () => {
+    expect(untrusted.makeHtml('`https://example.com`')).not.toContain('<a');
+    expect(untrusted.makeHtml('\\https://example.com')).toBe('<p>\\https://example.com</p>\n');
+  });
+
+  it('other schemes, domains and mail addresses stay text', () => {
+    for (const text of ['javascript:alert(1)', 'data:text/html,hi', 'ftp://example.com', 'example.com', 'a@example.com', 'vbscript://x']) {
+      expect(untrusted.makeHtml(`see ${text} now`)).not.toContain('<a');
+    }
+  });
+
+  it('written links in comments are as before: no new tab, no classes', () => {
+    expect(untrusted.makeHtml('[Ext](https://example.com)')).toBe('<p><a href="https://example.com">Ext</a></p>\n');
+    expect(untrusted.makeHtml('<https://example.com>')).toBe('<p><a href="https://example.com">https://example.com</a></p>\n');
+  });
+
+  it('headings get no ids and nothing else in the profile loosens', () => {
+    expect(untrusted.makeHtml('## Title')).not.toContain('id=');
+    expect(untrusted.makeHtml('- [x] done')).not.toContain('checkbox');
+    expect(untrusted.makeHtml('H~2~O')).not.toContain('<sub>');
   });
 });
 

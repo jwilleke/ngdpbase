@@ -601,6 +601,39 @@ describe('jspwiki-link-leftovers: wiki link split over two lines (#2443)', () =>
     const once = apply(`[Title\n|${url}|target='_blank']`).content;
     expect(apply(once).lines).toEqual([]);
   });
+
+  it('two split links on one line are both joined in one run, and a second run changes nothing', () => {
+    const body = `[A\n|${url}] and [B\n|${url}b] end`;
+    const once = apply(body);
+    expect(once.content).toBe(`[A|${url}] and [B|${url}b] end`);
+    expect(once.lines).toEqual([1, 2, 3]);
+    expect(apply(once.content).lines).toEqual([]);
+  });
+
+  it('a doubled address on the joined line is fixed in the same run', () => {
+    const body = `[A\n|${url}] ${url}(${url})`;
+    const once = apply(body);
+    expect(once.content).toBe(`[A|${url}] ${url}`);
+    expect(apply(once.content).content).toBe(once.content);
+  });
+
+  it('one run equals two runs on a page of mixed leftovers', () => {
+    const body = [`[A\n|${url}] [B`, `|${url}b|target='_blank'] x`, `${url}(${url}|target='_blank')`, '[C|', `${url}c]`].join('\n');
+    const once = apply(body).content;
+    expect(apply(once).content).toBe(once);
+  });
+
+  it('a very long line of repeated addresses is skipped quickly', () => {
+    const line = 'https://a.com'.repeat(20000);
+    const started = performance.now();
+    const r = apply(`${line}\n[A\n|${url}]`);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(r.content).toBe(`${line}\n[A|${url}]`);
+  });
+
+  it('a normal line still gets the doubled address repaired next to long ones', () => {
+    expect(apply(`${url}(${url})`).content).toBe(url);
+  });
 });
 
 describe('registry', () => {

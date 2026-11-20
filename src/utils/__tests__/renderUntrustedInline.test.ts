@@ -47,6 +47,25 @@ describe('markdown that should work in a comment', () => {
   });
 });
 
+describe('bare web addresses in a comment (#2443)', () => {
+  test('a bare http(s) address links and keeps its new-tab attributes through the filter', async () => {
+    const html = await renderUntrustedInline(TEST_FORMATTERS, 'see https://example.org/x', makeEngine());
+    expect(html).toMatch(/<a[^>]+href="https:\/\/example\.org\/x"[^>]*>/);
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
+
+  test('javascript: and data: addresses are not links, and raw HTML is still stripped', async () => {
+    const html = await renderUntrustedInline(
+      TEST_FORMATTERS,
+      'javascript:alert(1) data:text/html,hi <script>alert(1)</script><a href="javascript:alert(2)">x</a>',
+      makeEngine()
+    );
+    expect(html).not.toMatch(/<a[^>]+href="(?:javascript|data):/i);
+    expect(html).not.toContain('<script');
+  });
+});
+
 describe('what a hostile commenter writes does not survive', () => {
   test('script tags are stripped even when the SITE filter is off', async () => {
     // The page path gates SecurityFilter on config because page authors are
