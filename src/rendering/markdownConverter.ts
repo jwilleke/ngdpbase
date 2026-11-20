@@ -126,6 +126,27 @@ const INVISIBLE_IN_TEXT = /[\u200E\u200F\u061C\u202A-\u202E\u2066-\u2069\r\n]/g;
 /** Longest stretch of text read when looking for the end of a bare address (twice the 2048 the link-leftovers step matches). */
 const MAX_URL_SCAN = 4096;
 
+/** Limits on the host name passed to the address matcher: characters, labels, and `xn--` labels. */
+const MAX_HOST = 253;
+const MAX_HOST_LABELS = 32;
+const MAX_XN_LABELS = 8;
+
+/**
+ * Is the host of this candidate address within the limits? Linear in the
+ * candidate: the authority runs from after `://` to the first `/`, `?` or `#`,
+ * and the host is what follows its last `@`.
+ */
+function hostWithinLimits(candidate: string): boolean {
+  const at = candidate.indexOf('://');
+  if (at === -1) return true;
+  const rest = candidate.slice(at + 3);
+  const stop = rest.search(/[/?#]/);
+  const authority = stop === -1 ? rest : rest.slice(0, stop);
+  const host = authority.slice(authority.lastIndexOf('@') + 1);
+  if (host.length > MAX_HOST || host.split('.').length > MAX_HOST_LABELS) return false;
+  return (authority.toLowerCase().split('xn--').length - 1) <= MAX_XN_LABELS;
+}
+
 /** Private-use sentinels a table cell wraps around a placeholder (JSPWikiPreprocessor). */
 const PLACEHOLDER_START = '\uE000';
 const PLACEHOLDER_END = '\uE001';
@@ -139,7 +160,7 @@ const PLACEHOLDER_END = '\uE001';
  * made. The inline rule takes an address before emphasis, so `_` and `*` inside
  * it stay as written; each match reads only up to white space or `~~`, and at
  * most {@link MAX_URL_SCAN} characters (a longer unbroken address is left as
- * text), so a closing strikethrough stays outside. A rule after it takes back an
+ * text), and a host name over a length limit is left as text too, so a closing strikethrough stays outside. A rule after it takes back an
  * address written `\https://…`, which is how an author keeps an address as text,
  * and ends a link at a table cell's placeholder sentinels, in one pass over the
  * tokens. The text shown for a link drops direction marks, direction controls
@@ -157,9 +178,10 @@ function bareWebAddresses(md: MarkdownIt): void {
   md.linkify.matchAtStart = (text: string) => {
     const head = text.length > MAX_URL_SCAN ? text.slice(0, MAX_URL_SCAN) : text;
     const end = head.search(/\s|~~/);
-    if (end !== -1) return webOnly(matchAtStart(head.slice(0, end)));
     // No end within the limit: the address is too long to link, not cut short.
-    return head === text ? webOnly(matchAtStart(text)) : null;
+    if (end === -1 && head !== text) return null;
+    const candidate = end === -1 ? text : head.slice(0, end);
+    return hostWithinLimits(candidate) ? webOnly(matchAtStart(candidate)) : null;
   };
   // The core rule reads whole text tokens with no limit, and the inline rule
   // above covers every address, so only the inline rule is used.
