@@ -19,7 +19,7 @@ describe('page profile', () => {
     const o = buildMarkdownIt('page').options;
     expect(o.html).toBe(true);
     expect(o.breaks).toBe(true);
-    expect(o.linkify).toBe(false);
+    expect(o.linkify).toBe(true);
     expect(o.typographer).toBe(false);
   });
 
@@ -148,6 +148,62 @@ describe('external links (#1492)', () => {
     expect(createMarkdownConverter('untrusted').makeHtml('[Ext](https://example.com)')).toBe(
       '<p><a href="https://example.com">Ext</a></p>\n'
     );
+  });
+});
+
+// #2443: a bare web address becomes a link when the page is shown. The stored
+// text is not rewritten; code and an escaped address stay text.
+describe('bare web addresses (#2443)', () => {
+  const external = 'class="wiki-link external-link" target="_blank" rel="noopener noreferrer"';
+  const link = (u: string): string => `<a href="${u}" ${external}>${u}</a>`;
+
+  it('a bare address becomes an external link, with the same attributes as a written one', () => {
+    expect(html('See https://example.com/a?b=1 today')).toBe(`<p>See ${link('https://example.com/a?b=1')} today</p>\n`);
+    expect(html('Old http://example.com')).toContain(link('http://example.com'));
+  });
+
+  it('trailing punctuation stays outside the link', () => {
+    expect(html('Go to https://example.com.')).toBe(`<p>Go to ${link('https://example.com')}.</p>\n`);
+  });
+
+  it('an address inside quotation marks becomes a link', () => {
+    expect(html('He said "https://example.com" twice')).toContain(`&quot;${link('https://example.com')}&quot;`);
+  });
+
+  it('an address in an inline code span stays text', () => {
+    expect(html('Use `https://example.com` here')).toBe('<p>Use <code>https://example.com</code> here</p>\n');
+  });
+
+  it('an address in a fenced or an indented code block stays text', () => {
+    expect(html('```\nhttps://example.com\n```')).not.toContain('<a');
+    expect(html('    https://example.com')).not.toContain('<a');
+  });
+
+  it('a backslash-escaped address stays text', () => {
+    const out = html('See \\https://example.com now');
+    expect(out).not.toContain('<a');
+    expect(out).toContain('https://example.com');
+  });
+
+  it('a bare address in a table cell is a link', () => {
+    expect(renderInlineMarkdown('https://example.com')).toBe(link('https://example.com'));
+  });
+
+  it('written links render exactly as before and are not linked twice', () => {
+    expect(html('[Ext](https://example.com/a)')).toBe(`<p><a href="https://example.com/a" ${external}>Ext</a></p>\n`);
+    expect(html('[https://example.com](https://example.com)')).toBe(`<p>${link('https://example.com')}</p>\n`);
+    expect(html('<https://example.com>')).toBe(`<p>${link('https://example.com')}</p>\n`);
+    expect(html('<a href="https://example.com">x</a>')).toContain('<a href="https://example.com">x</a>');
+  });
+
+  it('only http and https addresses link: no bare domains, mail addresses, ftp or protocol-relative', () => {
+    for (const text of ['example.com', 'www.example.com', 'a@example.com', 'mailto:a@example.com', 'ftp://example.com', '//example.com/x']) {
+      expect(html(`See ${text} now`)).not.toContain('<a');
+    }
+  });
+
+  it('the untrusted profile (comments) is not changed', () => {
+    expect(createMarkdownConverter('untrusted').makeHtml('https://example.com')).toBe('<p>https://example.com</p>\n');
   });
 });
 

@@ -556,6 +556,53 @@ describe('jspwiki-link-leftovers (#1492)', () => {
   });
 });
 
+describe('jspwiki-link-leftovers: wiki link split over two lines (#2443)', () => {
+  const apply = (md: string) => jspwikiLinkLeftovers.apply(md);
+  const url = 'https://www.example.org/report';
+
+  it('joins a link whose address starts the second line with a pipe', () => {
+    const r = apply(`See [A long title\n|${url}|target='_blank'] for more`);
+    expect(r.content).toBe(`See [A long title|${url}|target='_blank'] for more`);
+    expect(r.lines).toEqual([1, 2]);
+  });
+
+  it('joins a link whose first line ends with the pipe', () => {
+    expect(apply(`[A long title|\n${url}|target='_blank']`).content).toBe(`[A long title|${url}|target='_blank']`);
+  });
+
+  it('joins a link with no target', () => {
+    expect(apply(`[A long title\n|${url}]`).content).toBe(`[A long title|${url}]`);
+  });
+
+  it('reports the right line numbers and keeps the rest of the page', () => {
+    const r = apply(`one\n[Title\n|${url}]\nthree`);
+    expect(r.content).toBe(`one\n[Title|${url}]\nthree`);
+    expect(r.lines).toEqual([2, 3]);
+  });
+
+  it('keeps CRLF line endings', () => {
+    expect(apply(`[Title\r\n|${url}]\r\nnext`).content).toBe(`[Title|${url}]\r\nnext`);
+  });
+
+  it('leaves what it cannot be sure of', () => {
+    expect(apply(`[Title\nplain words|${url}]`).lines).toEqual([]); // no pipe at the break
+    expect(apply(`[Title]\n|${url}]`).lines).toEqual([]); // first line is already closed
+    expect(apply(`[{Plugin\n|${url}]`).lines).toEqual([]); // plugin syntax
+    expect(apply(`[Title\n\n|${url}]`).lines).toEqual([]); // a blank line between
+    expect(apply('[Title\n|not an address]').lines).toEqual([]);
+  });
+
+  it('never touches code', () => {
+    expect(apply(`\`\`\`\n[Title\n|${url}]\n\`\`\``).lines).toEqual([]);
+    expect(apply(`\`[Title\` and\n|${url}]`).lines).toEqual([]);
+  });
+
+  it('is idempotent', () => {
+    const once = apply(`[Title\n|${url}|target='_blank']`).content;
+    expect(apply(once).lines).toEqual([]);
+  });
+});
+
 describe('registry', () => {
   it('selects every step by default', () => {
     expect(selectFixSteps()).toEqual(FIX_STEPS);
