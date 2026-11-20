@@ -14,6 +14,7 @@ vi.mock('../../utils/logger', () => ({
 
 import ConfigurationManager from '../../managers/ConfigurationManager';
 import PolicyEvaluator from '../../managers/PolicyEvaluator';
+import PolicyValidator from '../../managers/PolicyValidator';
 import UpgradeCheckManager from '../../managers/UpgradeCheckManager';
 import PolicyDecisionPoint from '../PolicyDecisionPoint';
 import PolicyInformationPoint from '../PolicyInformationPoint';
@@ -26,6 +27,7 @@ const SHIPPED_PATH = path.join(__dirname, '../../../config/app-default-config.js
 const shipped = fs.readJsonSync(SHIPPED_PATH) as Record<string, unknown>;
 const shippedPolicies = shipped['ngdpbase.access.policies'] as Policy[];
 const KEY = 'ngdpbase.access.policies';
+const NARROWED_KEY = 'ngdpbase.access.narrowed-role-writes';
 const WRITES = ['page-edit', 'page-delete', 'page-rename'];
 
 /** A role policy as a site saved it before #2255: the shipped one with its page writes on every page. */
@@ -54,6 +56,7 @@ describe('a narrowed role policy stays narrowed after the category policies arri
   let cm: ConfigurationManager;
   let pip: PolicyInformationPoint;
   let upgrades: UpgradeCheckManager;
+  let validator: PolicyValidator;
 
   const customFile = () => path.join(tempDir, 'data', 'config', 'app-custom-config.json');
 
@@ -86,6 +89,9 @@ describe('a narrowed role policy stays narrowed after the category policies arri
     pip = new PolicyInformationPoint(engine);
     await pip.initialize();
     managers.PolicyInformationPoint = pip;
+    validator = new PolicyValidator(engine);
+    await validator.initialize();
+    managers.PolicyValidator = validator;
     upgrades = new UpgradeCheckManager(engine);
     shippedLiveChecks(engine).forEach((c) => upgrades.registerLive(c));
   }
@@ -172,7 +178,7 @@ describe('a narrowed role policy stays narrowed after the category policies arri
       await cm.setProperty(KEY, cm.getProperty(KEY) as Policy[], ctx);
       expect(await items()).toEqual([]);
       expect(await may(editor, 'delete', meta('general'))).toBe(false);
-      await boot((await fs.readJson(customFile()))[KEY] as Policy[]);
+      await restart();
       expect(await may(editor, 'delete', meta('general'))).toBe(false);
       expect(await may(editor, 'edit', meta('general'))).toBe(true);
       expect(await items()).toEqual([]);
@@ -310,11 +316,92 @@ describe('a narrowed role policy stays narrowed after the category policies arri
       expect(await items()).toHaveLength(1);
     });
 
-    test('resetting the policy list to the shipped one ends the narrowing', async () => {
+    test('resetting the policy list does not end the narrowing; clearing the record does, at once and after a restart', async () => {
       await boot([savedBefore('admin-full-access', WRITES), savedBefore('editor-permissions', WRITES, ['page-delete'])]);
       await cm.setProperty(KEY, undefined, ctx);
+      expect(await may(editor, 'delete', meta('general'))).toBe(false);
+      await cm.setProperty(NARROWED_KEY, undefined, ctx);
+      expect(await may(editor, 'delete', meta('general'))).toBe(true);
+      await restart();
       expect(await may(editor, 'delete', meta('general'))).toBe(true);
       expect(await items()).toEqual([]);
+    });
+  });
+
+  describe('the narrowing is recorded in its own setting, not in the policy list (#2270 re-review)', () => {
+    const narrowedEditor = () => [savedBefore('admin-full-access', WRITES), savedBefore('editor-permissions', WRITES, ['page-delete', 'page-rename'])];
+    const nothingLeft = () => [savedBefore('editor-permissions', WRITES), savedBefore('contributor-permissions', ['page-edit'], ['page-edit']), savedBefore('demo-admin-access', ['page-edit'], ['page-edit'])];
+    const problems = () => [...validator.policyProblems(cm.getProperty(KEY)), ...validator.policyProblems(cm.getCustomProperty(KEY) ?? [])];
+    const ids = (list: unknown) => (list as Policy[]).map((p) => p.id);
+
+    test('a site that narrowed everything a policy gave still has a list the validator accepts, in force and stored, after a save and a restart', async () => {
+      await boot(nothingLeft());
+      await cm.setProperty('ngdpbase.application-name', 'Other', ctx);
+      await restart();
+      expect(problems()).toEqual([]);
+      expect(JSON.stringify(await fs.readJson(customFile()))).not.toContain('"none"');
+      expect(await may(contributor, 'edit', meta('general'))).toBe(false);
+      expect(await may(demoAdmin, 'edit', meta('general'))).toBe(false);
+    });
+
+    test('the file records the narrowing as role and write pairs, and its policy list holds no category policy', async () => {
+      await boot(narrowedEditor());
+      await cm.setProperty('ngdpbase.application-name', 'Other', ctx);
+      const file = await fs.readJson(customFile());
+      expect(file[NARROWED_KEY]).toEqual([{ role: 'editor', action: 'page-delete' }, { role: 'editor', action: 'page-rename' }]);
+      expect(ids(file[KEY]).filter((id) => /^(general|self-managed|shared|pushed)-/.test(id))).toEqual([]);
+    });
+
+    test('a site that narrowed nothing has no record', async () => {
+      await boot([savedBefore('admin-full-access', WRITES), savedBefore('editor-permissions', WRITES)]);
+      await cm.setProperty('ngdpbase.application-name', 'Other', ctx);
+      expect((await fs.readJson(customFile()))[NARROWED_KEY]).toBeUndefined();
+    });
+
+    test('removing the narrowed category rules in a policy-list save, then a restart, does not give the write back', async () => {
+      await boot(narrowedEditor());
+      await cm.setProperty('ngdpbase.application-name', 'Other', ctx);
+      await restart();
+      const without = (cm.getProperty(KEY) as Policy[]).filter((p) => !/^(general-page-write|self-managed-author-write)/.test(p.id));
+      await cm.setProperty(KEY, without, ctx);
+      expect(await may(editor, 'delete', meta('general'))).toBe(false);
+      await restart();
+      expect(await may(editor, 'delete', meta('general'))).toBe(false);
+      expect(await may(editor, 'delete', meta('capture', 'erin'))).toBe(false);
+      expect(await may(editor, 'edit', meta('general'))).toBe(true);
+    });
+
+    test('a category policy a later release adds, which grants editors delete, is narrowed too', async () => {
+      await boot(narrowedEditor());
+      await cm.setProperty('ngdpbase.application-name', 'Other', ctx);
+      const later: Policy = { ...shippedPolicy('general-page-write'), id: 'later-general-delete', subjects: [{ type: 'role', value: 'editor' }], actions: ['page-delete'] };
+      const file = path.join(tempDir, 'config', 'app-default-config.json');
+      const defaults = await fs.readJson(file);
+      defaults[KEY] = [...(defaults[KEY] as Policy[]), later];
+      await fs.writeJson(file, defaults);
+      await restart();
+      expect(await may(editor, 'delete', meta('general'))).toBe(false);
+      expect(await may(editor, 'edit', meta('general'))).toBe(true);
+    });
+
+    test('an administrator who clears the pairs gets the writes back at once and after a restart', async () => {
+      await boot(narrowedEditor());
+      await cm.setProperty('ngdpbase.application-name', 'Other', ctx);
+      await cm.setProperty(NARROWED_KEY, [], ctx);
+      expect(await may(editor, 'delete', meta('general'))).toBe(true);
+      await restart();
+      expect(await may(editor, 'delete', meta('general'))).toBe(true);
+    });
+
+    test('a hand-edited record that is not a list of role and write pairs is read as empty and stops nothing', async () => {
+      await boot(narrowedEditor());
+      await cm.setProperty('ngdpbase.application-name', 'Other', ctx);
+      const file = await fs.readJson(customFile());
+      file[NARROWED_KEY] = [{ role: 'editor', action: 'page-read' }, { role: 'nobody', action: 'page-delete' }, 'editor', null, { role: 'editor' }];
+      await fs.writeJson(customFile(), file);
+      await restart();
+      expect(await may(editor, 'edit', meta('general'))).toBe(true);
+      expect(problems()).toEqual([]);
     });
   });
 
