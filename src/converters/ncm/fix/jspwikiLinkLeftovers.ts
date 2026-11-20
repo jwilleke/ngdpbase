@@ -129,8 +129,9 @@ export const jspwikiLinkLeftovers: FixStep = {
         while (last + 1 < map.lines.length && editable(last + 1)) {
           const next = fixLinkLeftoversInLine(map.lines[last + 1]);
           const half = SECOND_HALF.exec(next);
+          if (!half) break;
           const first = endsInOpenLink(joined);
-          if (!half || !first.open || first.pipe === Boolean(half[1])) break;
+          if (!first.open || first.pipe === Boolean(half[1])) break;
           if (joined.length + next.length > MAX_LINE || last - i >= MAX_JOINS) {
             tooLong = true;
             break;

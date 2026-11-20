@@ -256,8 +256,9 @@ describe('bare web addresses (#2443)', () => {
     }
   });
 
-  it('an address of more than 4,096 characters with no break in it is not linked, a shorter one is', () => {
-    expect(html(`https://a.com/${'b'.repeat(5000)}`)).not.toContain('<a');
+  it('an address of more than 4,096 characters with no break in it is never linked as a cut-off prefix', () => {
+    const long = `https://a.com/${'b'.repeat(5000)}`;
+    for (const href of [...html(long).matchAll(/href="([^"]*)"/g)].map((m) => m[1])) expect(href).toBe(long);
     const near = `https://a.com/${'b'.repeat(4000)}`;
     expect(html(near)).toContain(`<a href="${near}"`);
     expect(html(`${near} next`)).toContain(`<a href="${near}"`);

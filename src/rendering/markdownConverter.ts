@@ -120,8 +120,11 @@ function externalLinksInNewTab(md: MarkdownIt, bareOnly = false): void {
   };
 }
 
-/** Bidi controls (U+202A–U+202E, U+2066–U+2069) and line breaks: never shown in a link's text. */
-const INVISIBLE_IN_TEXT = /[\u202A-\u202E\u2066-\u2069\r\n]/g;
+/** Direction marks and controls (U+200E, U+200F, U+061C, U+202A–U+202E, U+2066–U+2069) and line breaks: never shown in a link's text. */
+const INVISIBLE_IN_TEXT = /[\u200E\u200F\u061C\u202A-\u202E\u2066-\u2069\r\n]/g;
+
+/** Longest stretch of text read when looking for the end of a bare address (twice the 2048 the link-leftovers step matches). */
+const MAX_URL_SCAN = 4096;
 
 /** Private-use sentinels a table cell wraps around a placeholder (JSPWikiPreprocessor). */
 const PLACEHOLDER_START = '\uE000';
@@ -133,7 +136,8 @@ const PLACEHOLDER_END = '\uE001';
  * and links an address that follows a backslash. Domains, mail addresses and
  * the fuzzy forms are switched off at the source. markdown-it's inline `linkify`
  * rule takes an address before emphasis, so `_` and `*` inside it stay as
- * written; each match reads only up to white space or `~~`, so a
+ * written; each match reads only up to white space or `~~`, and at most
+ * {@link MAX_URL_SCAN} characters (a longer unbroken address is left as text), so a
  * closing strikethrough stays outside. A rule after the core `linkify` takes
  * back a link that is not `http(s)` and one written `\https://…`, which is how
  * an author keeps an address as text, and ends a link at a table cell's placeholder sentinels. The text shown for a
@@ -148,8 +152,11 @@ function bareWebAddresses(md: MarkdownIt): void {
   // the line, and trailing punctuation is trimmed as it is without `~~`.
   const matchAtStart = md.linkify.matchAtStart.bind(md.linkify);
   md.linkify.matchAtStart = (text: string) => {
-    const end = text.search(/\s|~~/);
-    return matchAtStart(end === -1 ? text : text.slice(0, end));
+    const head = text.length > MAX_URL_SCAN ? text.slice(0, MAX_URL_SCAN) : text;
+    const end = head.search(/\s|~~/);
+    if (end !== -1) return matchAtStart(head.slice(0, end));
+    // No end within the limit: the address is too long to link, not cut short.
+    return head === text ? matchAtStart(text) : null;
   };
   md.core.ruler.after('linkify', 'linkify_web_only', (state): void => {
     for (const block of state.tokens) {
