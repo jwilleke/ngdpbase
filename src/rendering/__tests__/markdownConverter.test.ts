@@ -214,6 +214,30 @@ describe('bare web addresses (#2443)', () => {
     );
   });
 
+  it('a full stop after an address inside ~~ stays outside the link, as it does without ~~', () => {
+    expect(html('~~see https://a.com/x.~~')).toBe(`<p><del>see ${link('https://a.com/x')}.</del></p>\n`);
+    expect(html('~~https://a.com/x,~~')).toBe(`<p><del>${link('https://a.com/x')},</del></p>\n`);
+  });
+
+  it('each match reads only up to the next strikethrough marker, so a long line renders quickly', () => {
+    const long = 'http://a/~~'.repeat(Math.floor(100_000 / 11));
+    for (const converter of [createMarkdownConverter('page'), createMarkdownConverter('untrusted')]) {
+      const started = performance.now();
+      converter.makeHtml(long);
+      expect(performance.now() - started).toBeLessThan(1000);
+      const short = converter.makeHtml('http://a/~~http://b/~~');
+      expect(short).toContain('<a href="http://a/"');
+      expect(short).toContain('<del><a href="http://b/"');
+    }
+  });
+
+  it('the visible text of a link has no bidi control characters or line breaks, and the href stays percent-encoded', () => {
+    const out = html('https://a.com/%E2%80%AEevil%E2%81%A6x%0D%0Ay');
+    const text = />([^<]*)<\/a>/.exec(out)?.[1] ?? '';
+    expect(text).toBe('https://a.com/evilxy');
+    expect(out).toContain('href="https://a.com/%E2%80%AEevil%E2%81%A6x%0D%0Ay"');
+  });
+
   it('a backslash-escaped address with `_` stays text', () => {
     const out = html('\\https://a.com/_foo_');
     expect(out).not.toContain('<a');

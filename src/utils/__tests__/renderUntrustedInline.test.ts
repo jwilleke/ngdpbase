@@ -55,6 +55,13 @@ describe('bare web addresses in a comment (#2443)', () => {
     expect(html).toContain('rel="noopener noreferrer"');
   });
 
+  test('the href of a bare address is the address as typed, escaped once', async () => {
+    const html = await renderUntrustedInline(TEST_FORMATTERS, 'see https://a.com/?a=1&b=2 and https://a.com/?q=&amp;x', makeEngine());
+    expect(html).toContain('href="https://a.com/?a=1&amp;b=2"');
+    expect(html).toContain('href="https://a.com/?q=&amp;amp;x"');
+    expect(html).not.toContain('&amp;amp;amp;');
+  });
+
   test('an upper-case scheme gets the same attributes', async () => {
     const html = await renderUntrustedInline(TEST_FORMATTERS, 'see HTTPS://EXAMPLE.COM/x', makeEngine());
     expect(html).toContain('target="_blank"');
