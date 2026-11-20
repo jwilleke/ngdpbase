@@ -71,6 +71,24 @@ describe('#2226 New Token follows the step-up answer', () => {
   });
 });
 
+describe('#2445 followReauth takes only a path on this site', () => {
+  const follow = (to: unknown): { followed: boolean; href: string; ran: boolean } => {
+    const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost/', runScripts: 'outside-only' });
+    vm.runInContext(CSRF_JS, dom.getInternalVMContext());
+    let ran = false;
+    const followed = (dom.window as unknown as { followReauth: (d: unknown, cb: () => void) => boolean }).followReauth({ reauth: to }, () => { ran = true; });
+    return { followed, href: dom.window.location.href, ran };
+  };
+
+  it.each(['//evil.example/x', '/\\evil.example/x', '/\\\\evil.example', 'https://evil.example/', 'evil', '', 5, null])('refuses %j and leaves the page where it is', (to) => {
+    expect(follow(to)).toEqual({ followed: false, href: 'http://localhost/', ran: false });
+  });
+
+  it('follows a path on this site and runs the callback first', () => {
+    expect(follow('/#reauth')).toEqual({ followed: true, href: 'http://localhost/#reauth', ran: true });
+  });
+});
+
 // The form a person filled in must survive the trip to the fresh sign-in prompt.
 type Fill = { name: string; scopes: string; ttl: string };
 const STALE = { status: 403, body: { success: false, error: 'A fresh sign-in is needed', reauth: '/#reauth' } };

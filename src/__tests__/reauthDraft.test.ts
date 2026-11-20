@@ -224,6 +224,8 @@ describe('#2445 Admin → Configuration keeps a typed value across the fresh sig
     // The note sits in the row's own form, next to the setting, and names the button by its label, not the setting by its key.
     const note = back.doc.querySelector('[data-draft-note]')!;
     expect(note.closest('form')).toBe(back.doc.getElementById('row'));
+    // It comes after the value field, so the field stays level with the row's Save button.
+    expect(el(back, 'rowValue').compareDocumentPosition(note) & back.dom.window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(note.textContent).toContain('Press Save again');
     expect(note.textContent).not.toContain('ngdpbase.');
     expect(back.sent).toEqual([]);
@@ -305,8 +307,19 @@ describe('#2445 the sign-in prompt says what is kept only when something is', ()
     expect(seen({}, '/admin/configuration')).toEqual({ banner: false, kept: false });
   });
 
-  it('an action that asked for the sign-in shows the banner, with or without a draft', () => {
-    expect(seen({}, '/profile', '0123456789abcdef0123456789abcdef')).toEqual({ banner: true, kept: true });
+  it('an action that asked for the sign-in shows the banner; the sentence only where the request is redone or a draft waits', () => {
+    const prompt = '0123456789abcdef0123456789abcdef';
+    // Revoke and Extend type nothing: the banner, without the promise.
+    expect(seen({}, '/profile', prompt)).toEqual({ banner: true, kept: false });
+    expect(seen(draftOf('alice'), '/profile', prompt)).toEqual({ banner: true, kept: true });
     expect(seen({}, '/auth/reauth/continue?replay=abc')).toEqual({ banner: true, kept: true });
+  });
+});
+
+describe('#2445 the Configuration row button says what the note says', () => {
+  it('shows the word Save beside its icon', () => {
+    const view = read('views/admin-configuration.ejs');
+    expect(view).toMatch(/<i class="fas fa-save[^"]*"[^>]*><\/i>\s*Save\s*<\/button>/);
+    expect(view).not.toMatch(/fa-save[^\n]*\n?[^\n]*visually-hidden">Save/);
   });
 });
