@@ -1180,6 +1180,19 @@ document.addEventListener('DOMContentLoaded', function() {
         errorEl.classList.remove('d-none');
     }
 
+    // #2445: a stale sign-in sends the page to the fresh sign-in prompt and back,
+    // which reloads it. public/js/reauth-draft.js keeps what was typed (never the
+    // token's secret) and fills the form again without sending it: Create is
+    // pressed again, by the person, to make the token.
+    if (window.reauthDraft.restore('agent-token', form, {
+        press: 'Create',
+        onRestore: () => {
+            form.classList.remove('d-none');
+            const details = document.getElementById('profile-tokens-and-devices');
+            if (details) details.open = true;
+        }
+    })) form.scrollIntoView?.({ block: 'nearest' });
+
     newBtn?.addEventListener('click', () => {
         form.classList.toggle('d-none');
         errorEl.classList.add('d-none');
@@ -1204,8 +1217,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
             });
             const data = await res.json().catch(() => ({}));
-            // Step-up: a stale sign-in is sent to the prompt, and comes back here.
-            if (window.followReauth(data)) return;
+            // Step-up: a stale sign-in is sent to the prompt, and comes back here
+            // with the form filled in again (#2445), not submitted.
+            if (window.followReauth(data, () => window.reauthDraft.keep('agent-token', form))) return;
             if (!res.ok || !data.success) {
                 showError(data.error || ('Could not create token (HTTP ' + res.status + ')'));
                 return;

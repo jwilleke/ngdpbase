@@ -5,7 +5,26 @@
 <div class="container">
   <div class="row justify-content-center">
     <div class="col-lg-6">
-      <div class="card mt-4">
+      <%# #2445: said at the top, where an action asked for this sign-in: the page redid its request (the continue
+          path), or a script is waiting for the prompt. The sentence that typed entries are kept is for the redone
+          request, and for a page that kept its entries in this tab (the script below): a script's prompt for Revoke
+          or Extend has typed nothing. The lower-sign-in notice's "Sign in again" link carries neither, so it shows
+          no banner. %>
+      <% const _replay = typeof next === 'string' && next.indexOf('/auth/reauth/continue') === 0;
+         const _asked = _replay || Boolean(prompt); %>
+      <div class="alert alert-warning mt-4 mb-0" role="alert" data-reauth-expired<%= _asked ? '' : ' hidden' %>>
+        <strong>It has been a while since you signed in.</strong> Confirm it is you below.
+        <span data-reauth-kept<%= _replay ? '' : ' hidden' %>>What you typed will be kept.</span>
+      </div>
+      <% if (!_replay) { %>
+      <script nonce="<%= locals.cspNonce %>">
+        if (window.reauthDraft && window.reauthDraft.pending()) {
+          document.querySelector('[data-reauth-expired]').hidden = false;
+          document.querySelector('[data-reauth-kept]').hidden = false;
+        }
+      </script>
+      <% } %>
+      <div class="card mt-3">
         <div class="card-header">
           <h4 class="mb-0"><i class="fas fa-user-shield"></i> Confirm it is you</h4>
         </div>

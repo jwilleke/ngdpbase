@@ -8,7 +8,7 @@
 
 > __safeRedirect__(`target`): `string`
 
-Defined in: src/utils/safeRedirect.ts:35
+Defined in: src/utils/safeRedirect.ts:44
 
 Return `target` when it is a same-site path, otherwise `/`.
 
@@ -20,7 +20,7 @@ Rejects, among others:
 - `https://evil.example`, `javascript:…`, `data:…` — any scheme
 - `/\evil.example`      — browsers normalise the backslash to `/`
 - `\\evil.example`, or anything not starting with `/`
-- a CR/LF, which would let a caller inject a second header
+- any control character, raw or percent-encoded (tab, CR, LF, NUL, DEL, …)
 
 ## Parameters
 

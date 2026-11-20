@@ -104,7 +104,7 @@
             .then(function (body) {
                 if (body && body.success && body.runId) poll(body.runId, 0);
                 // Step-up: the export needs a fresh sign-in, which comes back here.
-                else if (body && body.reauth) window.location.href = body.reauth;
+                else if (body && body.reauth && window.followReauth && window.followReauth(body)) { /* going to the prompt */ }
                 else { show('danger', (body && body.error) || 'The export could not be started.'); start.disabled = false; }
             })
             .catch(function () { show('danger', 'The export could not be started.'); start.disabled = false; });

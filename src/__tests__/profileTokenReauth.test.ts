@@ -9,7 +9,7 @@
  * against public/js/csrf.js, with fetch answering as the route does.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import vm from 'vm';
 import { JSDOM } from 'jsdom';
@@ -18,15 +18,19 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const read = (p: string): string => readFileSync(path.resolve(__dirname, '../..', p), 'utf8');
 const CSRF_JS = read('public/js/csrf.js');
+// #2445: the helper every step-up page shares; not there before the fix.
+const DRAFT_JS = existsSync(path.resolve(__dirname, '../../public/js/reauth-draft.js')) ? read('public/js/reauth-draft.js') : '';
 const SCRIPT = [...read('views/profile.ejs').matchAll(/<script nonce="[^"]*">([\s\S]*?)<\/script>/g)]
   .map(m => m[1])
   .find(s => s.includes("getElementById('agent-token-form')"))
   .replace('<%= csrfToken %>', 'csrf-value');
 
-const MARKUP = `<meta name="csrf-token" content="csrf-value">
-<form id="agent-token-form"><input id="agent-token-name" value="n"><select id="agent-token-scopes"><option value="page-read">r</option></select>
-<input id="agent-token-ttl" value="1"><button id="agent-token-create-btn">Create</button></form>
-<div id="agent-token-error" class="d-none"></div><div id="agent-token-result" class="d-none"></div><input id="agent-token-secret">`;
+const MARKUP = `<meta name="csrf-token" content="csrf-value"><meta name="current-user" content="alice">
+<details id="profile-tokens-and-devices"><summary>My tokens and devices</summary>
+<button type="button" id="agent-token-new-btn">New token</button>
+<form id="agent-token-form" class="d-none"><input id="agent-token-name" value="n"><select id="agent-token-scopes"><option value="page-read">r</option><option value="page-ingest" selected>w</option></select>
+<input id="agent-token-ttl" type="number" value="24" min="1" max="24"><button id="agent-token-create-btn">Create</button></form>
+<div id="agent-token-error" class="d-none"></div><div id="agent-token-result" class="d-none"></div><input id="agent-token-secret"></details>`;
 
 async function submit(answer: { status: number; body: unknown }): Promise<{ doc: Document; href: string; calls: string[] }> {
   const dom = new JSDOM(`<!doctype html><body>${MARKUP}</body>`, { url: 'http://localhost/', runScripts: 'outside-only' });
@@ -37,6 +41,7 @@ async function submit(answer: { status: number; body: unknown }): Promise<{ doc:
   };
   const ctx = dom.getInternalVMContext();
   vm.runInContext(CSRF_JS, ctx);
+  vm.runInContext(DRAFT_JS, ctx);
   vm.runInContext(SCRIPT, ctx);
   dom.window.document.getElementById('agent-token-form')!.dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
   await new Promise(r => setTimeout(r, 20));
@@ -63,5 +68,166 @@ describe('#2226 New Token follows the step-up answer', () => {
     const out = await submit({ status: 400, body: { success: false, error: 'Name required', reauth: '//evil.example/x' } });
     expect(out.href).toBe('http://localhost/');
     expect(out.doc.getElementById('agent-token-error')!.textContent).toBe('Name required');
+  });
+});
+
+describe('#2445 followReauth takes only a path on this site', () => {
+  const follow = (to: unknown): { followed: boolean; href: string; ran: boolean } => {
+    const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost/', runScripts: 'outside-only' });
+    vm.runInContext(CSRF_JS, dom.getInternalVMContext());
+    let ran = false;
+    const followed = (dom.window as unknown as { followReauth: (d: unknown, cb: () => void) => boolean }).followReauth({ reauth: to }, () => { ran = true; });
+    return { followed, href: dom.window.location.href, ran };
+  };
+
+  it.each(['//evil.example/x', '/\\evil.example/x', '/\\\\evil.example', 'https://evil.example/', 'evil', '', 5, null, '/\t/x', '/\n/x', '/\r/x', '/x\ty', '/x\ny', '/x\ry', '/ok\r\n'])('refuses %j and leaves the page where it is', (to) => {
+    expect(follow(to)).toEqual({ followed: false, href: 'http://localhost/', ran: false });
+  });
+
+  it('follows a path on this site and runs the callback first', () => {
+    expect(follow('/#reauth')).toEqual({ followed: true, href: 'http://localhost/#reauth', ran: true });
+  });
+});
+
+// The form a person filled in must survive the trip to the fresh sign-in prompt.
+type Fill = { name: string; scopes: string; ttl: string };
+const STALE = { status: 403, body: { success: false, error: 'A fresh sign-in is needed', reauth: '/#reauth' } };
+
+function openPage(storage: Record<string, string> = {}, now?: () => number, user = 'alice'): { dom: JSDOM; calls: string[] } {
+  const dom = new JSDOM(`<!doctype html><body>${MARKUP.replace('content="alice"', `content="${user}"`)}</body>`, { url: 'http://localhost/', runScripts: 'outside-only' });
+  for (const [k, v] of Object.entries(storage)) dom.window.sessionStorage.setItem(k, v);
+  const calls: string[] = [];
+  const w = dom.window as unknown as Record<string, unknown>;
+  w.fetch = async (url: string) => {
+    calls.push(url);
+    return { ok: STALE.status < 400, status: STALE.status, json: async () => STALE.body };
+  };
+  if (now) (dom.window.Date as unknown as { now: () => number }).now = now;
+  const ctx = dom.getInternalVMContext();
+  vm.runInContext(CSRF_JS, ctx);
+  vm.runInContext(DRAFT_JS, ctx);
+  vm.runInContext(SCRIPT, ctx);
+  return { dom, calls };
+}
+
+const field = (dom: JSDOM, id: string): HTMLInputElement => dom.window.document.getElementById(id) as HTMLInputElement;
+
+async function pressCreate(dom: JSDOM, fill: Fill): Promise<void> {
+  field(dom, 'agent-token-name').value = fill.name;
+  field(dom, 'agent-token-scopes').value = fill.scopes;
+  field(dom, 'agent-token-ttl').value = fill.ttl;
+  dom.window.document.getElementById('agent-token-form')!.dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+  await new Promise(r => setTimeout(r, 20));
+}
+
+/** What the browser keeps for this tab across the trip to the prompt and back. */
+const kept = (dom: JSDOM): Record<string, string> => {
+  const out: Record<string, string> = {};
+  for (let i = 0; i < dom.window.sessionStorage.length; i++) {
+    const k = dom.window.sessionStorage.key(i)!;
+    out[k] = dom.window.sessionStorage.getItem(k)!;
+  }
+  return out;
+};
+
+describe('#2445 the form survives the fresh sign-in prompt', () => {
+  const typed: Fill = { name: 'claude-laptop', scopes: 'page-read', ttl: '6' };
+
+  it('comes back with the name, permissions and hours, open, and creates nothing', async () => {
+    const before = openPage();
+    await pressCreate(before.dom, typed);
+    expect(before.calls).toEqual(['/api/tokens']);
+
+    const back = openPage(kept(before.dom));
+    expect(field(back.dom, 'agent-token-name').value).toBe('claude-laptop');
+    expect(field(back.dom, 'agent-token-scopes').value).toBe('page-read');
+    expect(field(back.dom, 'agent-token-ttl').value).toBe('6');
+    expect(back.dom.window.document.getElementById('agent-token-form')!.classList.contains('d-none')).toBe(false);
+    expect((back.dom.window.document.getElementById('profile-tokens-and-devices') as HTMLDetailsElement).open).toBe(true);
+    await new Promise(r => setTimeout(r, 20));
+    expect(back.calls).toEqual([]);
+  });
+
+  it('is restored once: a later visit shows the empty form', async () => {
+    const before = openPage();
+    await pressCreate(before.dom, typed);
+    const back = openPage(kept(before.dom));
+    expect(field(back.dom, 'agent-token-name').value).toBe('claude-laptop');
+    expect(kept(back.dom)).toEqual({});
+    const later = openPage(kept(back.dom));
+    expect(field(later.dom, 'agent-token-name').value).toBe('n');
+  });
+
+  it('is forgotten after ten minutes', async () => {
+    const before = openPage();
+    await pressCreate(before.dom, typed);
+    const back = openPage(kept(before.dom), () => Date.now() + 11 * 60 * 1000);
+    expect(field(back.dom, 'agent-token-name').value).toBe('n');
+    expect(back.dom.window.document.getElementById('agent-token-form')!.classList.contains('d-none')).toBe(true);
+  });
+
+  it('puts a restored name in the field as text and ignores a permission or hours the form does not offer', async () => {
+    const before = openPage();
+    await pressCreate(before.dom, { name: '<img src=x onerror=alert(1)>', scopes: 'page-ingest', ttl: '6' });
+    const stored = kept(before.dom);
+    const key = Object.keys(stored)[0];
+    const draft = JSON.parse(stored[key]);
+    draft.fields['agent-token-scopes'] = 'admin-everything';
+    draft.fields['agent-token-ttl'] = 'lots';
+    stored[key] = JSON.stringify(draft);
+    const back = openPage(stored);
+    expect(field(back.dom, 'agent-token-name').value).toBe('<img src=x onerror=alert(1)>');
+    expect(back.dom.window.document.querySelector('img')).toBeNull();
+    expect(field(back.dom, 'agent-token-scopes').value).toBe('page-ingest');
+    expect(field(back.dom, 'agent-token-ttl').value).toBe('24');
+  });
+
+  it('keeps nothing when the reauth link is off-site, or when the token was created', async () => {
+    const offsite = openPage();
+    (offsite.dom.window as unknown as Record<string, unknown>).fetch = async () => ({ ok: false, status: 403, json: async () => ({ error: 'x', reauth: '//evil.example/x' }) });
+    await pressCreate(offsite.dom, typed);
+    expect(kept(offsite.dom)).toEqual({});
+
+    const created = openPage();
+    (created.dom.window as unknown as Record<string, unknown>).fetch = async () => ({ ok: true, status: 201, json: async () => ({ success: true, token: 'ngt_secret' }) });
+    await pressCreate(created.dom, typed);
+    expect(kept(created.dom)).toEqual({});
+  });
+
+  it('never keeps the token secret', async () => {
+    const before = openPage();
+    field(before.dom, 'agent-token-secret').value = 'ngt_secret';
+    await pressCreate(before.dom, typed);
+    expect(JSON.stringify(kept(before.dom))).not.toContain('ngt_secret');
+  });
+
+  it('a long name comes back whole, never cut', async () => {
+    const name = 'n'.repeat(250);
+    const before = openPage();
+    await pressCreate(before.dom, { name, scopes: 'page-read', ttl: '6' });
+    const back = openPage(kept(before.dom));
+    expect(field(back.dom, 'agent-token-name').value).toBe(name);
+  });
+
+  it('says in the form that the entries were put back and Create must be pressed again', async () => {
+    const before = openPage();
+    await pressCreate(before.dom, typed);
+    const back = openPage(kept(before.dom));
+    const note = back.dom.window.document.querySelector('#agent-token-form [data-draft-note]')!;
+    expect(note.textContent).toMatch(/put back/i);
+    expect(note.textContent).toContain('Press Create again');
+    expect(back.dom.window.document.querySelector('[data-draft-note]')).toBe(note);
+    const plain = openPage();
+    expect(plain.dom.window.document.querySelector('[data-draft-note]')).toBeNull();
+  });
+
+  it('drops a draft kept for another account', async () => {
+    const before = openPage();
+    await pressCreate(before.dom, typed);
+    const back = openPage(kept(before.dom), undefined, 'bob');
+    expect(field(back.dom, 'agent-token-name').value).toBe('n');
+    expect(back.dom.window.document.getElementById('agent-token-form')!.classList.contains('d-none')).toBe(true);
+    expect(back.dom.window.document.querySelector('[data-draft-note]')).toBeNull();
+    expect(kept(back.dom)).toEqual({});
   });
 });
