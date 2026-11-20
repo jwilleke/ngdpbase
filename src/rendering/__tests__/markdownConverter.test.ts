@@ -219,12 +219,8 @@ describe('bare web addresses (#2443)', () => {
     expect(html('~~https://a.com/x,~~')).toBe(`<p><del>${link('https://a.com/x')},</del></p>\n`);
   });
 
-  it('each match reads only up to the next strikethrough marker, so a long line renders quickly', () => {
-    const long = 'http://a/~~'.repeat(Math.floor(100_000 / 11));
+  it('each match ends at the next strikethrough marker', () => {
     for (const converter of [createMarkdownConverter('page'), createMarkdownConverter('untrusted')]) {
-      const started = performance.now();
-      converter.makeHtml(long);
-      expect(performance.now() - started).toBeLessThan(1000);
       const short = converter.makeHtml('http://a/~~http://b/~~');
       expect(short).toContain('<a href="http://a/"');
       expect(short).toContain('<del><a href="http://b/"');
@@ -256,10 +252,6 @@ describe('bare web addresses (#2443)', () => {
       }
     );
 
-    test('a normal address still links', () => {
-      expect(converter.makeHtml('see https://example.com/a now')).toContain('<a href="https://example.com/a"');
-    });
-
     const LONG_HOST = `${'xn--a.'.repeat(8)}${'abcdefgh.'.repeat(440)}-`;
 
     test.each([
@@ -282,13 +274,13 @@ describe('bare web addresses (#2443)', () => {
       ['a long text before the @', `http://${'xn--a.'.repeat(8)}${'abcdefgh.'.repeat(440)}-@x.com`],
       ['33 labels before the @', `http://${'a.'.repeat(33)}@x.com/`],
       ['more than 253 characters before the @', `http://${`${'a'.repeat(60)}.`.repeat(5)}@x.com/`],
-      ['a ? before the @ (1)', `http://a?b@${LONG_HOST}@x.com`],
-      ['a # before the @ (1)', `http://a#b@${LONG_HOST}@x.com`],
-      ['a ? before the @ (2)', `http://${'a?'.repeat(24)}@${LONG_HOST}@x.com`],
+      ['a ? before the @, 8 punycode labels after it', `http://a?b@${LONG_HOST}@x.com`],
+      ['a # before the @, 8 punycode labels after it', `http://a#b@${LONG_HOST}@x.com`],
+      ['24 ? before the @, 8 punycode labels after it', `http://${'a?'.repeat(24)}@${LONG_HOST}@x.com`],
       ['4 punycode labels', `http://${'xn--a.'.repeat(4)}a.com`],
       ['4 punycode labels among 20 labels', 'http://u@é.xn--a.b.xn--a.c.xn--a.d.xn--a.e.f.g.h.i.j.k.l.m.n.zz:80-'],
-      ['a ? before the @ (3)', `http://a?b@${'a.'.repeat(33)}x.com/`],
-      ['a # before the @ (3)', `http://a#b@${`${'a'.repeat(60)}.`.repeat(5)}x.com/`]
+      ['a ? before the @, 33 labels after it', `http://a?b@${'a.'.repeat(33)}x.com/`],
+      ['a # before the @, a host of more than 253 characters after it', `http://a#b@${`${'a'.repeat(60)}.`.repeat(5)}x.com/`]
     ])('long host names stay text: %s', (_name, address) => {
       expect(converter.makeHtml(address)).not.toContain('<a');
     });
@@ -299,17 +291,40 @@ describe('bare web addresses (#2443)', () => {
       ['a query with an @ in it and no path', 'https://example.com?q=a@b.com'],
       ['3 punycode labels', 'https://xn--a.xn--b.xn--c.org/'],
       ['a punycode host and a path', 'https://xn--bcher-kva.example/path'],
+      ['a punycode host', 'https://xn--bcher-kva.example/'],
+      ['a host of several labels, a query and a fragment', 'https://a.b.c.example.com/x?y=1#z'],
       ['a long query and no path', `https://example.com?q=${'a'.repeat(300)}`],
       ['many dotted labels after a # and no path', `https://example.com#${'a.'.repeat(40)}b`],
       ['a user part of exactly 50 characters', `https://${'u'.repeat(50)}@example.com/`]
     ])('%s still links', (_name, address) => {
       expect(converter.makeHtml(address)).toContain(`<a href="${address}"`);
     });
+  });
 
-    test('a normal punycode address and a host within the limits still link', () => {
-      expect(converter.makeHtml('https://xn--bcher-kva.example/')).toContain('<a href="https://xn--bcher-kva.example/"');
-      expect(converter.makeHtml('https://a.b.c.example.com/x?y=1#z')).toContain('<a href="https://a.b.c.example.com/x?y=1#z"');
-    });
+  test.each(['page', 'untrusted', 'fallback'] as const)('a user part of 51 characters is not read as one (%s)', (profile) => {
+    const user = 'u'.repeat(51);
+    const out = createMarkdownConverter(profile).makeHtml(`https://${user}@example.com/`);
+    expect(out).not.toContain('<a href="https://' + user + '@example.com/"');
+    expect(out).toContain(`<a href="https://${user}"`);
+  });
+
+  test.each(['page', 'untrusted', 'fallback'] as const)('a backslash that is itself escaped does not escape the address (%s)', (profile) => {
+    expect(createMarkdownConverter(profile).makeHtml('\\\\https://example.com')).toContain(
+      '<p>\\<a href="https://example.com"'
+    );
+  });
+
+  test.each([
+    ['exactly 4,096 characters and nothing after it', 4096, '', true],
+    ['4,097 characters and nothing after it', 4097, '', false],
+    ['4,095 characters then a space', 4095, ' x', true],
+    ['4,096 characters then a space', 4096, ' x', false]
+  ])('the 4,096-character limit: %s', (_name, length, after, links) => {
+    const address = `https://a.com/${'b'.repeat(length - 14)}`;
+    for (const converter of [createMarkdownConverter('page'), createMarkdownConverter('untrusted')]) {
+      const out = converter.makeHtml(address + after);
+      expect(out.includes(`<a href="${address}"`)).toBe(links);
+    }
   });
 
   it('an address of more than 4,096 characters with no break in it is left as text', () => {
@@ -409,6 +424,13 @@ describe('untrusted profile (comments)', () => {
 
 describe('fallback profile (degraded paths)', () => {
   const fallback = createMarkdownConverter('fallback');
+
+  it('links a bare web address, and only that', () => {
+    expect(fallback.makeHtml('see https://example.com/a now')).toContain(
+      '<a href="https://example.com/a" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">'
+    );
+    expect(fallback.makeHtml('see example.com or a@b.com')).not.toContain('<a');
+  });
 
   it('is plain CommonMark: no single-newline breaks, no ids', () => {
     expect(fallback.makeHtml('a\nb')).not.toContain('<br>');

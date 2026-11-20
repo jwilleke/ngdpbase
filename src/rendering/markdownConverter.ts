@@ -167,13 +167,14 @@ const PLACEHOLDER_END = '\uE001';
  * `linkify` rule is used (the core rule, which reads whole text tokens with no
  * limit, is off), and it is given `http(s)` addresses only, so no other link is
  * made. The inline rule takes an address before emphasis, so `_` and `*` inside
- * it stay as written; each match reads only up to white space or `~~`, and at
- * most {@link MAX_URL_SCAN} characters (a longer unbroken address is left as
- * text), and a host name over a length limit is left as text too, so a closing strikethrough stays outside. A rule after it takes back an
- * address written `\https://…`, which is how an author keeps an address as text,
- * and ends a link at a table cell's placeholder sentinels, in one pass over the
- * tokens. The text shown for a link drops direction marks, direction controls
- * and line breaks decoded from `%…`. The stored text is never changed.
+ * it stay as written. Each match reads only up to white space or `~~`, so a
+ * closing strikethrough stays outside, and at most {@link MAX_URL_SCAN}
+ * characters (a longer unbroken address is left as text, and so is a host name
+ * over a length limit). A rule after it takes back an address written
+ * `\https://…`, which is how an author keeps an address as text, and ends a
+ * link at a table cell's placeholder sentinels, in one pass over the tokens.
+ * The text shown for a link drops direction marks, direction controls and line
+ * breaks decoded from `%…`. The stored text is never changed.
  */
 function bareWebAddresses(md: MarkdownIt): void {
   md.linkify.set({ fuzzyLink: false, fuzzyEmail: false, fuzzyIP: false });
@@ -195,7 +196,7 @@ function bareWebAddresses(md: MarkdownIt): void {
   // The core rule reads whole text tokens with no limit, and the inline rule
   // above covers every address, so only the inline rule is used.
   md.core.ruler.disable('linkify', true);
-  md.core.ruler.after('linkify', 'linkify_web_only', (state): void => {
+  md.core.ruler.after('linkify', 'linkify_cleanup', (state): void => {
     for (const block of state.tokens) {
       if (block.type !== 'inline' || !block.children) continue;
       const kids = block.children;
@@ -212,8 +213,8 @@ function bareWebAddresses(md: MarkdownIt): void {
         const text = kids[i + 1];
         const close = kids[i + 2];
         i += 2;
-        if (escaped || !/^https?:\/\//i.test(open.attrGet('href') ?? '')) {
-          // Unwrap: link_open, its text, link_close -> the text alone.
+        if (escaped) {
+          // Written `\https://…`: unwrap link_open, its text, link_close to the text alone.
           out.push(text);
           continue;
         }
