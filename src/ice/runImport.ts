@@ -429,8 +429,9 @@ function depsFor(deps: IceRunDeps, receiver: RegisteredReceiver | undefined): Ic
 /**
  * The files an upload holds, its zips unpacked (`expandUploads`). The run's
  * `maxFileBytes` applies inside a zip as it does to a file on its own, and
- * what all the zips unpack to is counted across the whole upload.
- * @throws ZipBudgetError when that total is over the limit
+ * what all the zips unpack to, and how many files they hold, are counted
+ * across the whole upload.
+ * @throws ZipBudgetError when either total is over its limit
  */
 function unpack(uploads: readonly IceUpload[], deps: IceRunDeps, receiver: RegisteredReceiver): ReturnType<typeof expandUploads> {
   return expandUploads(

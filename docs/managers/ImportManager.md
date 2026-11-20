@@ -85,11 +85,11 @@ The engine's own ledger (`src/ice/ledger.ts`), behind the `IceLedger` interface:
 | Key | Default | |
 | --- | --- | --- |
 | `ngdpbase.import.engine.noise` | `__MACOSX/`, `.DS_Store`, `Thumbs.db`, `desktop.ini`, `._*` | `dir/` a directory segment; `x*` / `*x` a name prefix or suffix; else an exact name |
-| `ngdpbase.import.engine.zip-max-entries` | 10000 | Per archive |
-| `ngdpbase.import.engine.zip-max-bytes` | 268435456 | Inflated, counted across the whole upload: every archive in it and the zips inside them, together. Over it, the whole upload is refused with a plain message and nothing is imported |
+| `ngdpbase.import.engine.zip-max-entries` | 10000 | Files across the whole upload: every archive in it and the zips inside them, counted together. One archive over it is not unpacked and is reported on its own; several that are over it together refuse the whole upload |
+| `ngdpbase.import.engine.zip-max-bytes` | 268435456 | Inflated, counted across the whole upload: every archive in it and the zips inside them, together. Each file's stated size is counted before it is unpacked, even if it then fails its checks. Over it, the whole upload is refused with a plain message and nothing is imported |
 | `ngdpbase.import.engine.zip-max-depth` | 3 | Zips inside zips |
 | `ngdpbase.import.engine.max-file-bytes` | 104857600 | One file. A file inside a zip over it is not unpacked and is reported on its own; the rest of the zip is imported |
-| `ngdpbase.import.engine.takeout-zip-max-entries` | 65534 | Per archive, for a takeout handed back into a private store (`core.private-store`) in place of `zip-max-entries` ([#2187](https://github.com/jwilleke/ngdpbase/issues/2187)) |
+| `ngdpbase.import.engine.takeout-zip-max-entries` | 65534 | Files across the whole upload, for a takeout handed back into a private store (`core.private-store`) in place of `zip-max-entries` ([#2187](https://github.com/jwilleke/ngdpbase/issues/2187)) |
 | `ngdpbase.import.engine.takeout-zip-max-bytes` | 268435456 | Inflated, counted across the whole upload, for a takeout, in place of `zip-max-bytes` |
 | `ngdpbase.import.engine.takeout-max-file-bytes` | 268435456 | One file of a takeout, in place of `max-file-bytes` |
 | `ngdpbase.import.engine.max-chain-depth` | 5 | Shims one file may pass through |

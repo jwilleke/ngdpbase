@@ -122,17 +122,21 @@ export function isZip(upload: IceUpload): boolean {
  * #2061). A nested zip is unpacked too. Everything else is passed through,
  * with the type its request gave it.
  *
- * What the archives unpack to is counted across the whole upload, nested
- * archives included, against `limits.maxTotalBytes`. Going over it throws a
- * `ZipBudgetError`: the upload is refused as a whole. Members are counted as
- * they are inflated, so what is held in memory never passes the total. The
- * other limits are per archive. A member over `limits.maxFileBytes` is not
- * inflated, and is returned in `unreadable` by its own name. An archive that
- * cannot be read is returned in `unreadable`, with why; the rest go on.
+ * What the archives unpack to, and how many members they hold, are counted
+ * across the whole upload, nested archives included, against
+ * `limits.maxTotalBytes` and `limits.maxEntries`. Going over either throws a
+ * `ZipBudgetError`: the upload is refused as a whole. A member's stated size
+ * is charged before it is inflated, whether or not it then unpacks cleanly,
+ * so what is held in memory never passes the total. A single archive with more
+ * than `limits.maxEntries` members is unreadable on its own, and the rest go
+ * on. A member over `limits.maxFileBytes` is not inflated, and is returned in
+ * `unreadable` by its own name. An archive that cannot be read is returned in
+ * `unreadable`, with why; the rest go on.
  *
  * With `innerZipsAsFiles` (#2118), only the uploads themselves are unpacked:
  * a zip inside one is passed on as a file, like any other member, and is not
- * unpacked, so it is not counted.
+ * unpacked. It is counted as a member of the archive that holds it, but what
+ * it holds is not counted.
  */
 export function expandUploads(
   uploads: readonly IceUpload[],
@@ -144,7 +148,7 @@ export function expandUploads(
   const files: IceUpload[] = [];
   const unreadable: Array<{ name: string; size: number; message: string }> = [];
   // One budget for the whole upload: nested archives spend from the same one.
-  const budget = options.budget ?? { remaining: limits.maxTotalBytes };
+  const budget = options.budget ?? { remaining: limits.maxTotalBytes, entriesRemaining: limits.maxEntries };
   for (const upload of uploads) {
     if (!isZip(upload) || (depth > 0 && options.innerZipsAsFiles)) {
       files.push(upload);
@@ -176,8 +180,9 @@ export function expandUploads(
       members.map(m => ({ name: `${upload.name}/${m.path}`, bytes: m.bytes, mediaType: memberMediaType(m.path, m.bytes), archive: view(m.path) })),
       limits, maxDepth, { ...options, budget }, depth + 1
     );
-    files.push(...inner.files);
-    unreadable.push(...inner.unreadable);
+    // A loop, not a spread: a spread passes every element as an argument, which fails for a very long list.
+    for (const file of inner.files) files.push(file);
+    for (const bad of inner.unreadable) unreadable.push(bad);
   }
   return { files, unreadable };
 }
