@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { resolveUploadMime } from '../utils/sniffMime.js';
-import { readZip, ZipBudgetError, type ZipBudget, type ZipReadLimits } from '../utils/zipArchive.js';
+import { readZip, sizeWords, ZipBudgetError, type ZipBudget, type ZipReadLimits } from '../utils/zipArchive.js';
 import type { IceArchiveView, IceUpload } from './types.js';
 
 /**
@@ -124,7 +124,8 @@ export function isZip(upload: IceUpload): boolean {
  *
  * What the archives unpack to, and how many members they hold, are counted
  * across the whole upload, nested archives included, against
- * `limits.maxTotalBytes` and `limits.maxEntries`. Going over either throws a
+ * `limits.maxTotalBytes` and `limits.maxEntries`; each member's full name
+ * (`archive.zip/inner/path`) counts toward the total with its size. Going over either throws a
  * `ZipBudgetError`: the upload is refused as a whole. A member's stated size
  * is charged before it is inflated, whether or not it then unpacks cleanly,
  * so what is held in memory never passes the total. A single archive with more
@@ -161,14 +162,14 @@ export function expandUploads(
     let members;
     const tooBig: Array<{ path: string; size: number }> = [];
     try {
-      members = readZip(upload.bytes, limits, budget, tooBig);
+      members = readZip(upload.bytes, limits, budget, tooBig, Buffer.byteLength(upload.name));
     } catch (err) {
       if (err instanceof ZipBudgetError) throw err;
       unreadable.push({ name: upload.name, size: upload.bytes.length, message: (err as Error).message });
       continue;
     }
     for (const big of tooBig) {
-      unreadable.push({ name: `${upload.name}/${big.path}`, size: big.size, message: `larger than the ${limits.maxFileBytes} bytes allowed` });
+      unreadable.push({ name: `${upload.name}/${big.path}`, size: big.size, message: `larger than the ${sizeWords(limits.maxFileBytes ?? 0)} allowed` });
     }
     // #2118: each member can see what lies beside it, for a format that spans the archive.
     const byPath = new Map(members.map(m => [m.path, m.bytes] as const));

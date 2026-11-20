@@ -82,13 +82,13 @@ The engine's own ledger (`src/ice/ledger.ts`), behind the `IceLedger` interface:
 
 ### Configuration
 
-A zip is checked before any of it is unpacked: each file's data must be its own (two files may not share data, so what is read never exceeds the archive's own length), and a stored file's stated size must equal its stored length. An archive that breaks either rule is reported as unreadable on its own, and the rest of the upload goes on.
+A zip is checked before any of it is unpacked: each file's data must be its own (two files may not share data, so what is read never exceeds the archive's own length), and a stored file's stated size must equal its stored length. A member path may be at most 1,024 bytes (UTF-8). An archive that breaks any of these rules is reported as unreadable on its own, and the rest of the upload goes on. What an archive was counted for stays counted when it fails to read: its file count and the stated size and name of each file read before the failure are not given back, so they still count toward the upload's totals. A zip inside a zip that is larger than `max-file-bytes` is left out and reported on its own, where it used to be unpacked.
 
 | Key | Default | |
 | --- | --- | --- |
 | `ngdpbase.import.engine.noise` | `__MACOSX/`, `.DS_Store`, `Thumbs.db`, `desktop.ini`, `._*` | `dir/` a directory segment; `x*` / `*x` a name prefix or suffix; else an exact name |
 | `ngdpbase.import.engine.zip-max-entries` | 10000 | Files across the whole upload: every archive in it and the zips inside them, counted together. One archive over it is not unpacked and is reported on its own; several that are over it together refuse the whole upload |
-| `ngdpbase.import.engine.zip-max-bytes` | 268435456 | Inflated, counted across the whole upload: every archive in it and the zips inside them, together. Each file's stated size is counted before it is unpacked, even if it then fails its checks. Over it, the whole upload is refused with a plain message and nothing is imported |
+| `ngdpbase.import.engine.zip-max-bytes` | 268435456 | Inflated, counted across the whole upload: every archive in it and the zips inside them, together. Each file's stated size and its full name (`archive.zip/inner/path`) are counted before it is unpacked, even if it then fails its checks. Over it, the whole upload is refused with a plain message and nothing is imported |
 | `ngdpbase.import.engine.zip-max-depth` | 3 | Zips inside zips |
 | `ngdpbase.import.engine.max-file-bytes` | 104857600 | One file. A file inside a zip over it is not unpacked and is reported on its own; the rest of the zip is imported |
 | `ngdpbase.import.engine.takeout-zip-max-entries` | 65534 | Files across the whole upload, for a takeout handed back into a private store (`core.private-store`) in place of `zip-max-entries` ([#2187](https://github.com/jwilleke/ngdpbase/issues/2187)) |

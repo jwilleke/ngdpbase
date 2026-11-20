@@ -37,7 +37,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { ActorContext } from '../context/ActorContext.js';
-import { ZipBudgetError, type ZipReadLimits } from '../utils/zipArchive.js';
+import { sizeWords, ZipBudgetError, type ZipReadLimits } from '../utils/zipArchive.js';
 import { expandUploads, fingerprint, isNoise } from './fileHandling.js';
 import { appliedGivenName, givenNameProblem } from './givenName.js';
 import { closeOriginalKeep, openOriginalKeep } from './originalKeep.js';
@@ -352,7 +352,7 @@ interface FilePlan {
 async function planFile(upload: IceUpload, request: IceRunRequest, receiver: RegisteredReceiver, deps: IceRunDeps, scope: string): Promise<FilePlan> {
   if (isNoise(upload.name, deps.settings.noise)) return { last: null, shim: null, stop: { status: 'noise', record: false } };
   if (upload.bytes.length > deps.settings.maxFileBytes) {
-    return { last: null, shim: null, stop: { status: 'failed', message: `larger than the ${deps.settings.maxFileBytes} bytes allowed`, record: false } };
+    return { last: null, shim: null, stop: { status: 'failed', message: `larger than the ${sizeWords(deps.settings.maxFileBytes)} allowed`, record: false } };
   }
   const sha256 = fingerprint(upload.bytes);
   const last = await deps.ledger.lastFile(scope, sha256);
