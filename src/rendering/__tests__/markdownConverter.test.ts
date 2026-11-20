@@ -238,6 +238,31 @@ describe('bare web addresses (#2443)', () => {
     expect(out).toContain('href="https://a.com/%E2%80%AEevil%E2%81%A6x%0D%0Ay"');
   });
 
+  it('the left-to-right and right-to-left marks and the Arabic letter mark are not shown either', () => {
+    const out = html('https://a.com/%E2%80%8Ea%E2%80%8Fb%D8%9Cc');
+    expect(/>([^<]*)<\/a>/.exec(out)?.[1]).toBe('https://a.com/abc');
+    expect(out).toContain('href="https://a.com/%E2%80%8Ea%E2%80%8Fb%D8%9Cc"');
+  });
+
+  it('a long line with many `://` that never form an address renders within a length limit', () => {
+    const shapes = ['a://', 'x://http://', 'http://a*b*', '[http://a]('];
+    for (const converter of [createMarkdownConverter('page'), createMarkdownConverter('untrusted')]) {
+      for (const shape of shapes) {
+        const started = performance.now();
+        converter.makeHtml(shape.repeat(Math.ceil(1_000_000 / shape.length)));
+        expect(performance.now() - started, shape).toBeLessThan(1000);
+      }
+      expect(converter.makeHtml('see https://example.com/a now')).toContain('<a href="https://example.com/a"');
+    }
+  });
+
+  it('an address of more than 4,096 characters with no break in it is not linked, a shorter one is', () => {
+    expect(html(`https://a.com/${'b'.repeat(5000)}`)).not.toContain('<a');
+    const near = `https://a.com/${'b'.repeat(4000)}`;
+    expect(html(near)).toContain(`<a href="${near}"`);
+    expect(html(`${near} next`)).toContain(`<a href="${near}"`);
+  });
+
   it('a backslash-escaped address with `_` stays text', () => {
     const out = html('\\https://a.com/_foo_');
     expect(out).not.toContain('<a');

@@ -647,6 +647,17 @@ describe('jspwiki-link-leftovers: wiki link split over two lines (#2443)', () =>
     expect(r.lines).toEqual([]);
   });
 
+  it('many long lines of backtick runs, each starting with an address, are read within a length limit', () => {
+    for (const unit of ['`', '``a`']) {
+      const line = `http://x ${unit.repeat(Math.ceil(9900 / unit.length))}`.slice(0, 9900);
+      const body = Array.from({ length: 100 }, () => line).join('\n');
+      const started = performance.now();
+      const r = apply(body);
+      expect(performance.now() - started, unit).toBeLessThan(1000);
+      expect(r.content).toBe(body);
+    }
+  });
+
   it('a few continuation lines within the length limit are still joined', () => {
     const r = apply(`[a\n|${url}] [b\n|${url}b] [c\n|${url}c]`);
     expect(r.content).toBe(`[a|${url}] [b|${url}b] [c|${url}c]`);
