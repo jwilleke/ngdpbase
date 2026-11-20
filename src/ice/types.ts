@@ -428,6 +428,14 @@ export interface IceReceiver {
    */
   innerZipsAsFiles?: boolean;
   /**
+   * Size limits for this receiver's runs, in place of the engine's
+   * (`ngdpbase.import.engine.*`): zip entries, the bytes a zip unpacks to,
+   * and the size of one file. Called at each run, so a setting changed in
+   * the meantime applies. A limit left out is the engine's. Core's only: an
+   * add-on receiver that declares it is refused at registration (#2187).
+   */
+  limits?(): { maxZipEntries?: number; maxZipBytes?: number; maxFileBytes?: number };
+  /**
    * The items this receiver checks for itself whether it still holds
    * (#2118, operator 2026-10-30): a takeout's page, by its uuid, and a
    * takeout's file, by its bytes (#2171), so one deleted since an earlier

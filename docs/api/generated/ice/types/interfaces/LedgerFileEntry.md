@@ -6,7 +6,7 @@
 
 # Interface: LedgerFileEntry
 
-Defined in: src/ice/types.ts:615
+Defined in: src/ice/types.ts:623
 
 What the engine remembers about one file in a scope.
 
@@ -16,7 +16,7 @@ What the engine remembers about one file in a scope.
 
 > __at__: `string`
 
-Defined in: src/ice/types.ts:626
+Defined in: src/ice/types.ts:634
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: src/ice/types.ts:626
 
 > `optional` __givenName?__: `string`
 
-Defined in: src/ice/types.ts:619
+Defined in: src/ice/types.ts:627
 
 The name the user gave what it became (#2130), when it was applied.
 
@@ -34,7 +34,7 @@ The name the user gave what it became (#2130), when it was applied.
 
 > `optional` __heldAs?__: `string`
 
-Defined in: src/ice/types.ts:621
+Defined in: src/ice/types.ts:629
 
 The name what it is already goes by on the site, when a given name was not applied (#2130).
 
@@ -44,7 +44,7 @@ The name what it is already goes by on the site, when a given name was not appli
 
 > `optional` __message?__: `string`
 
-Defined in: src/ice/types.ts:625
+Defined in: src/ice/types.ts:633
 
 ***
 
@@ -52,7 +52,7 @@ Defined in: src/ice/types.ts:625
 
 > __name__: `string`
 
-Defined in: src/ice/types.ts:617
+Defined in: src/ice/types.ts:625
 
 The file's own name, as uploaded.
 
@@ -62,7 +62,7 @@ The file's own name, as uploaded.
 
 > `optional` __original?__: [`LedgerOriginal`](LedgerOriginal.md)
 
-Defined in: src/ice/types.ts:629
+Defined in: src/ice/types.ts:637
 
 The original kept for this fingerprint, whatever became of the conversion (D11).
 
@@ -72,7 +72,7 @@ The original kept for this fingerprint, whatever became of the conversion (D11).
 
 > __refs__: `string`[]
 
-Defined in: src/ice/types.ts:627
+Defined in: src/ice/types.ts:635
 
 ***
 
@@ -80,7 +80,7 @@ Defined in: src/ice/types.ts:627
 
 > __sha256__: `string`
 
-Defined in: src/ice/types.ts:622
+Defined in: src/ice/types.ts:630
 
 ***
 
@@ -88,7 +88,7 @@ Defined in: src/ice/types.ts:622
 
 > __size__: `number`
 
-Defined in: src/ice/types.ts:623
+Defined in: src/ice/types.ts:631
 
 ***
 
@@ -96,4 +96,4 @@ Defined in: src/ice/types.ts:623
 
 > __status__: [`IceFileStatus`](../type-aliases/IceFileStatus.md)
 
-Defined in: src/ice/types.ts:624
+Defined in: src/ice/types.ts:632

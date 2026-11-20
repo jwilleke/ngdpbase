@@ -6,7 +6,7 @@
 
 # Interface: IceFileReport
 
-Defined in: src/ice/types.ts:563
+Defined in: src/ice/types.ts:571
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: src/ice/types.ts:563
 
 > __chain__: `string`[]
 
-Defined in: src/ice/types.ts:580
+Defined in: src/ice/types.ts:588
 
 The shims the file went through.
 
@@ -24,7 +24,7 @@ The shims the file went through.
 
 > __duplicates__: `number`
 
-Defined in: src/ice/types.ts:585
+Defined in: src/ice/types.ts:593
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: src/ice/types.ts:585
 
 > `optional` __givenName?__: `string`
 
-Defined in: src/ice/types.ts:566
+Defined in: src/ice/types.ts:574
 
 The name the user gave what it becomes (#2130), when it was applied: something was stored under it.
 
@@ -42,7 +42,7 @@ The name the user gave what it becomes (#2130), when it was applied: something w
 
 > `optional` __heldAs?__: `string`
 
-Defined in: src/ice/types.ts:574
+Defined in: src/ice/types.ts:582
 
 The name what the file already is goes by on the site, when a name given was not applied (#2130).
 
@@ -52,7 +52,7 @@ The name what the file already is goes by on the site, when a name given was not
 
 > `optional` __link?__: `string`
 
-Defined in: src/ice/types.ts:572
+Defined in: src/ice/types.ts:580
 
 Where the user can open what the file already is on the site, when a
 name they gave was not applied because it was already here (#2130):
@@ -64,7 +64,7 @@ the receiver's `linkFor`, a path on this site only.
 
 > `optional` __message?__: `string`
 
-Defined in: src/ice/types.ts:578
+Defined in: src/ice/types.ts:586
 
 ***
 
@@ -72,7 +72,7 @@ Defined in: src/ice/types.ts:578
 
 > __name__: `string`
 
-Defined in: src/ice/types.ts:564
+Defined in: src/ice/types.ts:572
 
 ***
 
@@ -80,7 +80,7 @@ Defined in: src/ice/types.ts:564
 
 > `optional` __original?__: [`KeptOriginal`](KeptOriginal.md)
 
-Defined in: src/ice/types.ts:586
+Defined in: src/ice/types.ts:594
 
 ***
 
@@ -88,7 +88,7 @@ Defined in: src/ice/types.ts:586
 
 > __refs__: `string`[]
 
-Defined in: src/ice/types.ts:582
+Defined in: src/ice/types.ts:590
 
 Where each item went.
 
@@ -98,7 +98,7 @@ Where each item went.
 
 > `optional` __sha256?__: `string`
 
-Defined in: src/ice/types.ts:575
+Defined in: src/ice/types.ts:583
 
 ***
 
@@ -106,7 +106,7 @@ Defined in: src/ice/types.ts:575
 
 > __size__: `number`
 
-Defined in: src/ice/types.ts:576
+Defined in: src/ice/types.ts:584
 
 ***
 
@@ -114,7 +114,7 @@ Defined in: src/ice/types.ts:576
 
 > __status__: [`IceFileStatus`](../type-aliases/IceFileStatus.md)
 
-Defined in: src/ice/types.ts:577
+Defined in: src/ice/types.ts:585
 
 ***
 
@@ -122,7 +122,7 @@ Defined in: src/ice/types.ts:577
 
 > __stored__: `number`
 
-Defined in: src/ice/types.ts:584
+Defined in: src/ice/types.ts:592
 
 Items stored, and items skipped as already seen.
 
@@ -132,4 +132,4 @@ Items stored, and items skipped as already seen.
 
 > __warnings__: [`IceWarning`](IceWarning.md)[]
 
-Defined in: src/ice/types.ts:587
+Defined in: src/ice/types.ts:595

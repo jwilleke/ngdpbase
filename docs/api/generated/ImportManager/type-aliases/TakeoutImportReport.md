@@ -58,17 +58,6 @@ Defined in: src/managers/ImportManager.ts:366
 
 ***
 
-### reportPage?
-
-> `optional` __reportPage?__: `string`
-
-Defined in: src/managers/ImportManager.ts:383
-
-The private page this import's report was saved as, in the target store
-(operator, 2026-09-25). Absent only when that save failed.
-
-***
-
 ### store
 
 > __store__: `string`

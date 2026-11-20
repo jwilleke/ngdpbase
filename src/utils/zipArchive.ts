@@ -6,7 +6,8 @@
  * while `.tar.gz` needs a third-party app on exactly the devices people carry.
  *
  * This is the only archive the system writes, and `readZip` below is the only
- * one it reads: a takeout handed back for import (#1472). The instance backup does not use
+ * one it reads: the import engine unpacks an uploaded zip with it (`expandUploads`),
+ * a takeout handed back included. The instance backup does not use
  * one: it carries private files as base64 inside the backup document (#1387),
  * so there is nothing to unpack on restore.
  *

@@ -6,7 +6,7 @@
 
 # Interface: IceRunReport
 
-Defined in: src/ice/types.ts:590
+Defined in: src/ice/types.ts:598
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: src/ice/types.ts:590
 
 > `optional` __error?__: `string`
 
-Defined in: src/ice/types.ts:601
+Defined in: src/ice/types.ts:609
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: src/ice/types.ts:601
 
 > __files__: [`IceFileReport`](IceFileReport.md)[]
 
-Defined in: src/ice/types.ts:602
+Defined in: src/ice/types.ts:610
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: src/ice/types.ts:602
 
 > `optional` __finishedAt?__: `string`
 
-Defined in: src/ice/types.ts:600
+Defined in: src/ice/types.ts:608
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: src/ice/types.ts:600
 
 > __receiver__: `string`
 
-Defined in: src/ice/types.ts:592
+Defined in: src/ice/types.ts:600
 
 ***
 
@@ -46,7 +46,7 @@ Defined in: src/ice/types.ts:592
 
 > __runId__: `string`
 
-Defined in: src/ice/types.ts:591
+Defined in: src/ice/types.ts:599
 
 ***
 
@@ -54,7 +54,7 @@ Defined in: src/ice/types.ts:591
 
 > __scope__: `string`
 
-Defined in: src/ice/types.ts:595
+Defined in: src/ice/types.ts:603
 
 ***
 
@@ -62,7 +62,7 @@ Defined in: src/ice/types.ts:595
 
 > `optional` __startedAt?__: `string`
 
-Defined in: src/ice/types.ts:599
+Defined in: src/ice/types.ts:607
 
 ***
 
@@ -70,7 +70,7 @@ Defined in: src/ice/types.ts:599
 
 > __state__: `"failed"` \| `"done"` \| `"running"` \| `"queued"`
 
-Defined in: src/ice/types.ts:598
+Defined in: src/ice/types.ts:606
 
 ***
 
@@ -78,7 +78,7 @@ Defined in: src/ice/types.ts:598
 
 > `optional` __target?__: `string`
 
-Defined in: src/ice/types.ts:594
+Defined in: src/ice/types.ts:602
 
 The place within the receiver (#2118), when it has places.
 
@@ -88,6 +88,6 @@ The place within the receiver (#2118), when it has places.
 
 > __username__: `string`
 
-Defined in: src/ice/types.ts:597
+Defined in: src/ice/types.ts:605
 
 Who it ran as.

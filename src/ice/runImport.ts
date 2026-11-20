@@ -404,9 +404,26 @@ function withholdingNames(ledger: IceLedger): IceLedger {
   };
 }
 
-/** The run's deps, with the ledger a confidential receiver's run writes ({@link withholdingNames}). */
+/**
+ * The run's deps: with the ledger a confidential receiver's run writes
+ * ({@link withholdingNames}), and with the size limits the receiver declares
+ * (`limits`) over the engine's.
+ */
 function depsFor(deps: IceRunDeps, receiver: RegisteredReceiver | undefined): IceRunDeps {
-  return isConfidentialReceiver(receiver) ? { ...deps, ledger: withholdingNames(deps.ledger) } : deps;
+  let out = isConfidentialReceiver(receiver) ? { ...deps, ledger: withholdingNames(deps.ledger) } : deps;
+  const limits = receiver?.limits?.();
+  if (limits) {
+    const { settings } = out;
+    out = {
+      ...out,
+      settings: {
+        ...settings,
+        zip: { maxEntries: limits.maxZipEntries ?? settings.zip.maxEntries, maxTotalBytes: limits.maxZipBytes ?? settings.zip.maxTotalBytes },
+        maxFileBytes: limits.maxFileBytes ?? settings.maxFileBytes
+      }
+    };
+  }
+  return out;
 }
 
 /** Does this run keep its originals during the upload (#2034)? */
