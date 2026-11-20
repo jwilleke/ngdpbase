@@ -603,9 +603,9 @@ describe('ImportManager — the limits a takeout has of its own (#2187)', () => 
     expect(registered(im, 'core.files')?.limits).toBeUndefined();
   });
 
-  test('a takeout allows 65,535 entries a zip, 256 MB a file, and what its own download can pack in a zip', async () => {
+  test('a takeout allows 65,534 entries a zip, 256 MB unpacked and 256 MB a file', async () => {
     const { im } = await makeImportManager();
-    expect(registered(im, 'core.private-store')?.limits?.()).toEqual({ maxZipEntries: 65_535, maxZipBytes: 4_294_967_295, maxFileBytes: 268_435_456 });
+    expect(registered(im, 'core.private-store')?.limits?.()).toEqual({ maxZipEntries: 65_534, maxZipBytes: 268_435_456, maxFileBytes: 268_435_456 });
   });
 
   test('the takeout\'s limits are the site\'s to set, and are read at each run', async () => {
@@ -618,7 +618,7 @@ describe('ImportManager — the limits a takeout has of its own (#2187)', () => 
 
   test('the removed ngdpbase.stores.import.maxsize changes nothing', async () => {
     const { im } = await makeImportManager({ 'ngdpbase.stores.import.maxsize': 1 });
-    expect(registered(im, 'core.private-store')?.limits?.()).toEqual({ maxZipEntries: 65_535, maxZipBytes: 4_294_967_295, maxFileBytes: 268_435_456 });
+    expect(registered(im, 'core.private-store')?.limits?.()).toEqual({ maxZipEntries: 65_534, maxZipBytes: 268_435_456, maxFileBytes: 268_435_456 });
     expect(engineSettings(im).maxFileBytes).toBe(104_857_600);
   });
 
@@ -626,8 +626,8 @@ describe('ImportManager — the limits a takeout has of its own (#2187)', () => 
     const shipped = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
     expect(shipped['ngdpbase.import.engine.zip-max-entries']).toBe(10_000);
     expect(shipped['ngdpbase.import.engine.max-file-bytes']).toBe(104_857_600);
-    expect(shipped['ngdpbase.import.engine.takeout-zip-max-entries']).toBe(65_535);
-    expect(shipped['ngdpbase.import.engine.takeout-zip-max-bytes']).toBe(4_294_967_295);
+    expect(shipped['ngdpbase.import.engine.takeout-zip-max-entries']).toBe(65_534);
+    expect(shipped['ngdpbase.import.engine.takeout-zip-max-bytes']).toBe(268_435_456);
     expect(shipped['ngdpbase.import.engine.takeout-max-file-bytes']).toBe(268_435_456);
     expect(shipped).not.toHaveProperty('ngdpbase.stores.import.maxsize');
   });
