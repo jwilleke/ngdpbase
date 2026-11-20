@@ -260,6 +260,8 @@ describe('bare web addresses (#2443)', () => {
       expect(converter.makeHtml('see https://example.com/a now')).toContain('<a href="https://example.com/a"');
     });
 
+    const LONG_HOST = `${'xn--a.'.repeat(8)}${'abcdefgh.'.repeat(440)}-`;
+
     test.each([
       ['xn--a.', '-'],
       ['xn--a.b.', '-'],
@@ -279,13 +281,19 @@ describe('bare web addresses (#2443)', () => {
     test.each([
       ['a long text before the @', `http://${'xn--a.'.repeat(8)}${'abcdefgh.'.repeat(440)}-@x.com`],
       ['33 labels before the @', `http://${'a.'.repeat(33)}@x.com/`],
-      ['more than 253 characters before the @', `http://${`${'a'.repeat(60)}.`.repeat(5)}@x.com/`]
+      ['more than 253 characters before the @', `http://${`${'a'.repeat(60)}.`.repeat(5)}@x.com/`],
+      ['a ? before the @ (1)', `http://a?b@${LONG_HOST}@x.com`],
+      ['a # before the @ (1)', `http://a#b@${LONG_HOST}@x.com`],
+      ['a ? before the @ (2)', `http://${'a?'.repeat(24)}@${LONG_HOST}@x.com`],
+      ['a ? before the @ (3)', `http://a?b@${'a.'.repeat(33)}x.com/`],
+      ['a # before the @ (3)', `http://a#b@${`${'a'.repeat(60)}.`.repeat(5)}x.com/`]
     ])('long host names stay text: %s', (_name, address) => {
       expect(converter.makeHtml(address)).not.toContain('<a');
     });
 
     test.each([
       ['a user name and password with a port', 'https://user:pass@example.com:8080/x'],
+      ['a query with an @ in it', 'https://example.com/?q=a@b.com'],
       ['a user part of exactly 50 characters', `https://${'u'.repeat(50)}@example.com/`]
     ])('%s still links', (_name, address) => {
       expect(converter.makeHtml(address)).toContain(`<a href="${address}"`);
