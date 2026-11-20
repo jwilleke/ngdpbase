@@ -116,6 +116,50 @@ describe('expandUploads', () => {
       expect(() => expandUploads([{ name: 'outer.zip', bytes: outer }], TOTAL, 3)).toThrow(ZipBudgetError);
     });
 
+    describe('members are counted across the whole upload', () => {
+      const LIMIT = { maxEntries: 5, maxTotalBytes: 1_000_000 };
+      /** A zip of `n` empty members: they cost no bytes, so only a count can bound them. */
+      const emptyZip = (prefix: string, n: number): Promise<Buffer> => packZip(Array.from({ length: n }, (_, i) => ({ path: `${prefix}${i}.txt`, bytes: Buffer.alloc(0) })));
+
+      test('archives that are each under the entry limit and together over it are refused as a whole', async () => {
+        const a = await emptyZip('a', 3);
+        const b = await emptyZip('b', 3);
+        expect(expandUploads([{ name: 'a.zip', bytes: a }], LIMIT, 3).files).toHaveLength(3);
+
+        const upload = [{ name: 'a.zip', bytes: a }, { name: 'b.zip', bytes: b }];
+        expect(() => expandUploads(upload, LIMIT, 3)).toThrow(ZipBudgetError);
+        expect(() => expandUploads(upload, LIMIT, 3)).toThrow(/more than 5 files in all/);
+      });
+
+      test('members of archives inside an archive are counted with the rest', async () => {
+        const outer = await packZip([
+          { path: 'one.zip', bytes: await emptyZip('a', 3) },
+          { path: 'two.zip', bytes: await emptyZip('b', 3) }
+        ]);
+        expect(() => expandUploads([{ name: 'outer.zip', bytes: outer }], LIMIT, 3)).toThrow(/more than 5 files in all/);
+      });
+
+      test('a count within the limit across several archives is unpacked', async () => {
+        const { files } = expandUploads([
+          { name: 'a.zip', bytes: await emptyZip('a', 2) },
+          { name: 'b.zip', bytes: await emptyZip('b', 2) }
+        ], LIMIT, 3);
+        expect(files).toHaveLength(4);
+      });
+
+      test('a very large number of members is returned without error', async () => {
+        const per = 60_000;
+        const outer = await packZip([
+          { path: 'one.zip', bytes: await emptyZip('a', per) },
+          { path: 'two.zip', bytes: await emptyZip('b', per) },
+          { path: 'three.zip', bytes: await emptyZip('c', per) }
+        ]);
+        const { files, unreadable } = expandUploads([{ name: 'outer.zip', bytes: outer }], { maxEntries: 1_000_000, maxTotalBytes: 100_000_000 }, 3);
+        expect(unreadable).toEqual([]);
+        expect(files).toHaveLength(3 * per);
+      }, 120_000);
+    });
+
     test('plain files and archives under the total in one upload are unpacked as before', async () => {
       const a = await zipOf('a.bin', 300);
       const b = await zipOf('b.bin', 300);

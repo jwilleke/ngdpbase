@@ -382,14 +382,33 @@ describe('readZip — verified against archives Python wrote (#1472)', () => {
       expect(budget.remaining).toBe(100_000 - 2);
     });
 
-    test('a member that understates its size still stops at what it declared, and spends nothing', async () => {
+    test('a member that understates its size still stops at what it declared, and its stated size is charged', async () => {
       const archive = await packZip([{ path: 'bomb.bin', bytes: Buffer.alloc(20 * 1024 * 1024) }]);
       const central = archive.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
       archive.writeUInt32LE(100, central + 24);
 
       const budget = { remaining: 1_000_000 };
       expect(() => readZip(archive, { ...LIMITS, maxFileBytes: 1000 }, budget, [])).toThrow(/more than it declares/);
-      expect(budget.remaining).toBe(1_000_000);
+      expect(budget.remaining).toBe(1_000_000 - 100);
+    });
+
+    test('a member that fails its CRC is still charged its stated size', async () => {
+      const archive = await randomZip('a.bin', 600);
+      archive[30 + 'a.bin'.length] ^= 0xff;   // stored, so the data is still a valid stream
+
+      const budget = { remaining: 1000 };
+      expect(() => readZip(archive, LIMITS, budget)).toThrow(/CRC/);
+      expect(budget.remaining).toBe(400);
+    });
+
+    test('the stated size is charged before unpacking, so a failed member counts against the next archive', async () => {
+      const bad = await randomZip('a.bin', 600);
+      bad[30 + 'a.bin'.length] ^= 0xff;
+      const budget = { remaining: 1000 };
+      expect(() => readZip(bad, LIMITS, budget)).toThrow(/CRC/);
+
+      const next = await randomZip('b.bin', 600);
+      expect(() => readZip(next, LIMITS, budget)).toThrow(ZipBudgetError);
     });
 
     test('without a budget argument an archive gets maxTotalBytes of its own, as before', async () => {
