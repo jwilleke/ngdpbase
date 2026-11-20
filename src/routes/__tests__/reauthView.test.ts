@@ -89,7 +89,7 @@ describe('reauth view banner (#2445)', () => {
 
   test('says in plain words that the sign-in for this action expired, at the top', () => {
     const out = html('/profile');
-    const banner = out.match(/<div class="alert alert-warning"[^>]*data-reauth-expired[^>]*>([\s\S]*?)<\/div>/);
+    const banner = out.match(/<div class="alert alert-warning[^"]*"[^>]*data-reauth-expired[^>]*>([\s\S]*?)<\/div>/);
     expect(banner).not.toBeNull();
     expect(banner![1]).toMatch(/sign-in for this action has expired/i);
     expect(out.indexOf('data-reauth-expired')).toBeLessThan(out.indexOf('Confirm it is you'));

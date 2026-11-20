@@ -179,6 +179,7 @@ describe('Admin → Configuration, passkeys on but the address cannot support th
         scripts: w => {
           w.csrfFetch = (_u: string, o: { body: string }) => { fetched.push(o.body); return Promise.resolve({ json: () => Promise.resolve({ success: true, message: 'ok' }) }); };
           w.followReauth = () => false;
+          w.reauthDraft = { keep: () => false, restore: () => false }; // from /js/reauth-draft.js, which this harness does not load
         }
       });
       const form = [...doc.querySelectorAll('form[action="/admin/configuration"]')].find(f =>

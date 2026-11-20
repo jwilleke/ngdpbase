@@ -48,12 +48,17 @@
    * returns true the page is already on its way to the prompt, so stop.
    * Only a same-site path is followed.
    *
+   * `beforeLeaving`, when given, runs just before the page goes, and only then:
+   * where a page keeps what was typed (reauth-draft.js, #2445).
+   *
    * @param {{reauth?: unknown}|null|undefined} data - the parsed JSON answer
+   * @param {() => void} [beforeLeaving] - runs when the page is about to leave
    * @returns {boolean} true when the page is being sent to the prompt
    */
-  function followReauth(data) {
+  function followReauth(data, beforeLeaving) {
     const to = data && data.reauth;
     if (typeof to !== 'string' || !/^\/(?!\/)/.test(to)) return false;
+    if (typeof beforeLeaving === 'function') beforeLeaving();
     window.location.href = to;
     return true;
   }

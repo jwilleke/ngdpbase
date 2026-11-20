@@ -1181,44 +1181,17 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // #2445: a stale sign-in sends the page to the fresh sign-in prompt and back,
-    // which reloads it. What was typed (never the token's secret) waits in this
-    // tab's sessionStorage for ten minutes and only fills the form again: Create
-    // is pressed again, by the person, to make the token.
-    const DRAFT_KEY = 'ngdpbase.agentTokenDraft';
-    const DRAFT_MAX_AGE_MS = 10 * 60 * 1000;
-    const nameEl   = document.getElementById('agent-token-name');
-    const scopesEl = document.getElementById('agent-token-scopes');
-    const ttlEl    = document.getElementById('agent-token-ttl');
-
-    function keepDraft() {
-        try {
-            sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
-                name: nameEl.value, scopes: scopesEl.value, ttl: ttlEl.value, at: Date.now()
-            }));
-        } catch (err) { /* storage refused: the prompt still works, the form is just empty after it */ }
-    }
-
-    function forgetDraft() {
-        try { sessionStorage.removeItem(DRAFT_KEY); } catch (err) { /* nothing kept */ }
-    }
-
-    // Values go in through .value, as text; one the form does not offer is left at its default.
-    function restoreDraft() {
-        let draft = null;
-        try {
-            draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null');
-        } catch (err) { /* unreadable: treated as none */ }
-        forgetDraft();
-        if (!draft || typeof draft !== 'object' || !(Date.now() - draft.at < DRAFT_MAX_AGE_MS)) return;
-        if (typeof draft.name === 'string') nameEl.value = draft.name.slice(0, 200);
-        if (typeof draft.scopes === 'string' && [...scopesEl.options].some((o) => o.value === draft.scopes)) scopesEl.value = draft.scopes;
-        const hours = Number(draft.ttl);
-        if (Number.isInteger(hours) && hours >= Number(ttlEl.min) && hours <= Number(ttlEl.max)) ttlEl.value = String(hours);
-        form.classList.remove('d-none');
-        const details = document.getElementById('profile-tokens-and-devices');
-        if (details) details.open = true;
-    }
-    restoreDraft();
+    // which reloads it. public/js/reauth-draft.js keeps what was typed (never the
+    // token's secret) and fills the form again without sending it: Create is
+    // pressed again, by the person, to make the token.
+    if (window.reauthDraft.restore('agent-token', form, {
+        press: 'Create',
+        onRestore: () => {
+            form.classList.remove('d-none');
+            const details = document.getElementById('profile-tokens-and-devices');
+            if (details) details.open = true;
+        }
+    })) form.scrollIntoView?.({ block: 'nearest' });
 
     newBtn?.addEventListener('click', () => {
         form.classList.toggle('d-none');
@@ -1246,9 +1219,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await res.json().catch(() => ({}));
             // Step-up: a stale sign-in is sent to the prompt, and comes back here
             // with the form filled in again (#2445), not submitted.
-            if (data && data.reauth) keepDraft();
-            if (window.followReauth(data)) return;
-            forgetDraft();
+            if (window.followReauth(data, () => window.reauthDraft.keep('agent-token', form))) return;
             if (!res.ok || !data.success) {
                 showError(data.error || ('Could not create token (HTTP ' + res.status + ')'));
                 return;

@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import vm from 'vm';
+import ejs from 'ejs';
 import { JSDOM } from 'jsdom';
 import { fileURLToPath } from 'url';
 
@@ -43,8 +44,7 @@ function open(body: string, opts: { user?: string; storage?: Record<string, stri
   vm.runInContext(CSRF_JS, ctx);
   vm.runInContext(DRAFT_JS, ctx);
   if (opts.script) {
-    vm.runInContext(opts.script, ctx);
-    dom.window.document.dispatchEvent(new dom.window.Event('DOMContentLoaded'));
+    vm.runInContext(opts.script, ctx); // runs its own DOMContentLoaded, which jsdom fires once the page is parsed
   }
   return { dom, doc: dom.window.document, sent, shown };
 }
@@ -134,6 +134,13 @@ describe('#2445 the shared draft helper', () => {
   });
 });
 
+/** A page whose script waits for DOMContentLoaded: open it, then let jsdom fire the event. */
+async function openConfig(opts: Parameters<typeof open>[1]): Promise<Page> {
+  const p = open(CONFIG, { ...opts, script: CONFIG_SCRIPT });
+  await new Promise(r => setTimeout(r, 20));
+  return p;
+}
+
 const CONFIG = `<div class="container mt-4">
 <button id="nav-custom-tab"></button><button id="nav-add-tab"></button>
 <div class="tab-pane" id="nav-custom">
@@ -154,28 +161,29 @@ describe('#2445 Admin → Configuration keeps a typed value across the fresh sig
   const ASK = { success: false, error: 'A fresh sign-in is needed', reauth: '/#reauth' };
 
   it('a setting row comes back with its value, its tab showing and a note, and is not saved', async () => {
-    const before = open(CONFIG, { script: CONFIG_SCRIPT, answer: ASK });
+    const before = await openConfig({ answer: ASK });
     await press(before, 'row', 'My Site');
-    const back = open(CONFIG, { script: CONFIG_SCRIPT, storage: kept(before.dom) });
+    const back = await openConfig({ storage: kept(before.dom) });
     expect(el(back, 'rowValue').value).toBe('My Site');
     expect(el(back, 'secretValue').value).toBe('');
     expect(back.shown).toContain('nav-custom-tab');
-    expect(back.doc.querySelector('[data-draft-note]')!.textContent).toContain('Press Save again');
+    expect(back.doc.querySelector('[data-draft-note]')!.textContent).toContain('Press the save button again');
+    expect(back.doc.querySelector('[data-draft-note]')!.textContent).toContain('ngdpbase.site.name');
     expect(back.sent).toEqual([]);
   });
 
   it('the Add property form comes back with both fields and its tab showing', async () => {
-    const before = open(CONFIG, { script: CONFIG_SCRIPT, answer: ASK });
+    const before = await openConfig({ answer: ASK });
     await press(before, 'add', 'v1', 'ngdpbase.new.thing');
-    const back = open(CONFIG, { script: CONFIG_SCRIPT, storage: kept(before.dom) });
+    const back = await openConfig({ storage: kept(before.dom) });
     expect(el(back, 'newProperty').value).toBe('ngdpbase.new.thing');
     expect(el(back, 'newValue').value).toBe('v1');
     expect(back.shown).toContain('nav-add-tab');
-    expect(back.doc.querySelector('[data-draft-note]')!.textContent).toContain('Press Add again');
+    expect(back.doc.querySelector('[data-draft-note]')!.textContent).toContain('Press Add Property again');
   });
 
   it('a value for a setting that looks secret is never kept', async () => {
-    const before = open(CONFIG, { script: CONFIG_SCRIPT, answer: ASK });
+    const before = await openConfig({ answer: ASK });
     await press(before, 'secretRow', 'p4ssw0rd-value');
     expect(JSON.stringify(kept(before.dom))).not.toContain('p4ssw0rd-value');
     await press(before, 'add', 'p4ssw0rd-value', 'ngdpbase.mail.password');
@@ -183,7 +191,7 @@ describe('#2445 Admin → Configuration keeps a typed value across the fresh sig
   });
 
   it('a saved or refused value keeps nothing', async () => {
-    const before = open(CONFIG, { script: CONFIG_SCRIPT, answer: { success: false, error: 'Bad value' } });
+    const before = await openConfig({ answer: { success: false, error: 'Bad value' } });
     await press(before, 'row', 'x');
     expect(kept(before.dom)).toEqual({});
   });
@@ -195,5 +203,24 @@ describe('#2445 the pages that follow reauth with nothing typed keep nothing', (
   // Admin → Configuration → Reveal, My list → Import a download, Export.
   it.each(['views/admin-upgrade.ejs', 'views/admin-dashboard.ejs', 'views/my-list.ejs', 'views/export-item.ejs'])('%s does not use the helper', (v) => {
     expect(read(v)).not.toContain('reauthDraft');
+  });
+});
+
+describe('#2445 the sign-in prompt says what is kept only when something is', () => {
+  const VIEW = read('views/reauth.ejs').replace(/<%- include\('(header|footer)'[^%]*%>/g, '');
+  const prompt = (storage: Record<string, string>): boolean => {
+    const html = ejs.render(VIEW, { next: '/profile', prompt: '', needsPasskey: false, hasPasskey: false, hasPassword: true, csrfToken: 't', cspNonce: 'n' });
+    const page = open(html, { storage });
+    const inline = [...html.matchAll(/<script nonce="n">([\s\S]*?)<\/script>/g)].map(m => m[1]);
+    for (const code of inline) vm.runInContext(code, page.dom.getInternalVMContext());
+    return !(page.doc.querySelector('[data-reauth-kept]') as HTMLElement).hidden;
+  };
+
+  it('a draft waiting in this tab shows the sentence; none leaves it hidden', () => {
+    const typed = open(FORM);
+    fill(typed);
+    draft(typed).keep('t', typed.doc.getElementById('f'));
+    expect(prompt(kept(typed.dom))).toBe(true);
+    expect(prompt({})).toBe(false);
   });
 });

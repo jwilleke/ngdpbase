@@ -5,7 +5,19 @@
 <div class="container">
   <div class="row justify-content-center">
     <div class="col-lg-6">
-      <div class="card mt-4">
+      <%# #2445: said at the top, before anything else. The second sentence is true where the page redoes
+          the request or waits for this prompt, and where a page kept its entries in this tab (the script). %>
+      <% const _keeps = (typeof next === 'string' && next.indexOf('/auth/reauth/continue') === 0) || Boolean(prompt); %>
+      <div class="alert alert-warning mt-4 mb-0" role="alert" data-reauth-expired>
+        <strong>Your sign-in for this action has expired.</strong>
+        <span data-reauth-kept<%= _keeps ? '' : ' hidden' %>>Confirm it is you below, and what you typed will be kept.</span>
+      </div>
+      <% if (!_keeps) { %>
+      <script nonce="<%= locals.cspNonce %>">
+        if (window.reauthDraft && window.reauthDraft.pending()) document.querySelector('[data-reauth-kept]').hidden = false;
+      </script>
+      <% } %>
+      <div class="card mt-3">
         <div class="card-header">
           <h4 class="mb-0"><i class="fas fa-user-shield"></i> Confirm it is you</h4>
         </div>
