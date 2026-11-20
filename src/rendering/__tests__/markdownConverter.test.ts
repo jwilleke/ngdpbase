@@ -6,7 +6,7 @@
  * form of the #1064 invariant: if one of these changes, pages change.
  */
 import { describe, it, expect } from 'vitest';
-import { createMarkdownConverter, buildMarkdownIt } from '../markdownConverter.js';
+import { createMarkdownConverter, buildMarkdownIt, renderInlineMarkdown } from '../markdownConverter.js';
 import { headingSlug } from '../../utils/SectionUtils.js';
 import { shippedHtmlPolicy } from './__fixtures__/shippedHtmlPolicy.js';
 
@@ -94,6 +94,60 @@ describe('page profile', () => {
 
   it('does not autolink a bare URL', () => {
     expect(html('see https://example.com')).not.toContain('<a');
+  });
+});
+
+// #1492: CommonMark is the house form for an external link, so it renders as
+// the `[text|url|target="_blank"]` form does: the same class, target and rel.
+describe('external links (#1492)', () => {
+  const external = 'class="wiki-link external-link" target="_blank" rel="noopener noreferrer"';
+
+  it('a CommonMark http(s) link opens in a new tab, with rel and the external-link classes', () => {
+    expect(html('[Ext](https://example.com/a)')).toBe(
+      `<p><a href="https://example.com/a" ${external}>Ext</a></p>\n`
+    );
+    expect(html('[Old](http://example.com)')).toContain(`<a href="http://example.com" ${external}>Old</a>`);
+  });
+
+  it('a link with a title keeps the title and gains the attributes', () => {
+    expect(html('[Ext](https://example.com "A title")')).toContain(
+      `<a href="https://example.com" title="A title" ${external}>Ext</a>`
+    );
+  });
+
+  it('an autolink and a reference link are external too', () => {
+    expect(html('<https://example.com>')).toContain(`<a href="https://example.com" ${external}>https://example.com</a>`);
+    expect(html('[Ext][r]\n\n[r]: https://example.com/r')).toContain(`<a href="https://example.com/r" ${external}>Ext</a>`);
+  });
+
+  it('inline in a table cell, where the page profile renders it without a paragraph', () => {
+    expect(renderInlineMarkdown('[Ext](https://example.com)')).toBe(`<a href="https://example.com" ${external}>Ext</a>`);
+  });
+
+  it('internal, relative, mailto and anchor links are unchanged', () => {
+    expect(html('[a](/view/Home)')).toBe('<p><a href="/view/Home">a</a></p>\n');
+    expect(html('[a](Page)')).toBe('<p><a href="Page">a</a></p>\n');
+    expect(html('[a](mailto:a@b.co)')).toBe('<p><a href="mailto:a@b.co">a</a></p>\n');
+    expect(html('[a](#top)')).toBe('<p><a href="#top">a</a></p>\n');
+    expect(html('[a](//example.com/x)')).toBe('<p><a href="//example.com/x">a</a></p>\n');
+  });
+
+  it('href escaping is as strict as before: entities escaped, quotes encoded, javascript: not a link', () => {
+    expect(html('[a](https://example.com/?a=1&b=2)')).toContain('href="https://example.com/?a=1&amp;b=2"');
+    expect(html('[a](https://example.com/x"y)')).toContain('href="https://example.com/x%22y"');
+    expect(html('[a](javascript:alert(1))')).not.toContain('<a');
+  });
+
+  it('the fallback profile gives the same attributes', () => {
+    expect(createMarkdownConverter('fallback').makeHtml('[Ext](https://example.com)')).toContain(
+      `<a href="https://example.com" ${external}>Ext</a>`
+    );
+  });
+
+  it('the untrusted profile (comments) is not changed', () => {
+    expect(createMarkdownConverter('untrusted').makeHtml('[Ext](https://example.com)')).toBe(
+      '<p><a href="https://example.com">Ext</a></p>\n'
+    );
   });
 });
 

@@ -20,7 +20,7 @@ describe('ncmToConversionResult bridge', () => {
     });
   });
 
-  test('html import path: NCM external link form + ncmVersion in metadata + structured warnings', () => {
+  test('html import path: CommonMark external link + ncmVersion in metadata + structured warnings', () => {
     const html =
       '<html><head><title>Doc</title></head><body><article>' +
       ('Plenty of article body so the content selector keeps it. '.repeat(4)) +
@@ -29,9 +29,9 @@ describe('ncmToConversionResult bridge', () => {
 
     expect(cr.metadata.title).toBe('Doc');
     expect(cr.metadata.ncmVersion).toBe(NCM_VERSION);
-    expect(cr.content).toContain('[Ext|https://example.com|target="_blank"]');
+    expect(cr.content).toContain('[Ext](https://example.com)');
     expect(cr.content).not.toContain('---'); // frontmatter was split out into metadata
-    expect(cr.warnings.some(w => w.kind === 'link-externalized' && w.detail === 'https://example.com')).toBe(true);
+    expect(cr.warnings.some(w => w.kind === 'link-externalized')).toBe(false);
   });
 
   test('jspwiki import path: importedFrom + ncmVersion surface as metadata', () => {
@@ -39,7 +39,7 @@ describe('ncmToConversionResult bridge', () => {
     const cr = ncmToConversionResult(normalizeToNcm(jsp, 'jspwiki'));
     expect(cr.metadata.importedFrom).toBe('jspwiki');
     expect(cr.metadata.ncmVersion).toBe(NCM_VERSION);
-    expect(cr.content).toContain('[L|http://e.com|target="_blank"]');
+    expect(cr.content).toContain('[L](http://e.com)');
     expect(cr.content).toContain('[WikiPage]');
   });
 });

@@ -16,10 +16,23 @@ describe('NCM §2.4 link normalization', () => {
     return { out: normalizeLinks(md, w), w };
   };
 
-  test('external CommonMark link → NCM external form + link-externalized warning', () => {
-    const { out, w } = run('see [Ext](https://example.com) here');
+  // #1492: CommonMark is the house form for external links; the renderer
+  // gives them target and rel, so the funnel keeps them as written.
+  test('external CommonMark link is kept as written, no warning', () => {
+    const { out, w } = run('see [Ext](https://example.com) and [Old](http://old.example.com/a?b=1) here');
+    expect(out).toBe('see [Ext](https://example.com) and [Old](http://old.example.com/a?b=1) here');
+    expect(w).toHaveLength(0);
+  });
+
+  test('an external link with a title is kept as written', () => {
+    const { out } = run('[Ext](https://example.com "A title")');
+    expect(out).toBe('[Ext](https://example.com "A title")');
+  });
+
+  test('a stored [text|url|target="_blank"] link is left alone', () => {
+    const { out, w } = run('see [Ext|https://example.com|target="_blank"] here');
     expect(out).toBe('see [Ext|https://example.com|target="_blank"] here');
-    expect(w).toEqual([{ kind: 'link-externalized', detail: 'https://example.com' }]);
+    expect(w).toHaveLength(0);
   });
 
   test('relative/bare target → NCM internal form, no warning', () => {
@@ -52,9 +65,10 @@ describe('NCM HTML→NCM (delegates to HtmlConverter)', () => {
     '<p><img src="https://cdn.example.com/x.png" alt="pic"></p>' +
     '</article></body></html>';
 
-  test('produces NCM: external link form, internal link form, frontmatter stamped', () => {
+  test('produces NCM: external link as CommonMark, internal link form, frontmatter stamped', () => {
     const r = normalizeToNcm(html, 'html');
-    expect(r.content).toContain('[Ext|https://example.com|target="_blank"]');
+    expect(r.content).toContain('[Ext](https://example.com)');
+    expect(r.content).not.toContain('target="_blank"');
     expect(r.content).toContain('[Int|/InternalPage]');
     const fm = matter(r.content);
     expect(fm.data.ncmVersion).toBe(NCM_VERSION);
@@ -68,9 +82,9 @@ describe('NCM HTML→NCM (delegates to HtmlConverter)', () => {
     expect(r.content).toContain('![pic](https://cdn.example.com/x.png)');
   });
 
-  test('warnings are structured: link-externalized + an html-dropped from element removal', () => {
+  test('warnings are structured: an html-dropped from element removal, and no link-externalized', () => {
     const r = normalizeToNcm(html, 'html');
-    expect(r.warnings.some(x => x.kind === 'link-externalized' && x.detail === 'https://example.com')).toBe(true);
+    expect(r.warnings.some(x => x.kind === 'link-externalized')).toBe(false);
     expect(r.warnings.some(x => x.kind === 'html-dropped')).toBe(true);
   });
 
@@ -95,13 +109,14 @@ describe('NCM JSPWiki→NCM (delegates to JSPWikiConverter)', () => {
     // JSPWiki's [{SET}] attribute-extraction specifics.)
     expect(fm.data.importedFrom).toBe('jspwiki');
     expect(fm.data.ncmVersion).toBe(NCM_VERSION);
-    expect(r.content).toContain('[Label|http://ext.example.com|target="_blank"]');
+    expect(r.content).toContain('[Label](http://ext.example.com)');
+    expect(r.content).not.toContain('target="_blank"');
     expect(r.content).toContain('[WikiPage]');
   });
 
-  test('external link recorded + idempotent NCM out', () => {
+  test('external link kept as CommonMark, nothing recorded, idempotent NCM out', () => {
     const r = normalizeToNcm(jsp, 'jspwiki');
-    expect(r.warnings.some(x => x.kind === 'link-externalized')).toBe(true);
+    expect(r.warnings.some(x => x.kind === 'link-externalized')).toBe(false);
     expect(normalizeToNcm(r.content, 'ncm').content).toBe(r.content);
   });
 

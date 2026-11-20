@@ -88,6 +88,28 @@ function ellipsisOnly(md: MarkdownIt): void {
   });
 }
 
+/**
+ * An absolute http(s) link written as CommonMark opens in a new tab, as the
+ * `[text|url|target="_blank"]` form does (#1492): the same `wiki-link
+ * external-link` classes, `target="_blank"` and `rel="noopener noreferrer"`.
+ * Internal, relative, protocol-relative, mailto and anchor links are left as
+ * markdown-it renders them. The href is untouched: markdown-it has already
+ * normalised and escaped it, and refused `javascript:` and its kin.
+ */
+function externalLinksInNewTab(md: MarkdownIt): void {
+  const renderLinkOpen = md.renderer.rules.link_open
+    ?? ((tokens, idx, options, _env, self): string => self.renderToken(tokens, idx, options));
+  md.renderer.rules.link_open = (tokens, idx, options, env, self): string => {
+    const token = tokens[idx];
+    if (/^https?:\/\//i.test(token.attrGet('href') ?? '')) {
+      token.attrJoin('class', 'wiki-link external-link');
+      token.attrSet('target', '_blank');
+      token.attrSet('rel', 'noopener noreferrer');
+    }
+    return renderLinkOpen(tokens, idx, options, env, self);
+  };
+}
+
 /** What a converter hands markdown-it for one render: the policy in force. */
 interface RenderEnv {
   htmlPolicy?: HtmlPolicy | null;
@@ -132,6 +154,7 @@ function authorHtmlThroughPolicy(md: MarkdownIt): void {
 export function buildMarkdownIt(profile: MarkdownProfile): MarkdownIt {
   if (profile === 'fallback') {
     const fallback = new MarkdownIt({ html: true, breaks: false, linkify: false, typographer: false });
+    externalLinksInNewTab(fallback);
     authorHtmlThroughPolicy(fallback);
     return fallback;
   }
@@ -143,6 +166,7 @@ export function buildMarkdownIt(profile: MarkdownProfile): MarkdownIt {
   showdownFenceClasses(md);
   delForStrikethrough(md);
   ellipsisOnly(md);
+  if (profile !== 'untrusted') externalLinksInNewTab(md); // #1492; comments keep their own rules
 
   if (profile === 'page') {
     // Section links (#500) are a stored contract: the slug is headingSlug

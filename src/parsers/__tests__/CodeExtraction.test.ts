@@ -78,7 +78,7 @@ describe('code extraction follows CommonMark (#1726)', () => {
   });
 
   test('an autolink is taken before a backtick inside it', async () => {
-    expect(await render('<https://foo.bar.`baz>`')).toContain('<a href="https://foo.bar.%60baz">');
+    expect(await render('<https://foo.bar.`baz>`')).toContain('<a href="https://foo.bar.%60baz" class="wiki-link external-link"');
   });
 
   test('a [[ escape around a plugin prints the plugin as written, not its placeholder', async () => {
