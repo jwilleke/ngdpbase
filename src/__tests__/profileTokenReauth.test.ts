@@ -80,7 +80,7 @@ describe('#2445 followReauth takes only a path on this site', () => {
     return { followed, href: dom.window.location.href, ran };
   };
 
-  it.each(['//evil.example/x', '/\\evil.example/x', '/\\\\evil.example', 'https://evil.example/', 'evil', '', 5, null])('refuses %j and leaves the page where it is', (to) => {
+  it.each(['//evil.example/x', '/\\evil.example/x', '/\\\\evil.example', 'https://evil.example/', 'evil', '', 5, null, '/\t/x', '/\n/x', '/\r/x', '/x\ty', '/x\ny', '/x\ry', '/ok\r\n'])('refuses %j and leaves the page where it is', (to) => {
     expect(follow(to)).toEqual({ followed: false, href: 'http://localhost/', ran: false });
   });
 

@@ -16,6 +16,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CODE = readFileSync(path.resolve(__dirname, '../../public/js/passkey.js'), 'utf8');
+const CSRF_CODE = readFileSync(path.resolve(__dirname, '../../public/js/csrf.js'), 'utf8');
 
 function page(markup: string, loads: number, userAgent?: string): { dom: JSDOM; fetched: string[] } {
   const dom = new JSDOM(`<!doctype html><body>${markup}</body>`, { runScripts: 'outside-only' });
@@ -91,3 +92,33 @@ describe('passkey names (operator, 2026-10-04)', () => {
   });
 });
 
+
+describe('passkey.js follows a step-up answer only to a path it accepts (#2445)', () => {
+  /** The enrol button pressed, the server answering 403 with `reauth`; where the page ended up. */
+  async function answeredWith(reauth: unknown, withCsrf = true): Promise<string> {
+    const dom = new JSDOM('<!doctype html><body><button data-passkey-enrol class="d-none">Add</button></body>', { url: 'http://localhost/', runScripts: 'outside-only' });
+    const win = dom.window as unknown as Record<string, unknown>;
+    win.PublicKeyCredential = function PublicKeyCredential() {};
+    win.fetch = async () => ({ ok: false, status: 403, json: async () => ({ error: 'A fresh sign-in is needed', reauth }) });
+    const context = dom.getInternalVMContext();
+    // jsdom does not navigate: where the page sends the browser is caught as `__went`.
+    const caught = (code: string): string => code.replace(/window\.location\.href = /g, 'window.__went = ');
+    if (withCsrf) vm.runInContext(caught(CSRF_CODE), context);
+    vm.runInContext(caught(CODE), context);
+    (dom.window.document.querySelector('[data-passkey-enrol]') as HTMLButtonElement).click();
+    await new Promise(r => setTimeout(r, 20));
+    return (win.__went as string | undefined) ?? 'stayed';
+  }
+
+  it('goes to the prompt for a path on this site', async () => {
+    expect(await answeredWith('/auth/reauth?next=%2Fprofile')).toBe('/auth/reauth?next=%2Fprofile');
+  });
+
+  it.each(['//evil.example/x', '/\\evil.example/x', '/\t/x', '/x\ny', 'https://evil.example/', 5])('stays put for %j', async (reauth) => {
+    expect(await answeredWith(reauth)).toBe('stayed');
+  });
+
+  it('stays put when the shared check is not on the page', async () => {
+    expect(await answeredWith('/auth/reauth?next=%2Fprofile', false)).toBe('stayed');
+  });
+});

@@ -53,6 +53,28 @@ describe('safeRedirect refuses anything off-site (#1041)', () => {
   });
 });
 
+describe('safeRedirect refuses control characters in return paths (#2445)', () => {
+  test.each([
+    ['a tab right after the leading slash', '/\t/example.com'],
+    ['a tab inside a path', '/view/Wel\tcome'],
+    ['a CR right after the leading slash', '/\r/example.com'],
+    ['a LF inside a path', '/view/Wel\ncome'],
+    ['a NUL byte', '/view/Wel\u0000come'],
+    ['a DEL byte', '/view/Wel\u007fcome'],
+    ['an encoded tab right after the leading slash', '/%09/example.com'],
+    ['an encoded tab inside a path', '/view/Wel%09come'],
+    ['an encoded CR or LF', '/view/Wel%0d%0acome'],
+    ['an upper-case encoded control character', '/view/Wel%0Acome']
+  ])('%s', (_label, value) => {
+    expect(safeRedirect(value)).toBe('/');
+  });
+
+  test('ordinary encoded characters are still accepted', () => {
+    expect(safeRedirect('/view/Tom%20%26%20Jerry')).toBe('/view/Tom%20%26%20Jerry');
+    expect(safeRedirect('/search?q=%E2%9C%93')).toBe('/search?q=%E2%9C%93');
+  });
+});
+
 describe('safeRedirect on absent or odd input (#1041)', () => {
   test.each([
     ['undefined', undefined],
