@@ -129,27 +129,31 @@ const MAX_URL_SCAN = 4096;
 /** Limits on the host name passed to the address matcher: characters, labels, and `xn--` labels. */
 const MAX_HOST = 253;
 const MAX_HOST_LABELS = 32;
-const MAX_XN_LABELS = 8;
+const MAX_XN_LABELS = 3;
 /** Longest user part (before the `@`) the matcher accepts. */
 const MAX_USER_PART = 50;
+/** What cannot be in a user part: white space, control characters and `/ [ ] ( )`. */
+const NOT_IN_USER_PART = /[\s\p{Cc}/[\]()]/u;
+/** What ends the host: white space, control characters, `/ ? # @ : [ ] ( ) < >` and the full-width bar. */
+const ENDS_HOST = /[\s\p{Cc}/?#@:[\]()<>\uFF5C]/u;
 
 /**
- * Is the host of this candidate address within the limits? Linear in the
- * candidate: the authority runs from after `://` to the first `/`,
- * and the host is what follows its last `@`, unless more than
- * {@link MAX_USER_PART} characters come before that `@`: then the whole
- * authority is the host, as the matcher reads it.
+ * Is the host of this candidate address within the limits? It measures the
+ * span the matcher reads as the host, in one pass over the candidate: after
+ * `://`, a user part of 1 to {@link MAX_USER_PART} characters before the first
+ * `@` is skipped, and the host runs to the first character that cannot be in
+ * one.
  */
 function hostWithinLimits(candidate: string): boolean {
   const at = candidate.indexOf('://');
   if (at === -1) return true;
-  const rest = candidate.slice(at + 3);
-  const stop = rest.indexOf('/');
-  const authority = stop === -1 ? rest : rest.slice(0, stop);
-  const at2 = authority.lastIndexOf('@');
-  const host = at2 > MAX_USER_PART ? authority : authority.slice(at2 + 1);
+  let rest = candidate.slice(at + 3);
+  const user = rest.slice(0, MAX_USER_PART + 1).indexOf('@');
+  if (user > 0 && !NOT_IN_USER_PART.test(rest.slice(0, user))) rest = rest.slice(user + 1);
+  const stop = rest.search(ENDS_HOST);
+  const host = stop === -1 ? rest : rest.slice(0, stop);
   if (host.length > MAX_HOST || host.split('.').length > MAX_HOST_LABELS) return false;
-  return (authority.toLowerCase().split('xn--').length - 1) <= MAX_XN_LABELS;
+  return host.toLowerCase().split('xn--').length - 1 <= MAX_XN_LABELS;
 }
 
 /** Private-use sentinels a table cell wraps around a placeholder (JSPWikiPreprocessor). */
