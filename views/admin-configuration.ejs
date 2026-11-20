@@ -367,7 +367,7 @@
                                                         </td>
                                                         <td>
                                                             <button type="submit" class="btn btn-sm btn-primary"<%- lockedUnless('config-manage') %>>
-                                                                <i class="fas fa-save"></i>
+                                                                <i class="fas fa-save me-1" aria-hidden="true"></i>Save
                                                             </button>
                                                         </form>
                                                     </td>
@@ -467,6 +467,46 @@
 
 <script nonce="<%= locals.cspNonce %>">
 document.addEventListener('DOMContentLoaded', function() {
+    // #2445: a stale sign-in sends the page to the fresh sign-in prompt and back.
+    // What was typed in a setting's form comes back in it, once, not saved: the
+    // admin presses its button again. A value for a setting the server treats as a
+    // secret (its list, or a name that looks like one) is never kept.
+    // public/js/reauth-draft.js does the keeping.
+    var SECRET_KEYS = <%- jsonForScript(secretKeys) %>;
+    var SECRET_NAME = /secret|password|passwd|passphrase|credential|api[-_.]?key|private[-_.]?key|token/i;
+    function isSecretName(name) {
+        return SECRET_KEYS.indexOf(name) !== -1 || SECRET_NAME.test(name);
+    }
+    function settingName(form) {
+        var field = form.querySelector('[name="property"]');
+        return field ? field.value : '';
+    }
+    function draftOptions(form) {
+        return { skip: function(el) { return el.name === 'value' && isSecretName(settingName(form)); } };
+    }
+    // Rows are keyed by their setting; the Add property form, whose name is typed, by itself.
+    // A setting shown in two tabs (Custom Overrides and another) shares one key: the form that loads first
+    // takes the draft, the other finds it gone. They hold the same setting, so nothing is lost.
+    function draftKey(form) {
+        var field = form.querySelector('[name="property"]');
+        return 'config:' + (field && field.type === 'hidden' ? field.value : 'add');
+    }
+    document.querySelectorAll('form[action="/admin/configuration"]').forEach(function(form) {
+        var options = draftOptions(form);
+        // The note goes in the form itself, next to the setting it is about: under a row's value field, so the
+        // field stays level with the row's Save button; at the top of the Add property form.
+        if (draftKey(form) !== 'config:add') options.noteAfter = form.querySelector('[name="value"]');
+        options.press = draftKey(form) === 'config:add' ? 'Add Property' : 'Save';
+        options.onRestore = function() {
+            // Show the tab the form is in, and the form.
+            var pane = form.closest('.tab-pane');
+            var tab = pane && document.getElementById(pane.id + '-tab');
+            if (tab && window.bootstrap) window.bootstrap.Tab.getOrCreateInstance(tab).show();
+            if (form.scrollIntoView) form.scrollIntoView({ block: 'center' });
+        };
+        window.reauthDraft.restore(draftKey(form), form, options);
+    });
+
     // Handle all configuration save forms via AJAX
     document.querySelectorAll('form[action="/admin/configuration"]').forEach(function(form) {
         form.addEventListener('submit', function(e) {
@@ -491,7 +531,7 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .then(function(response) { return response.json(); })
             .then(function(data) {
-                if (window.followReauth(data)) return;
+                if (window.followReauth(data, function() { window.reauthDraft.keep(draftKey(form), form, draftOptions(form)); })) return;
                 if (data.success && data.warning) {
                     // Saved, with something the admin must read: stays until dismissed
                     showConfigAlert('warning', data.message || data.warning);

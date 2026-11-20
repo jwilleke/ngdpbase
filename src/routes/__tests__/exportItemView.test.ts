@@ -14,6 +14,7 @@ import ejs from 'ejs';
 import { JSDOM } from 'jsdom';
 
 const VIEW = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../views/export-item.ejs');
+const CSRF_JS = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../public/js/csrf.js'), 'utf8').replace(/window\.location\.href = /g, 'window.__went = ');
 const TEMPLATE = fs.readFileSync(VIEW, 'utf8').replace(/<%- include\([^%]*%>/g, '').replace(/window\.location\.href = /g, 'window.__went = ');
 
 /** The DOM pieces these tests touch; the project has no DOM types. */
@@ -41,6 +42,8 @@ function exportPage(started: unknown, status: () => unknown) {
     url: 'http://localhost/export/page/Trip%20Notes',
     beforeParse(w: unknown) {
       const win = w as Win;
+      // The shared check every page uses, as csrf.js defines it, with navigation caught like the page's own.
+      (w as { eval: (code: string) => void }).eval(CSRF_JS);
       win.setTimeout = (fn) => { setImmediate(fn); return 0; };
       win.fetch = async (url) => { polls.push(url); return { json: async () => status() }; };
       win.csrfFetch = async () => ({ json: async () => started });
@@ -82,6 +85,14 @@ describe('export page: waiting for the file (#2120)', () => {
     const page = exportPage({ success: false, error: 'A fresh sign-in is needed', reauth: '/auth/reauth?next=%2Fexport%2Fpage%2FTrip%2520Notes' }, () => ({}));
     page.el('exportStart').click();
     await vi.waitFor(() => expect(page.went()).toBe('/auth/reauth?next=%2Fexport%2Fpage%2FTrip%2520Notes'));
+    expect(page.polls).toEqual([]);
+  });
+
+  test.each(['//evil.example/x', '/\\evil.example/x', '/\t/x', '/x\ny'])('a return path the shared check refuses (%j) is not followed, and the reason is shown', async (reauth) => {
+    const page = exportPage({ success: false, error: 'A fresh sign-in is needed', reauth }, () => ({}));
+    page.el('exportStart').click();
+    await vi.waitFor(() => expect(page.el('exportStatus').textContent).toBe('A fresh sign-in is needed'));
+    expect(page.went()).toBeUndefined();
     expect(page.polls).toEqual([]);
   });
 });

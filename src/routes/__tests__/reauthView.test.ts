@@ -83,3 +83,34 @@ describe('reauth view (#2193)', () => {
     expect(outside).not.toMatch(/authenticator|passkey/i);
   });
 });
+
+describe('reauth view banner (#2445)', () => {
+  const html = (next: string, prompt = '') => ejs.render(TEMPLATE, { next, prompt, needsPasskey: false, hasPasskey: true, hasPassword: true, csrfToken: 'tok', cspNonce: 'n' });
+
+  test('says in plain words that it has been a while since the last sign-in, at the top', () => {
+    const out = html('/profile');
+    const banner = out.match(/<div class="alert alert-warning[^"]*"[^>]*data-reauth-expired[^>]*>([\s\S]*?)<\/div>/);
+    expect(banner).not.toBeNull();
+    expect(banner![1]).toMatch(/been a while since you signed in/i);
+    expect(banner![1]).not.toMatch(/this action/i);
+    expect(out.indexOf('data-reauth-expired')).toBeLessThan(out.indexOf('Confirm it is you'));
+  });
+
+  test('says typed entries will be kept only where the page redoes the request', () => {
+    const kept = /data-reauth-kept(?![^>]*hidden)[^>]*>[^<]*what you typed will be kept/i;
+    expect(html('/auth/reauth/continue?replay=abc')).toMatch(kept);
+    // A script's prompt (Revoke, Extend, New token) has typed nothing by itself: the sentence waits for a draft.
+    expect(html('/profile', PROMPT)).toMatch(/data-reauth-kept[^>]*hidden/);
+    expect(html('/profile')).toMatch(/data-reauth-kept[^>]*hidden/);
+  });
+
+  test('is hidden, until a waiting draft shows it, where nothing says an action was tried (the lower-sign-in notice link)', () => {
+    expect(html('/admin/configuration')).toMatch(/<div class="alert alert-warning[^"]*"[^>]*data-reauth-expired[^>]*hidden/);
+    expect(html('/profile', PROMPT)).not.toMatch(/<div[^>]*data-reauth-expired[^>]*hidden/);
+    expect(html('/auth/reauth/continue?replay=abc')).not.toMatch(/<div[^>]*data-reauth-expired[^>]*hidden/);
+  });
+
+  test('is on this prompt only, not on the ordinary sign-in page', () => {
+    expect(fs.readFileSync(path.resolve(path.dirname(VIEW), 'login.ejs'), 'utf8')).not.toContain('data-reauth-expired');
+  });
+});
