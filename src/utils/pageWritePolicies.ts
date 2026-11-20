@@ -360,6 +360,21 @@ function narrowing(policies: unknown, narrowed: readonly NarrowedWrite[], keep: 
   return { policies: out, applied: [...applied.values()], changed };
 }
 
+/** A rule as it is, without who it names and how it is labelled: what decides what it grants. */
+function withoutWhoAndLabel(rule: unknown): unknown {
+  if (!rule || typeof rule !== 'object') return rule;
+  const copy: Record<string, unknown> = { ...(rule as Record<string, unknown>) };
+  delete copy.subjects;
+  delete copy.name;
+  delete copy.description;
+  return copy;
+}
+
+/** True when `posted` is `original` apart from its subjects, name and description. */
+function sameApartFromWho(posted: unknown, original: Policy): boolean {
+  return isDeepStrictEqual(withoutWhoAndLabel(posted), withoutWhoAndLabel(original));
+}
+
 /**
  * The list to store when `incoming` is the list in force (as Admin → Configuration shows it and saves it
  * back, or as a writer read it with `getProperty`) with the site's changes on it: the same list without the
@@ -370,12 +385,15 @@ function narrowing(policies: unknown, narrowed: readonly NarrowedWrite[], keep: 
  * A rule with a narrowed role is shown in two kinds of piece: the base piece, which keeps the rule's id and
  * the other subjects, and one `<id>-<role>` piece for each narrowed role, with what the role kept. The rule
  * is never to take a write the site did not remove, and never to give back one it removed or deleted, so:
- * - a role piece posted exactly as shown is folded back: the role's subject goes onto the base piece as it
- *   was posted, edited or not, and the role piece is not stored. If the base piece is also as shown, that
- *   is the original rule. The narrowing at load takes the removed writes out again, and clearing the pairs
- *   gives them back;
+ * - a role piece posted exactly as shown is folded back onto the base piece when the base piece is still the
+ *   original apart from its subjects, name and description: the role's subject goes onto it and the role
+ *   piece is not stored. The narrowing at load takes the removed writes out again, and clearing the pairs
+ *   gives them back. A base piece edited in anything else (an action, a resource, a category, the effect)
+ *   is not folded onto: the narrowing only touches a rule whose resources are all system categories, so a
+ *   role folded onto, for example, a `page:*` resource would get the removed write back;
  * - a role piece that was edited or deleted is not folded: it is stored as posted, or left out;
- * - a base piece that was deleted is not brought back: an unchanged role piece is stored as posted.
+ * - a base piece that was deleted, or whose id was changed, is not brought back: an unchanged role piece is
+ *   stored as posted, still narrowed at load.
  * A rule with no base piece (every subject was a narrowed role) is the original again when its pieces are
  * posted as shown. A rule narrowing removed whole, which the site could not see, is put back unless the
  * list already holds a rule with its id. Every other entry is the site's own and is kept as it is. Put back
@@ -408,13 +426,17 @@ export function restoreNarrowedWrites(incoming: unknown, base: unknown, narrowed
       entries[at] = { ...rule, subjects };
     };
     let target = hasBase ? entries.findIndex((e, i) => !folded.has(i) && idOf(e) === from.id) : -1;
+    // Narrowing only touches a rule whose resources are all system categories, so a role piece folded onto a
+    // base that was edited (a page:* resource, another category or action, a deny) would no longer be
+    // narrowed. Fold only onto a base that is the original apart from who it names and how it is labelled.
+    if (hasBase && target >= 0 && !sameApartFromWho(entries[target], from)) target = -1;
     if (!hasBase && entries.some((e) => idOf(e) === from.id)) continue;
     for (const piece of to.slice(hasBase ? 1 : 0)) {
       const at = entries.findIndex((e, i) => !folded.has(i) && i !== target && isDeepStrictEqual(e, piece));
       if (at < 0) continue;
       const subject = listOf<unknown>(piece.subjects)[0];
       if (hasBase) {
-        if (target < 0) continue;
+        if (target < 0) continue; // no base, or one that was edited: the role piece stays as posted
         fold(target, subject);
         folded.add(at);
       } else if (target < 0) {

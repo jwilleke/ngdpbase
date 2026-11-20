@@ -394,11 +394,11 @@ describe('restoreNarrowedWrites: a piece is folded back only when it is posted a
     expect(editorActionsWithoutPairs(out)).toEqual(['page-edit', 'page-delete']);
   });
 
-  test('a resource added to the base piece, the editor piece untouched: the editor keeps page-edit on the edited rule', () => {
+  test('a resource added to the base piece, the editor piece untouched: the editor piece is stored as shown, so the editor keeps page-edit on the original resources only', () => {
     const posted = inForce().map((p) => (p.id === 'cat-write' ? { ...p, resources: [...(p.resources as unknown[]), { type: 'system-category', pattern: 'user' }] } : p));
     const out = stored(posted);
-    expect(ids(out)).toEqual(['cat-write']);
-    expect(JSON.stringify(out[0].resources)).toContain('user');
+    expect(out).toEqual(posted);
+    expect(ids(out)).toEqual(['cat-write', 'cat-write-editor']);
     expect(editorActions(out)).toEqual(['page-edit']);
   });
 
