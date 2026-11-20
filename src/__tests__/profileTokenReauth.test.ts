@@ -27,7 +27,7 @@ const MARKUP = `<meta name="csrf-token" content="csrf-value">
 <details id="profile-tokens-and-devices"><summary>My tokens and devices</summary>
 <button type="button" id="agent-token-new-btn">New token</button>
 <form id="agent-token-form" class="d-none"><input id="agent-token-name" value="n"><select id="agent-token-scopes"><option value="page-read">r</option><option value="page-ingest" selected>w</option></select>
-<input id="agent-token-ttl" type="number" value="24"><button id="agent-token-create-btn">Create</button></form>
+<input id="agent-token-ttl" type="number" value="24" min="1" max="24"><button id="agent-token-create-btn">Create</button></form>
 <div id="agent-token-error" class="d-none"></div><div id="agent-token-result" class="d-none"></div><input id="agent-token-secret"></details>`;
 
 async function submit(answer: { status: number; body: unknown }): Promise<{ doc: Document; href: string; calls: string[] }> {
