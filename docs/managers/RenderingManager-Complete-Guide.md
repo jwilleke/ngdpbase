@@ -190,7 +190,7 @@ The RenderingManager converts markdown with __markdown-it__, `page` profile. Eve
 | __Heading IDs__ | `## Title` | `markdown-it-anchor`, slug from `SectionUtils.headingSlug` | ✅ Enabled |
 | __Sub/Superscript__ | `H~2~O`, `X^2^` | `markdown-it-sub` / `markdown-it-sup` (no spaces inside) | ✅ Enabled |
 | __Ellipsis__ | `...` | becomes `…` in text, never in code (`typographer: false`) | ✅ Enabled |
-| __Bare URLs__ | `https://example.com` | not auto-linked (`linkify: false`) | ❌ Off |
+| __Bare URLs__ | `https://example.com` | linked when the page renders, `http(s)` only (`linkify: true`); inside quotation marks too; not in code or when written `\https://example.com` | ✅ Enabled |
 
 ### markdown-it Configuration
 
@@ -203,7 +203,7 @@ this.converter = createMarkdownConverter('page');
 The `page` profile in `src/rendering/markdownConverter.ts`:
 
 ```javascript
-const md = new MarkdownIt({ html: true, breaks: true, linkify: false, typographer: false });
+const md = new MarkdownIt({ html: true, breaks: true, linkify: true, typographer: false });
 // renderer rules: fence classes "js language-js", <del> for ~~x~~, "..." → "…" in text
 md.use(anchor, { slugify: headingSlug, tabIndex: false }); // heading ids
 md.use(sub);                                              // H~2~O

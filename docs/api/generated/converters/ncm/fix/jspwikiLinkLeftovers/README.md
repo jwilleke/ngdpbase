@@ -22,9 +22,11 @@ each would become one long broken link. Three shapes, each unambiguous:
 Deliberately narrow:
 
 - two different addresses in `url(other)` are left alone;
-- a wiki link split over two lines (`[Long title` then
-    `|url|target='_blank']`) is left alone: which line it belongs to needs a
-    reader;
+- a wiki link split over two lines is joined only when the break is at
+    the pipe (`[Long title` then `|url|target='_blank']`, or `[Long title|`
+    then `url|target='_blank']`, #2443): the address and its closing `]`
+    must be on the second line, nothing between the lines, and the first
+    line must end inside an unclosed `[`. Anything less clear is left alone;
 - never inside code, an HTML block or an inline code span.
 
 ## Variables
