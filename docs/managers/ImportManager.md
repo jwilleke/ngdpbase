@@ -89,8 +89,8 @@ The engine's own ledger (`src/ice/ledger.ts`), behind the `IceLedger` interface:
 | `ngdpbase.import.engine.zip-max-bytes` | 268435456 | Per archive, inflated |
 | `ngdpbase.import.engine.zip-max-depth` | 3 | Zips inside zips |
 | `ngdpbase.import.engine.max-file-bytes` | 104857600 | One file |
-| `ngdpbase.import.engine.takeout-zip-max-entries` | 65535 | Per archive, for a takeout handed back into a private store (`core.private-store`) in place of `zip-max-entries` ([#2187](https://github.com/jwilleke/ngdpbase/issues/2187)) |
-| `ngdpbase.import.engine.takeout-zip-max-bytes` | 4294967295 | Per archive, inflated, for a takeout, in place of `zip-max-bytes` |
+| `ngdpbase.import.engine.takeout-zip-max-entries` | 65534 | Per archive, for a takeout handed back into a private store (`core.private-store`) in place of `zip-max-entries` ([#2187](https://github.com/jwilleke/ngdpbase/issues/2187)) |
+| `ngdpbase.import.engine.takeout-zip-max-bytes` | 268435456 | Per archive, inflated, for a takeout, in place of `zip-max-bytes` |
 | `ngdpbase.import.engine.takeout-max-file-bytes` | 268435456 | One file of a takeout, in place of `max-file-bytes` |
 | `ngdpbase.import.engine.max-chain-depth` | 5 | Shims one file may pass through |
 | `ngdpbase.import.engine.default-original` | `none` | `cite`, `keep` or `none` |

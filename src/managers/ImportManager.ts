@@ -1691,10 +1691,10 @@ class ImportManager extends BaseManager {
       writesEncrypted: true,
       // A zip the store held is one of its files: brought back as it was, not unpacked.
       innerZipsAsFiles: true,
-      // A takeout can be as large as the download packs: its own limits, next to the engine's.
+      // A takeout keeps the limits the old takeout import had: its own settings, next to the engine's.
       limits: () => ({
-        maxZipEntries: this.numberSetting('ngdpbase.import.engine.takeout-zip-max-entries', 65_535),
-        maxZipBytes: this.numberSetting('ngdpbase.import.engine.takeout-zip-max-bytes', 4_294_967_295),
+        maxZipEntries: this.numberSetting('ngdpbase.import.engine.takeout-zip-max-entries', 65_534),
+        maxZipBytes: this.numberSetting('ngdpbase.import.engine.takeout-zip-max-bytes', 268_435_456),
         maxFileBytes: this.numberSetting('ngdpbase.import.engine.takeout-max-file-bytes', 268_435_456)
       }),
       // A page by its uuid, a file by its bytes, not the fingerprint: one deleted since an earlier import comes back.
