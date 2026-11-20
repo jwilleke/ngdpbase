@@ -276,6 +276,21 @@ describe('bare web addresses (#2443)', () => {
       expect(converter.makeHtml(`http://${'a.'.repeat(33)}com/`)).not.toContain('<a');
     });
 
+    test.each([
+      ['a long text before the @', `http://${'xn--a.'.repeat(8)}${'abcdefgh.'.repeat(440)}-@x.com`],
+      ['33 labels before the @', `http://${'a.'.repeat(33)}@x.com/`],
+      ['more than 253 characters before the @', `http://${`${'a'.repeat(60)}.`.repeat(5)}@x.com/`]
+    ])('long host names stay text: %s', (_name, address) => {
+      expect(converter.makeHtml(address)).not.toContain('<a');
+    });
+
+    test.each([
+      ['a user name and password with a port', 'https://user:pass@example.com:8080/x'],
+      ['a user part of exactly 50 characters', `https://${'u'.repeat(50)}@example.com/`]
+    ])('%s still links', (_name, address) => {
+      expect(converter.makeHtml(address)).toContain(`<a href="${address}"`);
+    });
+
     test('a normal punycode address and a host within the limits still link', () => {
       expect(converter.makeHtml('https://xn--bcher-kva.example/')).toContain('<a href="https://xn--bcher-kva.example/"');
       expect(converter.makeHtml('https://a.b.c.example.com/x?y=1#z')).toContain('<a href="https://a.b.c.example.com/x?y=1#z"');
