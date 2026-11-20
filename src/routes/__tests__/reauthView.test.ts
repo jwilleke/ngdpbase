@@ -102,6 +102,12 @@ describe('reauth view banner (#2445)', () => {
     expect(html('/profile')).toMatch(/data-reauth-kept[^>]*hidden/);
   });
 
+  test('is hidden, until a waiting draft shows it, where nothing says an action was tried (the lower-sign-in notice link)', () => {
+    expect(html('/admin/configuration')).toMatch(/<div class="alert alert-warning[^"]*"[^>]*data-reauth-expired[^>]*hidden/);
+    expect(html('/profile', PROMPT)).not.toMatch(/data-reauth-expired[^>]*hidden/);
+    expect(html('/auth/reauth/continue?replay=abc')).not.toMatch(/data-reauth-expired[^>]*hidden/);
+  });
+
   test('is on this prompt only, not on the ordinary sign-in page', () => {
     expect(fs.readFileSync(path.resolve(path.dirname(VIEW), 'login.ejs'), 'utf8')).not.toContain('data-reauth-expired');
   });

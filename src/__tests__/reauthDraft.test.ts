@@ -23,9 +23,12 @@ const read = (p: string): string => readFileSync(file(p), 'utf8');
 const CSRF_JS = read('public/js/csrf.js');
 // Not there before the fix: the tests then fail on what they check, not on a missing file.
 const DRAFT_JS = existsSync(file('public/js/reauth-draft.js')) ? read('public/js/reauth-draft.js') : '';
-const CONFIG_SCRIPT = [...read('views/admin-configuration.ejs').matchAll(/<script nonce="[^"]*">([\s\S]*?)<\/script>/g)]
+// The page hands its script the server's list of secret settings; the test supplies one whose name the page's own pattern misses.
+const DECLARED_SECRET = 'ngdpbase.mail.provider.smtp.pass';
+const CONFIG_SCRIPT_SRC = [...read('views/admin-configuration.ejs').matchAll(/<script nonce="[^"]*">([\s\S]*?)<\/script>/g)]
   .map(m => m[1])
   .find(s => s.includes('Handle all configuration save forms'));
+const CONFIG_SCRIPT = ejs.render(CONFIG_SCRIPT_SRC, { secretKeys: [DECLARED_SECRET, 'ngdpbase.site.secret-sauce'] });
 
 interface Page { dom: JSDOM; doc: Document; sent: string[]; shown: string[] }
 
@@ -132,6 +135,55 @@ describe('#2445 the shared draft helper', () => {
     expect(draft(p).keep('t', p.doc.getElementById('f'))).toBe(false);
     expect(kept(p.dom)).toEqual({});
   });
+
+  const fresh = (user = 'alice', ageMs = 0): string => JSON.stringify({ user, at: Date.now() - ageMs, fields: { title: 'x' } });
+
+  it('keeps nothing and restores nothing when the page does not say who is signed in', () => {
+    const anon = open(FORM, { user: '' });
+    fill(anon);
+    expect(draft(anon).keep('t', anon.doc.getElementById('f'))).toBe(false);
+    expect(kept(anon.dom)).toEqual({});
+    const planted = open(FORM, { user: '', storage: { 'ngdpbase.draft.t': fresh('') } });
+    expect(draft(planted).restore('t', planted.doc.getElementById('f'))).toBe(false);
+    expect(el(planted, 'title').value).toBe('start');
+  });
+
+  it('on load, drops drafts that are old, for another account or for nobody, and leaves a fresh one of this account', () => {
+    const p = open(FORM, {
+      storage: {
+        'ngdpbase.draft.old': fresh('alice', 11 * 60 * 1000),
+        'ngdpbase.draft.bob': fresh('bob'),
+        'ngdpbase.draft.nobody': fresh(''),
+        'ngdpbase.draft.junk': 'not json',
+        'ngdpbase.draft.mine': fresh('alice'),
+        'unrelated': 'stays'
+      }
+    });
+    expect(Object.keys(kept(p.dom)).sort()).toEqual(['ngdpbase.draft.mine', 'unrelated']);
+  });
+
+  it('on a page with nobody signed in, drops every draft', () => {
+    const p = open(FORM, { user: '', storage: { 'ngdpbase.draft.mine': fresh('alice') } });
+    expect(kept(p.dom)).toEqual({});
+  });
+
+  it('signing out clears every draft', () => {
+    const p = open(`${FORM}<form id="out" action="/logout" method="POST"><button type="submit">Logout</button></form>`, { storage: { 'ngdpbase.draft.mine': fresh('alice') } });
+    expect(Object.keys(kept(p.dom))).toEqual(['ngdpbase.draft.mine']);
+    p.doc.getElementById('out')!.dispatchEvent(new p.dom.window.Event('submit', { cancelable: true }));
+    expect(kept(p.dom)).toEqual({});
+  });
+
+  it('pending() counts only a fresh draft of the signed-in account', () => {
+    const pendingOf = (storage: Record<string, string>): boolean => {
+      const p = open(FORM, { storage });
+      return (p.dom.window as unknown as { reauthDraft: { pending: () => boolean } }).reauthDraft.pending();
+    };
+    expect(pendingOf({ 'ngdpbase.draft.a': fresh('alice') })).toBe(true);
+    expect(pendingOf({ 'ngdpbase.draft.a': fresh('alice', 11 * 60 * 1000) })).toBe(false);
+    expect(pendingOf({ 'ngdpbase.draft.a': fresh('bob') })).toBe(false);
+    expect(pendingOf({})).toBe(false);
+  });
 });
 
 /** A page whose script waits for DOMContentLoaded: open it, then let jsdom fire the event. */
@@ -146,12 +198,14 @@ const CONFIG = `<div class="container mt-4">
 <div class="tab-pane" id="nav-custom">
 <form id="row" method="POST" action="/admin/configuration"><input type="hidden" name="_csrf" value="x"><input type="hidden" name="property" value="ngdpbase.site.name"><input type="text" id="rowValue" name="value" value="old"><button type="submit">Save</button></form>
 <form id="secretRow" method="POST" action="/admin/configuration"><input type="hidden" name="property" value="ngdpbase.mail.password"><input type="text" id="secretValue" name="value" value=""><button type="submit">Save</button></form>
+<form id="declaredRow" method="POST" action="/admin/configuration"><input type="hidden" name="property" value="ngdpbase.mail.provider.smtp.pass"><input type="text" id="declaredValue" name="value" value=""><button type="submit">Save</button></form>
 </div>
 <div class="tab-pane" id="nav-add"><form id="add" method="POST" action="/admin/configuration"><input type="text" id="newProperty" name="property"><input type="text" id="newValue" name="value"><button type="submit">Add</button></form></div>
 </div>`;
 
 async function press(p: Page, formId: string, value: string, property?: string): Promise<void> {
-  el(p, formId === 'add' ? 'newValue' : formId === 'row' ? 'rowValue' : 'secretValue').value = value;
+  const valueField = { add: 'newValue', row: 'rowValue', secretRow: 'secretValue', declaredRow: 'declaredValue' }[formId];
+  el(p, valueField).value = value;
   if (property) el(p, 'newProperty').value = property;
   p.doc.getElementById(formId)!.dispatchEvent(new p.dom.window.Event('submit', { cancelable: true }));
   await new Promise(r => setTimeout(r, 20));
@@ -167,8 +221,11 @@ describe('#2445 Admin → Configuration keeps a typed value across the fresh sig
     expect(el(back, 'rowValue').value).toBe('My Site');
     expect(el(back, 'secretValue').value).toBe('');
     expect(back.shown).toContain('nav-custom-tab');
-    expect(back.doc.querySelector('[data-draft-note]')!.textContent).toContain('Press the save button again');
-    expect(back.doc.querySelector('[data-draft-note]')!.textContent).toContain('ngdpbase.site.name');
+    // The note sits in the row's own form, next to the setting, and names the button by its label, not the setting by its key.
+    const note = back.doc.querySelector('[data-draft-note]')!;
+    expect(note.closest('form')).toBe(back.doc.getElementById('row'));
+    expect(note.textContent).toContain('Press Save again');
+    expect(note.textContent).not.toContain('ngdpbase.');
     expect(back.sent).toEqual([]);
   });
 
@@ -179,7 +236,9 @@ describe('#2445 Admin → Configuration keeps a typed value across the fresh sig
     expect(el(back, 'newProperty').value).toBe('ngdpbase.new.thing');
     expect(el(back, 'newValue').value).toBe('v1');
     expect(back.shown).toContain('nav-add-tab');
-    expect(back.doc.querySelector('[data-draft-note]')!.textContent).toContain('Press Add Property again');
+    const note = back.doc.querySelector('[data-draft-note]')!;
+    expect(note.closest('form')).toBe(back.doc.getElementById('add'));
+    expect(note.textContent).toContain('Press Add Property again');
   });
 
   it('a value for a setting that looks secret is never kept', async () => {
@@ -188,6 +247,17 @@ describe('#2445 Admin → Configuration keeps a typed value across the fresh sig
     expect(JSON.stringify(kept(before.dom))).not.toContain('p4ssw0rd-value');
     await press(before, 'add', 'p4ssw0rd-value', 'ngdpbase.mail.password');
     expect(JSON.stringify(kept(before.dom))).not.toContain('p4ssw0rd-value');
+  });
+
+  it('a value for a setting the server declares secret is never kept, though its name looks harmless', async () => {
+    const before = await openConfig({ answer: ASK });
+    await press(before, 'declaredRow', 'smtp-pass-value');
+    expect(JSON.stringify(kept(before.dom))).not.toContain('smtp-pass-value');
+    await press(before, 'add', 'smtp-pass-value-2', DECLARED_SECRET);
+    expect(JSON.stringify(kept(before.dom))).not.toContain('smtp-pass-value-2');
+    // A setting that is not secret still comes back.
+    await press(before, 'row', 'My Site');
+    expect(JSON.stringify(kept(before.dom))).toContain('My Site');
   });
 
   it('a saved or refused value keeps nothing', async () => {
@@ -208,19 +278,35 @@ describe('#2445 the pages that follow reauth with nothing typed keep nothing', (
 
 describe('#2445 the sign-in prompt says what is kept only when something is', () => {
   const VIEW = read('views/reauth.ejs').replace(/<%- include\('(header|footer)'[^%]*%>/g, '');
-  const prompt = (storage: Record<string, string>): boolean => {
-    const html = ejs.render(VIEW, { next: '/profile', prompt: '', needsPasskey: false, hasPasskey: false, hasPassword: true, csrfToken: 't', cspNonce: 'n' });
+  /** What the person sees on the sign-in page for `next` (the header's "Sign in again" link has no prompt), with these drafts in the tab. */
+  const seen = (storage: Record<string, string>, next = '/profile', promptId = ''): { banner: boolean; kept: boolean } => {
+    const html = ejs.render(VIEW, { next, prompt: promptId, needsPasskey: false, hasPasskey: false, hasPassword: true, csrfToken: 't', cspNonce: 'n' });
     const page = open(html, { storage });
     const inline = [...html.matchAll(/<script nonce="n">([\s\S]*?)<\/script>/g)].map(m => m[1]);
     for (const code of inline) vm.runInContext(code, page.dom.getInternalVMContext());
-    return !(page.doc.querySelector('[data-reauth-kept]') as HTMLElement).hidden;
+    const banner = page.doc.querySelector('[data-reauth-expired]') as HTMLElement;
+    const sentence = page.doc.querySelector('[data-reauth-kept]') as HTMLElement;
+    return { banner: !banner.hidden, kept: !banner.hidden && !sentence.hidden };
   };
+  const draftOf = (user: string, ageMs = 0): Record<string, string> => ({ 'ngdpbase.draft.t': JSON.stringify({ user, at: Date.now() - ageMs, fields: { title: 'x' } }) });
 
-  it('a draft waiting in this tab shows the sentence; none leaves it hidden', () => {
-    const typed = open(FORM);
-    fill(typed);
-    draft(typed).keep('t', typed.doc.getElementById('f'));
-    expect(prompt(kept(typed.dom))).toBe(true);
-    expect(prompt({})).toBe(false);
+  it('a fresh draft of this account shows the banner and the sentence; none shows neither', () => {
+    expect(seen(draftOf('alice'))).toEqual({ banner: true, kept: true });
+    expect(seen({})).toEqual({ banner: false, kept: false });
+  });
+
+  it('an old draft, or one for another account, shows neither', () => {
+    expect(seen(draftOf('alice', 11 * 60 * 1000))).toEqual({ banner: false, kept: false });
+    expect(seen(draftOf('bob'))).toEqual({ banner: false, kept: false });
+  });
+
+  it('"Sign in again" from the lower-sign-in notice, where no action was tried, has no "expired" banner', () => {
+    // views/header.ejs links to /auth/reauth?next=<page> with no prompt.
+    expect(seen({}, '/admin/configuration')).toEqual({ banner: false, kept: false });
+  });
+
+  it('an action that asked for the sign-in shows the banner, with or without a draft', () => {
+    expect(seen({}, '/profile', '0123456789abcdef0123456789abcdef')).toEqual({ banner: true, kept: true });
+    expect(seen({}, '/auth/reauth/continue?replay=abc')).toEqual({ banner: true, kept: true });
   });
 });
