@@ -345,6 +345,56 @@ describe('readZip — verified against archives Python wrote (#1472)', () => {
     expect(() => readZip(archive, LIMITS)).toThrow(/more than it declares/);
   });
 
+  describe('members may not share data', () => {
+    /** The offsets of each central directory record in an archive. */
+    const centralRecords = (archive: Buffer): number[] => {
+      const found: number[] = [];
+      for (let i = archive.length - 4; i >= 0; i--) if (archive.readUInt32LE(i) === 0x02014b50) found.unshift(i);
+      return found;
+    };
+
+    test('several members whose records point at the same data are refused', async () => {
+      const same = Buffer.alloc(2000, 'x');
+      const archive = await packZip(['a', 'b', 'c'].map(name => ({ path: name, bytes: same })));
+      const [first, ...others] = centralRecords(archive);
+      for (const at of others) archive.writeUInt32LE(archive.readUInt32LE(first + 42), at + 42);
+
+      expect(() => readZip(archive, LIMITS)).toThrow(/share data/);
+    });
+
+    test('a member whose stored length reaches into the next member is refused', async () => {
+      const archive = await packZip([{ path: 'a', bytes: randomBytes(100) }, { path: 'b', bytes: randomBytes(100) }]);
+      const [first] = centralRecords(archive);
+      // Stored, so the stated size and the stored length move together; the data now runs past where the next member starts.
+      archive.writeUInt32LE(150, first + 20);
+      archive.writeUInt32LE(150, first + 24);
+
+      expect(() => readZip(archive, LIMITS)).toThrow(/share data/);
+    });
+
+    test('an archive with many members, each with its own data, is read in full', async () => {
+      const entries = Array.from({ length: 300 }, (_, i) => ({ path: `m${i}.txt`, bytes: Buffer.from(`member ${i}`.repeat(20)) }));
+      const read = readZip(await packZip(entries), { maxEntries: 1000, maxTotalBytes: 10 * 1024 * 1024 });
+      expect(read.map(e => e.path)).toEqual(entries.map(e => e.path));
+      expect(read[299].bytes.equals(entries[299].bytes)).toBe(true);
+    });
+
+    test('an archive inside an archive is read, and so are its members', async () => {
+      const inner = await packZip([{ path: 'x.txt', bytes: Buffer.from('inner') }, { path: 'y.txt', bytes: Buffer.from('inner too') }]);
+      const outer = readZip(await packZip([{ path: 'inner.zip', bytes: inner }]), LIMITS);
+      expect(readZip(outer[0].bytes, LIMITS).map(e => e.path)).toEqual(['x.txt', 'y.txt']);
+    });
+
+    test('a stored member whose stated size differs from its stored length is refused', async () => {
+      const archive = await packZip([{ path: 'a.bin', bytes: randomBytes(100) }]);
+      const [central] = centralRecords(archive);
+      expect(archive.readUInt16LE(central + 10)).toBe(0);   // stored
+      archive.writeUInt32LE(50, central + 24);
+
+      expect(() => readZip(archive, LIMITS)).toThrow(/stored size/);
+    });
+  });
+
   describe('one budget for the unpacked size', () => {
     /** A zip of one member of random bytes, so its stored size is about its real size. */
     const randomZip = (name: string, size: number): Promise<Buffer> => packZip([{ path: name, bytes: randomBytes(size) }]);
