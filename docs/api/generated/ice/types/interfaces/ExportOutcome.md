@@ -6,7 +6,7 @@
 
 # Interface: ExportOutcome
 
-Defined in: src/ice/types.ts:727
+Defined in: src/ice/types.ts:735
 
 How an export ended, for its source's record (#2120).
 
@@ -16,7 +16,7 @@ How an export ended, for its source's record (#2120).
 
 > __format__: `string`
 
-Defined in: src/ice/types.ts:729
+Defined in: src/ice/types.ts:737
 
 The shim that made, or was to make, the file.
 
@@ -26,7 +26,7 @@ The shim that made, or was to make, the file.
 
 > __items__: `string`[]
 
-Defined in: src/ice/types.ts:732
+Defined in: src/ice/types.ts:740
 
 The names of the items the source read.
 
@@ -36,7 +36,7 @@ The names of the items the source read.
 
 > `optional` __reason?__: `string`
 
-Defined in: src/ice/types.ts:735
+Defined in: src/ice/types.ts:743
 
 Why it failed, as the user is told.
 
@@ -46,7 +46,7 @@ Why it failed, as the user is told.
 
 > __result__: `"success"` \| `"failure"`
 
-Defined in: src/ice/types.ts:733
+Defined in: src/ice/types.ts:741
 
 ***
 
@@ -54,4 +54,4 @@ Defined in: src/ice/types.ts:733
 
 > __runId__: `string`
 
-Defined in: src/ice/types.ts:730
+Defined in: src/ice/types.ts:738

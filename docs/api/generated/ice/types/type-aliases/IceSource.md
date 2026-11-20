@@ -8,7 +8,7 @@
 
 > __IceSource__ = \{ `files`: [`IceUpload`](../interfaces/IceUpload.md)[]; `type`: `"upload"`; \} \| [`IceUrlSource`](../interfaces/IceUrlSource.md)
 
-Defined in: src/ice/types.ts:517
+Defined in: src/ice/types.ts:525
 
 A source (D1): uploaded files, or a URL fetched when the run starts
 (#2109). A server folder joins this union later.

@@ -8,7 +8,7 @@
 
 > `const` __EXPORT\_FILE\_KIND__: `"file"` = `'file'`
 
-Defined in: src/ice/types.ts:681
+Defined in: src/ice/types.ts:689
 
 The kind of the one item an export ends with: a file to download, with
 `bytes`, `mediaType` and the `name` it is saved under.

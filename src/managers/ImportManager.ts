@@ -616,6 +616,10 @@ class ImportManager extends BaseManager {
     if (receiver.names !== undefined && receiver.names !== 'title' && receiver.names !== 'file') {
       throw new Error(`ICE receiver '${id}': names is 'title' or 'file'`);
     }
+    // #2187: the engine's limits are the site's; a receiver raising them for itself is core's only.
+    if (receiver.limits !== undefined && !mayWriteEncrypted) {
+      throw new Error(`ICE receiver '${id}': limits is core's only; an add-on receiver is held to the engine's limits`);
+    }
     // #2110: an add-on's receiver is confidential only by keeping originals sealed (`keepsEncrypted`).
     if (writesEncrypted && !mayWriteEncrypted) {
       throw new Error(`ICE receiver '${id}': writesEncrypted is core's only; an add-on receiver uses keepsEncrypted`);
@@ -1687,6 +1691,12 @@ class ImportManager extends BaseManager {
       writesEncrypted: true,
       // A zip the store held is one of its files: brought back as it was, not unpacked.
       innerZipsAsFiles: true,
+      // A takeout can be as large as the download packs: its own limits, next to the engine's.
+      limits: () => ({
+        maxZipEntries: this.numberSetting('ngdpbase.import.engine.takeout-zip-max-entries', 65_535),
+        maxZipBytes: this.numberSetting('ngdpbase.import.engine.takeout-zip-max-bytes', 4_294_967_295),
+        maxFileBytes: this.numberSetting('ngdpbase.import.engine.takeout-max-file-bytes', 268_435_456)
+      }),
       // A page by its uuid, a file by its bytes, not the fingerprint: one deleted since an earlier import comes back.
       rechecks: (item) => { const data = item.data as TakeoutData | undefined; return data?.entry === 'file' || (data?.entry === 'page' && !!data.uuid); },
       mayUse: (ctx) => this.mayImportIntoOwnStore(ctx),
@@ -1952,8 +1962,8 @@ class ImportManager extends BaseManager {
    * The run as one act (#1472's `store-import`): who, which store, and how
    * each file went, as counts. Never a page's or a file's name (#1461); each
    * file's own record is its door's (`asset-upload`, a sealed store's by id).
-   * The counts use the old door's keys, so whatever reads the event reads
-   * one shape.
+   * The counts are `pagesImported`, `pagesFailed`, `files`, `fileErrors`
+   * and the rest of the event's metadata, one shape for whatever reads it.
    */
   private async recordStoreImport(
     ctx: ActorContext, report: IceRunReport, filesUnlinked: number,
@@ -3270,7 +3280,7 @@ class ImportManager extends BaseManager {
     const bodiesInStore: string[] = [];
     for (const f of members) {
       if (f.status === 'noise') {
-        // The file index is read with the files it names, as the old door reads it.
+        // The file index is read with the files it names (`core.takeout`), so it is not a file left out.
         if (path.posix.basename(f.name) !== TAKEOUT_FILE_INDEX) report.ignored.push(inZip(f));
         continue;
       }

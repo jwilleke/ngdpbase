@@ -6,7 +6,7 @@
 
 # Interface: IceLedger
 
-Defined in: src/ice/types.ts:663
+Defined in: src/ice/types.ts:671
 
 Where the engine keeps fingerprints, per-file status and item keys, per
 scope. One interface so a database table can replace the file store when
@@ -18,7 +18,7 @@ the application database is on.
 
 > __files__(`scope`): `Promise`\<[`LedgerFileEntry`](LedgerFileEntry.md)[]\>
 
-Defined in: src/ice/types.ts:672
+Defined in: src/ice/types.ts:680
 
 #### Parameters
 
@@ -36,7 +36,7 @@ Defined in: src/ice/types.ts:672
 
 > __hasItem__(`scope`, `itemKey`): `Promise`\<`boolean`\>
 
-Defined in: src/ice/types.ts:666
+Defined in: src/ice/types.ts:674
 
 #### Parameters
 
@@ -58,7 +58,7 @@ Defined in: src/ice/types.ts:666
 
 > __lastFile__(`scope`, `sha256`): `Promise`\<[`LedgerFileEntry`](LedgerFileEntry.md) \| `null`\>
 
-Defined in: src/ice/types.ts:664
+Defined in: src/ice/types.ts:672
 
 #### Parameters
 
@@ -80,7 +80,7 @@ Defined in: src/ice/types.ts:664
 
 > __recordFile__(`scope`, `entry`): `Promise`\<`void`\>
 
-Defined in: src/ice/types.ts:665
+Defined in: src/ice/types.ts:673
 
 #### Parameters
 
@@ -102,7 +102,7 @@ Defined in: src/ice/types.ts:665
 
 > __recordItem__(`scope`, `itemKey`): `Promise`\<`void`\>
 
-Defined in: src/ice/types.ts:667
+Defined in: src/ice/types.ts:675
 
 #### Parameters
 
@@ -124,7 +124,7 @@ Defined in: src/ice/types.ts:667
 
 > __recordItems__(`scope`, `itemKeys`): `Promise`\<`void`\>
 
-Defined in: src/ice/types.ts:671
+Defined in: src/ice/types.ts:679
 
 Record several item keys in one write (#2109).
 
@@ -148,7 +148,7 @@ Record several item keys in one write (#2109).
 
 > __seenItems__(`scope`, `itemKeys`): `Promise`\<`Set`\<`string`\>\>
 
-Defined in: src/ice/types.ts:669
+Defined in: src/ice/types.ts:677
 
 Which of these item keys the scope has seen: one read for a whole file's items (#2109).
 

@@ -6,7 +6,7 @@
 
 # Interface: LedgerOriginal
 
-Defined in: src/ice/types.ts:610
+Defined in: src/ice/types.ts:618
 
 A kept original as the ledger remembers it, with the door that kept it
 (a receiver's own `keepOriginal`, or `core.files`). A later run of the same
@@ -22,7 +22,7 @@ fingerprint through the same door reuses it instead of keeping another copy.
 
 > __door__: `string`
 
-Defined in: src/ice/types.ts:611
+Defined in: src/ice/types.ts:619
 
 ***
 

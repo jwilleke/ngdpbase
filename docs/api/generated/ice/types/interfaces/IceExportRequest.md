@@ -6,7 +6,7 @@
 
 # Interface: IceExportRequest
 
-Defined in: src/ice/types.ts:753
+Defined in: src/ice/types.ts:761
 
 One export, as a caller asks for it.
 
@@ -16,7 +16,7 @@ One export, as a caller asks for it.
 
 > __format__: `string`
 
-Defined in: src/ice/types.ts:759
+Defined in: src/ice/types.ts:767
 
 The format: an id `exportFormatsFor` offered.
 
@@ -26,7 +26,7 @@ The format: an id `exportFormatsFor` offered.
 
 > __ref__: `string`
 
-Defined in: src/ice/types.ts:757
+Defined in: src/ice/types.ts:765
 
 What to export, in the source's own terms: a page's name.
 
@@ -36,6 +36,6 @@ What to export, in the source's own terms: a page's name.
 
 > __source__: `string`
 
-Defined in: src/ice/types.ts:755
+Defined in: src/ice/types.ts:763
 
 The export source's id, `core.pages`.

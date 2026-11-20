@@ -6,7 +6,7 @@
 
 # Interface: IceExportSource
 
-Defined in: src/ice/types.ts:698
+Defined in: src/ice/types.ts:706
 
 The owner's door for reading the thing being exported (#2120, D5): a page
 through PageManager, later a search result or an add-on's list. Export
@@ -24,7 +24,7 @@ kind are offered.
 
 > `optional` __label?__: `string`
 
-Defined in: src/ice/types.ts:700
+Defined in: src/ice/types.ts:708
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: src/ice/types.ts:700
 
 > __name__: `string`
 
-Defined in: src/ice/types.ts:699
+Defined in: src/ice/types.ts:707
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: src/ice/types.ts:699
 
 > __yields__: `string`
 
-Defined in: src/ice/types.ts:702
+Defined in: src/ice/types.ts:710
 
 The kind of the items it yields, e.g. `ncm` for a page.
 
@@ -50,7 +50,7 @@ The kind of the items it yields, e.g. `ncm` for a page.
 
 > `optional` __zipAs?__: `string`
 
-Defined in: src/ice/types.ts:704
+Defined in: src/ice/types.ts:712
 
 Make the export a zip with this name (`search-results`) even when it holds one file.
 
@@ -60,7 +60,7 @@ Make the export a zip with this name (`search-results`) even when it holds one f
 
 > __mayExport__(`ref`, `ctx`): `Promise`\<`boolean`\>
 
-Defined in: src/ice/types.ts:710
+Defined in: src/ice/types.ts:718
 
 Would this context be allowed to export `ref`? Asked only to decide
 whether to offer the Export action: an affordance, which records nothing.
@@ -86,7 +86,7 @@ The owner's existing read rule (D5).
 
 > __read__(`ref`, `ctx`, `info`): `Promise`\<[`IceItem`](IceItem.md)[] \| `null`\>
 
-Defined in: src/ice/types.ts:716
+Defined in: src/ice/types.ts:724
 
 Read `ref` for export as `ctx`: the door. It checks the owner's existing
 permission, records what its owner records, and answers null when the
@@ -116,7 +116,7 @@ thing is not there or `ctx` may not export it, without telling the two apart.
 
 > `optional` __recordExport__(`ref`, `ctx`, `outcome`): `Promise`\<`void`\>
 
-Defined in: src/ice/types.ts:723
+Defined in: src/ice/types.ts:731
 
 Record how an export of `ref` ended, as its owner records exports: once
 the run has ended, with the file made or not. Also called, as a failure,

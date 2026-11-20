@@ -6,7 +6,7 @@
 
 # Interface: IceUpload
 
-Defined in: src/ice/types.ts:475
+Defined in: src/ice/types.ts:483
 
 One file handed to the engine. A `.zip` is unpacked by the engine.
 
@@ -16,7 +16,7 @@ One file handed to the engine. A `.zip` is unpacked by the engine.
 
 > `optional` __archive?__: [`IceArchiveView`](IceArchiveView.md)
 
-Defined in: src/ice/types.ts:486
+Defined in: src/ice/types.ts:494
 
 The archive the engine unpacked this file from (#2118); set by the engine, never by a caller.
 
@@ -26,7 +26,7 @@ The archive the engine unpacked this file from (#2118); set by the engine, never
 
 > __bytes__: `Buffer`
 
-Defined in: src/ice/types.ts:477
+Defined in: src/ice/types.ts:485
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: src/ice/types.ts:477
 
 > `optional` __givenName?__: `string`
 
-Defined in: src/ice/types.ts:484
+Defined in: src/ice/types.ts:492
 
 The name the user gave what this file becomes (#2130). For a file
 uploaded on its own; a zip's files keep their own names (the engine
@@ -46,7 +46,7 @@ drops it on a zip). Checked by the engine against the receiver's `names`.
 
 > `optional` __mediaType?__: `string`
 
-Defined in: src/ice/types.ts:478
+Defined in: src/ice/types.ts:486
 
 ***
 
@@ -54,4 +54,4 @@ Defined in: src/ice/types.ts:478
 
 > __name__: `string`
 
-Defined in: src/ice/types.ts:476
+Defined in: src/ice/types.ts:484

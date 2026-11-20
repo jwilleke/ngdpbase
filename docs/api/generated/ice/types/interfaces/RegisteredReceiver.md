@@ -6,7 +6,7 @@
 
 # Interface: RegisteredReceiver
 
-Defined in: src/ice/types.ts:469
+Defined in: src/ice/types.ts:477
 
 A receiver as its owner writes it (D4). Its doors are the receiver's own
 existing ones; each checks its own permission with the context given (D5).
@@ -35,7 +35,7 @@ The kinds it takes, e.g. `['ncm']`, `['file']`, `['phr.health-record']`.
 
 > __id__: `string`
 
-Defined in: src/ice/types.ts:470
+Defined in: src/ice/types.ts:478
 
 ***
 
@@ -100,7 +100,7 @@ Defined in: src/ice/types.ts:360
 
 > `optional` __names?__: [`IceNameForm`](../../givenName/type-aliases/IceNameForm.md)
 
-Defined in: src/ice/types.ts:466
+Defined in: src/ice/types.ts:474
 
 This receiver applies a name the user gives (#2130): `title` (a page's
 title) or `file` (a file's name, keeping the upload's extension). The
@@ -119,7 +119,7 @@ name is refused, and the engine passes none.
 
 > `optional` __originals?__: [`IceOriginalChoices`](IceOriginalChoices.md)
 
-Defined in: src/ice/types.ts:457
+Defined in: src/ice/types.ts:465
 
 The original-file choices this receiver offers (D11). Without it: all three.
 
@@ -133,7 +133,7 @@ The original-file choices this receiver offers (D11). Without it: all three.
 
 > __owner__: `string`
 
-Defined in: src/ice/types.ts:471
+Defined in: src/ice/types.ts:479
 
 ***
 
@@ -245,6 +245,28 @@ upload door unchanged, as the upload's `keep` option.
 
 ***
 
+### limits()?
+
+> `optional` __limits__(): \{ `maxZipEntries?`: `number`; `maxZipBytes?`: `number`; `maxFileBytes?`: `number`; \}
+
+Defined in: src/ice/types.ts:437
+
+Size limits for this receiver's runs, in place of the engine's
+(`ngdpbase.import.engine.*`): zip entries, the bytes a zip unpacks to,
+and the size of one file. Called at each run, so a setting changed in
+the meantime applies. A limit left out is the engine's. Core's only: an
+add-on receiver that declares it is refused at registration (#2187).
+
+#### Returns
+
+\{ `maxZipEntries?`: `number`; `maxZipBytes?`: `number`; `maxFileBytes?`: `number`; \}
+
+#### Inherited from
+
+[`IceReceiver`](IceReceiver.md).[`limits`](IceReceiver.md#limits)
+
+***
+
 ### linkFor()?
 
 > `optional` __linkFor__(`ref`, `ctx`): `Promise`\<`string` \| `null`\>
@@ -340,7 +362,7 @@ Hand one item to the receiver's own door.
 
 > `optional` __rechecks__(`item`): `boolean`
 
-Defined in: src/ice/types.ts:440
+Defined in: src/ice/types.ts:448
 
 The items this receiver checks for itself whether it still holds
 (#2118, operator 2026-10-30): a takeout's page, by its uuid, and a
@@ -371,7 +393,7 @@ as the fingerprint skip leaves it. Without this, the fingerprint decides.
 
 > `optional` __runDone__(`ctx`, `report`): `Promise`\<`void`\>
 
-Defined in: src/ice/types.ts:455
+Defined in: src/ice/types.ts:463
 
 Called once when a run into this receiver has read every file (#2118),
 with its report: a receiver that records the run as one act (a
@@ -402,7 +424,7 @@ throw is the run's failure.
 
 > `optional` __targets__(`ctx`): `Promise`\<[`IceTarget`](IceTarget.md)[]\>
 
-Defined in: src/ice/types.ts:448
+Defined in: src/ice/types.ts:456
 
 The places within this receiver this context may import into (#2118):
 a user's own private stores. The receiver's own rule (D5). A receiver

@@ -8,6 +8,6 @@
 
 > __IceFileStatus__ = `"imported"` \| `"partial"` \| `"unchanged"` \| `"duplicate"` \| `"noise"` \| `"unreadable"` \| `"refused"` \| `"failed"`
 
-Defined in: src/ice/types.ts:553
+Defined in: src/ice/types.ts:561
 
 Per-file status (first slice).

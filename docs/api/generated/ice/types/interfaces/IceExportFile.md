@@ -6,7 +6,7 @@
 
 # Interface: IceExportFile
 
-Defined in: src/ice/types.ts:763
+Defined in: src/ice/types.ts:771
 
 The file an export made, as its status shows it.
 
@@ -16,7 +16,7 @@ The file an export made, as its status shows it.
 
 > __mediaType__: `string`
 
-Defined in: src/ice/types.ts:765
+Defined in: src/ice/types.ts:773
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: src/ice/types.ts:765
 
 > __name__: `string`
 
-Defined in: src/ice/types.ts:764
+Defined in: src/ice/types.ts:772
 
 ***
 
@@ -32,4 +32,4 @@ Defined in: src/ice/types.ts:764
 
 > __size__: `number`
 
-Defined in: src/ice/types.ts:766
+Defined in: src/ice/types.ts:774
