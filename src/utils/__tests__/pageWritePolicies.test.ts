@@ -463,3 +463,58 @@ describe('a value from a hand-edited file cannot forge a log line (#2270 re-revi
     expect(clip('x'.repeat(100)).length).toBeLessThan(50);
   });
 });
+
+describe('restoreNarrowedWrites: a role piece folds onto the base piece only when the base is the original apart from who and how it is named (#2270 re-review 4)', () => {
+  const category = (extra: Record<string, unknown>) => ({ effect: 'allow', resources: [{ type: 'system-category', pattern: 'general' }], ...extra });
+  const narrowed = [{ role: 'editor', action: 'page-delete', policyId: 'editor-permissions' }];
+  const rule = category({ id: 'cat-write', name: 'Writes', description: 'who writes', subjects: [...role('admin'), ...role('editor')], actions: ['page-edit', 'page-delete', 'page-rename'] });
+  const base = [rule];
+  const shown = (): Array<Record<string, any>> => withoutNarrowedWrites(base, narrowed, new Set()).policies as Array<Record<string, any>>;
+  const editBase = (change: Record<string, unknown>): unknown[] => shown().map((p) => (p.id === 'cat-write' ? { ...p, ...change } : p));
+  const stored = (posted: unknown[]): Array<Record<string, any>> => restoreNarrowedWrites(posted, base, narrowed) as Array<Record<string, any>>;
+  /** What the editor holds on page-delete after a restart narrows what was stored. */
+  const editorDeletes = (list: unknown): Array<Record<string, any>> =>
+    (withoutNarrowedWrites(list, narrowed, new Set()).policies as Array<Record<string, any>>).filter(
+      (p) => p.effect !== 'deny' && (p.subjects ?? []).some((s: { value: string }) => s.value === 'editor') && (p.actions ?? []).includes('page-delete')
+    );
+
+  test.each([
+    ['a page:* resource', { resources: [{ type: 'system-category', pattern: 'general' }, { type: 'page', pattern: '*' }] }],
+    ['the system category', { resources: [{ type: 'system-category', pattern: 'general' }, { type: 'system-category', pattern: 'system' }] }],
+    ['page-create', { actions: ['page-edit', 'page-delete', 'page-rename', 'page-create'] }],
+    ['a smaller list of actions', { actions: ['page-read'] }]
+  ])('%s added to the base piece: the editor piece is stored as shown, not folded in, and the editor gets nothing from the edit', (_name, change) => {
+    const posted = editBase(change);
+    const out = stored(posted);
+    expect(out).toEqual(posted);
+    expect(editorDeletes(out)).toEqual([]);
+    expect(JSON.stringify(out.find((p) => p.id === 'cat-write')?.subjects)).not.toContain('editor');
+  });
+
+  test('the base piece replaced by a deny under the same id: the editor piece is stored as shown', () => {
+    const posted = editBase({ effect: 'deny' });
+    expect(stored(posted)).toEqual(posted);
+  });
+
+  test('a change of name only folds the editor back in', () => {
+    const out = stored(editBase({ name: 'Renamed' }));
+    expect(out.map((p) => p.id)).toEqual(['cat-write']);
+    expect(out[0].name).toBe('Renamed');
+    expect(JSON.stringify(out[0].subjects)).toContain('editor');
+  });
+
+  test('a change of description only folds the editor back in', () => {
+    const out = stored(editBase({ description: 'new words' }));
+    expect(out.map((p) => p.id)).toEqual(['cat-write']);
+    expect(out[0].description).toBe('new words');
+  });
+
+  test('a change of name and description together folds back, and the original comes back when both are put back', () => {
+    expect(stored(editBase({ name: 'Writes', description: 'who writes' }))).toEqual(base);
+  });
+
+  test('a change of the rule id is not folded: the base is a new rule and the editor piece stays as shown', () => {
+    const posted = editBase({ id: 'cat-write-renamed' });
+    expect(stored(posted)).toEqual(posted);
+  });
+});

@@ -495,6 +495,19 @@ describe('a narrowed role policy stays narrowed after the category policies arri
       expect(problems()).toEqual([]);
     });
 
+    test('adding a page:* resource to the admin piece of the General write rule does not hand editors the write the site removed', async () => {
+      await boot(narrowedEditor());
+      const shown = (cm.getProperty(KEY) as Policy[]).map((p) =>
+        p.id === 'general-page-write' ? { ...p, resources: [...(p.resources ?? []), { type: 'page', pattern: '*' }] } : p
+      );
+      await cm.setProperty(KEY, shown, ctx);
+      expect(await may(editor, 'delete', meta('general'))).toBe(false);
+      expect(await may(editor, 'rename', meta('capture', 'erin'))).toBe(false);
+      await restart();
+      expect(await may(editor, 'delete', meta('general'))).toBe(false);
+      expect(await may(editor, 'edit', meta('general'))).toBe(true);
+    });
+
     test('deleting the editor piece from the list in force, with the pairs still there, does not bring editors a write the site removed', async () => {
       await boot(narrowedEditor());
       const shown = (cm.getProperty(KEY) as Policy[]).filter((p) => p.id !== 'general-page-write-editor');
