@@ -130,11 +130,15 @@ const MAX_URL_SCAN = 4096;
 const MAX_HOST = 253;
 const MAX_HOST_LABELS = 32;
 const MAX_XN_LABELS = 8;
+/** Longest user part (before the `@`) the matcher accepts. */
+const MAX_USER_PART = 50;
 
 /**
  * Is the host of this candidate address within the limits? Linear in the
  * candidate: the authority runs from after `://` to the first `/`, `?` or `#`,
- * and the host is what follows its last `@`.
+ * and the host is what follows its last `@`, unless more than
+ * {@link MAX_USER_PART} characters come before that `@`: then the whole
+ * authority is the host, as the matcher reads it.
  */
 function hostWithinLimits(candidate: string): boolean {
   const at = candidate.indexOf('://');
@@ -142,7 +146,8 @@ function hostWithinLimits(candidate: string): boolean {
   const rest = candidate.slice(at + 3);
   const stop = rest.search(/[/?#]/);
   const authority = stop === -1 ? rest : rest.slice(0, stop);
-  const host = authority.slice(authority.lastIndexOf('@') + 1);
+  const at2 = authority.lastIndexOf('@');
+  const host = at2 > MAX_USER_PART ? authority : authority.slice(at2 + 1);
   if (host.length > MAX_HOST || host.split('.').length > MAX_HOST_LABELS) return false;
   return (authority.toLowerCase().split('xn--').length - 1) <= MAX_XN_LABELS;
 }
