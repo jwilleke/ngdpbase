@@ -179,14 +179,19 @@ export interface AppliedNarrowing extends NarrowedWrite {
 
 const PAIR_EXAMPLE = '{ "role": "editor", "action": "page-delete" }';
 
-/** A value from a hand-edited file for a message: cut short, and never throws. */
-function clip(value: unknown): string {
+/**
+ * A value from a hand-edited file for a message or a log line: line breaks and other control characters are
+ * replaced by a space (so a value cannot start a line of its own), it is cut short, and it never throws.
+ */
+export function clip(value: unknown): string {
   let text: string;
   try {
     text = typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value));
   } catch {
     text = String(value);
   }
+  // eslint-disable-next-line no-control-regex -- control characters are what is being removed
+  text = text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ');
   return text.length > 40 ? `${text.slice(0, 40)}...` : text;
 }
 
@@ -360,11 +365,21 @@ function narrowing(policies: unknown, narrowed: readonly NarrowedWrite[], keep: 
  * back, or as a writer read it with `getProperty`) with the site's changes on it: the same list without the
  * effects of the narrowing, so the stored list holds only the site's own changes and clearing a pair gives
  * the write back everywhere. `base` is the list the narrowing was applied to (the merged list before this
- * save). An entry that is what the narrowing made of a rule is replaced by that rule, once; a rule the
- * narrowing removed whole, which the site could not see, is put back; every other entry is the site's own
- * (an addition, an edit, or a rule it deleted) and is kept as it is. A rule the site edited is not joined
- * by the original, and a rule whose every piece the site deleted stays deleted. Put back rules go where
- * they were in `base`.
+ * save).
+ *
+ * A rule with a narrowed role is shown in two kinds of piece: the base piece, which keeps the rule's id and
+ * the other subjects, and one `<id>-<role>` piece for each narrowed role, with what the role kept. The rule
+ * is never to take a write the site did not remove, and never to give back one it removed or deleted, so:
+ * - a role piece posted exactly as shown is folded back: the role's subject goes onto the base piece as it
+ *   was posted, edited or not, and the role piece is not stored. If the base piece is also as shown, that
+ *   is the original rule. The narrowing at load takes the removed writes out again, and clearing the pairs
+ *   gives them back;
+ * - a role piece that was edited or deleted is not folded: it is stored as posted, or left out;
+ * - a base piece that was deleted is not brought back: an unchanged role piece is stored as posted.
+ * A rule with no base piece (every subject was a narrowed role) is the original again when its pieces are
+ * posted as shown. A rule narrowing removed whole, which the site could not see, is put back unless the
+ * list already holds a rule with its id. Every other entry is the site's own and is kept as it is. Put back
+ * rules go where they were in `base`.
  */
 export function restoreNarrowedWrites(incoming: unknown, base: unknown, narrowed: readonly NarrowedWrite[]): unknown {
   if (!Array.isArray(incoming) || narrowed.length === 0) return incoming;
@@ -375,23 +390,49 @@ export function restoreNarrowedWrites(incoming: unknown, base: unknown, narrowed
     const at = typeof id === 'string' ? baseIds.indexOf(id) : -1;
     return at < 0 ? Infinity : at;
   };
-  const entries = incoming as unknown[];
-  const origin = entries.map((entry) => changed.find((c) => c.to.some((t) => isDeepStrictEqual(t, entry)))?.from ?? null);
-  const kept = new Set(entries.filter((_, i) => !origin[i]).map((entry) => (entry as Policy | null)?.id));
+  const idOf = (entry: unknown): unknown => (entry && typeof entry === 'object' ? (entry as Policy).id : undefined);
+  const entries = [...(incoming as unknown[])];
+  const folded = new Set<number>();
+  /** Where in `entries` each narrowed rule now lives, when a role piece was folded onto it. */
+  for (const { from, to } of changed) {
+    const hasBase = to[0]?.id === from.id;
+    const order = listOf<unknown>(from.subjects);
+    const position = (subject: unknown): number => order.findIndex((o) => isDeepStrictEqual(o, subject));
+    const fold = (at: number, subject: unknown): void => {
+      const rule = entries[at] as Policy;
+      const held = listOf<unknown>(rule.subjects);
+      if (held.some((h) => isDeepStrictEqual(h, subject))) return;
+      const place = held.findIndex((h) => position(h) < 0 || position(h) > position(subject));
+      const subjects = [...held];
+      subjects.splice(place < 0 ? subjects.length : place, 0, subject);
+      entries[at] = { ...rule, subjects };
+    };
+    let target = hasBase ? entries.findIndex((e, i) => !folded.has(i) && idOf(e) === from.id) : -1;
+    if (!hasBase && entries.some((e) => idOf(e) === from.id)) continue;
+    for (const piece of to.slice(hasBase ? 1 : 0)) {
+      const at = entries.findIndex((e, i) => !folded.has(i) && i !== target && isDeepStrictEqual(e, piece));
+      if (at < 0) continue;
+      const subject = listOf<unknown>(piece.subjects)[0];
+      if (hasBase) {
+        if (target < 0) continue;
+        fold(target, subject);
+        folded.add(at);
+      } else if (target < 0) {
+        entries[at] = { ...structuredClone(from), subjects: [subject] };
+        target = at;
+      } else {
+        fold(target, subject);
+        folded.add(at);
+      }
+    }
+  }
   const out: Array<{ entry: unknown; rank: number }> = [];
-  const restored = new Set<string>();
-  const restore = (from: Policy): { entry: unknown; rank: number } | null => {
-    if (restored.has(from.id) || kept.has(from.id)) return null;
-    restored.add(from.id);
-    return { entry: structuredClone(from), rank: rank(from.id) };
-  };
   entries.forEach((entry, i) => {
-    const put = origin[i] ? restore(origin[i]) : { entry, rank: rank((entry as Policy | null)?.id) };
-    if (put) out.push(put);
+    if (!folded.has(i)) out.push({ entry, rank: rank(idOf(entry)) });
   });
-  for (const c of changed.filter((x) => x.to.length === 0)) {
-    const put = restore(c.from);
-    if (!put) continue;
+  for (const { from, to } of changed) {
+    if (to.length > 0 || entries.some((e, i) => !folded.has(i) && idOf(e) === from.id)) continue;
+    const put = { entry: structuredClone(from), rank: rank(from.id) };
     const before = out.findIndex((o) => o.rank > put.rank);
     out.splice(before < 0 ? out.length : before, 0, put);
   }

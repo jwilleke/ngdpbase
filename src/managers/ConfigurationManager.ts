@@ -18,6 +18,7 @@ import {
   NARROWED_WRITES_KEY,
   narrowedRoleWrites,
   narrowedWritesFromRecord,
+  clip,
   readNarrowedWrites,
   recordOfNarrowedWrites,
   restoreNarrowedWrites,
@@ -574,7 +575,7 @@ class ConfigurationManager extends BaseManager {
     this.narrowedRoleWrites = applied.filter((a) => fresh.some((n) => same(n, a)));
     for (const policyId of new Set(this.narrowedRoleWrites.map((a) => a.policyId))) {
       const mine = this.narrowedRoleWrites.filter((a) => a.policyId === policyId);
-      logger.warn(`[config] '${policyId}' in custom config lacks ${mine.map((a) => a.action).join(', ')}, which the shipped one had; the category policies no longer give ${mine[0].role} ${mine.length === 1 ? 'it' : 'them'} (${[...new Set(mine.flatMap((a) => a.from))].join(', ')}). Save any setting in Admin → Configuration to record the change`);
+      logger.warn(`[config] '${policyId}' in custom config lacks ${mine.map((a) => a.action).join(', ')}, which the shipped one had; the category policies no longer give ${mine[0].role} ${mine.length === 1 ? 'it' : 'them'} (${[...new Set(mine.flatMap((a) => a.from))].map(clip).join(', ')}). Save any setting in Admin → Configuration to record the change`);
     }
   }
 
@@ -604,7 +605,7 @@ class ConfigurationManager extends BaseManager {
     if (!log) return;
     for (const id of byRule.keys()) {
       const mine = this.narrowingNotes.ownRules.filter((r) => r.id === id);
-      logger.warn(`[config] The site's own rule '${id}' grants ${mine.map((r) => `${r.role} ${r.actions.join(', ')}`).join('; ')}, which the site removed from that role's rules, so it is left out. To give it back, take the pair out of the removed page writes in Admin → Configuration`);
+      logger.warn(`[config] The site's own rule '${clip(id)}' grants ${mine.map((r) => `${r.role} ${r.actions.join(', ')}`).join('; ')}, which the site removed from that role's rules, so it is left out. To give it back, take the pair out of the removed page writes in Admin → Configuration`);
     }
   }
 
