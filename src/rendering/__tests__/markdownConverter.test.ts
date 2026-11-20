@@ -244,27 +244,42 @@ describe('bare web addresses (#2443)', () => {
     expect(out).toContain('href="https://a.com/%E2%80%8Ea%E2%80%8Fb%D8%9Cc"');
   });
 
-  it('a long line with many `://` that never form an address renders within a length limit', () => {
-    const shapes = ['a://', 'x://http://', 'http://a*b*', '[http://a]('];
-    for (const converter of [createMarkdownConverter('page'), createMarkdownConverter('untrusted')]) {
-      for (const shape of shapes) {
-        const started = performance.now();
-        converter.makeHtml(shape.repeat(Math.ceil(1_000_000 / shape.length)));
-        expect(performance.now() - started, shape).toBeLessThan(5000);
-      }
-      expect(converter.makeHtml('see https://example.com/a now')).toContain('<a href="https://example.com/a"');
-    }
-  });
+  describe.each(['page', 'untrusted'] as const)('length limits (%s)', (profile) => {
+    const converter = createMarkdownConverter(profile);
 
-  it('about 256 KB of text with no break in it renders within a length limit on both profiles', () => {
-    const shapes = ['http://a.b/((', 'ab://x.com/', 'http://a.b/x', 'http://a.b/%E2%80%8E', 'ftp://a ', '\\http://a '];
-    for (const converter of [createMarkdownConverter('page'), createMarkdownConverter('untrusted')]) {
-      for (const shape of shapes) {
+    test.each(['a://', 'x://http://', '[http://a](', 'http://a*b*', 'http://a/~~', 'https://[', 'http://a.b/((', 'ab://x.com/', 'http://a.b/x', 'http://a.b/%E2%80%8E', 'ftp://a ', '\\http://a '])(
+      'about 256 KB of %j renders within a length limit',
+      (shape) => {
         const started = performance.now();
         converter.makeHtml(shape.repeat(Math.ceil(256_000 / shape.length)));
-        expect(performance.now() - started, shape).toBeLessThan(5000);
+        expect(performance.now() - started).toBeLessThan(2000);
       }
-    }
+    );
+
+    test('a normal address still links', () => {
+      expect(converter.makeHtml('see https://example.com/a now')).toContain('<a href="https://example.com/a"');
+    });
+
+    test.each([
+      ['xn--a.', '-'],
+      ['xn--a.b.', '-'],
+      ['XN--1.', '-']
+    ])('long host names stay text: %s repeated', (unit, tail) => {
+      const started = performance.now();
+      const out = converter.makeHtml(`http://${unit.repeat(40)}${tail}`);
+      expect(performance.now() - started).toBeLessThan(200);
+      expect(out).not.toContain('<a');
+    });
+
+    test('a host of more than 253 characters or 32 labels stays text', () => {
+      expect(converter.makeHtml(`http://${'a'.repeat(254)}.com/`)).not.toContain('<a');
+      expect(converter.makeHtml(`http://${'a.'.repeat(33)}com/`)).not.toContain('<a');
+    });
+
+    test('a normal punycode address and a host within the limits still link', () => {
+      expect(converter.makeHtml('https://xn--bcher-kva.example/')).toContain('<a href="https://xn--bcher-kva.example/"');
+      expect(converter.makeHtml('https://a.b.c.example.com/x?y=1#z')).toContain('<a href="https://a.b.c.example.com/x?y=1#z"');
+    });
   });
 
   it('an address of more than 4,096 characters with no break in it is left as text', () => {
