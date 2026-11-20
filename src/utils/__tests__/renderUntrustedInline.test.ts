@@ -55,6 +55,31 @@ describe('bare web addresses in a comment (#2443)', () => {
     expect(html).toContain('rel="noopener noreferrer"');
   });
 
+  test('an upper-case scheme gets the same attributes', async () => {
+    const html = await renderUntrustedInline(TEST_FORMATTERS, 'see HTTPS://EXAMPLE.COM/x', makeEngine());
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
+
+  test('a link an author wrote in HTML gets no new-tab attributes, whatever its class', async () => {
+    const html = await renderUntrustedInline(
+      TEST_FORMATTERS,
+      '<a href="https://evil.example/" class="wiki-link external-link">x</a>',
+      makeEngine()
+    );
+    expect(html).not.toContain('target=');
+    expect(html).not.toContain('rel=');
+  });
+
+  test('a bare address next to such a link still gets them', async () => {
+    const html = await renderUntrustedInline(
+      TEST_FORMATTERS,
+      '<a href="https://evil.example/" class="wiki-link external-link">x</a> https://example.org/y',
+      makeEngine()
+    );
+    expect(html.match(/target="_blank"/g)).toHaveLength(1);
+  });
+
   test('javascript: and data: addresses are not links, and raw HTML is still stripped', async () => {
     const html = await renderUntrustedInline(
       TEST_FORMATTERS,

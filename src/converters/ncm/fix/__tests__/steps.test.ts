@@ -631,6 +631,27 @@ describe('jspwiki-link-leftovers: wiki link split over two lines (#2443)', () =>
     expect(r.content).toBe(`${line}\n[A|${url}]`);
   });
 
+  it('the next line is repaired before it is tested, so one run equals two runs', () => {
+    const body = `[A\n|${url}(${url})|target='_blank']`;
+    const once = apply(body);
+    expect(once.content).toBe(`[A|${url}|target='_blank']`);
+    expect(apply(once.content).lines).toEqual([]);
+  });
+
+  it('a long run of continuation lines is left as it is, quickly', () => {
+    const body = ['[b', ...Array.from({ length: 3000 }, () => '|https://x.com] [c')].join('\n');
+    const started = performance.now();
+    const r = apply(body);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(r.content).toBe(body);
+    expect(r.lines).toEqual([]);
+  });
+
+  it('a few continuation lines within the length limit are still joined', () => {
+    const r = apply(`[a\n|${url}] [b\n|${url}b] [c\n|${url}c]`);
+    expect(r.content).toBe(`[a|${url}] [b|${url}b] [c|${url}c]`);
+  });
+
   it('a normal line still gets the doubled address repaired next to long ones', () => {
     expect(apply(`${url}(${url})`).content).toBe(url);
   });

@@ -202,6 +202,24 @@ describe('bare web addresses (#2443)', () => {
     expect(html('~~https://a.com~~')).toBe(`<p><del>${link('https://a.com')}</del></p>\n`);
   });
 
+  it('an address keeps `_` and `*` as written, whole, and a closing ~~ stays outside it', () => {
+    expect(html('https://example.com/_foo_')).toBe(`<p>${link('https://example.com/_foo_')}</p>\n`);
+    expect(html('see https://example.com/a_b_c now')).toBe(`<p>see ${link('https://example.com/a_b_c')} now</p>\n`);
+    const star = html('https://example.com/*x*');
+    expect(star).not.toContain('<em>');
+    expect(star).toContain('href="https://example.com/*x');
+    expect(html('~~https://example.com/_foo_~~')).toBe(`<p><del>${link('https://example.com/_foo_')}</del></p>\n`);
+    expect(html('~~https://a.com~~ and ~~https://b.com~~')).toBe(
+      `<p><del>${link('https://a.com')}</del> and <del>${link('https://b.com')}</del></p>\n`
+    );
+  });
+
+  it('a backslash-escaped address with `_` stays text', () => {
+    const out = html('\\https://a.com/_foo_');
+    expect(out).not.toContain('<a');
+    expect(out).not.toContain('<em>');
+  });
+
   it('a backslash before the address keeps it as text and the backslash shows', () => {
     expect(html('\\https://a.com')).toBe('<p>\\https://a.com</p>\n');
   });
@@ -227,6 +245,15 @@ describe('bare web addresses in comments (#2443)', () => {
       `<p>see <a href="https://example.com/a" ${external}>https://example.com/a</a></p>\n`
     );
     expect(untrusted.makeHtml('"https://example.com"')).toContain(`<a href="https://example.com" ${external}>`);
+  });
+
+  it('an address with `_` or a closing ~~ in a comment is linked whole', () => {
+    expect(untrusted.makeHtml('https://example.com/_foo_')).toBe(
+      `<p><a href="https://example.com/_foo_" ${external}>https://example.com/_foo_</a></p>\n`
+    );
+    expect(untrusted.makeHtml('~~https://a.com~~')).toBe(
+      `<p><del><a href="https://a.com" ${external}>https://a.com</a></del></p>\n`
+    );
   });
 
   it('code and a backslash-escaped address stay text', () => {
