@@ -77,7 +77,7 @@ import { sharedFoldersWordsState } from '../utils/sharedFoldersWordsConsent.js';
 import type SharedFolderManager from '../managers/SharedFolderManager.js';
 import { PASSKEYS_ADDRESS_IN_SERVER_SETTINGS, PASSKEYS_CANNOT_WORK, PASSKEYS_OFF_BUTTON, PASSKEYS_OFF_HINT, PASSKEY_SETTING } from '../utils/passkeyAddressWording.js';
 import type PolicyEvaluator from '../managers/PolicyEvaluator.js';
-import { DENY_CHECKED_ACTION } from '../utils/pageWritePolicies.js';
+import { DENY_CHECKED_ACTION, NARROWED_WRITES_KEY } from '../utils/pageWritePolicies.js';
 import type UpgradeCheckManager from '../managers/UpgradeCheckManager.js';
 import type { OpenUpgradeItem } from '../managers/UpgradeCheckManager.js';
 import { UPGRADE_INTRO, UPGRADE_LIST_HEADING, UPGRADE_READ_ONLY, upgradeEmpty, upgradeHeading, upgradeListLead, upgradeNotice, upgradeResult, type UpgradeResultKey } from '../upgradeChecks/wording.js';
@@ -14411,8 +14411,12 @@ ${panes}
         ?.environmentAttributeProblems(readDeclaredAsWritten(configManager, 'ngdpbase.access.environment-attributes')) ?? [];
       const algorithmProblems = this.engine.getManager('PolicyValidator')
         ?.combiningAlgorithmProblems(configManager.getProperty(RULE_COMBINING_ALGORITHM_KEY, 'deny-overrides')) ?? [];
+      // #2270: and in the removed page writes in the file.
+      const narrowedProblems = this.engine.getManager('PolicyValidator')
+        ?.narrowedWritesProblems(configManager.getProperty(NARROWED_WRITES_KEY, [])) ?? [];
       const configProblems: Record<string, string[]> = {
         ...(policyProblems.length > 0 ? { 'ngdpbase.access.policies': policyProblems } : {}),
+        ...(narrowedProblems.length > 0 ? { [NARROWED_WRITES_KEY]: narrowedProblems } : {}),
         ...(subjectProblems.length > 0 ? { 'ngdpbase.access.subject-attributes': subjectProblems } : {}),
         ...(environmentProblems.length > 0 ? { 'ngdpbase.access.environment-attributes': environmentProblems } : {}),
         ...(algorithmProblems.length > 0 ? { [RULE_COMBINING_ALGORITHM_KEY]: algorithmProblems } : {})
@@ -14693,6 +14697,17 @@ ${panes}
         const refused = this.engine.getManager('PolicyValidator')?.policyProblems(parsedValue) ?? [];
         if (refused.length > 0) {
           const error = `Policies not saved: ${refused.join('; ')}`;
+          const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
+          if (wantsJson) return res.status(400).json({ error });
+          return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);
+        }
+      }
+      // #2270: a value that is not a list of role and write pairs would be read as empty, which gives every
+      // removed write back without a sign; it is refused here, in plain words.
+      if (property === NARROWED_WRITES_KEY) {
+        const refused = this.engine.getManager('PolicyValidator')?.narrowedWritesProblems(parsedValue) ?? [];
+        if (refused.length > 0) {
+          const error = `Removed page writes not saved: ${refused.join('; ')}`;
           const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
           if (wantsJson) return res.status(400).json({ error });
           return res.redirect(`/admin/configuration?error=${encodeURIComponent(error)}`);

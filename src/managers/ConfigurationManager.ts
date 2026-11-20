@@ -8,6 +8,7 @@ import {
   type EnvKeyMap,
   type PropertyDescription
 } from '../utils/configEnvKeys.js';
+import { isDeepStrictEqual } from 'node:util';
 import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
@@ -17,7 +18,9 @@ import {
   NARROWED_WRITES_KEY,
   narrowedRoleWrites,
   narrowedWritesFromRecord,
+  readNarrowedWrites,
   recordOfNarrowedWrites,
+  restoreNarrowedWrites,
   withoutNarrowedWrites,
   type AppliedNarrowing,
   type NarrowedWrite
@@ -493,8 +496,8 @@ class ConfigurationManager extends BaseManager {
     // #1860: so is ngdpbase.addons.<slug>.database, kept apart from the merge.
     const { merged, declared, addons, problems, refused, databases, siteCritical } = mergeConfigWithAddons(this.defaultConfig, this.customConfig, process.cwd(), this.instanceDataFolder);
     this.mergedConfig = merged;
-    this.applyNarrowedRoleWrites(detected);
     this.declaredConfig = declared;
+    this.applyNarrowedRoleWrites(detected);
     this.addonLayers = addons;
     this.systemCategoryProblems = problems;
     this.refusedAddons = refused;
@@ -534,6 +537,13 @@ class ConfigurationManager extends BaseManager {
   narrowedRoleWrites: AppliedNarrowing[] = [];
 
   /**
+   * What the removed page writes (#2270) did to the site's own rules, and what could not be read of them; the
+   * "After updating" item reads it. Worked out again at every start and every save of the policy list or the
+   * pairs, so it stays until the site changes what causes it.
+   */
+  narrowingNotes: { ownRules: Array<{ id: string; role: string; actions: string[] }>; unreadable: string[] } = { ownRules: [], unreadable: [] };
+
+  /**
    * #2270: what a site removed from its stored role policies, as recorded in its own setting
    * (`NARROWED_WRITES_KEY`) plus `detected`, read from the file before the migration rewrote it. All of it is
    * left out of every category policy in force, for that role only, so a policy added later, and one the site
@@ -543,14 +553,19 @@ class ConfigurationManager extends BaseManager {
    */
   private applyNarrowedRoleWrites(detected: NarrowedWrite[]): void {
     this.narrowedRoleWrites = [];
+    this.narrowingNotes = { ownRules: [], unreadable: [] };
     if (!this.mergedConfig) return;
-    const recorded = narrowedWritesFromRecord(this.customConfig?.[NARROWED_WRITES_KEY]);
+    const read = readNarrowedWrites(this.customConfig?.[NARROWED_WRITES_KEY]);
+    for (const reason of read.skipped) logger.warn(`[config] ${NARROWED_WRITES_KEY}: ${reason}. It is ignored, so it narrows nothing`);
+    const recorded = read.pairs;
     const same = (a: NarrowedWrite, b: NarrowedWrite): boolean => a.role === b.role && a.action === b.action;
     const fresh = detected.filter((n) => !recorded.some((r) => same(r, n)));
     const all = [...recorded, ...fresh];
+    this.narrowingNotes.unreadable = read.skipped;
     if (all.length === 0) return;
     const { policies, applied } = withoutNarrowedWrites(this.mergedConfig[POLICIES_KEY], all, new Set());
     this.mergedConfig[POLICIES_KEY] = policies;
+    this.noteOwnRules(applied, true);
     if (fresh.length === 0) return;
     const record = recordOfNarrowedWrites(all);
     this.customConfig = this.customConfig ?? {};
@@ -560,6 +575,36 @@ class ConfigurationManager extends BaseManager {
     for (const policyId of new Set(this.narrowedRoleWrites.map((a) => a.policyId))) {
       const mine = this.narrowedRoleWrites.filter((a) => a.policyId === policyId);
       logger.warn(`[config] '${policyId}' in custom config lacks ${mine.map((a) => a.action).join(', ')}, which the shipped one had; the category policies no longer give ${mine[0].role} ${mine.length === 1 ? 'it' : 'them'} (${[...new Set(mine.flatMap((a) => a.from))].join(', ')}). Save any setting in Admin → Configuration to record the change`);
+    }
+  }
+
+  /**
+   * #2270: the site's own rules, those in its custom policy list that differ from the declared (shipped and
+   * add-on) ones, that grant a write the site removed from a role. They are left out like the shipped ones;
+   * this notes each, so the site can see why a rule of its own does nothing. `log` writes one warning per rule.
+   */
+  private noteOwnRules(applied: AppliedNarrowing[], log: boolean): void {
+    const custom = this.customConfig?.[POLICIES_KEY];
+    const declared = this.declaredConfig?.[POLICIES_KEY];
+    const idOf = (p: unknown): unknown => (p && typeof p === 'object' ? (p as { id?: unknown }).id : undefined);
+    const ownIds = new Set(
+      (Array.isArray(custom) ? (custom as unknown[]) : [])
+        .filter((p) => typeof idOf(p) === 'string' && !(Array.isArray(declared) && (declared as unknown[]).some((d) => isDeepStrictEqual(d, p))))
+        .map((p) => idOf(p) as string)
+    );
+    const byRule = new Map<string, Map<string, Set<string>>>();
+    for (const a of applied) {
+      for (const id of a.from.filter((f) => ownIds.has(f))) {
+        const roles = byRule.get(id) ?? new Map<string, Set<string>>();
+        roles.set(a.role, (roles.get(a.role) ?? new Set<string>()).add(a.action));
+        byRule.set(id, roles);
+      }
+    }
+    this.narrowingNotes.ownRules = [...byRule].flatMap(([id, roles]) => [...roles].map(([role, actions]) => ({ id, role, actions: [...actions] })));
+    if (!log) return;
+    for (const id of byRule.keys()) {
+      const mine = this.narrowingNotes.ownRules.filter((r) => r.id === id);
+      logger.warn(`[config] The site's own rule '${id}' grants ${mine.map((r) => `${r.role} ${r.actions.join(', ')}`).join('; ')}, which the site removed from that role's rules, so it is left out. To give it back, take the pair out of the removed page writes in Admin → Configuration`);
     }
   }
 
@@ -982,35 +1027,50 @@ class ConfigurationManager extends BaseManager {
     // site's; `undefined` takes the key out of the custom file, so the layers
     // beneath are in force again (an empty list would replace them all).
     const declared = this.declaredConfig?.[key];
-    let inForce: unknown = value === undefined
-      ? declared
-      : Array.isArray(declared) && Array.isArray(value) ? mergeArrays(declared, value) : value;
+    const mergedWith = (own: unknown): unknown => (Array.isArray(declared) && Array.isArray(own) ? mergeArrays(declared, own) : own);
     // #2270: what the site removed is left out of the policies in force whenever either the policy list
-    // or the record of it changes. Worked out here, before anything changes.
+    // or the record of it changes, and is never stored in the policy list: a list posted back from the
+    // list in force is made into the list it was made from. All worked out here, before anything changes.
+    let stored: unknown = value;
     let policiesInForce: unknown;
-    if (key === POLICIES_KEY) {
-      inForce = withoutNarrowedWrites(inForce, narrowedWritesFromRecord(this.customConfig[NARROWED_WRITES_KEY]), new Set()).policies;
-    } else if (key === NARROWED_WRITES_KEY) {
-      const policies = this.customConfig[POLICIES_KEY];
-      const shippedPolicies = this.declaredConfig?.[POLICIES_KEY];
-      const merged = Array.isArray(shippedPolicies) && Array.isArray(policies) ? mergeArrays(shippedPolicies, policies) : (policies ?? shippedPolicies);
-      policiesInForce = withoutNarrowedWrites(merged, narrowedWritesFromRecord(value), new Set()).policies;
+    let applied: AppliedNarrowing[] | null = null;
+    if (key === POLICIES_KEY && value !== undefined) {
+      const pairs = narrowedWritesFromRecord(this.customConfig[NARROWED_WRITES_KEY]);
+      const own = this.customConfig[POLICIES_KEY];
+      stored = restoreNarrowedWrites(value, own === undefined ? declared : mergedWith(own), pairs);
     }
-    if (value === undefined) {
+    let inForce: unknown = value === undefined ? declared : mergedWith(stored);
+    if (key === POLICIES_KEY) {
+      const narrowed = withoutNarrowedWrites(inForce, narrowedWritesFromRecord(this.customConfig[NARROWED_WRITES_KEY]), new Set());
+      inForce = narrowed.policies;
+      applied = narrowed.applied;
+    } else if (key === NARROWED_WRITES_KEY) {
+      const declaredPolicies = this.declaredConfig?.[POLICIES_KEY];
+      const own = this.customConfig[POLICIES_KEY];
+      const merged = Array.isArray(declaredPolicies) && Array.isArray(own) ? mergeArrays(declaredPolicies, own) : (own ?? declaredPolicies);
+      const narrowed = withoutNarrowedWrites(merged, narrowedWritesFromRecord(value), new Set());
+      policiesInForce = narrowed.policies;
+      applied = narrowed.applied;
+    }
+    if (stored === undefined) {
       delete this.customConfig[key];
     } else {
-      this.customConfig[key] = value;
+      this.customConfig[key] = stored;
     }
     if (this.mergedConfig) {
       this.mergedConfig[key] = inForce;
       if (key === NARROWED_WRITES_KEY) this.mergedConfig[POLICIES_KEY] = policiesInForce;
       this.revision++;
     }
+    if (applied) {
+      this.narrowingNotes.unreadable = readNarrowedWrites(this.customConfig[NARROWED_WRITES_KEY]).skipped;
+      this.noteOwnRules(applied, true);
+    }
 
     // Save to custom config file
     await this.saveCustomConfiguration();
 
-    await this.recordConfigChange(key, before, value, ctx);
+    await this.recordConfigChange(key, before, stored, ctx);
   }
 
   /**
@@ -1620,6 +1680,8 @@ class ConfigurationManager extends BaseManager {
 
     this.customConfig = {};
     this.mergedConfig = { ...this.defaultConfig } as WikiConfig;
+    // #2270: the removed page writes are in the file that was just emptied, so the shipped rules apply again.
+    this.narrowingNotes = { ownRules: [], unreadable: [] };
     this.revision++;
     await this.saveCustomConfiguration();
   }

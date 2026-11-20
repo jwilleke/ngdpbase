@@ -11,7 +11,12 @@ const KEY = 'ngdpbase.access.narrowed-role-writes';
 const adminUser = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
 
 async function makeRoutes(inForce: unknown = []) {
-  const config: Record<string, unknown> = { 'ngdpbase.access.policies': [], [KEY]: inForce };
+  const config: Record<string, unknown> = {
+    'ngdpbase.access.policies': [],
+    [KEY]: inForce,
+    'ngdpbase.access.resource-types': { page: { attributes: { owner: { type: 'identity' }, 'system-category': { type: 'string' } } } },
+    'ngdpbase.permissions.definitions': { 'page-read': {}, 'page-edit': {} }
+  };
   const configManager = {
     getProperty: vi.fn((k: string, d: unknown) => (k in config ? config[k] : d)),
     getUnresolvedProperty: vi.fn((k: string, d: unknown) => (k in config ? config[k] : d)),

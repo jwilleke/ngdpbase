@@ -5,6 +5,7 @@ import addFormats from 'ajv-formats';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import { combiningAlgorithmProblem, readDeclaredAsWritten, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesProblems, subjectAttributesProblems } from '../utils/policyAttributes.js';
+import { readNarrowedWrites } from '../utils/pageWritePolicies.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 import { conditionAttributeSource, conditionProblems, declaredResourceTypes, SUBJECT_MATCHERS, VALUELESS_SUBJECT_TYPES } from './PolicyEvaluator.js';
 
@@ -452,6 +453,16 @@ class PolicyValidator extends BaseManager {
         .map((m) => `subjects: ${m}`);
       return [...schema, ...extra, ...unknown, ...condition].map((message) => `'${id}': ${message}`);
     });
+  }
+
+  /**
+   * Problems in the removed page writes (`ngdpbase.access.narrowed-role-writes`): one plain-words message for
+   * each entry that is not a pair of a role and a write its shipped policy held, or for the whole value when
+   * it is not a list. Empty when it is fine or unset. A value that is not read narrows nothing, so it is
+   * refused on save rather than lifting a permission reduction without a sign.
+   */
+  narrowedWritesProblems(value: unknown): string[] {
+    return readNarrowedWrites(value).skipped;
   }
 
   /**

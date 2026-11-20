@@ -34,6 +34,7 @@
  * the policy list from the configuration editor writes the migrated list.
  */
 import { createHash } from 'crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { Policy } from '../types/Policy.js';
 
 /**
@@ -176,23 +177,60 @@ export interface AppliedNarrowing extends NarrowedWrite {
   from: string[];
 }
 
-/**
- * The pairs in the setting `NARROWED_WRITES_KEY`, as narrowings. Only a role this reads from a role copy and a
- * page write are taken; anything else in a hand-edited value is not read, and a pair named twice counts once.
- */
-export function narrowedWritesFromRecord(record: unknown): NarrowedWrite[] {
-  const policyOf = new Map(Object.entries(ROLE_OF).map(([policyId, role]) => [role, policyId]));
-  const seen = new Set<string>();
-  const out: NarrowedWrite[] = [];
-  for (const pair of Array.isArray(record) ? (record as unknown[]) : []) {
-    const { role, action } = (pair && typeof pair === 'object' ? pair : {}) as { role?: unknown; action?: unknown };
-    if (typeof role !== 'string' || typeof action !== 'string') continue;
-    const policyId = policyOf.get(role);
-    if (!policyId || !(PAGE_WRITES as readonly string[]).includes(action) || !MOVED[policyId].includes(action) || seen.has(`${role}/${action}`)) continue;
-    seen.add(`${role}/${action}`);
-    out.push({ role, action, policyId });
+const PAIR_EXAMPLE = '{ "role": "editor", "action": "page-delete" }';
+
+/** A value from a hand-edited file for a message: cut short, and never throws. */
+function clip(value: unknown): string {
+  let text: string;
+  try {
+    text = typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value));
+  } catch {
+    text = String(value);
   }
-  return out;
+  return text.length > 40 ? `${text.slice(0, 40)}...` : text;
+}
+
+/**
+ * The pairs in the setting `NARROWED_WRITES_KEY` as narrowings, and one plain-words reason for each entry
+ * that cannot be read (a role other than the three whose shipped policies held a page write, in lower case;
+ * a write that role's shipped policy held). What is skipped does not narrow anything, so the caller says so:
+ * reading a damaged value as empty must not lift a permission reduction without a sign. A pair named twice
+ * counts once and is not a problem. No value at all is an empty list.
+ */
+export function readNarrowedWrites(record: unknown): { pairs: NarrowedWrite[]; skipped: string[] } {
+  if (record === undefined) return { pairs: [], skipped: [] };
+  if (!Array.isArray(record)) return { pairs: [], skipped: [`the value is not a list; it should be a list of pairs like ${PAIR_EXAMPLE}`] };
+  const policyOf = new Map(Object.entries(ROLE_OF).map(([policyId, role]) => [role, policyId]));
+  const roles = [...policyOf.keys()];
+  const or = (names: readonly string[]): string => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}`);
+  const seen = new Set<string>();
+  const pairs: NarrowedWrite[] = [];
+  const skipped: string[] = [];
+  (record as unknown[]).forEach((pair, i) => {
+    const at = `entry ${i + 1}`;
+    const { role, action } = (pair && typeof pair === 'object' && !Array.isArray(pair) ? pair : {}) as { role?: unknown; action?: unknown };
+    if (typeof role !== 'string' || typeof action !== 'string') {
+      skipped.push(`${at}: ${clip(pair)} is not a pair like ${PAIR_EXAMPLE}`);
+      return;
+    }
+    const policyId = policyOf.get(role);
+    if (!policyId) {
+      skipped.push(`${at}: '${clip(role)}' is not a role whose page writes can be removed; use ${or(roles)}, in lower case`);
+    } else if (!(PAGE_WRITES as readonly string[]).includes(action)) {
+      skipped.push(`${at}: '${clip(action)}' is not a page write; use ${or(PAGE_WRITES)}`);
+    } else if (!MOVED[policyId].includes(action)) {
+      skipped.push(`${at}: the shipped rules never gave ${role} '${action}'; for ${role} use ${or(MOVED[policyId])}`);
+    } else if (!seen.has(`${role}/${action}`)) {
+      seen.add(`${role}/${action}`);
+      pairs.push({ role, action, policyId });
+    }
+  });
+  return { pairs, skipped };
+}
+
+/** The pairs {@link readNarrowedWrites} can read; anything else in a hand-edited value does not narrow anything. */
+export function narrowedWritesFromRecord(record: unknown): NarrowedWrite[] {
+  return readNarrowedWrites(record).pairs;
 }
 
 /** The value to store in `NARROWED_WRITES_KEY` for these narrowings, in a fixed order. */
@@ -258,7 +296,19 @@ export function narrowedRoleWrites(stored: unknown): NarrowedWrite[] {
  * lists, are left as they are.
  */
 export function withoutNarrowedWrites(policies: unknown, narrowed: readonly NarrowedWrite[], keep: ReadonlySet<string>): { policies: unknown; applied: AppliedNarrowing[] } {
-  if (!Array.isArray(policies) || narrowed.length === 0) return { policies, applied: [] };
+  const { policies: out, applied } = narrowing(policies, narrowed, keep);
+  return { policies: out, applied };
+}
+
+/** A rule narrowing changed: what it was, and what is in force in its place (nothing when it was left with no subject). */
+interface Changed {
+  from: Policy;
+  to: Policy[];
+}
+
+function narrowing(policies: unknown, narrowed: readonly NarrowedWrite[], keep: ReadonlySet<string>): { policies: unknown; applied: AppliedNarrowing[]; changed: Changed[] } {
+  if (!Array.isArray(policies) || narrowed.length === 0) return { policies, applied: [], changed: [] };
+  const changed: Changed[] = [];
   const applied = new Map<string, AppliedNarrowing>();
   const used = new Set(rulesIn(policies).map((p) => p.id));
   const out: unknown[] = [];
@@ -297,11 +347,55 @@ export function withoutNarrowedWrites(policies: unknown, narrowed: readonly Narr
     }
     if (split.length === 0 && rest.length === subjects.length) out.push(entry);
     else {
-      if (rest.length > 0) out.push({ ...policy, subjects: rest });
-      out.push(...split);
+      const to: Policy[] = [...(rest.length > 0 ? [{ ...policy, subjects: rest }] : []), ...split];
+      out.push(...to);
+      changed.push({ from: policy, to });
     }
   }
-  return { policies: out, applied: [...applied.values()] };
+  return { policies: out, applied: [...applied.values()], changed };
+}
+
+/**
+ * The list to store when `incoming` is the list in force (as Admin → Configuration shows it and saves it
+ * back, or as a writer read it with `getProperty`) with the site's changes on it: the same list without the
+ * effects of the narrowing, so the stored list holds only the site's own changes and clearing a pair gives
+ * the write back everywhere. `base` is the list the narrowing was applied to (the merged list before this
+ * save). An entry that is what the narrowing made of a rule is replaced by that rule, once; a rule the
+ * narrowing removed whole, which the site could not see, is put back; every other entry is the site's own
+ * (an addition, an edit, or a rule it deleted) and is kept as it is. A rule the site edited is not joined
+ * by the original, and a rule whose every piece the site deleted stays deleted. Put back rules go where
+ * they were in `base`.
+ */
+export function restoreNarrowedWrites(incoming: unknown, base: unknown, narrowed: readonly NarrowedWrite[]): unknown {
+  if (!Array.isArray(incoming) || narrowed.length === 0) return incoming;
+  const { changed } = narrowing(base, narrowed, new Set());
+  if (changed.length === 0) return incoming;
+  const baseIds = rulesIn(base).map((p) => p.id);
+  const rank = (id: unknown): number => {
+    const at = typeof id === 'string' ? baseIds.indexOf(id) : -1;
+    return at < 0 ? Infinity : at;
+  };
+  const entries = incoming as unknown[];
+  const origin = entries.map((entry) => changed.find((c) => c.to.some((t) => isDeepStrictEqual(t, entry)))?.from ?? null);
+  const kept = new Set(entries.filter((_, i) => !origin[i]).map((entry) => (entry as Policy | null)?.id));
+  const out: Array<{ entry: unknown; rank: number }> = [];
+  const restored = new Set<string>();
+  const restore = (from: Policy): { entry: unknown; rank: number } | null => {
+    if (restored.has(from.id) || kept.has(from.id)) return null;
+    restored.add(from.id);
+    return { entry: structuredClone(from), rank: rank(from.id) };
+  };
+  entries.forEach((entry, i) => {
+    const put = origin[i] ? restore(origin[i]) : { entry, rank: rank((entry as Policy | null)?.id) };
+    if (put) out.push(put);
+  });
+  for (const c of changed.filter((x) => x.to.length === 0)) {
+    const put = restore(c.from);
+    if (!put) continue;
+    const before = out.findIndex((o) => o.rank > put.rank);
+    out.splice(before < 0 ? out.length : before, 0, put);
+  }
+  return out.map((o) => o.entry);
 }
 
 /**
