@@ -472,7 +472,7 @@ class ConfigurationManager extends BaseManager {
 
     // #2270: what the site removed from its stored role policies, read before the
     // migration below rewrites them; applied to the category policies after the merge.
-    const narrowed = narrowedRoleWrites(this.customConfig?.[POLICIES_KEY]);
+    this.loadNarrowed = narrowedRoleWrites(this.customConfig?.[POLICIES_KEY]);
 
     // #2255: a stored copy of a shipped role policy loses the page writes it
     // held on every page; they now come from the category policies.
@@ -490,7 +490,7 @@ class ConfigurationManager extends BaseManager {
     // #1860: so is ngdpbase.addons.<slug>.database, kept apart from the merge.
     const { merged, declared, addons, problems, refused, databases, siteCritical } = mergeConfigWithAddons(this.defaultConfig, this.customConfig, process.cwd(), this.instanceDataFolder);
     this.mergedConfig = merged;
-    this.applyNarrowedRoleWrites(narrowed);
+    this.applyNarrowedRoleWrites(this.loadNarrowed);
     this.declaredConfig = declared;
     this.addonLayers = addons;
     this.systemCategoryProblems = problems;
@@ -530,19 +530,42 @@ class ConfigurationManager extends BaseManager {
   /** Page writes the site removed from its stored role policies and the category policies leave out for it (#2270); the "After updating" item reads it. */
   narrowedRoleWrites: AppliedNarrowing[] = [];
 
+  /** What the site removed, read from its file as last saved before the #2255 migration rewrote it; every save of the policy list applies it again (#2270). */
+  private loadNarrowed: NarrowedWrite[] = [];
+
   /**
-   * #2270: take the page writes a site removed from a stored role policy out of the shipped and add-on
-   * category policies in the merged list, for that role only. In memory only; the site's file is not written.
-   * One warning per narrowed role policy. Policies the site stores itself are left as stored.
+   * #2270: the merged list with the page writes a site removed from a stored role policy taken out of the
+   * shipped and add-on category policies, for that role only, and the stored entries that say so: the changed
+   * and split policies, and a stored copy that matches no action for a policy nothing is left of. Policies the
+   * site stores itself (`stored`) are left as stored. Changes nothing, throws on nothing.
+   */
+  private narrowingPlan(merged: unknown, stored: unknown, narrowed: NarrowedWrite[]): { policies: unknown; applied: AppliedNarrowing[]; add: unknown[] } {
+    const keep = new Set(Array.isArray(stored) ? (stored as Array<{ id?: unknown }>).map((p) => p?.id).filter((id): id is string => typeof id === 'string') : []);
+    const { policies, applied } = withoutNarrowedWrites(merged, narrowed, keep);
+    if (applied.length === 0 || !Array.isArray(merged) || !Array.isArray(policies)) return { policies: merged, applied: [], add: [] };
+    const was = new Set<unknown>(merged);
+    const now = new Set<unknown>(policies);
+    const idOf = (p: unknown): unknown => (p as { id?: unknown } | null)?.id;
+    const nowIds = new Set(policies.map(idOf));
+    const add = policies.filter((p) => !was.has(p));
+    // Nothing left of a policy: stored, it replaces the shipped one, so it must match nothing ('none' is no action).
+    for (const p of merged) if (!now.has(p) && !nowIds.has(idOf(p)) && p && typeof p === 'object') add.push({ ...(p as object), actions: ['none'] });
+    return { policies, applied, add };
+  }
+
+  /**
+   * #2270: apply what a site removed from its stored role policies to the merged list, and put the result
+   * in the in-memory custom layer, so the next write of the file stores it and a restart reads it as stored
+   * (a list holding the category policies is not read as narrowed). One warning per narrowed role policy.
    */
   private applyNarrowedRoleWrites(narrowed: NarrowedWrite[]): void {
     this.narrowedRoleWrites = [];
     if (!this.mergedConfig || narrowed.length === 0) return;
     const stored = this.customConfig?.[POLICIES_KEY];
-    const keep = new Set(Array.isArray(stored) ? (stored as Array<{ id?: unknown }>).map((p) => p?.id).filter((id): id is string => typeof id === 'string') : []);
-    const { policies, applied } = withoutNarrowedWrites(this.mergedConfig[POLICIES_KEY], narrowed, keep);
+    const { policies, applied, add } = this.narrowingPlan(this.mergedConfig[POLICIES_KEY], stored, narrowed);
     if (applied.length === 0) return;
     this.mergedConfig[POLICIES_KEY] = policies;
+    if (this.customConfig && Array.isArray(stored)) this.customConfig[POLICIES_KEY] = [...(stored as unknown[]), ...add];
     this.narrowedRoleWrites = applied;
     for (const policyId of new Set(applied.map((a) => a.policyId))) {
       const mine = applied.filter((a) => a.policyId === policyId);
@@ -969,17 +992,29 @@ class ConfigurationManager extends BaseManager {
     // site's; `undefined` takes the key out of the custom file, so the layers
     // beneath are in force again (an empty list would replace them all).
     const declared = this.declaredConfig?.[key];
+    // #2270: worked out before anything changes. What the site removed (read at load) is applied to
+    // what is saved here too, so a list that lacks the category policies does not undo it.
+    let stored: unknown = value;
+    let inForce: unknown = value === undefined
+      ? declared
+      : Array.isArray(declared) && Array.isArray(value) ? mergeArrays(declared, value) : value;
+    if (key === POLICIES_KEY) {
+      if (value === undefined) this.loadNarrowed = [];
+      else if (this.loadNarrowed.length > 0 && Array.isArray(value)) {
+        const plan = this.narrowingPlan(inForce, value, this.loadNarrowed);
+        if (plan.applied.length > 0) {
+          inForce = plan.policies;
+          stored = [...(value as unknown[]), ...plan.add];
+        }
+      }
+    }
     if (value === undefined) {
       delete this.customConfig[key];
     } else {
-      this.customConfig[key] = value;
+      this.customConfig[key] = stored;
     }
     if (this.mergedConfig) {
-      this.mergedConfig[key] = value === undefined
-        ? declared
-        : Array.isArray(declared) && Array.isArray(value) ? mergeArrays(declared, value) : value;
-      // #2270: the same narrowing a restart would apply, so what is in force is what a restart merges.
-      if (key === POLICIES_KEY) this.applyNarrowedRoleWrites(narrowedRoleWrites(value));
+      this.mergedConfig[key] = inForce;
       this.revision++;
     }
 
@@ -1064,6 +1099,8 @@ class ConfigurationManager extends BaseManager {
     };
 
     await fs.writeJson(this.customConfigPath, configToSave, { spaces: 2 });
+    // #2270: what a site removed from its role policies is in the file now; nothing is left to update.
+    this.narrowedRoleWrites = [];
     // #1751: cached renders that read configuration (policies, roles, values shown) re-render.
     await this.engine.getManager<{ bump(topic: string): Promise<string> }>('CacheManager')?.bump(CONFIG_DATA_TOPIC);
   }
@@ -1593,6 +1630,7 @@ class ConfigurationManager extends BaseManager {
     }, (err) => logger.warn('[ConfigurationManager] Audit record failed for config-reset:', err));
 
     this.customConfig = {};
+    this.loadNarrowed = [];
     this.mergedConfig = { ...this.defaultConfig } as WikiConfig;
     this.revision++;
     await this.saveCustomConfiguration();

@@ -265,6 +265,16 @@ describe('a narrowed role policy stays narrowed after the category policies arri
       });
     });
 
+    test('a policy nothing is left of stays gone after a save and a restart: contributors and demo administrators both narrowed', async () => {
+      await boot([savedBefore('editor-permissions', WRITES), savedBefore('contributor-permissions', ['page-edit'], ['page-edit']), savedBefore('demo-admin-access', ['page-edit'], ['page-edit'])]);
+      const gone: Array<[unknown, string, boolean]> = [[contributor, 'edit', false], [demoAdmin, 'edit', false], [editor, 'edit', true], [editor, 'delete', true]];
+      await everything(gone);
+      await cm.setProperty('ngdpbase.application-name', 'Other', ctx);
+      await restart();
+      await everything(gone);
+      expect(await items()).toEqual([]);
+    });
+
     test('a list another writer saved on 5.43 to 5.45 (copies with no writes, no category policies, nothing that shows it was narrowed) is not read as narrowed: editors keep their writes', async () => {
       await boot([shippedPolicy('editor-permissions'), shippedPolicy('contributor-permissions'), shippedPolicy('demo-admin-access')]);
       for (const action of ['edit', 'delete', 'rename']) expect(await may(editor, action, meta('general'))).toBe(true);
