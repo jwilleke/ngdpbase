@@ -42,6 +42,13 @@ import type { Policy } from '../types/Policy.js';
  */
 export const CHECKED_DENIES_KEY = 'ngdpbase.access.checked-denies';
 
+/**
+ * Where the page writes a site removed from a role are recorded (#2270): a list of `{ role, action }`
+ * pairs. They are left out of every category policy in force, at every start and every save of the
+ * policy list, so a policy added later is narrowed too and nothing in the policy list stands for them.
+ */
+export const NARROWED_WRITES_KEY = 'ngdpbase.access.narrowed-role-writes';
+
 /** Where the "Mark as checked" button on the dashboard item posts (#2355). */
 export const DENY_CHECKED_ACTION = '/admin/access-policies/deny-checked';
 
@@ -167,6 +174,32 @@ export interface NarrowedWrite {
 /** A {@link NarrowedWrite} that was left out of at least one category policy, and which ones. */
 export interface AppliedNarrowing extends NarrowedWrite {
   from: string[];
+}
+
+/**
+ * The pairs in the setting `NARROWED_WRITES_KEY`, as narrowings. Only a role this reads from a role copy and a
+ * page write are taken; anything else in a hand-edited value is not read, and a pair named twice counts once.
+ */
+export function narrowedWritesFromRecord(record: unknown): NarrowedWrite[] {
+  const policyOf = new Map(Object.entries(ROLE_OF).map(([policyId, role]) => [role, policyId]));
+  const seen = new Set<string>();
+  const out: NarrowedWrite[] = [];
+  for (const pair of Array.isArray(record) ? (record as unknown[]) : []) {
+    const { role, action } = (pair && typeof pair === 'object' ? pair : {}) as { role?: unknown; action?: unknown };
+    if (typeof role !== 'string' || typeof action !== 'string') continue;
+    const policyId = policyOf.get(role);
+    if (!policyId || !(PAGE_WRITES as readonly string[]).includes(action) || !MOVED[policyId].includes(action) || seen.has(`${role}/${action}`)) continue;
+    seen.add(`${role}/${action}`);
+    out.push({ role, action, policyId });
+  }
+  return out;
+}
+
+/** The value to store in `NARROWED_WRITES_KEY` for these narrowings, in a fixed order. */
+export function recordOfNarrowedWrites(narrowed: readonly NarrowedWrite[]): Array<{ role: string; action: string }> {
+  return narrowedWritesFromRecord(narrowed.map(({ role, action }) => ({ role, action })))
+    .map(({ role, action }) => ({ role, action }))
+    .sort((a, b) => a.role.localeCompare(b.role) || a.action.localeCompare(b.action));
 }
 
 /** What a hand-edited list may hold where a list belongs: anything else reads as empty, so no input throws. */

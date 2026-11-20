@@ -3708,6 +3708,8 @@
   "ngdpbase.backup.shared-folders-key-saved-fingerprint": "",
   "_comment_access_checked_denies": "#2355: the deny rules an administrator marked as checked on the dashboard, each as rule id -> a fingerprint of the rule's content at that time. A deny listed here with the same content is not reported under 'Access policies need review'; change the rule and it is reported again. Nothing that decides access reads this.",
   "ngdpbase.access.checked-denies": {},
+  "_comment_access_narrowed_role_writes": "#2270: the page writes a site removed from its own copy of editor-permissions, contributor-permissions or demo-admin-access before page-edit, page-delete and page-rename moved to the category policies, each as { role, action }. Every category policy in force leaves these out for that role only, at every start and every save of the access policies, so a policy added later, or one edited or deleted in Admin, does not give them back. Written the first time the site's file is saved after an update that finds such a narrowing. Take a pair out of this list to give the role that write again; an empty list changes nothing.",
+  "ngdpbase.access.narrowed-role-writes": [],
   "_comment_media": "MediaManager configuration (Issue #273). Media scanning/indexing of external photo/video libraries.",
   "ngdpbase.media.enabled": false,
   "ngdpbase.media.folders": [],

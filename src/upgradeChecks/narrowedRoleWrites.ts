@@ -5,7 +5,7 @@
  * (editor, contributor or demo administrator) would otherwise get them back from the category policies
  * that carry those writes since #2255. ConfigurationManager leaves them out of those policies in
  * memory, and this reports it. Read live from what it applied each time Admin is shown, so it goes when
- * the site saves its policy list, which stores the change. It has no button: the rules are the site's.
+ * the site's file is next saved, which records the change. It has no button: the rules are the site's.
  */
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { LiveUpgradeCheck, UpgradeItem } from '../managers/UpgradeCheckManager.js';
