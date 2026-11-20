@@ -956,6 +956,53 @@ describe('a format that spans an archive (#2118)', () => {
     expect(runDone).not.toHaveBeenCalled();
   });
 
+  describe('a receiver\'s own size limits (#2187)', () => {
+    const FIVE = async (): Promise<Buffer> => packZip(['a', 'b', 'c', 'd', 'e'].map(k => ({ path: `${k}.rec`, bytes: Buffer.from(`${k}=1`) })));
+    /** A receiver that raises the engine's limits for its own runs; what it says is read at each run. */
+    const raising = (limits: { maxZipEntries?: number; maxZipBytes?: number; maxFileBytes?: number }) => {
+      const made = recordingReceiver('test.records', ['test.record']);
+      made.receiver.limits = () => limits;
+      return made;
+    };
+    const tight = { zip: { maxEntries: 3, maxTotalBytes: 1_000_000 }, maxFileBytes: 4 };
+
+    test('a zip with more members than the engine allows is read when the receiver allows them', async () => {
+      const { receiver, received } = raising({ maxZipEntries: 10 });
+      const result = await run(deps([recordShim()], [receiver], undefined, tight), { source: { type: 'upload', files: [{ name: 'x.zip', bytes: await FIVE() }] }, receiver: 'test.records' });
+      expect(result.files.map(f => f.status)).toEqual(['imported', 'imported', 'imported', 'imported', 'imported']);
+      expect(received).toHaveLength(5);
+    });
+
+    test('the same zip into a receiver with no limits of its own is refused at the engine\'s limit', async () => {
+      const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+      const result = await run(deps([recordShim()], [receiver], undefined, tight), { source: { type: 'upload', files: [{ name: 'x.zip', bytes: await FIVE() }] }, receiver: 'test.records' });
+      expect(result.files).toHaveLength(1);
+      expect(result.files[0]).toMatchObject({ name: 'x.zip', status: 'failed', message: expect.stringMatching(/5 members exceeds the 3 allowed/) });
+      expect(received).toHaveLength(0);
+    });
+
+    test('a file over the engine\'s file limit is read when the receiver allows its size', async () => {
+      const { receiver, received } = raising({ maxFileBytes: 100 });
+      const result = await run(deps([recordShim()], [receiver], undefined, tight), { source: { type: 'upload', files: [upload('a.rec', 'bp=120')] }, receiver: 'test.records' });
+      expect(result.files[0]).toMatchObject({ status: 'imported', stored: 1 });
+      expect(received).toHaveLength(1);
+    });
+
+    test('a file over the engine\'s file limit, into a receiver with no limits of its own, still fails', async () => {
+      const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+      const result = await run(deps([recordShim()], [receiver], undefined, tight), { source: { type: 'upload', files: [upload('a.rec', 'bp=120')] }, receiver: 'test.records' });
+      expect(result.files[0]).toMatchObject({ status: 'failed', message: expect.stringMatching(/larger than the 4 bytes/) });
+      expect(received).toHaveLength(0);
+    });
+
+    test('a receiver\'s limit that is above the file\'s size but not set for zip bytes leaves the engine\'s zip bytes in place', async () => {
+      const { receiver } = raising({ maxZipEntries: 10 });
+      const zip = await packZip([{ path: 'a.rec', bytes: Buffer.from('a'.repeat(200) + '=1') }]);
+      const result = await run(deps([recordShim()], [receiver], undefined, { zip: { maxEntries: 3, maxTotalBytes: 50 } }), { source: { type: 'upload', files: [{ name: 'x.zip', bytes: zip }] }, receiver: 'test.records' });
+      expect(result.files[0]).toMatchObject({ status: 'failed', message: expect.stringMatching(/more than the 50 bytes/) });
+    });
+  });
+
   test('a bound scope narrows by the place, then by the caller\'s own scope', () => {
     expect(boundScope('core.private-store', 'molly', 'vault')).toBe('ice2/core.private-store/molly/vault');
     expect(boundScope('phr.records', 'molly', undefined, 'src-1')).toBe('ice2/phr.records/molly/src-1');

@@ -76,6 +76,10 @@ describe('the download page sends an import to /import (#2187)', () => {
     expect(render()).toContain('href="/import?receiver=core.private-store"');
   });
 
+  test('says what an import needs, since /import offers nothing to someone signed in long ago or with every store locked', () => {
+    expect(render()).toContain('You need to be signed in recently, and have a store unlocked.');
+  });
+
   test('holds no upload form and posts nowhere to /my/takeout/import', () => {
     const html = render();
     expect(html).not.toContain('takeoutImportForm');

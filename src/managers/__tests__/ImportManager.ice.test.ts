@@ -587,3 +587,55 @@ describe('ImportManager — background runs', () => {
     expect(saved).toEqual([]);
   });
 });
+
+describe('ImportManager — the limits a takeout has of its own (#2187)', () => {
+  type Registered = { limits?: () => { maxZipEntries?: number; maxZipBytes?: number; maxFileBytes?: number } };
+  const registered = (im: ImportManager, id: string): Registered | undefined =>
+    (im as unknown as { receiverRegistry: Map<string, Registered> }).receiverRegistry.get(id);
+  const engineSettings = (im: ImportManager): { zip: { maxEntries: number; maxTotalBytes: number }; maxFileBytes: number } =>
+    (im as unknown as { engineSettings(): { zip: { maxEntries: number; maxTotalBytes: number }; maxFileBytes: number } }).engineSettings();
+
+  test('every other import keeps the engine\'s limits: 10,000 entries a zip and 100 MB a file', async () => {
+    const { im } = await makeImportManager();
+    expect(engineSettings(im).zip.maxEntries).toBe(10_000);
+    expect(engineSettings(im).maxFileBytes).toBe(104_857_600);
+    expect(registered(im, 'core.pages')?.limits).toBeUndefined();
+    expect(registered(im, 'core.files')?.limits).toBeUndefined();
+  });
+
+  test('a takeout allows 65,535 entries a zip, 256 MB a file, and what its own download can pack in a zip', async () => {
+    const { im } = await makeImportManager();
+    expect(registered(im, 'core.private-store')?.limits?.()).toEqual({ maxZipEntries: 65_535, maxZipBytes: 4_294_967_295, maxFileBytes: 268_435_456 });
+  });
+
+  test('the takeout\'s limits are the site\'s to set, and are read at each run', async () => {
+    const { im } = await makeImportManager({
+      'ngdpbase.import.engine.takeout-zip-max-entries': 7, 'ngdpbase.import.engine.takeout-zip-max-bytes': 8, 'ngdpbase.import.engine.takeout-max-file-bytes': 9
+    });
+    expect(registered(im, 'core.private-store')?.limits?.()).toEqual({ maxZipEntries: 7, maxZipBytes: 8, maxFileBytes: 9 });
+    expect(engineSettings(im).zip.maxEntries).toBe(10_000);
+  });
+
+  test('the removed ngdpbase.stores.import.maxsize changes nothing', async () => {
+    const { im } = await makeImportManager({ 'ngdpbase.stores.import.maxsize': 1 });
+    expect(registered(im, 'core.private-store')?.limits?.()).toEqual({ maxZipEntries: 65_535, maxZipBytes: 4_294_967_295, maxFileBytes: 268_435_456 });
+    expect(engineSettings(im).maxFileBytes).toBe(104_857_600);
+  });
+
+  test('the defaults in the shipped configuration are the ones the code uses', async () => {
+    const shipped = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
+    expect(shipped['ngdpbase.import.engine.zip-max-entries']).toBe(10_000);
+    expect(shipped['ngdpbase.import.engine.max-file-bytes']).toBe(104_857_600);
+    expect(shipped['ngdpbase.import.engine.takeout-zip-max-entries']).toBe(65_535);
+    expect(shipped['ngdpbase.import.engine.takeout-zip-max-bytes']).toBe(4_294_967_295);
+    expect(shipped['ngdpbase.import.engine.takeout-max-file-bytes']).toBe(268_435_456);
+    expect(shipped).not.toHaveProperty('ngdpbase.stores.import.maxsize');
+  });
+
+  test('an add-on\'s receiver cannot raise the limits, whoever it names as owner', async () => {
+    const { im } = await makeImportManager();
+    const greedy = { name: 'greedy', accepts: ['x'], limits: () => ({ maxFileBytes: 1e12 }), mayUse: async () => true, receive: async () => ({ status: 'stored' as const }) };
+    expect(() => im.registerReceiver('acct', greedy)).toThrow(/limits is core's only/);
+    expect(() => im.registerReceiver('core', greedy)).toThrow(/limits is core's only/);
+  });
+});

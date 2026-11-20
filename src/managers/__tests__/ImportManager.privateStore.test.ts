@@ -73,6 +73,8 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
   let attachments: AttachmentManager;
   let importer: ImportManager;
   let visibleToMolly: Set<string>;
+  /** Settings a test sets over the defaults below. */
+  let extraConfig: Record<string, unknown>;
   let audit: { logAuditEvent: ReturnType<typeof vi.fn>; flushAuditQueue: () => Promise<void> };
 
   const build = async (): Promise<void> => {
@@ -86,7 +88,8 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
       'ngdpbase.page.provider.versioning.compression': 'none',
       'ngdpbase.system-category': { general: { label: 'general', storageLocation: { defaultstore: 'pages/' } } },
       'ngdpbase.attachment.maxsize': 10485760,
-      'ngdpbase.attachment.allowedtypes': ''
+      'ngdpbase.attachment.allowedtypes': '',
+      ...extraConfig
     };
     const configManager = {
       getProperty: vi.fn((key: string, fallback: unknown) => (config[key] !== undefined ? config[key] : fallback)),
@@ -204,6 +207,7 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     await fs.ensureDir(pagesDir);
     await fs.ensureDir(storageDir);
     visibleToMolly = new Set();
+    extraConfig = {};
     clearUnlockedPrivateStores();
     await build();
     await seal(VAULT);
@@ -843,5 +847,70 @@ describe('a takeout into its owner\'s private store, through the engine (#2118)'
     // The ledger names nothing of a sealed store: no title, so no link by it either.
     expect(recent).toEqual([expect.objectContaining({ receiver: RECEIVER, target: VAULT, status: 'imported', name: expect.stringMatching(/^[0-9a-f]{12}$/), refs: 0 })]);
     expect(recent[0].link).toBeUndefined();
+  });
+
+  describe('the limits a takeout has of its own (#2187)', () => {
+    const page = (n: number): { path: string; bytes: Buffer } => ({
+      path: `${VAULT}/Note ${n}.md`, bytes: Buffer.from(`---\ntitle: Note ${n}\nuuid: ${String(n).repeat(8)}-aaaa-4aaa-8aaa-aaaaaaaaaaaa\n---\n\nNo links.\n`)
+    });
+    /** The engine's limits turned down, the takeout's own left above them: what a big takeout meets, in small. */
+    const tight = { 'ngdpbase.import.engine.zip-max-entries': 3, 'ngdpbase.import.engine.max-file-bytes': 150 };
+    /** An import into another receiver, run in place (a queued run needs a job runner this test has none of). */
+    const uploadInto = (receiver: string, bytes: Buffer, fileName: string): Promise<IceRunReport> => importer.runImport({
+      source: { type: 'upload', files: [{ name: fileName, bytes, ...(fileName.endsWith('.zip') ? { mediaType: 'application/zip' } : {}) }] },
+      receiver
+    }, MOLLY);
+
+    test('a takeout with more entries than the engine allows imports', async () => {
+      extraConfig = { ...tight, 'ngdpbase.import.engine.takeout-zip-max-entries': 20 };
+      await build();
+      await seal(VAULT);
+      const run = await upload(VAULT, await packZip([1, 2, 3, 4, 5, 6].map(page)));
+
+      expect(run.files.map(f => f.status)).toEqual(Array(6).fill('imported'));
+    });
+
+    test('a zip of other files with that many entries is still refused', async () => {
+      extraConfig = { ...tight, 'ngdpbase.import.engine.takeout-zip-max-entries': 20 };
+      await build();
+      await seal(VAULT);
+      const run = await uploadInto('core.files', await packZip([1, 2, 3, 4, 5, 6].map(n => ({ path: `f${n}.txt`, bytes: Buffer.from('x') }))), 'files.zip');
+
+      expect(run.files).toHaveLength(1);
+      expect(run.files[0]).toMatchObject({ status: 'failed', message: expect.stringMatching(/6 members exceeds the 3 allowed/) });
+    });
+
+    // Both are stored, and both are reported stored: a page links the first, none links the second.
+    test('a takeout file over the engine\'s file limit imports, whether or not a page links to it', async () => {
+      extraConfig = { ...tight, 'ngdpbase.import.engine.zip-max-entries': 100, 'ngdpbase.import.engine.takeout-max-file-bytes': 5000 };
+      await build();
+      await seal(VAULT);
+      const linked = Buffer.from('L'.repeat(200));
+      const loose = Buffer.from('U'.repeat(300));
+      const run = await upload(VAULT, await packZip([
+        { path: `${VAULT}/Scans.md`, bytes: Buffer.from(`---\ntitle: Scans\nuuid: ${UUID_A}\n---\n\n![scan](/attachments/old-id)\n`) },
+        { path: `${VAULT}/attachments/linked.bin`, bytes: linked },
+        { path: `${VAULT}/attachments/loose.bin`, bytes: loose },
+        { path: `${VAULT}/files-index.json`, bytes: Buffer.from(JSON.stringify({ version: 1, files: { 'old-id': { id: 'old-id', fileName: 'attachments/linked.bin', name: 'linked.bin' } } })) }
+      ]));
+
+      expect(byPath(run)).toMatchObject({
+        [`${VAULT}/Scans.md`]: ['imported', undefined],
+        [`${VAULT}/attachments/linked.bin`]: ['imported', undefined],
+        [`${VAULT}/attachments/loose.bin`]: ['imported', undefined]
+      });
+      const idOf = (n: string): string => String(run.files.find(f => f.name.endsWith(n))?.refs[0]);
+      expect((await attachments.getPrivateStoreAttachment(idOf('linked.bin'), MOLLY))?.buffer.equals(linked)).toBe(true);
+      expect((await attachments.getPrivateStoreAttachment(idOf('loose.bin'), MOLLY))?.buffer.equals(loose)).toBe(true);
+    });
+
+    test('a file of the same size on its own, into another receiver, is still refused', async () => {
+      extraConfig = { ...tight, 'ngdpbase.import.engine.takeout-max-file-bytes': 5000 };
+      await build();
+      await seal(VAULT);
+      const run = await uploadInto('core.files', Buffer.from('U'.repeat(300)), 'big.bin');
+
+      expect(run.files[0]).toMatchObject({ status: 'failed', message: expect.stringMatching(/larger than the 150 bytes/) });
+    });
   });
 });
