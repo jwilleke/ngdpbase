@@ -183,6 +183,15 @@ describe('runImport', () => {
     expect(read).not.toHaveBeenCalled();
   });
 
+  test('the message for a file over the limit says the limit in MB when it is whole MB', async () => {
+    const { receiver } = recordingReceiver('test.records', ['test.record']);
+    const big = { name: 'big.rec', bytes: Buffer.alloc(2 * 1024 * 1024, 'a') };
+    const result = await run(deps([recordShim()], [receiver], undefined, { maxFileBytes: 1024 * 1024 }), {
+      source: { type: 'upload', files: [big] }, receiver: 'test.records'
+    });
+    expect(result.files[0]).toMatchObject({ status: 'failed', message: 'larger than the 1 MB allowed' });
+  });
+
   test('a shim\'s "can I read this?" decides, even when the extension matches', async () => {
     const { receiver } = recordingReceiver('test.records', ['test.record']);
     const result = await run(deps([recordShim()], [receiver]), {
