@@ -995,11 +995,38 @@ describe('a format that spans an archive (#2118)', () => {
       expect(received).toHaveLength(0);
     });
 
+    test('several archives that together unpack to more than the total are refused whole, and nothing is imported', async () => {
+      const { receiver, received } = recordingReceiver('test.records', ['test.record']);
+      const pack = (key: string) => packZip([{ path: `${key}.rec`, bytes: Buffer.from(`${key}=${'1'.repeat(600)}`) }]);
+      const files = [{ name: 'a.zip', bytes: await pack('a') }, { name: 'b.zip', bytes: await pack('b') }, upload('c.rec', 'c=1')];
+      const settings = { zip: { maxEntries: 100, maxTotalBytes: 1000 } };
+
+      const result = await run(deps([recordShim()], [receiver], undefined, settings), { source: { type: 'upload', files }, receiver: 'test.records' });
+      expect(result.state).toBe('done');
+      expect(result.files.map(f => [f.name, f.status])).toEqual([['a.zip', 'failed'], ['b.zip', 'failed'], ['c.rec', 'failed']]);
+      expect(result.files[0].message).toMatch(/more than 1000 bytes in all, so nothing was imported/);
+      expect(received).toHaveLength(0);
+
+      // Each on its own is under the total, so the same files one at a time are imported.
+      const alone = await run(deps([recordShim()], [receiver], undefined, settings), { source: { type: 'upload', files: [files[0]] }, receiver: 'test.records' });
+      expect(alone.files.map(f => f.status)).toEqual(['imported']);
+    });
+
+    test('keeping originals at upload does not throw for such an upload, and keeps nothing', async () => {
+      const { receiver, kept } = recordingReceiver('test.records', ['test.record'], { keeps: true });
+      const pack = (key: string) => packZip([{ path: `${key}.rec`, bytes: Buffer.from(`${key}=${'1'.repeat(600)}`) }]);
+      const files = [{ name: 'a.zip', bytes: await pack('a') }, { name: 'b.zip', bytes: await pack('b') }];
+      const d = deps([recordShim()], [receiver], undefined, { zip: { maxEntries: 100, maxTotalBytes: 1000 } });
+      const result = await keepOriginalsAtUpload(d, { source: { type: 'upload', files }, receiver: 'test.records', original: 'keep' }, ALICE, 'test.records/alice');
+      expect(result).toEqual({ kept: 0 });
+      expect(kept).toHaveLength(0);
+    });
+
     test('a receiver\'s limit that is above the file\'s size but not set for zip bytes leaves the engine\'s zip bytes in place', async () => {
       const { receiver } = raising({ maxZipEntries: 10 });
       const zip = await packZip([{ path: 'a.rec', bytes: Buffer.from('a'.repeat(200) + '=1') }]);
       const result = await run(deps([recordShim()], [receiver], undefined, { zip: { maxEntries: 3, maxTotalBytes: 50 } }), { source: { type: 'upload', files: [{ name: 'x.zip', bytes: zip }] }, receiver: 'test.records' });
-      expect(result.files[0]).toMatchObject({ status: 'failed', message: expect.stringMatching(/more than the 50 bytes/) });
+      expect(result.files[0]).toMatchObject({ status: 'failed', message: expect.stringMatching(/more than 50 bytes in all/) });
     });
   });
 

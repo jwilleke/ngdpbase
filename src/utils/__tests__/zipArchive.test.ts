@@ -11,11 +11,12 @@
  */
 
 import path from 'path';
+import { randomBytes } from 'crypto';
 import os from 'os';
 import fs from 'fs-extra';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { packZip, readZip, crc32, type ZipEntry } from '../zipArchive';
+import { packZip, readZip, crc32, ZipBudgetError, type ZipEntry } from '../zipArchive';
 
 const run = promisify(execFile);
 
@@ -342,6 +343,60 @@ describe('readZip — verified against archives Python wrote (#1472)', () => {
     archive.writeUInt32LE(100, central + 24);  // claims 100 bytes uncompressed
 
     expect(() => readZip(archive, LIMITS)).toThrow(/more than it declares/);
+  });
+
+  describe('one budget for the unpacked size', () => {
+    /** A zip of one member of random bytes, so its stored size is about its real size. */
+    const randomZip = (name: string, size: number): Promise<Buffer> => packZip([{ path: name, bytes: randomBytes(size) }]);
+
+    test('a budget passed in is spent by what each archive unpacks to, and shared across archives', async () => {
+      const budget = { remaining: 1000 };
+      readZip(await randomZip('a', 600), LIMITS, budget);
+      expect(budget.remaining).toBe(400);
+
+      const second = await randomZip('b', 600);
+      expect(() => readZip(second, LIMITS, budget)).toThrow(ZipBudgetError);
+      expect(() => readZip(second, LIMITS, budget)).toThrow(/in all/);
+    });
+
+    test('a member whose declared size is over what is left is refused before it is inflated', async () => {
+      const archive = await packZip([{ path: 'x.bin', bytes: Buffer.alloc(100) }]);
+      const central = archive.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+      archive.writeUInt32LE(5000, central + 24);   // declares 5000 bytes; the data holds 100
+
+      // Inflating first would end in "does not match its declared size"; the budget answers first.
+      expect(() => readZip(archive, LIMITS, { remaining: 1000 })).toThrow(/in all/);
+    });
+
+    test('a member whose declared size is over the per-file cap is left out, not inflated', async () => {
+      const archive = await packZip([{ path: 'small.txt', bytes: Buffer.from('ok') }, { path: 'big.bin', bytes: Buffer.alloc(100) }]);
+      const central = archive.lastIndexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+      archive.writeUInt32LE(5000, central + 24);   // declares 5000 bytes; the data holds 100
+
+      const budget = { remaining: 100_000 };
+      const skipped: Array<{ path: string; size: number }> = [];
+      const entries = readZip(archive, { ...LIMITS, maxFileBytes: 1000 }, budget, skipped);
+
+      expect(entries.map(e => e.path)).toEqual(['small.txt']);
+      expect(skipped).toEqual([{ path: 'big.bin', size: 5000 }]);
+      expect(budget.remaining).toBe(100_000 - 2);
+    });
+
+    test('a member that understates its size still stops at what it declared, and spends nothing', async () => {
+      const archive = await packZip([{ path: 'bomb.bin', bytes: Buffer.alloc(20 * 1024 * 1024) }]);
+      const central = archive.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+      archive.writeUInt32LE(100, central + 24);
+
+      const budget = { remaining: 1_000_000 };
+      expect(() => readZip(archive, { ...LIMITS, maxFileBytes: 1000 }, budget, [])).toThrow(/more than it declares/);
+      expect(budget.remaining).toBe(1_000_000);
+    });
+
+    test('without a budget argument an archive gets maxTotalBytes of its own, as before', async () => {
+      const archive = await randomZip('a', 600);
+      expect(readZip(archive, { maxEntries: 10, maxTotalBytes: 1000 })).toHaveLength(1);
+      expect(readZip(archive, { maxEntries: 10, maxTotalBytes: 1000 })).toHaveLength(1);
+    });
   });
 
   test('more members than allowed is refused', async () => {
