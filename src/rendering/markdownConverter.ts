@@ -133,16 +133,17 @@ const PLACEHOLDER_END = '\uE001';
 /**
  * Bare web addresses become links (#2443), and only those. markdown-it's
  * linkify also links bare domains, mail addresses, `ftp:` and `//host` forms,
- * and links an address that follows a backslash. Domains, mail addresses and
- * the fuzzy forms are switched off at the source. markdown-it's inline `linkify`
- * rule takes an address before emphasis, so `_` and `*` inside it stay as
- * written; each match reads only up to white space or `~~`, and at most
- * {@link MAX_URL_SCAN} characters (a longer unbroken address is left as text), so a
- * closing strikethrough stays outside. A rule after the core `linkify` takes
- * back a link that is not `http(s)` and one written `\https://…`, which is how
- * an author keeps an address as text, and ends a link at a table cell's placeholder sentinels. The text shown for a
- * link drops direction controls and line breaks decoded from `%…`. The stored
- * text is never changed.
+ * and links an address that follows a backslash. Only markdown-it's inline
+ * `linkify` rule is used (the core rule, which reads whole text tokens with no
+ * limit, is off), and it is given `http(s)` addresses only, so no other link is
+ * made. The inline rule takes an address before emphasis, so `_` and `*` inside
+ * it stay as written; each match reads only up to white space or `~~`, and at
+ * most {@link MAX_URL_SCAN} characters (a longer unbroken address is left as
+ * text), so a closing strikethrough stays outside. A rule after it takes back an
+ * address written `\https://…`, which is how an author keeps an address as text,
+ * and ends a link at a table cell's placeholder sentinels, in one pass over the
+ * tokens. The text shown for a link drops direction marks, direction controls
+ * and line breaks decoded from `%…`. The stored text is never changed.
  */
 function bareWebAddresses(md: MarkdownIt): void {
   md.linkify.set({ fuzzyLink: false, fuzzyEmail: false, fuzzyIP: false });
@@ -151,28 +152,41 @@ function bareWebAddresses(md: MarkdownIt): void {
   // space or at `~~`, so each match reads only up to that point, not the rest of
   // the line, and trailing punctuation is trimmed as it is without `~~`.
   const matchAtStart = md.linkify.matchAtStart.bind(md.linkify);
+  const webOnly = (match: ReturnType<typeof matchAtStart>): ReturnType<typeof matchAtStart> =>
+    match && /^https?:/i.test(match.url) ? match : null;
   md.linkify.matchAtStart = (text: string) => {
     const head = text.length > MAX_URL_SCAN ? text.slice(0, MAX_URL_SCAN) : text;
     const end = head.search(/\s|~~/);
-    if (end !== -1) return matchAtStart(head.slice(0, end));
+    if (end !== -1) return webOnly(matchAtStart(head.slice(0, end)));
     // No end within the limit: the address is too long to link, not cut short.
-    return head === text ? matchAtStart(text) : null;
+    return head === text ? webOnly(matchAtStart(text)) : null;
   };
+  // The core rule reads whole text tokens with no limit, and the inline rule
+  // above covers every address, so only the inline rule is used.
+  md.core.ruler.disable('linkify', true);
   md.core.ruler.after('linkify', 'linkify_web_only', (state): void => {
     for (const block of state.tokens) {
       if (block.type !== 'inline' || !block.children) continue;
       const kids = block.children;
+      // One pass into a new array: a splice per link costs the square of the link count.
+      const out: Token[] = [];
       for (let i = 0; i < kids.length; i++) {
         const open = kids[i];
-        if (open.type !== 'link_open' || open.markup !== 'linkify') continue;
-        const escaped = i > 0 && kids[i - 1].type === 'text' && kids[i - 1].content.endsWith('\\');
-        if (escaped || !/^https?:\/\//i.test(open.attrGet('href') ?? '')) {
-          // Unwrap: link_open, its text, link_close -> the text alone.
-          kids.splice(i + 2, 1);
-          kids.splice(i, 1);
+        if (open.type !== 'link_open' || open.markup !== 'linkify') {
+          out.push(open);
           continue;
         }
+        const before = out[out.length - 1];
+        const escaped = before !== undefined && before.type === 'text' && before.content.endsWith('\\');
         const text = kids[i + 1];
+        const close = kids[i + 2];
+        i += 2;
+        if (escaped || !/^https?:\/\//i.test(open.attrGet('href') ?? '')) {
+          // Unwrap: link_open, its text, link_close -> the text alone.
+          out.push(text);
+          continue;
+        }
+        out.push(open, text, close);
         const cut = [text.content.indexOf(PLACEHOLDER_START), text.content.indexOf(PLACEHOLDER_END)]
           .filter((n) => n > 0)
           .sort((a, b) => a - b)[0];
@@ -182,12 +196,13 @@ function bareWebAddresses(md: MarkdownIt): void {
           open.attrSet('href', md.normalizeLink(text.content));
           const after = new state.Token('text', '', 0);
           after.content = rest;
-          kids.splice(i + 3, 0, after);
+          out.push(after);
         }
         // The shown text is decoded from the address; a direction control or a
         // line break decoded from `%…` is not shown. The href stays encoded.
         text.content = text.content.replace(INVISIBLE_IN_TEXT, '');
       }
+      block.children = out;
     }
   });
 }
