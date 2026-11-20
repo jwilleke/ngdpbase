@@ -334,7 +334,7 @@ describe('readZip — verified against archives Python wrote (#1472)', () => {
     const archive = await packZip([{ path: 'bomb.bin', bytes: Buffer.alloc(20 * 1024 * 1024) }]);
     expect(archive.length).toBeLessThan(100 * 1024);
 
-    expect(() => readZip(archive, { maxEntries: 10, maxTotalBytes: 1024 * 1024 })).toThrow(/allowed/);
+    expect(() => readZip(archive, { maxEntries: 10, maxTotalBytes: 1024 * 1024 })).toThrow(/more than 1 MB in all/);
   });
 
   test('a member that understates its size is stopped at what it declared', async () => {

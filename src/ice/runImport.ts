@@ -37,7 +37,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { ActorContext } from '../context/ActorContext.js';
-import type { ZipReadLimits } from '../utils/zipArchive.js';
+import { ZipBudgetError, type ZipReadLimits } from '../utils/zipArchive.js';
 import { expandUploads, fingerprint, isNoise } from './fileHandling.js';
 import { appliedGivenName, givenNameProblem } from './givenName.js';
 import { closeOriginalKeep, openOriginalKeep } from './originalKeep.js';
@@ -426,6 +426,21 @@ function depsFor(deps: IceRunDeps, receiver: RegisteredReceiver | undefined): Ic
   return out;
 }
 
+/**
+ * The files an upload holds, its zips unpacked (`expandUploads`). The run's
+ * `maxFileBytes` applies inside a zip as it does to a file on its own, and
+ * what all the zips unpack to is counted across the whole upload.
+ * @throws ZipBudgetError when that total is over the limit
+ */
+function unpack(uploads: readonly IceUpload[], deps: IceRunDeps, receiver: RegisteredReceiver): ReturnType<typeof expandUploads> {
+  return expandUploads(
+    uploads,
+    { ...deps.settings.zip, maxFileBytes: deps.settings.maxFileBytes },
+    deps.settings.maxZipDepth,
+    { innerZipsAsFiles: receiver.innerZipsAsFiles === true }
+  );
+}
+
 /** Does this run keep its originals during the upload (#2034)? */
 export function keepsAtUpload(receiver: RegisteredReceiver | undefined, original: OriginalChoice): boolean {
   return original === 'keep' && !!receiver?.keepOriginal && receiver.keepsEncrypted === true;
@@ -463,7 +478,14 @@ export async function keepOriginalsAtUpload(siteDeps: IceRunDeps, request: IceRu
   if (!await mayReceive(receiver, ctx)) return result;
   const door = receiver.id;
 
-  const { files } = expandUploads(request.source.files, deps.settings.zip, deps.settings.maxZipDepth, { innerZipsAsFiles: receiver.innerZipsAsFiles === true });
+  let files: IceUpload[];
+  try {
+    ({ files } = unpack(request.source.files, deps, receiver));
+  } catch (err) {
+    // Too much to unpack: nothing is kept, and the run reports it.
+    if (err instanceof ZipBudgetError) return result;
+    throw err;
+  }
   for (const upload of files) {
     const plan = await planFile(upload, request, receiver, deps, scope);
     if (plan.stop || plan.recheck || !plan.sha256 || !plan.file) continue;
@@ -571,7 +593,20 @@ export async function runImport(siteDeps: IceRunDeps, request: IceRunRequest, ct
   }
   const tools = runTools(deps, request);
 
-  const { files, unreadable } = expandUploads(uploads, deps.settings.zip, deps.settings.maxZipDepth, { innerZipsAsFiles: receiver.innerZipsAsFiles === true });
+  let unpacked: ReturnType<typeof unpack>;
+  try {
+    unpacked = unpack(uploads, deps, receiver);
+  } catch (err) {
+    if (!(err instanceof ZipBudgetError)) throw err;
+    // Over the total the upload may unpack to: every file is reported, and none is imported.
+    for (const upload of uploads) {
+      report.files.push({ name: upload.name, size: upload.bytes.length, status: 'failed', message: err.message, chain: [], refs: [], stored: 0, duplicates: 0, warnings: [] });
+    }
+    report.state = 'done';
+    report.finishedAt = now().toISOString();
+    return report;
+  }
+  const { files, unreadable } = unpacked;
   for (const bad of unreadable) {
     report.files.push({ name: bad.name, size: bad.size, status: 'failed', message: bad.message, chain: [], refs: [], stored: 0, duplicates: 0, warnings: [] });
   }
