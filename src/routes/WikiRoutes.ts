@@ -223,7 +223,7 @@ import type { RecentImport } from '../ice/types.js';
 import { isZip } from '../ice/fileHandling.js';
 import { IceVetRefused } from '../ice/vet.js';
 import type FileManager from '../managers/FileManager.js';
-import { IceExportBusy, IceExportNeedsFreshSignIn, IceExportRefused, ImportUploadRefused, TakeoutImportRefused } from '../managers/ImportManager.js';
+import { IceExportBusy, IceExportNeedsFreshSignIn, IceExportRefused, ImportUploadRefused } from '../managers/ImportManager.js';
 import { IceExportFailed, PAGES_EXPORT_SOURCE } from '../ice/runExport.js';
 import { SEARCH_EXPORT_SOURCE, searchExportParams, searchExportRef } from '../ice/searchExportSource.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
@@ -11041,8 +11041,6 @@ ${panes}
 
       const pageManager = this.engine.getManager('PageManager');
       const stores = await pageManager.listOwnStoreIds(currentUser);
-      const configManager = this.engine.getManager('ConfigurationManager');
-      const defaultStore = privateStoreLayoutFromConfig((key, def) => configManager.getProperty(key, def)).defaultStoreId;
 
       const items = [];
       for (const store of stores) {
@@ -11071,13 +11069,6 @@ ${panes}
         totalItems: items.length,
         paginationHtml: '',
         listKind: 'takeout',
-        // #1472: where a takeout may be imported — the stores open in this
-        // session, and the default store, which a person on a new site has
-        // before they have written anything.
-        importStores: [...new Set([
-          ...items.filter(i => !i.locked).map(i => i.store),
-          ...(items.some(i => i.store === defaultStore) ? [] : [defaultStore])
-        ])],
         csrfToken: req.session?.csrfToken || '',
         emptyMessage: 'You have no private store to download.'
       });
@@ -11146,95 +11137,6 @@ ${panes}
     res.setHeader('Content-Length', String(archive.length));
     res.setHeader('Cache-Control', 'no-store');
     return res.end(archive);
-  }
-
-  /**
-   * POST /my/takeout/import — a takeout handed back into one of the
-   * requester's own stores (#1472). Multipart, one file field `archive`.
-   *
-   * Held in memory and never written to disk: the archive is decrypted data.
-   * The size cap is the operator's (`ngdpbase.stores.import.maxsize`) and caps
-   * both the upload and what it unpacks to, since both are in memory at once.
-   * Answers JSON: the page posts it with `csrfFetch`, because the CSRF check
-   * runs before a multipart body is parsed and could not see a form field.
-   */
-  async myTakeoutImport(req: Request, res: Response) {
-    const wikiContext = this.createWikiContext(req);
-    const currentUser = wikiContext.userContext;
-    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'json'))) return;
-    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'json', 'account-security');
-
-    const configManager = this.engine.getManager('ConfigurationManager');
-    const maxBytes = Number(configManager?.getProperty('ngdpbase.stores.import.maxsize', 268435456)) || 268435456;
-    const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: maxBytes, files: 1 } }).single('archive');
-    try {
-      await new Promise<void>((resolve, reject) => upload(req, res, (err: unknown) => {
-        if (err) reject(err instanceof Error ? err : new Error(getErrorMessage(err)));
-        else resolve();
-      }));
-    } catch (err) {
-      const tooBig = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE';
-      return res.status(tooBig ? 413 : 400).json({
-        success: false,
-        error: tooBig
-          ? `That file is larger than the ${Math.round(maxBytes / 1024 / 1024)} MB an import can take.`
-          : `The upload could not be read: ${getErrorMessage(err)}`
-      });
-    }
-
-    const store = typeof req.body?.store === 'string' ? req.body.store : '';
-    const uploaded = (req as Request & { file?: Express.Multer.File }).file;
-    const archive = uploaded?.buffer;
-    if (!store) return res.status(400).json({ success: false, error: 'No store was named.' });
-    if (!archive) return res.status(400).json({ success: false, error: 'No file was uploaded.' });
-
-    const importManager = this.engine.getManager<ImportManager>('ImportManager');
-    if (!importManager) return res.status(503).json({ success: false, error: 'Import is not available.' });
-
-    let report;
-    try {
-      report = await importManager.importOwnStoreTakeout(currentUser, {
-        store,
-        archive,
-        limits: { maxEntries: 0xffff, maxTotalBytes: maxBytes },
-        ...(uploaded?.originalname ? { sourceName: uploaded.originalname } : {})
-      });
-    } catch (err) {
-      if (err instanceof TakeoutImportRefused) {
-        const status = err.reason === 'locked' ? 409 : err.reason === 'not-owner' ? 403 : 400;
-        return res.status(status).json({ success: false, error: err.message });
-      }
-      logger.error(`[my-takeout] import into a store of ${currentUser.username} failed:`, err);
-      return res.status(500).json({ success: false, error: 'The import failed. Pages already imported are kept.' });
-    }
-
-    const count = (outcome: string): number => report.pages.filter(p => p.outcome === outcome).length;
-    // #1472: its own event — a bulk write into private data in one request.
-    // Counts only; a private page is never named in a log (#1461).
-    await recordAuditEvent(this.engine.getManager('AuditManager'), {
-      eventType: AUDIT_EVENT.STORE_IMPORT,
-      ...WikiRoutes.auditWho(req, currentUser, 'unknown'),
-      action: 'store-import',
-      // The import ran; what failed within it is counted below.
-      result: 'success',
-      severity: 'high',
-      resource: `private/${currentUser.username}/${store}`,
-      resourceType: 'private-store',
-      metadata: {
-        store,
-        bytes: archive.length,
-        pagesImported: count('imported'),
-        pagesUnchanged: count('unchanged'),
-        pagesChanged: count('changed-since-takeout'),
-        pagesElsewhere: count('uuid-elsewhere'),
-        pagesFailed: count('failed'),
-        files: report.files,
-        fileErrors: report.fileErrors.length,
-        filesUnlinked: report.unlinkedFiles.length
-      }
-    }, (err) => logger.warn('[my-takeout] audit record failed:', err));
-
-    return res.json({ success: true, report });
   }
 
   /**
@@ -19156,7 +19058,6 @@ ${panes}
     // admin sees nothing extra; /admin/trash stays public pages only.
     app.get('/my/takeout', (req: Request, res: Response) => this.myTakeoutPage(req, res));
     app.post('/my/takeout', (req: Request, res: Response) => void this.myTakeoutDownload(req, res));
-    app.post('/my/takeout/import', (req: Request, res: Response) => void this.myTakeoutImport(req, res));
     // #2021 — the import screen (ICE #1979): any user, into the receivers they may use.
     app.get('/import', (req: Request, res: Response) => void this.importPage(req, res));
     app.post('/import', (req: Request, res: Response) => void this.importUpload(req, res));

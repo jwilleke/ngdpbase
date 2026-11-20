@@ -41,7 +41,6 @@ const result = await importManager.importPages({
 - [IceExportNeedsFreshSignIn](classes/IceExportNeedsFreshSignIn.md)
 - [IceExportRefused](classes/IceExportRefused.md)
 - [ImportUploadRefused](classes/ImportUploadRefused.md)
-- [TakeoutImportRefused](classes/TakeoutImportRefused.md)
 
 ## Interfaces
 

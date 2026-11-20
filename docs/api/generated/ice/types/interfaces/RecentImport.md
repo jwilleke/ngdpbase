@@ -6,7 +6,7 @@
 
 # Interface: RecentImport
 
-Defined in: src/ice/types.ts:637
+Defined in: src/ice/types.ts:645
 
 One file in a user's recent imports (#2110), read from the ledger: what
 the import screen lists, so the list survives a restart. Only the user's
@@ -18,7 +18,7 @@ own entries, from the receivers they may use.
 
 > __at__: `string`
 
-Defined in: src/ice/types.ts:645
+Defined in: src/ice/types.ts:653
 
 When the ledger last recorded this file, ISO.
 
@@ -28,7 +28,7 @@ When the ledger last recorded this file, ISO.
 
 > `optional` __givenName?__: `string`
 
-Defined in: src/ice/types.ts:641
+Defined in: src/ice/types.ts:649
 
 The name the user gave what it became (#2130); the screen shows it with `name` beside it.
 
@@ -38,7 +38,7 @@ The name the user gave what it became (#2130); the screen shows it with `name` b
 
 > `optional` __link?__: `string`
 
-Defined in: src/ice/types.ts:655
+Defined in: src/ice/types.ts:663
 
 Where the user can open the first of them (`linkFor`), when they may.
 
@@ -48,7 +48,7 @@ Where the user can open the first of them (`linkFor`), when they may.
 
 > `optional` __message?__: `string`
 
-Defined in: src/ice/types.ts:643
+Defined in: src/ice/types.ts:651
 
 ***
 
@@ -56,7 +56,7 @@ Defined in: src/ice/types.ts:643
 
 > __name__: `string`
 
-Defined in: src/ice/types.ts:639
+Defined in: src/ice/types.ts:647
 
 The file's own name, as uploaded.
 
@@ -66,7 +66,7 @@ The file's own name, as uploaded.
 
 > __receiver__: `string`
 
-Defined in: src/ice/types.ts:647
+Defined in: src/ice/types.ts:655
 
 The receiver it went into.
 
@@ -76,7 +76,7 @@ The receiver it went into.
 
 > `optional` __receiverLabel?__: `string`
 
-Defined in: src/ice/types.ts:648
+Defined in: src/ice/types.ts:656
 
 ***
 
@@ -84,7 +84,7 @@ Defined in: src/ice/types.ts:648
 
 > __refs__: `number`
 
-Defined in: src/ice/types.ts:653
+Defined in: src/ice/types.ts:661
 
 How many references the receiver gave (pages, records).
 
@@ -94,7 +94,7 @@ How many references the receiver gave (pages, records).
 
 > __status__: [`IceFileStatus`](../type-aliases/IceFileStatus.md)
 
-Defined in: src/ice/types.ts:642
+Defined in: src/ice/types.ts:650
 
 ***
 
@@ -102,7 +102,7 @@ Defined in: src/ice/types.ts:642
 
 > `optional` __target?__: `string`
 
-Defined in: src/ice/types.ts:650
+Defined in: src/ice/types.ts:658
 
 The place within it (#2118), when the receiver has places.
 
@@ -112,4 +112,4 @@ The place within it (#2118), when the receiver has places.
 
 > `optional` __targetLabel?__: `string`
 
-Defined in: src/ice/types.ts:651
+Defined in: src/ice/types.ts:659

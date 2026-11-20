@@ -170,7 +170,6 @@ Export starts from the thing being exported, and there is no general export scre
 
 Later, once the engine has proven itself:
 
-- the vault takeout import;
 - export of search results and add-on lists (#2120's follow-up);
 - accounting's statement imports.
 

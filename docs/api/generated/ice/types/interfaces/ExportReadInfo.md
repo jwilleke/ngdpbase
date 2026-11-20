@@ -6,7 +6,7 @@
 
 # Interface: ExportReadInfo
 
-Defined in: src/ice/types.ts:684
+Defined in: src/ice/types.ts:692
 
 What an export source is told about the read it is asked for.
 
@@ -16,7 +16,7 @@ What an export source is told about the read it is asked for.
 
 > __format__: `string`
 
-Defined in: src/ice/types.ts:686
+Defined in: src/ice/types.ts:694
 
 The shim that will make the file (`core.pdf`).
 
@@ -26,7 +26,7 @@ The shim that will make the file (`core.pdf`).
 
 > __note__(`text`): `void`
 
-Defined in: src/ice/types.ts:688
+Defined in: src/ice/types.ts:696
 
 Tell the user something about what was read (what was left out and why); shown with the finished export.
 

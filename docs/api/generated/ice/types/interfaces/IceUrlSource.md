@@ -6,7 +6,7 @@
 
 # Interface: IceUrlSource
 
-Defined in: src/ice/types.ts:496
+Defined in: src/ice/types.ts:504
 
 A URL the engine fetches as the run's one file (D1, D10, #2109): through
 the one guarded path (`guardedFetch`, #1139) with the site's egress policy
@@ -20,7 +20,7 @@ the run. A feed's schedule is its owner's job; the engine fetches when run.
 
 > `optional` __headers?__: `Record`\<`string`, `string`\>
 
-Defined in: src/ice/types.ts:502
+Defined in: src/ice/types.ts:510
 
 Request headers for every fetch of the run (a `User-Agent` replaces the site default).
 
@@ -30,7 +30,7 @@ Request headers for every fetch of the run (a `User-Agent` replaces the site def
 
 > `optional` __metadata?__: `Record`\<`string`, `unknown`\>
 
-Defined in: src/ice/types.ts:510
+Defined in: src/ice/types.ts:518
 
 Facts the source states about the file, carried on it and on every item
 read from it (a feed source's id). The engine adds `sourceUrl`, the URL
@@ -42,7 +42,7 @@ fetched, so a shim can resolve the file's relative links.
 
 > `optional` __name?__: `string`
 
-Defined in: src/ice/types.ts:500
+Defined in: src/ice/types.ts:508
 
 The name the fetched file gets in reports and the ledger. Default: the URL.
 
@@ -52,7 +52,7 @@ The name the fetched file gets in reports and the ledger. Default: the URL.
 
 > `optional` __timeoutMs?__: `number`
 
-Defined in: src/ice/types.ts:504
+Defined in: src/ice/types.ts:512
 
 Each fetch's time limit, ms. Default `ngdpbase.fetch-timeout-ms`.
 
@@ -62,7 +62,7 @@ Each fetch's time limit, ms. Default `ngdpbase.fetch-timeout-ms`.
 
 > __type__: `"url"`
 
-Defined in: src/ice/types.ts:497
+Defined in: src/ice/types.ts:505
 
 ***
 
@@ -70,4 +70,4 @@ Defined in: src/ice/types.ts:497
 
 > __url__: `string`
 
-Defined in: src/ice/types.ts:498
+Defined in: src/ice/types.ts:506

@@ -12,12 +12,9 @@
  *     whole private store leaving the building is not a `page-export`.
  */
 
-import express from 'express';
-import request from 'supertest';
 import WikiRoutes from '../WikiRoutes';
 import type { Request, Response } from 'express';
 import { AUDIT_EVENT } from '../../utils/auditEventNames';
-import { TakeoutImportRefused } from '../../managers/ImportManager';
 
 type Res = Response & {
   setHeader: ReturnType<typeof vi.fn>;
@@ -43,8 +40,6 @@ function makeRoutes(options: {
   takeout?: unknown;
   buildThrows?: Error;
   stores?: string[];
-  importThrows?: Error;
-  maxSize?: number;
 } = {}) {
   const logAuditEvent = vi.fn().mockResolvedValue('evt-1');
   const buildOwnStoreTakeout = vi.fn(async () => {
@@ -61,25 +56,9 @@ function makeRoutes(options: {
     listOwnStoreIds: vi.fn(async () => options.stores ?? ['vault'])
   };
 
-  const importOwnStoreTakeout = vi.fn(async (_ctx: unknown, opts: { store: string }) => {
-    if (options.importThrows) throw options.importThrows;
-    return {
-      store: opts.store,
-      pages: [{ title: 'Recipes', outcome: 'imported', importedAs: 'private/molly/vault/Recipes' }, { title: 'Soup', outcome: 'unchanged' }],
-      files: 2,
-      fileErrors: [],
-      unlinkedFiles: ['scan.pdf'],
-      ignored: []
-    };
-  });
-
   const managers: Record<string, unknown> = {
     PageManager: pageManager,
-    ImportManager: { importOwnStoreTakeout },
-    AuditManager: { logAuditEvent, flushAuditQueue: vi.fn() },
-    ConfigurationManager: {
-      getProperty: (k: string, d: unknown) => (k === 'ngdpbase.stores.import.maxsize' && options.maxSize ? options.maxSize : d)
-    }
+    AuditManager: { logAuditEvent, flushAuditQueue: vi.fn() }
   };
 
   const routes = new WikiRoutes({ getManager: (n: string) => managers[n] ?? null });
@@ -91,7 +70,7 @@ function makeRoutes(options: {
   const renderError = vi.fn(async () => undefined);
   vi.spyOn(routes, 'renderError').mockImplementation(renderError as never);
 
-  return { routes, renderError, logAuditEvent, buildOwnStoreTakeout, pageManager, importOwnStoreTakeout };
+  return { routes, renderError, logAuditEvent, buildOwnStoreTakeout, pageManager };
 }
 
 const post = (body: Record<string, unknown>, user: unknown = MOLLY) =>
@@ -242,105 +221,5 @@ describe('GET /my/takeout (#1387)', () => {
 
     const data = res.render.mock.calls[0][1] as { items: Array<{ locked: boolean }> };
     expect(data.items[0].locked).toBe(true);
-  });
-});
-
-/** The import route behind a real multipart parse, as a browser posts it. */
-function importApp(routes: WikiRoutes) {
-  const app = express();
-  app.use((req, _res, next) => {
-    (req as unknown as { userContext: unknown }).userContext = MOLLY;
-    (req as unknown as { session: unknown }).session = { csrfToken: 't' };
-    next();
-  });
-  app.post('/my/takeout/import', (req, res) =>
-    void (routes as unknown as { myTakeoutImport: (q: Request, s: Response) => Promise<unknown> }).myTakeoutImport(req, res));
-  return app;
-}
-
-const ZIP = Buffer.from('PK fake archive bytes');
-
-describe('POST /my/takeout/import (#1472)', () => {
-  test('hands the uploaded bytes to the manager door and answers with its report', async () => {
-    const { routes, importOwnStoreTakeout } = makeRoutes();
-
-    const res = await request(importApp(routes))
-      .post('/my/takeout/import')
-      .field('store', 'vault')
-      .attach('archive', ZIP, 'takeout-vault.zip');
-
-    expect(res.status).toBe(200);
-    expect(res.body.report.pages).toHaveLength(2);
-    // Requester positional, no owner named: the door decides whose store it is.
-    expect(importOwnStoreTakeout).toHaveBeenCalledWith(
-      expect.objectContaining({ username: 'molly' }),
-      expect.objectContaining({ store: 'vault', archive: ZIP, sourceName: 'takeout-vault.zip' })
-    );
-  });
-
-  test('audited under its own event, with counts and no page names', async () => {
-    const { routes, logAuditEvent } = makeRoutes();
-
-    await request(importApp(routes)).post('/my/takeout/import').field('store', 'vault').attach('archive', ZIP, 'a.zip');
-
-    const event = logAuditEvent.mock.calls[0][0] as { eventType: string; resource: string; metadata: Record<string, unknown> };
-    expect(event.eventType).toBe(AUDIT_EVENT.STORE_IMPORT);
-    expect(event.resource).toBe('private/molly/vault');
-    expect(event.metadata).toMatchObject({ pagesImported: 1, pagesUnchanged: 1, files: 2, filesUnlinked: 1 });
-    // Counts only: a private page or file is never named in a log (#1461).
-    expect(JSON.stringify(event)).not.toContain('Recipes');
-    expect(JSON.stringify(event)).not.toContain('scan.pdf');
-  });
-
-  test('a locked store is a 409 with the reason, and nothing is audited', async () => {
-    const { routes, logAuditEvent } = makeRoutes({
-      importThrows: new TakeoutImportRefused('locked', 'That store is encrypted and locked in this session. Unlock it, then import again.')
-    });
-
-    const res = await request(importApp(routes)).post('/my/takeout/import').field('store', 'vault').attach('archive', ZIP, 'a.zip');
-
-    expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/unlock/i);
-    expect(logAuditEvent).not.toHaveBeenCalled();
-  });
-
-  test('a file over the operator\'s cap is a 413, and never reaches the door', async () => {
-    const { routes, importOwnStoreTakeout } = makeRoutes({ maxSize: 8 });
-
-    const res = await request(importApp(routes)).post('/my/takeout/import').field('store', 'vault').attach('archive', ZIP, 'a.zip');
-
-    expect(res.status).toBe(413);
-    expect(importOwnStoreTakeout).not.toHaveBeenCalled();
-  });
-
-  test('no file is a 400', async () => {
-    const { routes, importOwnStoreTakeout } = makeRoutes();
-
-    const res = await request(importApp(routes)).post('/my/takeout/import').field('store', 'vault');
-
-    expect(res.status).toBe(400);
-    expect(importOwnStoreTakeout).not.toHaveBeenCalled();
-  });
-});
-
-describe('GET /my/takeout — where an import may go (#1472)', () => {
-  test('the open stores, plus the default store a new site starts with', async () => {
-    const { routes } = makeRoutes({ stores: ['vault'] });
-    const res = newRes();
-
-    await (routes as unknown as { myTakeoutPage: (q: Request, s: Response) => Promise<unknown> })
-      .myTakeoutPage(post({}), res);
-
-    expect((res.render.mock.calls[0][1] as { importStores: string[] }).importStores).toEqual(['vault', 'default']);
-  });
-
-  test('a locked store is not offered', async () => {
-    const { routes } = makeRoutes({ buildThrows: new Error('locked'), stores: ['default'] });
-    const res = newRes();
-
-    await (routes as unknown as { myTakeoutPage: (q: Request, s: Response) => Promise<unknown> })
-      .myTakeoutPage(post({}), res);
-
-    expect((res.render.mock.calls[0][1] as { importStores: string[] }).importStores).toEqual([]);
   });
 });

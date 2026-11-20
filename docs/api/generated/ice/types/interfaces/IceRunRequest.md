@@ -6,7 +6,7 @@
 
 # Interface: IceRunRequest
 
-Defined in: src/ice/types.ts:520
+Defined in: src/ice/types.ts:528
 
 One import, as a caller asks for it.
 
@@ -16,7 +16,7 @@ One import, as a caller asks for it.
 
 > `optional` __options?__: `Record`\<`string`, `unknown`\>
 
-Defined in: src/ice/types.ts:543
+Defined in: src/ice/types.ts:551
 
 Options for this run's shims, over the site's (`ShimTools.options`): a
 feed source's parse settings (#2109). Server-built; never a value a
@@ -28,7 +28,7 @@ client sent.
 
 > `optional` __original?__: [`OriginalChoice`](../type-aliases/OriginalChoice.md)
 
-Defined in: src/ice/types.ts:527
+Defined in: src/ice/types.ts:535
 
 D11. Default `ngdpbase.import.engine.default-original`.
 
@@ -38,7 +38,7 @@ D11. Default `ngdpbase.import.engine.default-original`.
 
 > __receiver__: `string`
 
-Defined in: src/ice/types.ts:523
+Defined in: src/ice/types.ts:531
 
 The receiver id the results go to: `core.pages`, `phr.health-records`.
 
@@ -48,7 +48,7 @@ The receiver id the results go to: `core.pages`, `phr.health-records`.
 
 > `optional` __scope?__: `string`
 
-Defined in: src/ice/types.ts:537
+Defined in: src/ice/types.ts:545
 
 A narrower ledger scope within the caller's own (#2013). The engine binds
 every run's scope to the receiver and to the user it runs as (their
@@ -64,7 +64,7 @@ value a client sent.
 
 > `optional` __shim?__: `string`
 
-Defined in: src/ice/types.ts:525
+Defined in: src/ice/types.ts:533
 
 Pin the first shim (a format the person chose) instead of detecting one.
 
@@ -74,7 +74,7 @@ Pin the first shim (a format the person chose) instead of detecting one.
 
 > __source__: [`IceSource`](../type-aliases/IceSource.md)
 
-Defined in: src/ice/types.ts:521
+Defined in: src/ice/types.ts:529
 
 ***
 
@@ -82,7 +82,7 @@ Defined in: src/ice/types.ts:521
 
 > `optional` __target?__: `string`
 
-Defined in: src/ice/types.ts:549
+Defined in: src/ice/types.ts:557
 
 The place within the receiver (#2118), for a receiver with `targets`:
 one of those it gives the user the run is for. Required for such a

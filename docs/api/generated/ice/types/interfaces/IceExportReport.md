@@ -6,7 +6,7 @@
 
 # Interface: IceExportReport
 
-Defined in: src/ice/types.ts:769
+Defined in: src/ice/types.ts:777
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: src/ice/types.ts:769
 
 > __chain__: `string`[]
 
-Defined in: src/ice/types.ts:774
+Defined in: src/ice/types.ts:782
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: src/ice/types.ts:774
 
 > `optional` __error?__: `string`
 
-Defined in: src/ice/types.ts:780
+Defined in: src/ice/types.ts:788
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: src/ice/types.ts:780
 
 > `optional` __expiresAt?__: `string`
 
-Defined in: src/ice/types.ts:785
+Defined in: src/ice/types.ts:793
 
 When the file is let go (`ngdpbase.export.engine.keep-minutes`).
 
@@ -40,7 +40,7 @@ When the file is let go (`ngdpbase.export.engine.keep-minutes`).
 
 > `optional` __file?__: [`IceExportFile`](IceExportFile.md)
 
-Defined in: src/ice/types.ts:783
+Defined in: src/ice/types.ts:791
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: src/ice/types.ts:783
 
 > `optional` __finishedAt?__: `string`
 
-Defined in: src/ice/types.ts:779
+Defined in: src/ice/types.ts:787
 
 ***
 
@@ -56,7 +56,7 @@ Defined in: src/ice/types.ts:779
 
 > __format__: `string`
 
-Defined in: src/ice/types.ts:773
+Defined in: src/ice/types.ts:781
 
 ***
 
@@ -64,7 +64,7 @@ Defined in: src/ice/types.ts:773
 
 > `optional` __notes?__: `string`[]
 
-Defined in: src/ice/types.ts:782
+Defined in: src/ice/types.ts:790
 
 What the source says about what it read, such as how many items were left out.
 
@@ -74,7 +74,7 @@ What the source says about what it read, such as how many items were left out.
 
 > __ref__: `string`
 
-Defined in: src/ice/types.ts:772
+Defined in: src/ice/types.ts:780
 
 ***
 
@@ -82,7 +82,7 @@ Defined in: src/ice/types.ts:772
 
 > __runId__: `string`
 
-Defined in: src/ice/types.ts:770
+Defined in: src/ice/types.ts:778
 
 ***
 
@@ -90,7 +90,7 @@ Defined in: src/ice/types.ts:770
 
 > __source__: `string`
 
-Defined in: src/ice/types.ts:771
+Defined in: src/ice/types.ts:779
 
 ***
 
@@ -98,7 +98,7 @@ Defined in: src/ice/types.ts:771
 
 > `optional` __startedAt?__: `string`
 
-Defined in: src/ice/types.ts:778
+Defined in: src/ice/types.ts:786
 
 ***
 
@@ -106,7 +106,7 @@ Defined in: src/ice/types.ts:778
 
 > __state__: `"failed"` \| `"done"` \| `"running"` \| `"queued"`
 
-Defined in: src/ice/types.ts:777
+Defined in: src/ice/types.ts:785
 
 ***
 
@@ -114,6 +114,6 @@ Defined in: src/ice/types.ts:777
 
 > __username__: `string`
 
-Defined in: src/ice/types.ts:776
+Defined in: src/ice/types.ts:784
 
 Who it ran as: the only user who sees it or downloads its file.

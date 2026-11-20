@@ -6,7 +6,7 @@
 
 # Interface: IceExportFormat
 
-Defined in: src/ice/types.ts:744
+Defined in: src/ice/types.ts:752
 
 A format the Export action offers: the shim that makes the file, and the shims before it.
 
@@ -16,7 +16,7 @@ A format the Export action offers: the shim that makes the file, and the shims b
 
 > __chain__: `string`[]
 
-Defined in: src/ice/types.ts:749
+Defined in: src/ice/types.ts:757
 
 Every shim the export runs through, in order, ending with `id`.
 
@@ -26,7 +26,7 @@ Every shim the export runs through, in order, ending with `id`.
 
 > __id__: `string`
 
-Defined in: src/ice/types.ts:746
+Defined in: src/ice/types.ts:754
 
 The shim that makes the file, `core.pdf`.
 
@@ -36,4 +36,4 @@ The shim that makes the file, `core.pdf`.
 
 > __label__: `string`
 
-Defined in: src/ice/types.ts:747
+Defined in: src/ice/types.ts:755
