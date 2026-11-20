@@ -22,7 +22,9 @@
  * of a password or a one-time code. A draft is read once, dropped when it is
  * for another account or older than ten minutes, and a value the field does not
  * accept (a choice it does not offer, a number out of range, text past its
- * `maxlength`) is left out.
+ * `maxlength`) is left out. Nothing is kept or restored on a page that does not say
+ * who is signed in. Every page that loads this script drops the drafts that are old,
+ * for another account or for nobody, and signing out drops them all.
  */
 (function () {
   'use strict';
@@ -34,6 +36,43 @@
   function currentUser() {
     var meta = document.querySelector('meta[name="current-user"]');
     return (meta && meta.getAttribute('content')) || '';
+  }
+
+  /** A draft that may still be used: well-formed, for the signed-in account, under ten minutes old. */
+  function usable(draft) {
+    var user = currentUser();
+    return !!draft && typeof draft === 'object' && !!draft.fields && typeof draft.fields === 'object' &&
+      !!user && draft.user === user && typeof draft.at === 'number' && Date.now() - draft.at < MAX_AGE_MS;
+  }
+
+  function draftKeys() {
+    var keys = [];
+    try {
+      for (var i = 0; i < sessionStorage.length; i++) {
+        var k = sessionStorage.key(i);
+        if (k && k.indexOf(PREFIX) === 0) keys.push(k);
+      }
+    } catch (err) { /* no storage */ }
+    return keys;
+  }
+
+  function parse(raw) {
+    try { return JSON.parse(raw || 'null'); } catch (err) { return null; }
+  }
+
+  /** Drop every draft that can no longer be used. */
+  function sweep() {
+    draftKeys().forEach(function (k) {
+      try {
+        if (!usable(parse(sessionStorage.getItem(k)))) sessionStorage.removeItem(k);
+      } catch (err) { /* no storage */ }
+    });
+  }
+
+  function clearAll() {
+    draftKeys().forEach(function (k) {
+      try { sessionStorage.removeItem(k); } catch (err) { /* no storage */ }
+    });
   }
 
   function idOf(el) {
@@ -60,6 +99,7 @@
    * was kept. `opts.skip(field)` leaves out a field this page knows to be secret.
    */
   function keep(key, root, opts) {
+    if (!currentUser()) return false;
     var fields = {};
     var count = 0;
     fieldsOf(root, opts && opts.skip).forEach(function (el) {
@@ -85,14 +125,12 @@
     var o = opts || {};
     var draft = null;
     try {
-      draft = JSON.parse(sessionStorage.getItem(PREFIX + key) || 'null');
+      draft = parse(sessionStorage.getItem(PREFIX + key));
       sessionStorage.removeItem(PREFIX + key);
     } catch (err) {
       return false;
     }
-    if (!draft || typeof draft !== 'object' || !draft.fields || typeof draft.fields !== 'object') return false;
-    if (draft.user !== currentUser()) return false;
-    if (typeof draft.at !== 'number' || !(Date.now() - draft.at < MAX_AGE_MS)) return false;
+    if (!usable(draft)) return false;
 
     var filled = 0;
     fieldsOf(root, o.skip).forEach(function (el) {
@@ -124,15 +162,18 @@
     return true;
   }
 
-  /** Whether any draft is waiting in this tab (the sign-in prompt says so). */
+  /** Whether a fresh draft of the signed-in account is waiting in this tab (the sign-in prompt says so). */
   function pending() {
-    try {
-      for (var i = 0; i < sessionStorage.length; i++) {
-        if (sessionStorage.key(i).indexOf(PREFIX) === 0) return true;
-      }
-    } catch (err) { /* no storage */ }
-    return false;
+    sweep();
+    return draftKeys().length > 0;
   }
+
+  sweep();
+  // Signing out leaves nothing typed behind in the tab.
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (form && form.getAttribute && /^\/logout\/?$/.test(form.getAttribute('action') || '')) clearAll();
+  }, true);
 
   window.reauthDraft = { keep: keep, restore: restore, pending: pending };
 })();

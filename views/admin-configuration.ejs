@@ -367,7 +367,7 @@
                                                         </td>
                                                         <td>
                                                             <button type="submit" class="btn btn-sm btn-primary"<%- lockedUnless('config-manage') %>>
-                                                                <i class="fas fa-save"></i>
+                                                                <i class="fas fa-save" aria-hidden="true"></i><span class="visually-hidden">Save</span>
                                                             </button>
                                                         </form>
                                                     </td>
@@ -469,26 +469,32 @@
 document.addEventListener('DOMContentLoaded', function() {
     // #2445: a stale sign-in sends the page to the fresh sign-in prompt and back.
     // What was typed in a setting's form comes back in it, once, not saved: the
-    // admin presses its button again. A value for a setting whose name looks like a
-    // secret is never kept. public/js/reauth-draft.js does the keeping.
+    // admin presses its button again. A value for a setting the server treats as a
+    // secret (its list, or a name that looks like one) is never kept.
+    // public/js/reauth-draft.js does the keeping.
+    var SECRET_KEYS = <%- jsonForScript(secretKeys) %>;
     var SECRET_NAME = /secret|password|passwd|passphrase|credential|api[-_.]?key|private[-_.]?key|token/i;
+    function isSecretName(name) {
+        return SECRET_KEYS.indexOf(name) !== -1 || SECRET_NAME.test(name);
+    }
     function settingName(form) {
         var field = form.querySelector('[name="property"]');
         return field ? field.value : '';
     }
     function draftOptions(form) {
-        return { skip: function(el) { return el.name === 'value' && SECRET_NAME.test(settingName(form)); } };
+        return { skip: function(el) { return el.name === 'value' && isSecretName(settingName(form)); } };
     }
     // Rows are keyed by their setting; the Add property form, whose name is typed, by itself.
+    // A setting shown in two tabs (Custom Overrides and another) shares one key: the form that loads first
+    // takes the draft, the other finds it gone. They hold the same setting, so nothing is lost.
     function draftKey(form) {
         var field = form.querySelector('[name="property"]');
         return 'config:' + (field && field.type === 'hidden' ? field.value : 'add');
     }
     document.querySelectorAll('form[action="/admin/configuration"]').forEach(function(form) {
         var options = draftOptions(form);
-        options.press = draftKey(form) === 'config:add' ? 'Add Property' : 'the save button';
-        options.label = draftKey(form) === 'config:add' ? 'the new setting' : settingName(form);
-        options.noteIn = document.querySelector('.container.mt-4');
+        // The note goes in the form itself, next to the setting it is about.
+        options.press = draftKey(form) === 'config:add' ? 'Add Property' : 'Save';
         options.onRestore = function() {
             // Show the tab the form is in, and the form.
             var pane = form.closest('.tab-pane');

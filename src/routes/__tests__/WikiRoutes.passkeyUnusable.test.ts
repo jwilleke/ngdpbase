@@ -94,7 +94,7 @@ async function configurationScreen(s: Awaited<ReturnType<typeof site>>, custom: 
   const data = r.render.mock.calls[0][1] as Record<string, unknown>;
   const html = await ejs.renderFile(path.join(VIEWS, 'admin-configuration.ejs'), {
     ...data, customProperties: custom, csrfToken: 'tok', lockedUnless: () => (locked ? ' disabled aria-disabled="true" title="Requires the permission"' : ''), locals: {}, cspNonce: 'n',
-    securityPosture: null, secretKeys: [], secretIsSet: {}, canRevealSecrets: false, envControlled
+    securityPosture: null, secretKeys: [], jsonForScript: (v: unknown) => JSON.stringify(v ?? null).replace(/</g, '\\u003c'), secretIsSet: {}, canRevealSecrets: false, envControlled
   }, { includer });
   if (opts.scripts) {
     const dom = new JSDOM(html, { runScripts: 'dangerously', beforeParse: w => opts.scripts(w) });

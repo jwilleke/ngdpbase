@@ -28,7 +28,7 @@ const DECLARED_SECRET = 'ngdpbase.mail.provider.smtp.pass';
 const CONFIG_SCRIPT_SRC = [...read('views/admin-configuration.ejs').matchAll(/<script nonce="[^"]*">([\s\S]*?)<\/script>/g)]
   .map(m => m[1])
   .find(s => s.includes('Handle all configuration save forms'));
-const CONFIG_SCRIPT = ejs.render(CONFIG_SCRIPT_SRC, { secretKeys: [DECLARED_SECRET, 'ngdpbase.site.secret-sauce'] });
+const CONFIG_SCRIPT = ejs.render(CONFIG_SCRIPT_SRC, { secretKeys: [DECLARED_SECRET, 'ngdpbase.site.secret-sauce'], jsonForScript: (v: unknown) => JSON.stringify(v ?? null).replace(/</g, '\\u003c') });
 
 interface Page { dom: JSDOM; doc: Document; sent: string[]; shown: string[] }
 
