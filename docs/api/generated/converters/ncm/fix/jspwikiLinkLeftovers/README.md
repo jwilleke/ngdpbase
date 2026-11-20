@@ -31,10 +31,13 @@ Deliberately narrow:
 - never inside code, an HTML block or an inline code span;
 - a line longer than 10,000 characters is left as it is, and an
     address is matched up to 2,048 characters, so the cost of a
-    page grows with its size, not with the square of one line.
+    page grows with its size, not with the square of one line;
+- a join may not make a line longer than 10,000 characters or
+    take more than 20 lines; a longer run is left as it is.
 
-One run does everything: a line made by a join is looked at again, for the
-next join and for the leftovers above, so a second run changes nothing.
+One run does everything: a line is repaired for the leftovers above before
+it is tested for a join, and a line made by a join is looked at again, so a
+second run changes nothing.
 
 ## Variables
 

@@ -23,10 +23,13 @@
  *   - never inside code, an HTML block or an inline code span;
  *   - a line longer than {@link MAX_LINE} characters is left as it is, and an
  *     address is matched up to {@link MAX_URL} characters, so the cost of a
- *     page grows with its size, not with the square of one line.
+ *     page grows with its size, not with the square of one line;
+ *   - a join may not make a line longer than {@link MAX_LINE} characters or
+ *     take more than {@link MAX_JOINS} lines; a longer run is left as it is.
  *
- * One run does everything: a line made by a join is looked at again, for the
- * next join and for the leftovers above, so a second run changes nothing.
+ * One run does everything: a line is repaired for the leftovers above before
+ * it is tested for a join, and a line made by a join is looked at again, so a
+ * second run changes nothing.
  *
  * @module converters/ncm/fix/jspwikiLinkLeftovers
  */
@@ -34,9 +37,10 @@
 import type { FixStep } from './types.js';
 import { buildBlockMap, joinLines } from './blocks.js';
 
-/** Longest address the step matches, and longest line it reads. */
+/** Longest address the step matches, longest line it reads or makes, and most lines it joins into one. */
 const MAX_URL = 2048;
 const MAX_LINE = 10000;
+const MAX_JOINS = 20;
 
 /** An address: no space, and none of the characters the leftovers glue on. */
 const URL = String.raw`https?:\/\/[^\s()|\]]{1,${MAX_URL}}`;
@@ -115,15 +119,48 @@ export const jspwikiLinkLeftovers: FixStep = {
       const from = [i];
       if (editable(i)) {
         // A wiki link split over two lines: join the next line onto this one,
-        // as often as it fits, so `[A|u] [B` + `|u2]` ends as one line.
-        while (i + 1 < map.lines.length && editable(i + 1)) {
-          const half = SECOND_HALF.exec(map.lines[i + 1]);
-          const first = endsInOpenLink(text);
+        // as often as it fits, so `[A|u] [B` + `|u2]` ends as one line. A line
+        // is repaired before it is tested, so the answer does not depend on a
+        // second run. The joined text may not pass MAX_LINE characters or
+        // MAX_JOINS lines: a longer run is left exactly as it is.
+        let joined = text;
+        let last = i;
+        let tooLong = false;
+        while (last + 1 < map.lines.length && editable(last + 1)) {
+          const next = fixLinkLeftoversInLine(map.lines[last + 1]);
+          const half = SECOND_HALF.exec(next);
+          const first = endsInOpenLink(joined);
           if (!half || !first.open || first.pipe === Boolean(half[1])) break;
-          text = text.replace(/\s+$/, '') + map.lines[i + 1].replace(/^\s+/, '');
-          eol = map.eols[i + 1];
-          i++;
-          from.push(i);
+          if (joined.length + next.length > MAX_LINE || last - i >= MAX_JOINS) {
+            tooLong = true;
+            break;
+          }
+          joined = joined.replace(/\s+$/, '') + next.replace(/^\s+/, '');
+          last++;
+        }
+        if (tooLong) {
+          // Leave the whole run as it is, so a second run decides the same way.
+          let end = last;
+          while (
+            end + 1 < map.lines.length &&
+            editable(end + 1) &&
+            SECOND_HALF.test(map.lines[end + 1]) &&
+            endsInOpenLink(map.lines[end]).open
+          ) end++;
+          for (let n = i; n <= end; n++) {
+            const own = fixLinkLeftoversInLine(map.lines[n]);
+            if (own !== map.lines[n]) touched.add(n + 1);
+            out.push(own);
+            eols.push(map.eols[n]);
+          }
+          i = end;
+          continue;
+        }
+        if (last > i) {
+          text = joined;
+          eol = map.eols[last];
+          for (let n = i + 1; n <= last; n++) from.push(n);
+          i = last;
         }
         const fixed = fixLinkLeftoversInLine(text);
         if (fixed !== text || from.length > 1) from.forEach((n) => touched.add(n + 1));

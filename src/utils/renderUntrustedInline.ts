@@ -23,6 +23,7 @@
  * fully escaped text — the pre-#1123 behaviour — never unsanitized HTML.
  */
 
+import { randomBytes } from 'node:crypto';
 import { createMarkdownConverter, type MarkdownConverter } from '../rendering/markdownConverter.js';
 import SecurityFilter from '../parsers/filters/SecurityFilter.js';
 import logger from './logger.js';
@@ -35,13 +36,16 @@ const PROFILE_FORBIDDEN_TAGS = ['iframe', 'img', 'figure', 'figcaption', 'detail
 interface ProfileRenderer {
   converter: MarkdownConverter;
   filter: SecurityFilter;
+  /** Class the converter puts on a bare-address link; random per process, so an author cannot write it. */
+  marker: string;
 }
 
 const renderers = new WeakMap<object, Promise<ProfileRenderer | null>>();
 
 async function buildRenderer(engine: WikiEngine): Promise<ProfileRenderer | null> {
   try {
-    const converter = createMarkdownConverter('untrusted');
+    const marker = `bare-${randomBytes(12).toString('hex')}`;
+    const converter = createMarkdownConverter('untrusted', undefined, marker);
 
     const filter = new SecurityFilter();
     await filter.initialize({ engine });
@@ -57,7 +61,7 @@ async function buildRenderer(engine: WikiEngine): Promise<ProfileRenderer | null
     for (const tag of PROFILE_FORBIDDEN_TAGS) {
       filter.allowedTags.delete(tag);
     }
-    return { converter, filter };
+    return { converter, filter, marker };
   } catch (err) {
     logger.warn('[renderUntrustedInline] profile renderer unavailable, falling back to escaped text:', err);
     return null;
@@ -68,13 +72,14 @@ async function buildRenderer(engine: WikiEngine): Promise<ProfileRenderer | null
  * A bare address in a comment opens in a new tab like one in a page (#2443).
  * The sanitiser drops `target` and `rel`, and the profile's attribute list is
  * deliberately not widened for an author's own markup, so the two attributes
- * are put back afterwards, and only on the exact tag the converter writes for
- * a bare `http(s)` address: an `href` that already passed the filter, then the
- * `wiki-link external-link` class. Links an author wrote stay as they were.
+ * are put back afterwards, and only on a link the converter made from a bare
+ * address: it carries a class only this process knows, which is removed again
+ * here. An `<a>` an author wrote, whatever its class, gets nothing.
  */
-function openBareAddressesInNewTab(html: string): string {
+function openBareAddressesInNewTab(html: string, marker: string): string {
+  const tag = new RegExp(`<a href="(https?:\\/\\/[^"]*)" class="wiki-link external-link ${marker}">`, 'gi');
   return html.replace(
-    /<a href="(https?:\/\/[^"]*)" class="wiki-link external-link">/g,
+    tag,
     (_tag: string, href: string) => `<a href="${href}" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">`
   );
 }
@@ -100,7 +105,7 @@ export async function renderUntrustedInline(formatters: PluginFormatters, markdo
     if (!renderer) return fallback();
 
     const html = renderer.converter.makeHtml(markdown);
-    return openBareAddressesInNewTab(await renderer.filter.process(html, { pageName: 'untrusted-inline' }));
+    return openBareAddressesInNewTab(await renderer.filter.process(html, { pageName: 'untrusted-inline' }), renderer.marker);
   } catch (err) {
     logger.warn('[renderUntrustedInline] render failed, falling back to escaped text:', err);
     return fallback();

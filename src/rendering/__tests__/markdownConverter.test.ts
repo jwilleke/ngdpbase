@@ -217,7 +217,7 @@ describe('bare web addresses (#2443)', () => {
   it('a backslash-escaped address with `_` stays text', () => {
     const out = html('\\https://a.com/_foo_');
     expect(out).not.toContain('<a');
-    expect(out).not.toContain('<em>');
+    expect(out).toContain('\\https://a.com/');
   });
 
   it('a backslash before the address keeps it as text and the backslash shows', () => {

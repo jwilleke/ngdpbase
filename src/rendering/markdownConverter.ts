@@ -100,7 +100,9 @@ function ellipsisOnly(md: MarkdownIt): void {
  * normalised and escaped it, and refused `javascript:` and its kin.
  *
  * `bareOnly` (comments, #2443): only a link made from a bare address gets them;
- * every link an author wrote in a comment renders as it always did.
+ * every link an author wrote in a comment renders as it always did. A render
+ * can ask for one more class on those links (`bareLinkClass`), so the caller
+ * can tell them from an `<a>` an author wrote with the same classes.
  */
 function externalLinksInNewTab(md: MarkdownIt, bareOnly = false): void {
   const renderLinkOpen = md.renderer.rules.link_open
@@ -109,6 +111,8 @@ function externalLinksInNewTab(md: MarkdownIt, bareOnly = false): void {
     const token = tokens[idx];
     if (/^https?:\/\//i.test(token.attrGet('href') ?? '') && (!bareOnly || token.markup === 'linkify')) {
       token.attrJoin('class', 'wiki-link external-link');
+      const marker = (env as RenderEnv | undefined)?.bareLinkClass;
+      if (bareOnly && marker) token.attrJoin('class', marker);
       token.attrSet('target', '_blank');
       token.attrSet('rel', 'noopener noreferrer');
     }
@@ -124,17 +128,30 @@ const PLACEHOLDER_END = '\uE001';
  * Bare web addresses become links (#2443), and only those. markdown-it's
  * linkify also links bare domains, mail addresses, `ftp:` and `//host` forms,
  * and links an address that follows a backslash. Domains, mail addresses and
- * the fuzzy forms are switched off at the source; the inline `linkify` rule is
- * switched off too, because it takes an address before emphasis can end and so
- * swallows a closing `~~`; the core rule links the text left after inline
- * parsing. A rule after it takes back a link that is not `http(s)` and one
+ * the fuzzy forms are switched off at the source. markdown-it's inline `linkify`
+ * rule takes an address before emphasis, so `_` and `*` inside it stay as
+ * written; it is told to end an address at `~~`, so a closing strikethrough
+ * stays outside. A rule after the core `linkify` takes back a link that is not `http(s)` and one
  * written `\https://…`, which is how an author keeps an address as text, and
  * ends a link at a table cell's placeholder sentinels. The stored text is
  * never changed.
  */
 function bareWebAddresses(md: MarkdownIt): void {
   md.linkify.set({ fuzzyLink: false, fuzzyEmail: false, fuzzyIP: false });
-  md.inline.ruler.disable('linkify');
+  // The inline rule keeps an address whole (`_` and `*` inside it are not
+  // emphasis); it asks matchAtStart for the address, so end it there at `~~`.
+  const matchAtStart = md.linkify.matchAtStart.bind(md.linkify);
+  md.linkify.matchAtStart = (text: string) => {
+    const found = matchAtStart(text);
+    const cut = found ? found.url.indexOf('~~') : -1;
+    if (found && cut > 0) {
+      found.url = found.url.slice(0, cut);
+      found.raw = found.raw.slice(0, cut);
+      found.text = found.text.slice(0, cut);
+      found.lastIndex = found.index + cut;
+    }
+    return found;
+  };
   md.core.ruler.after('linkify', 'linkify_web_only', (state): void => {
     for (const block of state.tokens) {
       if (block.type !== 'inline' || !block.children) continue;
@@ -168,6 +185,8 @@ function bareWebAddresses(md: MarkdownIt): void {
 /** What a converter hands markdown-it for one render: the policy in force. */
 interface RenderEnv {
   htmlPolicy?: HtmlPolicy | null;
+  /** Extra class on the links made from a bare address (comments only, #2443). */
+  bareLinkClass?: string;
 }
 
 /** Set on the html tokens markdown-it parsed from the source: the author's. */
@@ -271,13 +290,20 @@ function markdownItFor(profile: MarkdownProfile): MarkdownIt {
  * The converter for a profile. `readHtmlPolicy` returns the configured value of
  * `ngdpbase.markup.html-policy` and is called on every render, so the policy in
  * force is always the configured one; without it, no author HTML is allowed.
- * One markdown-it instance per profile; renders are independent.
+ * `bareLinkClass` (the `untrusted` profile, #2443) is one more class on the
+ * links made from a bare address, so a caller that sanitises the output can
+ * tell them from an `<a>` an author wrote. One markdown-it instance per
+ * profile; renders are independent.
  */
-export function createMarkdownConverter(profile: MarkdownProfile, readHtmlPolicy?: () => unknown): MarkdownConverter {
+export function createMarkdownConverter(
+  profile: MarkdownProfile,
+  readHtmlPolicy?: () => unknown,
+  bareLinkClass?: string
+): MarkdownConverter {
   const md = markdownItFor(profile);
   return {
     makeHtml: (markdown: string): string =>
-      md.render(markdown, { htmlPolicy: asHtmlPolicy(readHtmlPolicy?.()) } satisfies RenderEnv)
+      md.render(markdown, { htmlPolicy: asHtmlPolicy(readHtmlPolicy?.()), bareLinkClass } satisfies RenderEnv)
   };
 }
 
