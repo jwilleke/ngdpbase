@@ -285,6 +285,8 @@ describe('bare web addresses (#2443)', () => {
       ['a ? before the @ (1)', `http://a?b@${LONG_HOST}@x.com`],
       ['a # before the @ (1)', `http://a#b@${LONG_HOST}@x.com`],
       ['a ? before the @ (2)', `http://${'a?'.repeat(24)}@${LONG_HOST}@x.com`],
+      ['4 punycode labels', `http://${'xn--a.'.repeat(4)}a.com`],
+      ['4 punycode labels among 20 labels', 'http://u@é.xn--a.b.xn--a.c.xn--a.d.xn--a.e.f.g.h.i.j.k.l.m.n.zz:80-'],
       ['a ? before the @ (3)', `http://a?b@${'a.'.repeat(33)}x.com/`],
       ['a # before the @ (3)', `http://a#b@${`${'a'.repeat(60)}.`.repeat(5)}x.com/`]
     ])('long host names stay text: %s', (_name, address) => {
@@ -294,6 +296,11 @@ describe('bare web addresses (#2443)', () => {
     test.each([
       ['a user name and password with a port', 'https://user:pass@example.com:8080/x'],
       ['a query with an @ in it', 'https://example.com/?q=a@b.com'],
+      ['a query with an @ in it and no path', 'https://example.com?q=a@b.com'],
+      ['3 punycode labels', 'https://xn--a.xn--b.xn--c.org/'],
+      ['a punycode host and a path', 'https://xn--bcher-kva.example/path'],
+      ['a long query and no path', `https://example.com?q=${'a'.repeat(300)}`],
+      ['many dotted labels after a # and no path', `https://example.com#${'a.'.repeat(40)}b`],
       ['a user part of exactly 50 characters', `https://${'u'.repeat(50)}@example.com/`]
     ])('%s still links', (_name, address) => {
       expect(converter.makeHtml(address)).toContain(`<a href="${address}"`);
