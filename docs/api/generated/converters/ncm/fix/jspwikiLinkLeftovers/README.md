@@ -33,7 +33,7 @@ Deliberately narrow:
     address is matched up to 2,048 characters, so the cost of a
     page grows with its size, not with the square of one line;
 - a join may not make a line longer than 10,000 characters or
-    take more than 20 lines; a longer run is left as it is.
+    take more than 20 continuation lines (the first line and 20 more); a longer run is left as it is.
 
 One run does everything: a line is repaired for the leftovers above before
 it is tested for a join, and a line made by a join is looked at again, so a

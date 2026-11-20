@@ -120,6 +120,9 @@ function externalLinksInNewTab(md: MarkdownIt, bareOnly = false): void {
   };
 }
 
+/** Bidi controls (U+202A–U+202E, U+2066–U+2069) and line breaks: never shown in a link's text. */
+const INVISIBLE_IN_TEXT = /[\u202A-\u202E\u2066-\u2069\r\n]/g;
+
 /** Private-use sentinels a table cell wraps around a placeholder (JSPWikiPreprocessor). */
 const PLACEHOLDER_START = '\uE000';
 const PLACEHOLDER_END = '\uE001';
@@ -130,27 +133,23 @@ const PLACEHOLDER_END = '\uE001';
  * and links an address that follows a backslash. Domains, mail addresses and
  * the fuzzy forms are switched off at the source. markdown-it's inline `linkify`
  * rule takes an address before emphasis, so `_` and `*` inside it stay as
- * written; it is told to end an address at `~~`, so a closing strikethrough
- * stays outside. A rule after the core `linkify` takes back a link that is not `http(s)` and one
- * written `\https://…`, which is how an author keeps an address as text, and
- * ends a link at a table cell's placeholder sentinels. The stored text is
- * never changed.
+ * written; each match reads only up to white space or `~~`, so a
+ * closing strikethrough stays outside. A rule after the core `linkify` takes
+ * back a link that is not `http(s)` and one written `\https://…`, which is how
+ * an author keeps an address as text, and ends a link at a table cell's placeholder sentinels. The text shown for a
+ * link drops direction controls and line breaks decoded from `%…`. The stored
+ * text is never changed.
  */
 function bareWebAddresses(md: MarkdownIt): void {
   md.linkify.set({ fuzzyLink: false, fuzzyEmail: false, fuzzyIP: false });
   // The inline rule keeps an address whole (`_` and `*` inside it are not
-  // emphasis); it asks matchAtStart for the address, so end it there at `~~`.
+  // emphasis); it asks matchAtStart for the address. An address ends at white
+  // space or at `~~`, so each match reads only up to that point, not the rest of
+  // the line, and trailing punctuation is trimmed as it is without `~~`.
   const matchAtStart = md.linkify.matchAtStart.bind(md.linkify);
   md.linkify.matchAtStart = (text: string) => {
-    const found = matchAtStart(text);
-    const cut = found ? found.url.indexOf('~~') : -1;
-    if (found && cut > 0) {
-      found.url = found.url.slice(0, cut);
-      found.raw = found.raw.slice(0, cut);
-      found.text = found.text.slice(0, cut);
-      found.lastIndex = found.index + cut;
-    }
-    return found;
+    const end = text.search(/\s|~~/);
+    return matchAtStart(end === -1 ? text : text.slice(0, end));
   };
   md.core.ruler.after('linkify', 'linkify_web_only', (state): void => {
     for (const block of state.tokens) {
@@ -170,13 +169,17 @@ function bareWebAddresses(md: MarkdownIt): void {
         const cut = [text.content.indexOf(PLACEHOLDER_START), text.content.indexOf(PLACEHOLDER_END)]
           .filter((n) => n > 0)
           .sort((a, b) => a - b)[0];
-        if (cut === undefined) continue;
-        const rest = text.content.slice(cut);
-        text.content = text.content.slice(0, cut);
-        open.attrSet('href', md.normalizeLink(text.content));
-        const after = new state.Token('text', '', 0);
-        after.content = rest;
-        kids.splice(i + 3, 0, after);
+        if (cut !== undefined) {
+          const rest = text.content.slice(cut);
+          text.content = text.content.slice(0, cut);
+          open.attrSet('href', md.normalizeLink(text.content));
+          const after = new state.Token('text', '', 0);
+          after.content = rest;
+          kids.splice(i + 3, 0, after);
+        }
+        // The shown text is decoded from the address; a direction control or a
+        // line break decoded from `%…` is not shown. The href stays encoded.
+        text.content = text.content.replace(INVISIBLE_IN_TEXT, '');
       }
     }
   });

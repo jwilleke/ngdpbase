@@ -25,7 +25,7 @@
  *     address is matched up to {@link MAX_URL} characters, so the cost of a
  *     page grows with its size, not with the square of one line;
  *   - a join may not make a line longer than {@link MAX_LINE} characters or
- *     take more than {@link MAX_JOINS} lines; a longer run is left as it is.
+ *     take more than {@link MAX_JOINS} continuation lines (the first line and 20 more); a longer run is left as it is.
  *
  * One run does everything: a line is repaired for the leftovers above before
  * it is tested for a join, and a line made by a join is looked at again, so a
@@ -37,7 +37,7 @@
 import type { FixStep } from './types.js';
 import { buildBlockMap, joinLines } from './blocks.js';
 
-/** Longest address the step matches, longest line it reads or makes, and most lines it joins into one. */
+/** Longest address the step matches, longest line it reads or makes, and most continuation lines it joins onto one. */
 const MAX_URL = 2048;
 const MAX_LINE = 10000;
 const MAX_JOINS = 20;
@@ -122,7 +122,7 @@ export const jspwikiLinkLeftovers: FixStep = {
         // as often as it fits, so `[A|u] [B` + `|u2]` ends as one line. A line
         // is repaired before it is tested, so the answer does not depend on a
         // second run. The joined text may not pass MAX_LINE characters or
-        // MAX_JOINS lines: a longer run is left exactly as it is.
+        // MAX_JOINS continuation lines: a longer run is left exactly as it is.
         let joined = text;
         let last = i;
         let tooLong = false;

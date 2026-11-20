@@ -74,13 +74,16 @@ async function buildRenderer(engine: WikiEngine): Promise<ProfileRenderer | null
  * deliberately not widened for an author's own markup, so the two attributes
  * are put back afterwards, and only on a link the converter made from a bare
  * address: it carries a class only this process knows, which is removed again
- * here. An `<a>` an author wrote, whatever its class, gets nothing.
+ * here. An `<a>` an author wrote, whatever its class, gets nothing. The
+ * sanitiser also escapes the `&` of an href a second time; the href of a bare
+ * address is put back escaped once, so it points where the author typed.
  */
 function openBareAddressesInNewTab(html: string, marker: string): string {
   const tag = new RegExp(`<a href="(https?:\\/\\/[^"]*)" class="wiki-link external-link ${marker}">`, 'gi');
   return html.replace(
     tag,
-    (_tag: string, href: string) => `<a href="${href}" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">`
+    (_tag: string, href: string) =>
+      `<a href="${href.replace(/&amp;/g, '&')}" class="wiki-link external-link" target="_blank" rel="noopener noreferrer">`
   );
 }
 
