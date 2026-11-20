@@ -11,11 +11,12 @@
  */
 
 import path from 'path';
+import { randomBytes } from 'crypto';
 import os from 'os';
 import fs from 'fs-extra';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { packZip, readZip, crc32, type ZipEntry } from '../zipArchive';
+import { packZip, readZip, crc32, ZipBudgetError, type ZipEntry } from '../zipArchive';
 
 const run = promisify(execFile);
 
@@ -333,7 +334,7 @@ describe('readZip — verified against archives Python wrote (#1472)', () => {
     const archive = await packZip([{ path: 'bomb.bin', bytes: Buffer.alloc(20 * 1024 * 1024) }]);
     expect(archive.length).toBeLessThan(100 * 1024);
 
-    expect(() => readZip(archive, { maxEntries: 10, maxTotalBytes: 1024 * 1024 })).toThrow(/allowed/);
+    expect(() => readZip(archive, { maxEntries: 10, maxTotalBytes: 1024 * 1024 })).toThrow(/more than 1 MB in all/);
   });
 
   test('a member that understates its size is stopped at what it declared', async () => {
@@ -342,6 +343,178 @@ describe('readZip — verified against archives Python wrote (#1472)', () => {
     archive.writeUInt32LE(100, central + 24);  // claims 100 bytes uncompressed
 
     expect(() => readZip(archive, LIMITS)).toThrow(/more than it declares/);
+  });
+
+  describe('members may not share data', () => {
+    /** The offsets of each central directory record in an archive. */
+    const centralRecords = (archive: Buffer): number[] => {
+      const found: number[] = [];
+      for (let i = archive.length - 4; i >= 0; i--) if (archive.readUInt32LE(i) === 0x02014b50) found.unshift(i);
+      return found;
+    };
+
+    test('several members whose records point at the same data are refused', async () => {
+      const same = Buffer.alloc(2000, 'x');
+      const archive = await packZip(['a', 'b', 'c'].map(name => ({ path: name, bytes: same })));
+      const [first, ...others] = centralRecords(archive);
+      for (const at of others) archive.writeUInt32LE(archive.readUInt32LE(first + 42), at + 42);
+
+      expect(() => readZip(archive, LIMITS)).toThrow(/share data/);
+    });
+
+    test('a member whose stored length reaches into the next member is refused', async () => {
+      const archive = await packZip([{ path: 'a', bytes: randomBytes(100) }, { path: 'b', bytes: randomBytes(100) }]);
+      const [first] = centralRecords(archive);
+      // Stored, so the stated size and the stored length move together; the data now runs past where the next member starts.
+      archive.writeUInt32LE(150, first + 20);
+      archive.writeUInt32LE(150, first + 24);
+
+      expect(() => readZip(archive, LIMITS)).toThrow(/share data/);
+    });
+
+    test('an archive with many members, each with its own data, is read in full', async () => {
+      const entries = Array.from({ length: 300 }, (_, i) => ({ path: `m${i}.txt`, bytes: Buffer.from(`member ${i}`.repeat(20)) }));
+      const read = readZip(await packZip(entries), { maxEntries: 1000, maxTotalBytes: 10 * 1024 * 1024 });
+      expect(read.map(e => e.path)).toEqual(entries.map(e => e.path));
+      expect(read[299].bytes.equals(entries[299].bytes)).toBe(true);
+    });
+
+    test('an archive inside an archive is read, and so are its members', async () => {
+      const inner = await packZip([{ path: 'x.txt', bytes: Buffer.from('inner') }, { path: 'y.txt', bytes: Buffer.from('inner too') }]);
+      const outer = readZip(await packZip([{ path: 'inner.zip', bytes: inner }]), LIMITS);
+      expect(readZip(outer[0].bytes, LIMITS).map(e => e.path)).toEqual(['x.txt', 'y.txt']);
+    });
+
+    test('a stored member whose stated size differs from its stored length is refused', async () => {
+      const archive = await packZip([{ path: 'a.bin', bytes: randomBytes(100) }]);
+      const [central] = centralRecords(archive);
+      expect(archive.readUInt16LE(central + 10)).toBe(0);   // stored
+      archive.writeUInt32LE(50, central + 24);
+
+      expect(() => readZip(archive, LIMITS)).toThrow(/stored size/);
+    });
+  });
+
+  describe('member paths count toward the budget', () => {
+    test('a member path may be at most 1,024 bytes', async () => {
+      const ok = 'p'.repeat(1020) + '.txt';   // 1,024 bytes
+      expect(readZip(await packZip([{ path: ok, bytes: Buffer.from('x') }]), LIMITS).map(e => e.path)).toEqual([ok]);
+
+      const tooLong = await packZip([{ path: 'p'.repeat(1021) + '.txt', bytes: Buffer.from('x') }]);
+      expect(() => readZip(tooLong, LIMITS)).toThrow(/at most 1,024 bytes/);
+    });
+
+    test('the length is in UTF-8 bytes, not characters', async () => {
+      const archive = await packZip([{ path: 'é'.repeat(600), bytes: Buffer.from('x') }]);   // 600 characters, 1,200 bytes
+      expect(() => readZip(archive, LIMITS)).toThrow(/at most 1,024 bytes/);
+    });
+
+    test('each member is charged its path as well as its size', async () => {
+      const archive = await packZip([{ path: 'folder/note.txt', bytes: Buffer.alloc(10, 'x') }]);
+      const budget = { remaining: 1000 };
+      readZip(archive, LIMITS, budget);
+      expect(budget.remaining).toBe(1000 - 10 - 'folder/note.txt'.length);
+    });
+
+    test('the name of the archive that holds it is charged too, with the separator', async () => {
+      const archive = await packZip([{ path: 'note.txt', bytes: Buffer.alloc(10, 'x') }]);
+      const budget = { remaining: 1000 };
+      readZip(archive, LIMITS, budget, undefined, 20);
+      expect(budget.remaining).toBe(1000 - 10 - 'note.txt'.length - 20 - 1);
+    });
+
+    test('a member left out for its size is charged its path too', async () => {
+      const archive = await packZip([{ path: 'big.bin', bytes: Buffer.alloc(100) }]);
+      const budget = { remaining: 1000 };
+      readZip(archive, { ...LIMITS, maxFileBytes: 10 }, budget, []);
+      expect(budget.remaining).toBe(1000 - 'big.bin'.length);
+    });
+
+    test('an archive written with data descriptors still reads through the range check', async () => {
+      const archive = await pythonZip([['a.txt', Buffer.from('one '.repeat(100))], ['b.bin', BINARY], ['c.txt', Buffer.from('three')]], { stream: true });
+      expect(archive.readUInt16LE(6) & 0x0008).toBe(0x0008);
+      expect(readZip(archive, LIMITS).map(e => e.path)).toEqual(['a.txt', 'b.bin', 'c.txt']);
+    });
+
+    test('an archive with a comment after the directory still reads through the range check', async () => {
+      const archive = await packZip([{ path: 'a.txt', bytes: Buffer.from('one') }, { path: 'b.txt', bytes: Buffer.from('two') }]);
+      const comment = Buffer.from('made by a test');
+      archive.writeUInt16LE(comment.length, archive.length - 2);
+      expect(readZip(Buffer.concat([archive, comment]), LIMITS).map(e => e.path)).toEqual(['a.txt', 'b.txt']);
+    });
+  });
+
+  describe('one budget for the unpacked size', () => {
+    /** A zip of one member of random bytes, so its stored size is about its real size. */
+    const randomZip = (name: string, size: number): Promise<Buffer> => packZip([{ path: name, bytes: randomBytes(size) }]);
+
+    test('a budget passed in is spent by what each archive unpacks to, and shared across archives', async () => {
+      const budget = { remaining: 1000 };
+      readZip(await randomZip('a', 600), LIMITS, budget);
+      expect(budget.remaining).toBe(400 - 1);   // the size, and the one byte of the path
+
+      const second = await randomZip('b', 600);
+      expect(() => readZip(second, LIMITS, budget)).toThrow(ZipBudgetError);
+      expect(() => readZip(second, LIMITS, budget)).toThrow(/in all/);
+    });
+
+    test('a member whose declared size is over what is left is refused before it is inflated', async () => {
+      const archive = await packZip([{ path: 'x.bin', bytes: Buffer.alloc(100) }]);
+      const central = archive.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+      archive.writeUInt32LE(5000, central + 24);   // declares 5000 bytes; the data holds 100
+
+      // Inflating first would end in "does not match its declared size"; the budget answers first.
+      expect(() => readZip(archive, LIMITS, { remaining: 1000 })).toThrow(/in all/);
+    });
+
+    test('a member whose declared size is over the per-file cap is left out, not inflated', async () => {
+      const archive = await packZip([{ path: 'small.txt', bytes: Buffer.from('ok') }, { path: 'big.bin', bytes: Buffer.alloc(100) }]);
+      const central = archive.lastIndexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+      archive.writeUInt32LE(5000, central + 24);   // declares 5000 bytes; the data holds 100
+
+      const budget = { remaining: 100_000 };
+      const skipped: Array<{ path: string; size: number }> = [];
+      const entries = readZip(archive, { ...LIMITS, maxFileBytes: 1000 }, budget, skipped);
+
+      expect(entries.map(e => e.path)).toEqual(['small.txt']);
+      expect(skipped).toEqual([{ path: 'big.bin', size: 5000 }]);
+      expect(budget.remaining).toBe(100_000 - 2 - 'small.txt'.length - 'big.bin'.length);
+    });
+
+    test('a member that understates its size still stops at what it declared, and its stated size is charged', async () => {
+      const archive = await packZip([{ path: 'bomb.bin', bytes: Buffer.alloc(20 * 1024 * 1024) }]);
+      const central = archive.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+      archive.writeUInt32LE(100, central + 24);
+
+      const budget = { remaining: 1_000_000 };
+      expect(() => readZip(archive, { ...LIMITS, maxFileBytes: 1000 }, budget, [])).toThrow(/more than it declares/);
+      expect(budget.remaining).toBe(1_000_000 - 100 - 'bomb.bin'.length);
+    });
+
+    test('a member that fails its CRC is still charged its stated size', async () => {
+      const archive = await randomZip('a.bin', 600);
+      archive[30 + 'a.bin'.length] ^= 0xff;   // stored, so the data is still a valid stream
+
+      const budget = { remaining: 1000 };
+      expect(() => readZip(archive, LIMITS, budget)).toThrow(/CRC/);
+      expect(budget.remaining).toBe(400 - 'a.bin'.length);
+    });
+
+    test('the stated size is charged before unpacking, so a failed member counts against the next archive', async () => {
+      const bad = await randomZip('a.bin', 600);
+      bad[30 + 'a.bin'.length] ^= 0xff;
+      const budget = { remaining: 1000 };
+      expect(() => readZip(bad, LIMITS, budget)).toThrow(/CRC/);
+
+      const next = await randomZip('b.bin', 600);
+      expect(() => readZip(next, LIMITS, budget)).toThrow(ZipBudgetError);
+    });
+
+    test('without a budget argument an archive gets maxTotalBytes of its own, as before', async () => {
+      const archive = await randomZip('a', 600);
+      expect(readZip(archive, { maxEntries: 10, maxTotalBytes: 1000 })).toHaveLength(1);
+      expect(readZip(archive, { maxEntries: 10, maxTotalBytes: 1000 })).toHaveLength(1);
+    });
   });
 
   test('more members than allowed is refused', async () => {
