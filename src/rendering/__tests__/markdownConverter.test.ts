@@ -256,6 +256,23 @@ describe('bare web addresses (#2443)', () => {
     }
   });
 
+  it('about 256 KB of text with no break in it renders within a length limit on both profiles', () => {
+    const shapes = ['http://a.b/((', 'ab://x.com/', 'http://a.b/x', 'http://a.b/%E2%80%8E', 'ftp://a ', '\\http://a '];
+    for (const converter of [createMarkdownConverter('page'), createMarkdownConverter('untrusted')]) {
+      for (const shape of shapes) {
+        const started = performance.now();
+        converter.makeHtml(shape.repeat(Math.ceil(256_000 / shape.length)));
+        expect(performance.now() - started, shape).toBeLessThan(5000);
+      }
+    }
+  });
+
+  it('an address of more than 4,096 characters with no break in it is left as text', () => {
+    for (const converter of [createMarkdownConverter('page'), createMarkdownConverter('untrusted')]) {
+      expect(converter.makeHtml(`http://a.b/${'x'.repeat(5000)}*y*z`)).not.toContain('<a');
+    }
+  });
+
   it('an address of more than 4,096 characters with no break in it is never linked as a cut-off prefix', () => {
     const long = `https://a.com/${'b'.repeat(5000)}`;
     for (const href of [...html(long).matchAll(/href="([^"]*)"/g)].map((m) => m[1])) expect(href).toBe(long);
