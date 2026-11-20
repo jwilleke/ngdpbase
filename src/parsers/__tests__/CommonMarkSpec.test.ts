@@ -48,6 +48,7 @@ const REASONS = {
   'wiki-link': '`[text]` is an NCM wiki link when the page defines no such reference label; in CommonMark it is literal text.',
   'fence-class-as-written': 'The code-fence class follows showdown (`showdownFenceClasses`): the bare language name beside `language-…`, and the info string as written; CommonMark decodes escapes and entities and adds only `language-…`.',
   'ncm-escape': '`[[` is NCM\'s escape for a literal `[` (kept, J1 in the #1271 decision log).',
+  'bare-address-link': 'A bare http(s) address becomes a link (#2443); CommonMark leaves one that is not written as `<url>` or `[text](url)` as text.',
   'ncm-line-break': '`\\\\` (two backslashes) is NCM\'s line break, kept from JSPWiki (#1370); CommonMark reads it as an escaped backslash.'
 } as const;
 
@@ -82,6 +83,9 @@ const EXCEPTIONS: Record<number, keyof typeof REASONS> = Object.fromEntries(([
   ]],
   ['ncm-line-break', [
     12, 15, 550
+  ]],
+  ['bare-address-link', [
+    602, 608, 611
   ]]
 ] as Array<[keyof typeof REASONS, number[]]>).flatMap(([reason, numbers]) => numbers.map((n) => [n, reason])));
 

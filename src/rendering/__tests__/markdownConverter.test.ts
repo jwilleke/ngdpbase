@@ -91,10 +91,6 @@ describe('page profile', () => {
     expect(html('- [x] done')).toContain('type="checkbox"');
     expect(html('| a | b |\n|---|---|\n| 1 | 2 |')).toContain('<table>');
   });
-
-  it('does not autolink a bare URL', () => {
-    expect(html('see https://example.com')).not.toContain('<a');
-  });
 });
 
 // #1492: CommonMark is the house form for an external link, so it renders as

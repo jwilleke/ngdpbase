@@ -110,6 +110,33 @@ function externalLinksInNewTab(md: MarkdownIt): void {
   };
 }
 
+/**
+ * Bare web addresses become links (#2443), and only those. markdown-it's
+ * linkify also links bare domains, mail addresses, `ftp:` and `//host` forms,
+ * and links an address that follows a backslash. Domains, mail addresses and
+ * the fuzzy forms are switched off at the source; a rule after `linkify` takes
+ * back a link that is not `http(s)` and one written `\https://…`, which is
+ * how an author keeps an address as text. The stored text is never changed.
+ */
+function bareWebAddresses(md: MarkdownIt): void {
+  md.linkify.set({ fuzzyLink: false, fuzzyEmail: false, fuzzyIP: false });
+  md.core.ruler.after('linkify', 'linkify_web_only', (state): void => {
+    for (const block of state.tokens) {
+      if (block.type !== 'inline' || !block.children) continue;
+      const kids = block.children;
+      for (let i = 0; i < kids.length; i++) {
+        const open = kids[i];
+        if (open.type !== 'link_open' || open.markup !== 'linkify') continue;
+        const escaped = i > 0 && kids[i - 1].type === 'text' && kids[i - 1].content.endsWith('\\');
+        if (!escaped && /^https?:\/\//i.test(open.attrGet('href') ?? '')) continue;
+        // Unwrap: link_open, its text, link_close -> the text alone.
+        kids.splice(i + 2, 1);
+        kids.splice(i, 1);
+      }
+    }
+  });
+}
+
 /** What a converter hands markdown-it for one render: the policy in force. */
 interface RenderEnv {
   htmlPolicy?: HtmlPolicy | null;
@@ -153,7 +180,8 @@ function authorHtmlThroughPolicy(md: MarkdownIt): void {
  */
 export function buildMarkdownIt(profile: MarkdownProfile): MarkdownIt {
   if (profile === 'fallback') {
-    const fallback = new MarkdownIt({ html: true, breaks: false, linkify: false, typographer: false });
+    const fallback = new MarkdownIt({ html: true, breaks: false, linkify: true, typographer: false });
+    bareWebAddresses(fallback);
     externalLinksInNewTab(fallback);
     authorHtmlThroughPolicy(fallback);
     return fallback;
@@ -161,8 +189,10 @@ export function buildMarkdownIt(profile: MarkdownProfile): MarkdownIt {
 
   // `html: true`: pages contain inline HTML that showdown passed through; what
   // is allowed is decided by the HTML policy (#1623), applied by the html
-  // token renderers. `linkify` off: showdown never autolinked bare URLs.
-  const md = new MarkdownIt({ html: true, breaks: true, linkify: false, typographer: false });
+  // token renderers. `linkify` on for pages, not comments (#2443): a bare
+  // http(s) address is a link; see bareWebAddresses.
+  const md = new MarkdownIt({ html: true, breaks: true, linkify: profile !== 'untrusted', typographer: false });
+  if (profile !== 'untrusted') bareWebAddresses(md);
   showdownFenceClasses(md);
   delForStrikethrough(md);
   ellipsisOnly(md);
