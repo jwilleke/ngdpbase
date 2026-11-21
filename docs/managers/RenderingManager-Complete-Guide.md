@@ -190,7 +190,7 @@ The RenderingManager converts markdown with __markdown-it__, `page` profile. Eve
 | __Heading IDs__ | `## Title` | `markdown-it-anchor`, slug from `SectionUtils.headingSlug` | ✅ Enabled |
 | __Sub/Superscript__ | `H~2~O`, `X^2^` | `markdown-it-sub` / `markdown-it-sup` (no spaces inside) | ✅ Enabled |
 | __Ellipsis__ | `...` | becomes `…` in text, never in code (`typographer: false`) | ✅ Enabled |
-| __Bare URLs__ | `https://example.com` | not auto-linked (`linkify: false`) | ❌ Off |
+| __Bare URLs__ | `https://example.com` | linked when the page renders, `http(s)` only (`linkify: true`); inside quotation marks too; not in code or when written `\https://example.com` | ✅ Enabled |
 
 ### markdown-it Configuration
 
@@ -203,7 +203,7 @@ this.converter = createMarkdownConverter('page');
 The `page` profile in `src/rendering/markdownConverter.ts`:
 
 ```javascript
-const md = new MarkdownIt({ html: true, breaks: true, linkify: false, typographer: false });
+const md = new MarkdownIt({ html: true, breaks: true, linkify: true, typographer: false });
 // renderer rules: fence classes "js language-js", <del> for ~~x~~, "..." → "…" in text
 md.use(anchor, { slugify: headingSlug, tabIndex: false }); // heading ids
 md.use(sub);                                              // H~2~O
@@ -211,7 +211,7 @@ md.use(sup);                                              // X^2^
 md.use(taskLists);                                        // - [x]
 ```
 
-The same file builds two more profiles: `untrusted` for comments (no heading ids, task lists or sub/superscript) and `fallback` for degraded paths (plain CommonMark, no single-newline breaks).
+The same file builds two more profiles: `untrusted` for comments (no heading ids, task lists or sub/superscript; a bare `http(s)` address links, nothing else is loosened) and `fallback` for degraded paths (CommonMark with bare `http(s)` addresses linked, no single-newline breaks).
 
 markdown-it replaced showdown 2.1.0 in [#1273](https://github.com/jwilleke/ngdpbase/issues/1273), and showdown was removed in [#1274](https://github.com/jwilleke/ngdpbase/issues/1274). Each deliberate rendering difference is a decision (R1–R17) in the [#1271 decision log](https://github.com/jwilleke/ngdpbase/issues/1271#issuecomment-5617541677).
 

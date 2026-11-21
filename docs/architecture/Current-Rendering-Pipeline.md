@@ -144,7 +144,7 @@ markdown-it converts the preprocessed string (which now contains table HTML, inl
 |---|---|
 | `html` | `true` — inline HTML passes through; the save-time rules and the render filter decide what is allowed |
 | `breaks` | `true` — a single newline is a line break |
-| `linkify` | `false` — bare URLs are not auto-linked |
+| `linkify` | `true` — a bare `http(s)` address becomes an external link (also inside quotation marks); code and `\https://…` stay text; no bare domains, mail addresses or `ftp:` |
 | `typographer` | `false` — but `...` becomes `…` in text (never in code) |
 | Heading ids | `markdown-it-anchor`, slug from `SectionUtils.headingSlug` |
 | Sub/superscript | `markdown-it-sub` / `markdown-it-sup`, strict: `H~2~O`, `X^2^`, no spaces |

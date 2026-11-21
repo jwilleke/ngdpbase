@@ -556,6 +556,118 @@ describe('jspwiki-link-leftovers (#1492)', () => {
   });
 });
 
+describe('jspwiki-link-leftovers: wiki link split over two lines (#2443)', () => {
+  const apply = (md: string) => jspwikiLinkLeftovers.apply(md);
+  const url = 'https://www.example.org/report';
+
+  it('joins a link whose address starts the second line with a pipe', () => {
+    const r = apply(`See [A long title\n|${url}|target='_blank'] for more`);
+    expect(r.content).toBe(`See [A long title|${url}|target='_blank'] for more`);
+    expect(r.lines).toEqual([1, 2]);
+  });
+
+  it('joins a link whose first line ends with the pipe', () => {
+    expect(apply(`[A long title|\n${url}|target='_blank']`).content).toBe(`[A long title|${url}|target='_blank']`);
+  });
+
+  it('joins a link with no target', () => {
+    expect(apply(`[A long title\n|${url}]`).content).toBe(`[A long title|${url}]`);
+  });
+
+  it('reports the right line numbers and keeps the rest of the page', () => {
+    const r = apply(`one\n[Title\n|${url}]\nthree`);
+    expect(r.content).toBe(`one\n[Title|${url}]\nthree`);
+    expect(r.lines).toEqual([2, 3]);
+  });
+
+  it('keeps CRLF line endings', () => {
+    expect(apply(`[Title\r\n|${url}]\r\nnext`).content).toBe(`[Title|${url}]\r\nnext`);
+  });
+
+  it('leaves what it cannot be sure of', () => {
+    expect(apply(`[Title\nplain words|${url}]`).lines).toEqual([]); // no pipe at the break
+    expect(apply(`[Title]\n|${url}]`).lines).toEqual([]); // first line is already closed
+    expect(apply(`[{Plugin\n|${url}]`).lines).toEqual([]); // plugin syntax
+    expect(apply(`[Title\n\n|${url}]`).lines).toEqual([]); // a blank line between
+    expect(apply('[Title\n|not an address]').lines).toEqual([]);
+  });
+
+  it('never touches code', () => {
+    expect(apply(`\`\`\`\n[Title\n|${url}]\n\`\`\``).lines).toEqual([]);
+    expect(apply(`\`[Title\` and\n|${url}]`).lines).toEqual([]);
+  });
+
+  it('is idempotent', () => {
+    const once = apply(`[Title\n|${url}|target='_blank']`).content;
+    expect(apply(once).lines).toEqual([]);
+  });
+
+  it('two split links on one line are both joined in one run, and a second run changes nothing', () => {
+    const body = `[A\n|${url}] and [B\n|${url}b] end`;
+    const once = apply(body);
+    expect(once.content).toBe(`[A|${url}] and [B|${url}b] end`);
+    expect(once.lines).toEqual([1, 2, 3]);
+    expect(apply(once.content).lines).toEqual([]);
+  });
+
+  it('a doubled address on the joined line is fixed in the same run', () => {
+    const body = `[A\n|${url}] ${url}(${url})`;
+    const once = apply(body);
+    expect(once.content).toBe(`[A|${url}] ${url}`);
+    expect(apply(once.content).content).toBe(once.content);
+  });
+
+  it('one run equals two runs on a page of mixed leftovers', () => {
+    const body = [`[A\n|${url}] [B`, `|${url}b|target='_blank'] x`, `${url}(${url}|target='_blank')`, '[C|', `${url}c]`].join('\n');
+    const once = apply(body).content;
+    expect(apply(once).content).toBe(once);
+  });
+
+  it('a very long line of repeated addresses is skipped quickly', () => {
+    const line = 'https://a.com'.repeat(20000);
+    const started = performance.now();
+    const r = apply(`${line}\n[A\n|${url}]`);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(r.content).toBe(`${line}\n[A|${url}]`);
+  });
+
+  it('the next line is repaired before it is tested, so one run equals two runs', () => {
+    const body = `[A\n|${url}(${url})|target='_blank']`;
+    const once = apply(body);
+    expect(once.content).toBe(`[A|${url}|target='_blank']`);
+    expect(apply(once.content).lines).toEqual([]);
+  });
+
+  it('a long run of continuation lines is left as it is, quickly', () => {
+    const body = ['[b', ...Array.from({ length: 3000 }, () => '|https://x.com] [c')].join('\n');
+    const started = performance.now();
+    const r = apply(body);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(r.content).toBe(body);
+    expect(r.lines).toEqual([]);
+  });
+
+  it('many long lines of backtick runs, each starting with an address, are read within a length limit', () => {
+    for (const unit of ['`', '``a`']) {
+      const line = `http://x ${unit.repeat(Math.ceil(9900 / unit.length))}`.slice(0, 9900);
+      const body = Array.from({ length: 100 }, () => line).join('\n');
+      const started = performance.now();
+      const r = apply(body);
+      expect(performance.now() - started, unit).toBeLessThan(1000);
+      expect(r.content).toBe(body);
+    }
+  });
+
+  it('a few continuation lines within the length limit are still joined', () => {
+    const r = apply(`[a\n|${url}] [b\n|${url}b] [c\n|${url}c]`);
+    expect(r.content).toBe(`[a|${url}] [b|${url}b] [c|${url}c]`);
+  });
+
+  it('a normal line still gets the doubled address repaired next to long ones', () => {
+    expect(apply(`${url}(${url})`).content).toBe(url);
+  });
+});
+
 describe('registry', () => {
   it('selects every step by default', () => {
     expect(selectFixSteps()).toEqual(FIX_STEPS);

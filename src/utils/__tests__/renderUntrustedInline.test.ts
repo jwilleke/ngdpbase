@@ -47,6 +47,57 @@ describe('markdown that should work in a comment', () => {
   });
 });
 
+describe('bare web addresses in a comment (#2443)', () => {
+  test('a bare http(s) address links and keeps its new-tab attributes through the filter', async () => {
+    const html = await renderUntrustedInline(TEST_FORMATTERS, 'see https://example.org/x', makeEngine());
+    expect(html).toMatch(/<a[^>]+href="https:\/\/example\.org\/x"[^>]*>/);
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
+
+  test('the href of a bare address is the address as typed, escaped once', async () => {
+    const html = await renderUntrustedInline(TEST_FORMATTERS, 'see https://a.com/?a=1&b=2 and https://a.com/?q=&amp;x', makeEngine());
+    expect(html).toContain('href="https://a.com/?a=1&amp;b=2"');
+    expect(html).toContain('href="https://a.com/?q=&amp;amp;x"');
+    expect(html).not.toContain('&amp;amp;amp;');
+  });
+
+  test('an upper-case scheme gets the same attributes', async () => {
+    const html = await renderUntrustedInline(TEST_FORMATTERS, 'see HTTPS://EXAMPLE.COM/x', makeEngine());
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
+
+  test('a link an author wrote in HTML gets no new-tab attributes, whatever its class', async () => {
+    const html = await renderUntrustedInline(
+      TEST_FORMATTERS,
+      '<a href="https://evil.example/" class="wiki-link external-link">x</a>',
+      makeEngine()
+    );
+    expect(html).not.toContain('target=');
+    expect(html).not.toContain('rel=');
+  });
+
+  test('a bare address next to such a link still gets them', async () => {
+    const html = await renderUntrustedInline(
+      TEST_FORMATTERS,
+      '<a href="https://evil.example/" class="wiki-link external-link">x</a> https://example.org/y',
+      makeEngine()
+    );
+    expect(html.match(/target="_blank"/g)).toHaveLength(1);
+  });
+
+  test('javascript: and data: addresses are not links, and raw HTML is still stripped', async () => {
+    const html = await renderUntrustedInline(
+      TEST_FORMATTERS,
+      'javascript:alert(1) data:text/html,hi <script>alert(1)</script><a href="javascript:alert(2)">x</a>',
+      makeEngine()
+    );
+    expect(html).not.toMatch(/<a[^>]+href="(?:javascript|data):/i);
+    expect(html).not.toContain('<script');
+  });
+});
+
 describe('what a hostile commenter writes does not survive', () => {
   test('script tags are stripped even when the SITE filter is off', async () => {
     // The page path gates SecurityFilter on config because page authors are

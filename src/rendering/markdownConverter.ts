@@ -81,8 +81,11 @@ function ellipsisOnly(md: MarkdownIt): void {
   md.core.ruler.push('showdown_ellipsis', (state): void => {
     for (const blockToken of state.tokens) {
       if (blockToken.type !== 'inline' || !blockToken.children) continue;
+      let inBareAddress = false; // an address keeps its dots as written (#2443)
       for (const token of blockToken.children) {
-        if (token.type === 'text') token.content = token.content.replace(/\.{3}/g, '…');
+        if (token.type === 'link_open') inBareAddress = token.markup === 'linkify';
+        else if (token.type === 'link_close') inBareAddress = false;
+        else if (token.type === 'text' && !inBareAddress) token.content = token.content.replace(/\.{3}/g, '…');
       }
     }
   });
@@ -95,14 +98,21 @@ function ellipsisOnly(md: MarkdownIt): void {
  * Internal, relative, protocol-relative, mailto and anchor links are left as
  * markdown-it renders them. The href is untouched: markdown-it has already
  * normalised and escaped it, and refused `javascript:` and its kin.
+ *
+ * `bareOnly` (comments, #2443): only a link made from a bare address gets them;
+ * every link an author wrote in a comment renders as it always did. A render
+ * can ask for one more class on those links (`bareLinkClass`), so the caller
+ * can tell them from an `<a>` an author wrote with the same classes.
  */
-function externalLinksInNewTab(md: MarkdownIt): void {
+function externalLinksInNewTab(md: MarkdownIt, bareOnly = false): void {
   const renderLinkOpen = md.renderer.rules.link_open
     ?? ((tokens, idx, options, _env, self): string => self.renderToken(tokens, idx, options));
   md.renderer.rules.link_open = (tokens, idx, options, env, self): string => {
     const token = tokens[idx];
-    if (/^https?:\/\//i.test(token.attrGet('href') ?? '')) {
+    if (/^https?:\/\//i.test(token.attrGet('href') ?? '') && (!bareOnly || token.markup === 'linkify')) {
       token.attrJoin('class', 'wiki-link external-link');
+      const marker = (env as RenderEnv | undefined)?.bareLinkClass;
+      if (bareOnly && marker) token.attrJoin('class', marker);
       token.attrSet('target', '_blank');
       token.attrSet('rel', 'noopener noreferrer');
     }
@@ -110,9 +120,130 @@ function externalLinksInNewTab(md: MarkdownIt): void {
   };
 }
 
+/** Direction marks and controls (U+200E, U+200F, U+061C, U+202A–U+202E, U+2066–U+2069) and line breaks: never shown in a link's text. */
+const INVISIBLE_IN_TEXT = /[\u200E\u200F\u061C\u202A-\u202E\u2066-\u2069\r\n]/g;
+
+/** Longest stretch of text read when looking for the end of a bare address (twice the 2048 the link-leftovers step matches). */
+const MAX_URL_SCAN = 4096;
+
+/** Limits on the host name passed to the address matcher: characters, labels, and `xn--` labels. */
+const MAX_HOST = 253;
+const MAX_HOST_LABELS = 32;
+const MAX_XN_LABELS = 3;
+/** Longest user part (before the `@`) the matcher accepts. */
+const MAX_USER_PART = 50;
+/** What cannot be in a user part: white space, control characters and `/ [ ] ( )`. */
+const NOT_IN_USER_PART = /[\s\p{Cc}/[\]()]/u;
+/** What ends the host: white space, control characters, `/ ? # @ : [ ] ( ) < >` and the full-width bar. */
+const ENDS_HOST = /[\s\p{Cc}/?#@:[\]()<>\uFF5C]/u;
+
+/**
+ * Is the host of this candidate address within the limits? It measures the
+ * span the matcher reads as the host, in one pass over the candidate: after
+ * `://`, a user part of 1 to {@link MAX_USER_PART} characters before the first
+ * `@` is skipped, and the host runs to the first character that cannot be in
+ * one.
+ */
+function hostWithinLimits(candidate: string): boolean {
+  const at = candidate.indexOf('://');
+  if (at === -1) return true;
+  let rest = candidate.slice(at + 3);
+  const user = rest.slice(0, MAX_USER_PART + 1).indexOf('@');
+  if (user > 0 && !NOT_IN_USER_PART.test(rest.slice(0, user))) rest = rest.slice(user + 1);
+  const stop = rest.search(ENDS_HOST);
+  const host = stop === -1 ? rest : rest.slice(0, stop);
+  if (host.length > MAX_HOST || host.split('.').length > MAX_HOST_LABELS) return false;
+  return host.toLowerCase().split('xn--').length - 1 <= MAX_XN_LABELS;
+}
+
+/** Private-use sentinels a table cell wraps around a placeholder (JSPWikiPreprocessor). */
+const PLACEHOLDER_START = '\uE000';
+const PLACEHOLDER_END = '\uE001';
+
+/**
+ * Bare web addresses become links (#2443), and only those. markdown-it's
+ * linkify also links bare domains, mail addresses, `ftp:` and `//host` forms,
+ * and links an address that follows a backslash. Only markdown-it's inline
+ * `linkify` rule is used (the core rule, which reads whole text tokens with no
+ * limit, is off), and it is given `http(s)` addresses only, so no other link is
+ * made. The inline rule takes an address before emphasis, so `_` and `*` inside
+ * it stay as written. Each match reads only up to white space or `~~`, so a
+ * closing strikethrough stays outside, and at most {@link MAX_URL_SCAN}
+ * characters (a longer unbroken address is left as text, and so is a host name
+ * over a length limit). A rule after it takes back an address written
+ * `\https://…`, which is how an author keeps an address as text, and ends a
+ * link at a table cell's placeholder sentinels, in one pass over the tokens.
+ * The text shown for a link drops direction marks, direction controls and line
+ * breaks decoded from `%…`. The stored text is never changed.
+ */
+function bareWebAddresses(md: MarkdownIt): void {
+  md.linkify.set({ fuzzyLink: false, fuzzyEmail: false, fuzzyIP: false });
+  // The inline rule keeps an address whole (`_` and `*` inside it are not
+  // emphasis); it asks matchAtStart for the address. An address ends at white
+  // space or at `~~`, so each match reads only up to that point, not the rest of
+  // the line, and trailing punctuation is trimmed as it is without `~~`.
+  const matchAtStart = md.linkify.matchAtStart.bind(md.linkify);
+  const webOnly = (match: ReturnType<typeof matchAtStart>): ReturnType<typeof matchAtStart> =>
+    match && /^https?:/i.test(match.url) ? match : null;
+  md.linkify.matchAtStart = (text: string) => {
+    const head = text.length > MAX_URL_SCAN ? text.slice(0, MAX_URL_SCAN) : text;
+    const end = head.search(/\s|~~/);
+    // No end within the limit: the address is too long to link, not cut short.
+    if (end === -1 && head !== text) return null;
+    const candidate = end === -1 ? text : head.slice(0, end);
+    return hostWithinLimits(candidate) ? webOnly(matchAtStart(candidate)) : null;
+  };
+  // The core rule reads whole text tokens with no limit, and the inline rule
+  // above covers every address, so only the inline rule is used.
+  md.core.ruler.disable('linkify', true);
+  md.core.ruler.after('linkify', 'linkify_cleanup', (state): void => {
+    for (const block of state.tokens) {
+      if (block.type !== 'inline' || !block.children) continue;
+      const kids = block.children;
+      // One pass into a new array: a splice per link costs the square of the link count.
+      const out: Token[] = [];
+      for (let i = 0; i < kids.length; i++) {
+        const open = kids[i];
+        if (open.type !== 'link_open' || open.markup !== 'linkify') {
+          out.push(open);
+          continue;
+        }
+        const before = out[out.length - 1];
+        const escaped = before !== undefined && before.type === 'text' && before.content.endsWith('\\');
+        const text = kids[i + 1];
+        const close = kids[i + 2];
+        i += 2;
+        if (escaped) {
+          // Written `\https://…`: unwrap link_open, its text, link_close to the text alone.
+          out.push(text);
+          continue;
+        }
+        out.push(open, text, close);
+        const cut = [text.content.indexOf(PLACEHOLDER_START), text.content.indexOf(PLACEHOLDER_END)]
+          .filter((n) => n > 0)
+          .sort((a, b) => a - b)[0];
+        if (cut !== undefined) {
+          const rest = text.content.slice(cut);
+          text.content = text.content.slice(0, cut);
+          open.attrSet('href', md.normalizeLink(text.content));
+          const after = new state.Token('text', '', 0);
+          after.content = rest;
+          out.push(after);
+        }
+        // The shown text is decoded from the address; a direction control or a
+        // line break decoded from `%…` is not shown. The href stays encoded.
+        text.content = text.content.replace(INVISIBLE_IN_TEXT, '');
+      }
+      block.children = out;
+    }
+  });
+}
+
 /** What a converter hands markdown-it for one render: the policy in force. */
 interface RenderEnv {
   htmlPolicy?: HtmlPolicy | null;
+  /** Extra class on the links made from a bare address (comments only, #2443). */
+  bareLinkClass?: string;
 }
 
 /** Set on the html tokens markdown-it parsed from the source: the author's. */
@@ -153,7 +284,8 @@ function authorHtmlThroughPolicy(md: MarkdownIt): void {
  */
 export function buildMarkdownIt(profile: MarkdownProfile): MarkdownIt {
   if (profile === 'fallback') {
-    const fallback = new MarkdownIt({ html: true, breaks: false, linkify: false, typographer: false });
+    const fallback = new MarkdownIt({ html: true, breaks: false, linkify: true, typographer: false });
+    bareWebAddresses(fallback);
     externalLinksInNewTab(fallback);
     authorHtmlThroughPolicy(fallback);
     return fallback;
@@ -161,12 +293,14 @@ export function buildMarkdownIt(profile: MarkdownProfile): MarkdownIt {
 
   // `html: true`: pages contain inline HTML that showdown passed through; what
   // is allowed is decided by the HTML policy (#1623), applied by the html
-  // token renderers. `linkify` off: showdown never autolinked bare URLs.
-  const md = new MarkdownIt({ html: true, breaks: true, linkify: false, typographer: false });
+  // token renderers. `linkify` on for pages, not comments (#2443): a bare
+  // http(s) address is a link; see bareWebAddresses.
+  const md = new MarkdownIt({ html: true, breaks: true, linkify: true, typographer: false });
+  bareWebAddresses(md);
   showdownFenceClasses(md);
   delForStrikethrough(md);
   ellipsisOnly(md);
-  if (profile !== 'untrusted') externalLinksInNewTab(md); // #1492; comments keep their own rules
+  externalLinksInNewTab(md, profile === 'untrusted'); // #1492; comments: bare addresses only (#2443)
 
   if (profile === 'page') {
     // Section links (#500) are a stored contract: the slug is headingSlug
@@ -213,13 +347,20 @@ function markdownItFor(profile: MarkdownProfile): MarkdownIt {
  * The converter for a profile. `readHtmlPolicy` returns the configured value of
  * `ngdpbase.markup.html-policy` and is called on every render, so the policy in
  * force is always the configured one; without it, no author HTML is allowed.
- * One markdown-it instance per profile; renders are independent.
+ * `bareLinkClass` (the `untrusted` profile, #2443) is one more class on the
+ * links made from a bare address, so a caller that sanitises the output can
+ * tell them from an `<a>` an author wrote. One markdown-it instance per
+ * profile; renders are independent.
  */
-export function createMarkdownConverter(profile: MarkdownProfile, readHtmlPolicy?: () => unknown): MarkdownConverter {
+export function createMarkdownConverter(
+  profile: MarkdownProfile,
+  readHtmlPolicy?: () => unknown,
+  bareLinkClass?: string
+): MarkdownConverter {
   const md = markdownItFor(profile);
   return {
     makeHtml: (markdown: string): string =>
-      md.render(markdown, { htmlPolicy: asHtmlPolicy(readHtmlPolicy?.()) } satisfies RenderEnv)
+      md.render(markdown, { htmlPolicy: asHtmlPolicy(readHtmlPolicy?.()), bareLinkClass } satisfies RenderEnv)
   };
 }
 
