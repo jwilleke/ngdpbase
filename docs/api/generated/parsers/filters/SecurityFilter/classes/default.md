@@ -325,6 +325,10 @@ Defined in: src/parsers/filters/SecurityFilter.ts:681
 
 Escape attribute values to prevent injection (modular escaping)
 
+The value is read out of rendered markup, so an `&` that already starts
+one of the five entities this method writes is left alone: escaping it
+again turned `?a=1&b=2` into `?a=1&amp;amp;b=2` (#2449).
+
 #### Parameters
 
 ##### value

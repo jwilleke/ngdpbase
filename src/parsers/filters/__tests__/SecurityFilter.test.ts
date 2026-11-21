@@ -439,6 +439,13 @@ describe('SecurityFilter', () => {
       expect(f.escapeAttributeValue('a&b')).toBe('a&amp;b');
     });
 
+    test('does not escape an & that already starts an entity it writes (#2449)', () => {
+      const f = makeFilter();
+      expect(f.escapeAttributeValue('a=1&amp;b=2')).toBe('a=1&amp;b=2');
+      expect(f.escapeAttributeValue('&#106;avascript:x')).toBe('&amp;#106;avascript:x');
+      expect(f.escapeAttributeValue('&<b>')).toBe('&amp;&lt;b&gt;');
+    });
+
     test('escapes < and > characters', () => {
       const f = makeFilter();
       expect(f.escapeAttributeValue('<script>')).toBe('&lt;script&gt;');
