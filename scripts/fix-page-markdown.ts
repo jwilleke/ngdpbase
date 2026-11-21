@@ -23,6 +23,10 @@
  * the index — so stop it first (`./server.sh stop <env>`) and start it after.
  * Each page is re-read and re-converted at apply time; the dry-run report is
  * never used as input.
+ * Each page is saved on its own: a page whose save is refused (the HTML policy
+ * refusing text the page already carried, say) is left as it was, named on the
+ * console with the reason and in the report under Failed, and the other pages
+ * are still written. The exit code is 1 when any page failed.
  *
  * Usage:
  *   npx tsx scripts/fix-page-markdown.ts --data /path/to/pages \
@@ -72,39 +76,28 @@ interface PageChange {
   samples: Array<{ line: number; before: string; after: string }>;
 }
 
-async function main(): Promise<void> {
-  const argv = process.argv.slice(2);
-  const get = (flag: string): string | undefined => {
-    const i = argv.indexOf(flag);
-    return i === -1 ? undefined : argv[i + 1];
-  };
-  const apply = argv.includes('--apply');
-  const stepsArg = get('--steps');
-  if (stepsArg === 'list') {
-    for (const s of FIX_STEPS) console.log(`${s.id}: ${s.summary}`);
-    return;
-  }
-  const dataDir = get('--data');
-  if (!dataDir || !(await fs.pathExists(dataDir))) {
-    console.error('✗ --data <page store directory> is required and must exist');
-    process.exit(1);
-  }
-  const options: RunFixesOptions = stepsArg ? { steps: stepsArg.split(',').map((s) => s.trim()) } : {};
-  let stepIds: string[];
-  try {
-    stepIds = selectFixSteps(options).map((s) => s.id);
-  } catch (err) {
-    console.error(`✗ ${err instanceof Error ? err.message : String(err)} (see --steps list)`);
-    process.exit(1);
-  }
-  const reportPath = get('--report') ?? `private/fix-${apply ? 'applied' : 'dry-run'}.md`;
-  const baseUrl = get('--base-url');
+/** What one pass over the page files did. */
+export interface FixPassResult {
+  changes: PageChange[];
+  failed: Array<{ title: string; error: string }>;
+  skippedPrivate: string[];
+  stepCounts: Map<string, number>;
+}
 
-  const save: SaveThroughDoor | null = apply
-    ? await openSaveThroughDoor(dataDir, 'Markdown fix migration (scripts/fix-page-markdown.ts)')
-    : null;
-
-  const files = (await pageFiles(dataDir)).sort();
+/**
+ * Run the steps over `files`. With `save`, each changed page is written on
+ * its own: a page whose save throws goes to `failed` and the pass carries on.
+ * Each such page is then named through `log` with the reason the save gave, so
+ * the operator sees which pages were left as they were. A page whose text the
+ * HTML policy already refuses is one of them: the policy is never bypassed.
+ */
+export async function fixPages(
+  files: string[],
+  dataDir: string,
+  options: RunFixesOptions,
+  save: SaveThroughDoor | null,
+  log: (line: string) => void = console.error
+): Promise<FixPassResult> {
   const failed: Array<{ title: string; error: string }> = [];
   const skippedPrivate: string[] = [];
   const changes: PageChange[] = [];
@@ -148,6 +141,44 @@ async function main(): Promise<void> {
       samples: samples(parsed.content.replace(/\r/g, ''), result.content.replace(/\r/g, ''))
     });
   }
+  for (const f of failed) log(`✗ Not saved, left as it was: ${f.title}: ${f.error}`);
+  return { changes, failed, skippedPrivate, stepCounts };
+}
+
+async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+  const get = (flag: string): string | undefined => {
+    const i = argv.indexOf(flag);
+    return i === -1 ? undefined : argv[i + 1];
+  };
+  const apply = argv.includes('--apply');
+  const stepsArg = get('--steps');
+  if (stepsArg === 'list') {
+    for (const s of FIX_STEPS) console.log(`${s.id}: ${s.summary}`);
+    return;
+  }
+  const dataDir = get('--data');
+  if (!dataDir || !(await fs.pathExists(dataDir))) {
+    console.error('✗ --data <page store directory> is required and must exist');
+    process.exit(1);
+  }
+  const options: RunFixesOptions = stepsArg ? { steps: stepsArg.split(',').map((s) => s.trim()) } : {};
+  let stepIds: string[];
+  try {
+    stepIds = selectFixSteps(options).map((s) => s.id);
+  } catch (err) {
+    console.error(`✗ ${err instanceof Error ? err.message : String(err)} (see --steps list)`);
+    process.exit(1);
+  }
+  const reportPath = get('--report') ?? `private/fix-${apply ? 'applied' : 'dry-run'}.md`;
+  const baseUrl = get('--base-url');
+
+  const save: SaveThroughDoor | null = apply
+    ? await openSaveThroughDoor(dataDir, 'Markdown fix migration (scripts/fix-page-markdown.ts)')
+    : null;
+
+  const files = (await pageFiles(dataDir)).sort();
+  const { changes, failed, skippedPrivate, stepCounts } = await fixPages(files, dataDir, options, save);
 
   const link = (title: string): string =>
     baseUrl ? `[${title.replace(/([[\]])/g, '\\$1')}](${baseUrl}${encodeURIComponent(title)})` : title;
