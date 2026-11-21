@@ -536,10 +536,9 @@ describe('jspwiki-link-leftovers (#1492)', () => {
     expect(apply(`Title on the line above](${url}|target='_blank') - captured`).content).toBe(`Title on the line above](${url}) - captured`);
   });
 
-  it('leaves two different addresses, a split wiki link, and parentheses inside an address', () => {
+  it('leaves two different addresses, a complete wiki link, and parentheses inside an address', () => {
     const different = `${url}(https://other.example.org/)`;
     expect(apply(different).lines).toEqual([]);
-    expect(apply(`|${url}|target='_blank']`).lines).toEqual([]);
     expect(apply('https://en.wikipedia.org/wiki/Gold_(element)').lines).toEqual([]);
     expect(apply(`[Text|${url}|target='_blank']`).lines).toEqual([]);
   });
@@ -665,6 +664,145 @@ describe('jspwiki-link-leftovers: wiki link split over two lines (#2443)', () =>
 
   it('a normal line still gets the doubled address repaired next to long ones', () => {
     expect(apply(`${url}(${url})`).content).toBe(url);
+  });
+});
+
+describe('jspwiki-link-leftovers: links that lost their opening bracket (#2451)', () => {
+  const apply = (md: string) => jspwikiLinkLeftovers.apply(md);
+
+  it('text before the pipe becomes the link text (Tucker Carlson page)', () => {
+    const body = [
+      "2023-06-13 Ep. 3 https://twitter.com/i/status/1668747661028081664 America's principles are at stake",
+      '',
+      "- 2023-06-15 EP 4|https://twitter.com/i/status/1669472439472988161|target='_blank'] Wannabe [Dictator]"
+    ].join('\n');
+    const r = apply(body);
+    expect(r.content).toBe([
+      "2023-06-13 Ep. 3 https://twitter.com/i/status/1668747661028081664 America's principles are at stake",
+      '',
+      '- [2023-06-15 EP 4](https://twitter.com/i/status/1669472439472988161) Wannabe [Dictator]'
+    ].join('\n'));
+    expect(r.lines).toEqual([3]);
+  });
+
+  it('no text before the pipe: the address itself is the link (CTILFiles page)', () => {
+    const body = [
+      ' content] messaging, create sock puppet accounts, and infiltrate private invite-only groups.',
+      '',
+      " |https://public.substack.com/p/ctil-files-1-us-and-uk-military-contractors|target='_blank'] - based on information obtained 2023-12-20"
+    ].join('\n');
+    const r = apply(body);
+    expect(r.content).toBe([
+      ' content] messaging, create sock puppet accounts, and infiltrate private invite-only groups.',
+      '',
+      ' https://public.substack.com/p/ctil-files-1-us-and-uk-military-contractors - based on information obtained 2023-12-20'
+    ].join('\n'));
+    expect(r.lines).toEqual([3]);
+  });
+
+  it('an address followed by the interwiki copy and the target becomes the address, with CRLF kept (Thing page)', () => {
+    const body = [
+      '[{$applicationname}]  refers you to Thing[^1]',
+      '',
+      "- [#1] - https://schema.org/Thing|Wikipedia:https://schema.org/Thing|target='_blank' - based on information obtained 2018-10-10-",
+      ''
+    ].join('\r\n');
+    const r = apply(body);
+    expect(r.content).toBe([
+      '[{$applicationname}]  refers you to Thing[^1]',
+      '',
+      '- [#1] - https://schema.org/Thing - based on information obtained 2018-10-10-',
+      ''
+    ].join('\r\n'));
+    expect(r.lines).toEqual([3]);
+  });
+
+  it('leaves lines that do not match a leftover shape', () => {
+    const url = 'https://www.example.org/report';
+    expect(apply(`[Text|${url}|target='_blank']`).lines).toEqual([]); // complete link
+    expect(apply(`a [b|${url}|target='_blank'] c`).lines).toEqual([]);
+    expect(apply(`words|${url}`).lines).toEqual([]); // no leftover target
+    expect(apply(`${url}|https://other.example.org/x|target='_blank'`).lines).toEqual([]); // two different addresses
+    expect(apply(`\`code\` words|${url}|target='_blank']`).lines).toEqual([]); // not at the start of the line
+    expect(apply(`- see [a] words|${url}|target='_blank']`).lines).toEqual([]); // text holds brackets
+  });
+
+  it('never touches code', () => {
+    const url = 'https://www.example.org/report';
+    expect(apply(`\`\`\`\nText|${url}|target='_blank']\n\`\`\``).lines).toEqual([]);
+    expect(apply(`\`Text|${url}|target='_blank']\``).lines).toEqual([]);
+    expect(apply(`\`\`\`\n${url}|Wikipedia:${url}|target='_blank'\n\`\`\``).lines).toEqual([]);
+  });
+
+  it('a second half of a split link is still joined, not repaired as a lost bracket', () => {
+    const url = 'https://www.example.org/report';
+    expect(apply(`[A long title\n|${url}|target='_blank']`).content).toBe(`[A long title|${url}|target='_blank']`);
+    // a refused join leaves the second line as it was
+    expect(apply(`[{Plugin\n|${url}|target='_blank']`).lines).toEqual([]);
+  });
+
+  it('a long line of spaces or addresses with a target is read in linear time', () => {
+    for (const line of [`${' '.repeat(9000)}|target='_blank']`, `${'https://a.com|'.repeat(600)}|target='_blank']`]) {
+      const started = performance.now();
+      apply(line);
+      expect(performance.now() - started).toBeLessThan(1000);
+    }
+  });
+
+  it('the label no longer starts with a quote marker: quotes keep working, and a line of them is read quickly', () => {
+    expect(apply("> a b|http://x|target='_blank']").content).toBe('> [a b](http://x)');
+    expect(apply("> > a b|http://x|target='_blank']").content).toBe('> > [a b](http://x)');
+    const body = `${Array.from({ length: 10 }, () => `${'>'.repeat(9900)}|target=x`).join('\n')}\nhttp://z`;
+    const started = performance.now();
+    const r = apply(body);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(r.content).toBe(body);
+  });
+
+  it('an interwiki copy inside an open bracket keeps its closing bracket', () => {
+    expect(apply("[see https://a.com|Wikipedia:https://a.com|target='_blank'] end").content).toBe('[see https://a.com] end');
+    expect(apply("see [a] https://a.com|Wikipedia:https://a.com|target='_blank'] end").content).toBe('see [a] https://a.com end');
+  });
+
+  it('a long line of mismatched backtick runs before a leftover is read within the time limit', () => {
+    const line = `x${'`'.repeat(5000)}${'a`'.repeat(2490)}`;
+    const body = Array.from({ length: 3 }, () => `${line}\n|target=x\nhttp://z`).join('\n');
+    const started = performance.now();
+    const r = apply(body);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(r.content).toBe(body);
+  });
+
+  it('many pairs of long lines with spaces before a leftover are read within the time limit', () => {
+    const pair = `[x${' '.repeat(9900)}y\n|http://z|target='_blank']`;
+    const body = Array.from({ length: 20 }, () => pair).join('\n');
+    const started = performance.now();
+    apply(body);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it('a heading keeps its marker, and the link text follows it', () => {
+    expect(apply("# foo|https://a.com/x|target='_blank']").content).toBe('# [foo](https://a.com/x)');
+    expect(apply("### Two words|https://a.com/x|target='_blank'] tail").content).toBe('### [Two words](https://a.com/x) tail');
+    expect(apply("## |https://a.com/x|target='_blank']").content).toBe('## https://a.com/x');
+  });
+
+  it('a previous line of backticks is checked within the same length limit', () => {
+    const previous = `a${'`'.repeat(100000)}a`;
+    const started = performance.now();
+    const r = apply(`${previous}\nText|https://x.example/p|target='_blank']`);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(r.content).toBe(`${previous}\n[Text](https://x.example/p)`);
+  });
+
+  it('an interwiki copy that still has its closing bracket loses the bracket too', () => {
+    expect(apply("see https://a.com|Wikipedia:https://a.com|target='_blank'] end").content).toBe('see https://a.com end');
+  });
+
+  it('is idempotent', () => {
+    const body = "- A B|https://x.example.org/p|target='_blank'] c\n\n |https://y.example.org/q|target='_blank'] d\n\n- https://z.example.org/r|Wikipedia:https://z.example.org/r|target='_blank' e";
+    const once = apply(body).content;
+    expect(apply(once).lines).toEqual([]);
   });
 });
 
