@@ -165,7 +165,7 @@ function hasUnclosedBracket(line: string): boolean {
  * syntax (`[{`), footnotes (`[^`) and checkboxes (`[ ]`, `[x]`) are not.
  */
 function endsInOpenLink(line: string): { open: boolean; pipe: boolean } {
-  const text = withoutCodeSpans(line).replace(/\s+$/, '');
+  const text = withoutCodeSpans(line).trimEnd();
   const at = text.lastIndexOf('[');
   if (at === -1 || text.indexOf(']', at) !== -1) return { open: false, pipe: false };
   const rest = text.slice(at + 1);
@@ -207,7 +207,7 @@ export const jspwikiLinkLeftovers: FixStep = {
             tooLong = true;
             break;
           }
-          joined = joined.replace(/\s+$/, '') + next.replace(/^\s+/, '');
+          joined = joined.trimEnd() + next.replace(/^\s+/, '');
           last++;
         }
         if (tooLong) {
