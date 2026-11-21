@@ -4,14 +4,19 @@
  * The import turned `[text|url|target='_blank']` into Markdown by pieces, and
  * on some pages the pieces were left glued together. Now that a bare web
  * address renders as a link (#2443), each would show as one long broken link.
- * Four shapes, each unambiguous:
+ * Five shapes, each unambiguous:
  *
  *   - `url(url)`, the same address twice, becomes `url`;
  *   - `url(url|target='_blank')`, the same address twice, becomes `url`;
  *   - `](url|target='_blank')`, a Markdown link whose destination kept the
  *     JSPWiki attribute, becomes `](url)` — every external link opens in a new
  *     tab anyway (#1492);
- *   - a wiki link split over two lines is joined back onto one (#2443, below).
+ *   - a wiki link split over two lines is joined back onto one (#2443, below);
+ *   - a link that lost its opening `[` (#2451), in the two shapes seen on real
+ *     pages: `text|url|target='_blank']` at the start of a line becomes
+ *     `[text](url)`, and the same with no text (` |url|target='_blank']`)
+ *     becomes the bare address, which renders as a link; and `url|Wikipedia:url|target='_blank'`
+ *     with no brackets at all, the same address twice, becomes `url`.
  *
  * Deliberately narrow:
  *   - two different addresses in `url(other)` are left alone;
@@ -20,6 +25,10 @@
  *     `url|target='_blank']`, #2443): the address and its closing `]` must
  *     be on the second line, nothing between the lines, and the first line
  *     must end inside an unclosed `[`. Anything less clear is left alone;
+ *   - a lost-bracket repair needs the leftover `|target=` and, for the text
+ *     form, the text at the start of the line (after a list marker) with no
+ *     bracket in it; a line right after one with an unclosed `[` is left alone,
+ *     since it may be the second half of a split link;
  *   - never inside code, an HTML block or an inline code span;
  *   - a line longer than {@link MAX_LINE} characters is left as it is, and an
  *     address is matched up to {@link MAX_URL} characters, so the cost of a
@@ -50,24 +59,49 @@ const TARGET_BLANK = String.raw`\|target=(?:'_blank'|"_blank")`;
 const DOUBLED = new RegExp(`(${URL})\\((${URL})(?:${TARGET_BLANK})?\\)`, 'g');
 const DESTINATION_WITH_TARGET = new RegExp(`\\]\\((${URL})${TARGET_BLANK}\\)`, 'g');
 
+/**
+ * A link that lost its opening `[` (#2451), at the start of a line after an
+ * optional indent, quote mark or list marker: `text|url|target='_blank']`,
+ * with or without the text. The text holds no bracket, pipe or backtick.
+ */
+const LOST_BRACKET = new RegExp(`^(\\s*(?:>\\s*)*(?:(?:[-*+]|\\d{1,9}[.)])\\s+)?)([^\\s\\[\\]|\`][^\\[\\]|\`]*)?\\|(${URL})${TARGET_BLANK}\\]`);
+/** The same address twice, the second behind an interwiki prefix, with no brackets at all (#2451). */
+const INTERWIKI_COPY = new RegExp(`(${URL})\\|(?:[A-Za-z][A-Za-z0-9_]*:)?(${URL})${TARGET_BLANK}`, 'g');
+
 /** Rewrite one stretch of text that is not inside a code span. */
-function fixText(text: string): string {
-  return text
+function fixText(text: string, lostBrackets: boolean, atLineStart: boolean): string {
+  let out = text
     .replace(DOUBLED, (whole: string, first: string, second: string) => (first === second ? first : whole))
     .replace(DESTINATION_WITH_TARGET, (_whole: string, url: string) => `](${url})`);
+  if (!lostBrackets || !out.includes('|target=')) return out;
+  if (atLineStart) {
+    out = out.replace(LOST_BRACKET, (_whole: string, lead: string, words: string | undefined, url: string) => {
+      const label = (words ?? '').trim();
+      return label ? `${lead}[${label}](${url})` : `${lead}${url}`;
+    });
+  }
+  return out.replace(INTERWIKI_COPY, (whole: string, first: string, second: string, at: number) => {
+    // The address must start the line or follow a space, so a longer word or a link destination is left alone.
+    const startsAfterSpace = at === 0 ? atLineStart : /\s/.test(out[at - 1]);
+    return first === second && startsAfterSpace ? first : whole;
+  });
 }
 
-/** Apply {@link fixText} to a line, leaving its code spans as written. */
-export function fixLinkLeftoversInLine(line: string): string {
+/**
+ * Apply {@link fixText} to a line, leaving its code spans as written. With
+ * `lostBrackets` false, the lost-bracket repairs (#2451) are skipped: the join
+ * test needs a second half of a split link as it was written.
+ */
+export function fixLinkLeftoversInLine(line: string, lostBrackets = true): string {
   let out = '';
   let i = 0;
   while (i < line.length) {
     const tick = line.indexOf('`', i);
     if (tick === -1) {
-      out += fixText(line.slice(i));
+      out += fixText(line.slice(i), lostBrackets, i === 0);
       break;
     }
-    out += fixText(line.slice(i, tick));
+    out += fixText(line.slice(i, tick), lostBrackets, i === 0);
     let run = tick;
     while (line[run] === '`') run++;
     const fence = line.slice(tick, run);
@@ -88,6 +122,12 @@ const SECOND_HALF = new RegExp(`^\\s*(\\|)?${URL}(?:${TARGET_BLANK})?\\]`);
 /** Text of a line outside its code spans, with each span blanked to spaces. */
 function withoutCodeSpans(line: string): string {
   return line.replace(/(`+)(?:(?!\1).)*?\1/g, (m: string) => ' '.repeat(m.length));
+}
+
+/** Does a line, outside its code spans, hold more `[` than `]`? */
+function hasUnclosedBracket(line: string): boolean {
+  const text = withoutCodeSpans(line);
+  return (text.match(/\[/g) ?? []).length > (text.match(/\]/g) ?? []).length;
 }
 
 /**
@@ -128,7 +168,7 @@ export const jspwikiLinkLeftovers: FixStep = {
         let last = i;
         let tooLong = false;
         while (last + 1 < map.lines.length && editable(last + 1)) {
-          const next = fixLinkLeftoversInLine(map.lines[last + 1]);
+          const next = fixLinkLeftoversInLine(map.lines[last + 1], false);
           const half = SECOND_HALF.exec(next);
           if (!half) break;
           const first = endsInOpenLink(joined);
@@ -150,7 +190,7 @@ export const jspwikiLinkLeftovers: FixStep = {
             endsInOpenLink(map.lines[end]).open
           ) end++;
           for (let n = i; n <= end; n++) {
-            const own = fixLinkLeftoversInLine(map.lines[n]);
+            const own = fixLinkLeftoversInLine(map.lines[n], false);
             if (own !== map.lines[n]) touched.add(n + 1);
             out.push(own);
             eols.push(map.eols[n]);
@@ -164,7 +204,12 @@ export const jspwikiLinkLeftovers: FixStep = {
           for (let n = i + 1; n <= last; n++) from.push(n);
           i = last;
         }
-        const fixed = fixLinkLeftoversInLine(text);
+        // After a line with an unclosed `[`, a leftover may be the second half of a link the join refused: leave it.
+        const fixed = fixLinkLeftoversInLine(
+          text,
+          // only a line with a leftover target can need it, so the bracket count is not run on every line
+          text.includes('|target=') && (from[0] === 0 || !hasUnclosedBracket(map.lines[from[0] - 1]))
+        );
         if (fixed !== text || from.length > 1) from.forEach((n) => touched.add(n + 1));
         text = fixed;
       }

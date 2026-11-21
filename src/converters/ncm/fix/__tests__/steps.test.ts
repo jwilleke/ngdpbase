@@ -536,10 +536,9 @@ describe('jspwiki-link-leftovers (#1492)', () => {
     expect(apply(`Title on the line above](${url}|target='_blank') - captured`).content).toBe(`Title on the line above](${url}) - captured`);
   });
 
-  it('leaves two different addresses, a split wiki link, and parentheses inside an address', () => {
+  it('leaves two different addresses, a complete wiki link, and parentheses inside an address', () => {
     const different = `${url}(https://other.example.org/)`;
     expect(apply(different).lines).toEqual([]);
-    expect(apply(`|${url}|target='_blank']`).lines).toEqual([]);
     expect(apply('https://en.wikipedia.org/wiki/Gold_(element)').lines).toEqual([]);
     expect(apply(`[Text|${url}|target='_blank']`).lines).toEqual([]);
   });
@@ -724,7 +723,7 @@ describe('jspwiki-link-leftovers: links that lost their opening bracket (#2451)'
     expect(apply(`a [b|${url}|target='_blank'] c`).lines).toEqual([]);
     expect(apply(`words|${url}`).lines).toEqual([]); // no leftover target
     expect(apply(`${url}|https://other.example.org/x|target='_blank'`).lines).toEqual([]); // two different addresses
-    expect(apply(`mid line words|${url}|target='_blank']`).lines).toEqual([]); // not at the start of the line
+    expect(apply(`\`code\` words|${url}|target='_blank']`).lines).toEqual([]); // not at the start of the line
     expect(apply(`- see [a] words|${url}|target='_blank']`).lines).toEqual([]); // text holds brackets
   });
 
@@ -740,6 +739,14 @@ describe('jspwiki-link-leftovers: links that lost their opening bracket (#2451)'
     expect(apply(`[A long title\n|${url}|target='_blank']`).content).toBe(`[A long title|${url}|target='_blank']`);
     // a refused join leaves the second line as it was
     expect(apply(`[{Plugin\n|${url}|target='_blank']`).lines).toEqual([]);
+  });
+
+  it('a long line of spaces or addresses with a target is read in linear time', () => {
+    for (const line of [`${' '.repeat(9000)}|target='_blank']`, `${'https://a.com|'.repeat(600)}|target='_blank']`]) {
+      const started = performance.now();
+      apply(line);
+      expect(performance.now() - started).toBeLessThan(1000);
+    }
   });
 
   it('is idempotent', () => {
