@@ -53,11 +53,11 @@ Precedence, highest first:
 
 | # | Source | Notes |
 |---|---|---|
-| 1 | Ambient environment | Kubernetes `env:`, `PORT=x node …`, shell exports |
+| 1 | Ambient environment | Kubernetes `env:`, `PORT=x node …`, shell exports (not under `./server.sh`; see [The shell path](#the-shell-path)) |
 | 2 | `<FAST_STORAGE>/.env` | Per-instance, lives on the data volume |
 | 3 | `<cwd>/.env` | Repo root |
 
-The ambient environment wins so an explicitly-set variable is never silently overridden by a file.
+Started with `node dist/src/app.js` (a container, or `PORT=x node …`), the ambient environment wins so an explicitly-set variable is never silently overridden by a file. Started with `./server.sh`, the files win over the shell; see [The shell path](#the-shell-path).
 
 There is a chicken-and-egg step worth knowing about: `FAST_STORAGE` may itself be declared in the root `.env`. So that file is __parsed but not applied__ first, purely to discover where the per-instance file lives (`resolveInstanceDataDir()` in `bootstrap-env.ts`). Then the per-instance file is applied, then the root file. Because `dotenv` does not overwrite an existing value, first-applied wins — which is why the instance file takes precedence over the root one.
 
@@ -67,7 +67,7 @@ There is a chicken-and-egg step worth knowing about: `FAST_STORAGE` may itself b
 
 ### The shell path
 
-`server.sh` reaches the same precedence by the opposite route (near the top of `server.sh`):
+`server.sh` reaches the same order between the two files by the opposite route, but not the same order against the shell (near the top of `server.sh`):
 
 ```bash
 # root first
@@ -77,9 +77,9 @@ _FAST="${FAST_STORAGE:-${INSTANCE_DATA_FOLDER:-./data}}"
 if [ -f "$_FAST/.env" ]; then set -a; source "$_FAST/.env"; set +a; fi
 ```
 
-Sourcing order is reversed relative to `bootstrap-env.ts`, but the __precedence is identical__: shell assignment overwrites (so last wins), `dotenv` does not (so first wins). Both end with the instance file beating the root file, and both are then beaten by anything already exported.
+Sourcing order is reversed relative to `bootstrap-env.ts`, and the two agree on the instance file beating the root file: shell assignment overwrites (so last wins), `dotenv` does not (so first wins). They differ against the environment. `set -a; source` also overwrites a variable already exported in the shell or given on the `./server.sh` command line, so under `./server.sh` __both files beat the shell__. A direct `node dist/src/app.js` start keeps whatever is already in the environment, because `dotenv` never overwrites. Whether `server.sh` should let the shell win is tracked in [#2456](https://github.com/jwilleke/ngdpbase/issues/2456).
 
-When launched via `server.sh`, both files are already in the ambient environment by the time node starts, so the file-loading half of `bootstrap-env.ts` finds nothing to conflict with. The session-secret guarantee below still runs. The file loading earns its keep in containers.
+When launched via `server.sh`, both files are already in the ambient environment by the time node starts (with the file values, shell exports they overwrote included), so the file-loading half of `bootstrap-env.ts` finds nothing to conflict with. The session-secret guarantee below still runs. The file loading earns its keep in containers.
 
 ### The session secret guarantee
 

@@ -75,14 +75,16 @@ SLOW_STORAGE=/srv/ngdpbase/data   # may be the same folder as FAST_STORAGE
 PORT=3000
 ```
 
-Both storage folders must be writable by `PUID`:`PGID`. The session secret, credentials key and backup key are generated into `<FAST_STORAGE>/.env` on the first start; save the backup key somewhere off the server.
+Both storage folders must be writable by `PUID`:`PGID`. Keys such as the session secret, credentials key and backup key are generated into `<FAST_STORAGE>/.env` on the first start; save the backup key somewhere off the server.
 
 A direct install ends up with two `.env` files:
 
 - `<checkout>/.env` is the one you just wrote: `FAST_STORAGE`, `SLOW_STORAGE`, `PORT` and the other settings in `.env.example`. The server reads it first to find `FAST_STORAGE`.
-- `<FAST_STORAGE>/.env` belongs to the site. The server writes its generated keys there (`NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY`, `NGDPBASE_BACKUP_KEY`), and you add the site's own secrets there, such as `NGDPBASE_DATABASE_KEY` and any mail or add-on secrets.
+- `<FAST_STORAGE>/.env` belongs to the site. The server writes its generated keys there, such as `NGDPBASE_SESSION_SECRET`, `NGDPBASE_CREDENTIALS_KEY` and `NGDPBASE_BACKUP_KEY`, and you add the site's own secrets there, such as `NGDPBASE_DATABASE_KEY` and any mail or add-on secrets.
 
-If both files set the same variable, the one in `<FAST_STORAGE>/.env` wins. A variable set outside the files (exported in your shell, or on the command line of `node dist/src/app.js`, or in a container's settings) wins over both, except when you start with `./server.sh`, which reads the files after your shell and so overrides it. [Where `.env` files are read from](docs/guides/bootstrap-developer-guide.md#where-env-files-are-read-from) has the full order.
+If both files set a variable, `<FAST_STORAGE>/.env` wins.
+
+A variable set outside the files wins over both (a shell export before `node dist/src/app.js`, or a container's settings). The exception is `./server.sh`, which reads the files after your shell, so the files win there. [Where `.env` files are read from](docs/guides/bootstrap-developer-guide.md#where-env-files-are-read-from) has the full order.
 
 Only `<FAST_STORAGE>/.env` is in your backups and in Admin → Backup → Download .env. Keep your own copy of `<checkout>/.env`; [What to keep safe](docs/guides/backup-restore-guide.md#what-to-keep-safe) in the backup guide says more.
 
