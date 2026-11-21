@@ -14,7 +14,8 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$SCRIPT_DIR/.ngdpbase.pid"
 
-# Source .env if present (shell exports and CLI args still override)
+# Source .env if present. Sourcing overwrites: a value in the file beats one
+# already exported in the shell or given on the command line.
 if [ -f "$SCRIPT_DIR/.env" ]; then
   set -a
   source "$SCRIPT_DIR/.env"
