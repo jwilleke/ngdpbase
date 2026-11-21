@@ -749,6 +749,24 @@ describe('jspwiki-link-leftovers: links that lost their opening bracket (#2451)'
     }
   });
 
+  it('a heading keeps its marker, and the link text follows it', () => {
+    expect(apply("# foo|https://a.com/x|target='_blank']").content).toBe('# [foo](https://a.com/x)');
+    expect(apply("### Two words|https://a.com/x|target='_blank'] tail").content).toBe('### [Two words](https://a.com/x) tail');
+    expect(apply("## |https://a.com/x|target='_blank']").content).toBe('## https://a.com/x');
+  });
+
+  it('a previous line of backticks is checked within the same length limit', () => {
+    const previous = `a${'`'.repeat(100000)}a`;
+    const started = performance.now();
+    const r = apply(`${previous}\nText|https://x.example/p|target='_blank']`);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(r.content).toBe(`${previous}\n[Text](https://x.example/p)`);
+  });
+
+  it('an interwiki copy that still has its closing bracket loses the bracket too', () => {
+    expect(apply("see https://a.com|Wikipedia:https://a.com|target='_blank'] end").content).toBe('see https://a.com end');
+  });
+
   it('is idempotent', () => {
     const body = "- A B|https://x.example.org/p|target='_blank'] c\n\n |https://y.example.org/q|target='_blank'] d\n\n- https://z.example.org/r|Wikipedia:https://z.example.org/r|target='_blank' e";
     const once = apply(body).content;
