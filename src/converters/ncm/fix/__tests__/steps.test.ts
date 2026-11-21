@@ -752,7 +752,7 @@ describe('jspwiki-link-leftovers: links that lost their opening bracket (#2451)'
   it('the label no longer starts with a quote marker: quotes keep working, and a line of them is read quickly', () => {
     expect(apply("> a b|http://x|target='_blank']").content).toBe('> [a b](http://x)');
     expect(apply("> > a b|http://x|target='_blank']").content).toBe('> > [a b](http://x)');
-    const body = `${'>'.repeat(9900)}|target=x\nhttp://z`;
+    const body = `${Array.from({ length: 10 }, () => `${'>'.repeat(9900)}|target=x`).join('\n')}\nhttp://z`;
     const started = performance.now();
     const r = apply(body);
     expect(performance.now() - started).toBeLessThan(1000);
