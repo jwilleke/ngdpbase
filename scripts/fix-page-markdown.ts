@@ -23,6 +23,10 @@
  * the index — so stop it first (`./server.sh stop <env>`) and start it after.
  * Each page is re-read and re-converted at apply time; the dry-run report is
  * never used as input.
+ * Each page is saved on its own: a page whose save is refused (the HTML policy
+ * refusing text the page already carried, say) is left as it was, named on the
+ * console with the reason and in the report under Failed, and the other pages
+ * are still written. The exit code is 1 when any page failed.
  *
  * Usage:
  *   npx tsx scripts/fix-page-markdown.ts --data /path/to/pages \
@@ -83,12 +87,16 @@ export interface FixPassResult {
 /**
  * Run the steps over `files`. With `save`, each changed page is written on
  * its own: a page whose save throws goes to `failed` and the pass carries on.
+ * Each such page is then named through `log` with the reason the save gave, so
+ * the operator sees which pages were left as they were. A page whose text the
+ * HTML policy already refuses is one of them: the policy is never bypassed.
  */
 export async function fixPages(
   files: string[],
   dataDir: string,
   options: RunFixesOptions,
-  save: SaveThroughDoor | null
+  save: SaveThroughDoor | null,
+  log: (line: string) => void = console.error
 ): Promise<FixPassResult> {
   const failed: Array<{ title: string; error: string }> = [];
   const skippedPrivate: string[] = [];
@@ -133,6 +141,7 @@ export async function fixPages(
       samples: samples(parsed.content.replace(/\r/g, ''), result.content.replace(/\r/g, ''))
     });
   }
+  for (const f of failed) log(`✗ Not saved, left as it was: ${f.title}: ${f.error}`);
   return { changes, failed, skippedPrivate, stepCounts };
 }
 
