@@ -4,7 +4,7 @@
  * The import turned `[text|url|target='_blank']` into Markdown by pieces, and
  * on some pages the pieces were left glued together. Now that a bare web
  * address renders as a link (#2443), each would show as one long broken link.
- * Five shapes, each unambiguous:
+ * Each shape is unambiguous:
  *
  *   - `url(url)`, the same address twice, becomes `url`;
  *   - `url(url|target='_blank')`, the same address twice, becomes `url`;
@@ -12,11 +12,13 @@
  *     JSPWiki attribute, becomes `](url)` — every external link opens in a new
  *     tab anyway (#1492);
  *   - a wiki link split over two lines is joined back onto one (#2443, below);
- *   - a link that lost its opening `[` (#2451), in the two shapes seen on real
- *     pages: `text|url|target='_blank']` at the start of a line becomes
+ *   - a link that lost its opening `[` (#2451), in the shapes seen on real
+ *     pages: `text|url|target='_blank']` at the start of a line (after an
+ *     indent, quote, list or heading marker, which stay in front) becomes
  *     `[text](url)`, and the same with no text (` |url|target='_blank']`)
- *     becomes the bare address, which renders as a link; and `url|Wikipedia:url|target='_blank'`
- *     with no brackets at all, the same address twice, becomes `url`.
+ *     becomes the bare address, which renders as a link; and
+ *     `url|Wikipedia:url|target='_blank'` (with or without a closing `]`) with
+ *     no brackets at all, the same address twice, becomes `url`.
  *
  * Deliberately narrow:
  *   - two different addresses in `url(other)` are left alone;
@@ -26,9 +28,11 @@
  *     be on the second line, nothing between the lines, and the first line
  *     must end inside an unclosed `[`. Anything less clear is left alone;
  *   - a lost-bracket repair needs the leftover `|target=` and, for the text
- *     form, the text at the start of the line (after a list marker) with no
- *     bracket in it; a line right after one with an unclosed `[` is left alone,
- *     since it may be the second half of a split link;
+ *     form, the text at the start of the line (after a quote, list or heading
+ *     marker) with no bracket in it, which does not start with a quote mark;
+ *     a line right after one with an unclosed `[` is left alone, since it may
+ *     be the second half of a split link; the `]` after an interwiki copy is
+ *     dropped only when no unclosed `[` comes before it on the line;
  *   - never inside code, an HTML block or an inline code span;
  *   - a line longer than {@link MAX_LINE} characters is left as it is, and an
  *     address is matched up to {@link MAX_URL} characters, so the cost of a
@@ -64,7 +68,7 @@ const DESTINATION_WITH_TARGET = new RegExp(`\\]\\((${URL})${TARGET_BLANK}\\)`, '
  * optional indent, quote mark, list marker or heading marker: `text|url|target='_blank']`,
  * with or without the text. The text holds no bracket, pipe or backtick.
  */
-const LOST_BRACKET = new RegExp(`^(\\s*(?:>\\s*)*(?:(?:[-*+]|\\d{1,9}[.)])\\s+)?(?:#{1,6}\\s+)?)([^\\s\\[\\]|\`][^\\[\\]|\`]*)?\\|(${URL})${TARGET_BLANK}\\]`);
+const LOST_BRACKET = new RegExp(`^(\\s*(?:>\\s*)*(?:(?:[-*+]|\\d{1,9}[.)])\\s+)?(?:#{1,6}\\s+)?)((?!>)[^\\s\\[\\]|\`][^\\[\\]|\`]*)?\\|(${URL})${TARGET_BLANK}\\]`);
 /** The same address twice, the second behind an interwiki prefix, with no brackets at all (#2451). */
 const INTERWIKI_COPY = new RegExp(`(${URL})\\|(?:[A-Za-z][A-Za-z0-9_]*:)?(${URL})${TARGET_BLANK}\\]?`, 'g');
 
@@ -83,7 +87,11 @@ function fixText(text: string, lostBrackets: boolean, atLineStart: boolean): str
   return out.replace(INTERWIKI_COPY, (whole: string, first: string, second: string, at: number) => {
     // The address must start the line or follow a space, so a longer word or a link destination is left alone.
     const startsAfterSpace = at === 0 ? atLineStart : /\s/.test(out[at - 1]);
-    return first === second && startsAfterSpace ? first : whole;
+    if (first !== second || !startsAfterSpace) return whole;
+    // A closing `]` that belongs to an open `[` before the match stays.
+    const before = out.slice(0, at);
+    const open = (before.match(/\[/g) ?? []).length > (before.match(/\]/g) ?? []).length;
+    return open && whole.endsWith(']') ? `${first}]` : first;
   });
 }
 
