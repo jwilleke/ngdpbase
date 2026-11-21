@@ -2,7 +2,8 @@ const path = require('path');
 const fs = require('fs');
 
 // Load .env into process.env if values are not already set.
-// Mirrors what server.sh does: source .env, then let shell exports override.
+// Unlike server.sh, whose sourcing overwrites shell exports, this keeps a value
+// already in the environment.
 // This ensures PM2 auto-restarts (which bypass server.sh) still pick up PORT,
 // FAST_STORAGE, SLOW_STORAGE, PM2_MAX_MEMORY, etc.
 const envFile = path.join(__dirname, '.env');
