@@ -764,6 +764,15 @@ describe('jspwiki-link-leftovers: links that lost their opening bracket (#2451)'
     expect(apply("see [a] https://a.com|Wikipedia:https://a.com|target='_blank'] end").content).toBe('see [a] https://a.com end');
   });
 
+  it('a long line of mismatched backtick runs before a leftover is read within the time limit', () => {
+    const line = `x${'`'.repeat(5000)}${'a`'.repeat(2490)}`;
+    const body = Array.from({ length: 3 }, () => `${line}\n|target=x\nhttp://z`).join('\n');
+    const started = performance.now();
+    const r = apply(body);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(r.content).toBe(body);
+  });
+
   it('a heading keeps its marker, and the link text follows it', () => {
     expect(apply("# foo|https://a.com/x|target='_blank']").content).toBe('# [foo](https://a.com/x)');
     expect(apply("### Two words|https://a.com/x|target='_blank'] tail").content).toBe('### [Two words](https://a.com/x) tail');
