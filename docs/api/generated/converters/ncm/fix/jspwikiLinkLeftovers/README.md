@@ -24,8 +24,8 @@ Five shapes, each unambiguous:
     be on the second line, nothing between the lines, and the first line
     must end inside an unclosed `[`. Anything less clear is left alone;
 - a link that lost its opening `[` (#2451) is repaired in the shapes seen on
-    real pages: `text|url|target='_blank']` at the start of a line becomes
-    `[text](url)`; the same with no text (` |url|target='_blank']`) becomes the
+    real pages: `text|url|target='_blank']` at the start of a line (after a list, quote or
+    heading marker) becomes `[text](url)`, with the marker kept in front; the same with no text (` |url|target='_blank']`) becomes the
     bare address, which renders as a link; and `url|Wikipedia:url|target='_blank'`
     with no brackets at all, the same address twice, becomes `url`. The
     `|target=` leftover is required, the text holds no bracket, and a line right

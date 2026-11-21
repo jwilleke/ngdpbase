@@ -61,12 +61,12 @@ const DESTINATION_WITH_TARGET = new RegExp(`\\]\\((${URL})${TARGET_BLANK}\\)`, '
 
 /**
  * A link that lost its opening `[` (#2451), at the start of a line after an
- * optional indent, quote mark or list marker: `text|url|target='_blank']`,
+ * optional indent, quote mark, list marker or heading marker: `text|url|target='_blank']`,
  * with or without the text. The text holds no bracket, pipe or backtick.
  */
-const LOST_BRACKET = new RegExp(`^(\\s*(?:>\\s*)*(?:(?:[-*+]|\\d{1,9}[.)])\\s+)?)([^\\s\\[\\]|\`][^\\[\\]|\`]*)?\\|(${URL})${TARGET_BLANK}\\]`);
+const LOST_BRACKET = new RegExp(`^(\\s*(?:>\\s*)*(?:(?:[-*+]|\\d{1,9}[.)])\\s+)?(?:#{1,6}\\s+)?)([^\\s\\[\\]|\`][^\\[\\]|\`]*)?\\|(${URL})${TARGET_BLANK}\\]`);
 /** The same address twice, the second behind an interwiki prefix, with no brackets at all (#2451). */
-const INTERWIKI_COPY = new RegExp(`(${URL})\\|(?:[A-Za-z][A-Za-z0-9_]*:)?(${URL})${TARGET_BLANK}`, 'g');
+const INTERWIKI_COPY = new RegExp(`(${URL})\\|(?:[A-Za-z][A-Za-z0-9_]*:)?(${URL})${TARGET_BLANK}\\]?`, 'g');
 
 /** Rewrite one stretch of text that is not inside a code span. */
 function fixText(text: string, lostBrackets: boolean, atLineStart: boolean): string {
@@ -126,6 +126,7 @@ function withoutCodeSpans(line: string): string {
 
 /** Does a line, outside its code spans, hold more `[` than `]`? */
 function hasUnclosedBracket(line: string): boolean {
+  if (line.length > MAX_LINE) return false;
   const text = withoutCodeSpans(line);
   return (text.match(/\[/g) ?? []).length > (text.match(/\]/g) ?? []).length;
 }
