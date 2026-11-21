@@ -668,6 +668,87 @@ describe('jspwiki-link-leftovers: wiki link split over two lines (#2443)', () =>
   });
 });
 
+describe('jspwiki-link-leftovers: links that lost their opening bracket (#2451)', () => {
+  const apply = (md: string) => jspwikiLinkLeftovers.apply(md);
+
+  it('text before the pipe becomes the link text (Tucker Carlson page)', () => {
+    const body = [
+      "2023-06-13 Ep. 3 https://twitter.com/i/status/1668747661028081664 America's principles are at stake",
+      '',
+      "- 2023-06-15 EP 4|https://twitter.com/i/status/1669472439472988161|target='_blank'] Wannabe [Dictator]"
+    ].join('\n');
+    const r = apply(body);
+    expect(r.content).toBe([
+      "2023-06-13 Ep. 3 https://twitter.com/i/status/1668747661028081664 America's principles are at stake",
+      '',
+      '- [2023-06-15 EP 4](https://twitter.com/i/status/1669472439472988161) Wannabe [Dictator]'
+    ].join('\n'));
+    expect(r.lines).toEqual([3]);
+  });
+
+  it('no text before the pipe: the address itself is the link (CTILFiles page)', () => {
+    const body = [
+      ' content] messaging, create sock puppet accounts, and infiltrate private invite-only groups.',
+      '',
+      " |https://public.substack.com/p/ctil-files-1-us-and-uk-military-contractors|target='_blank'] - based on information obtained 2023-12-20"
+    ].join('\n');
+    const r = apply(body);
+    expect(r.content).toBe([
+      ' content] messaging, create sock puppet accounts, and infiltrate private invite-only groups.',
+      '',
+      ' https://public.substack.com/p/ctil-files-1-us-and-uk-military-contractors - based on information obtained 2023-12-20'
+    ].join('\n'));
+    expect(r.lines).toEqual([3]);
+  });
+
+  it('an address followed by the interwiki copy and the target becomes the address, with CRLF kept (Thing page)', () => {
+    const body = [
+      '[{$applicationname}]  refers you to Thing[^1]',
+      '',
+      "- [#1] - https://schema.org/Thing|Wikipedia:https://schema.org/Thing|target='_blank' - based on information obtained 2018-10-10-",
+      ''
+    ].join('\r\n');
+    const r = apply(body);
+    expect(r.content).toBe([
+      '[{$applicationname}]  refers you to Thing[^1]',
+      '',
+      '- [#1] - https://schema.org/Thing - based on information obtained 2018-10-10-',
+      ''
+    ].join('\r\n'));
+    expect(r.lines).toEqual([3]);
+  });
+
+  it('leaves lines that do not match a leftover shape', () => {
+    const url = 'https://www.example.org/report';
+    expect(apply(`[Text|${url}|target='_blank']`).lines).toEqual([]); // complete link
+    expect(apply(`a [b|${url}|target='_blank'] c`).lines).toEqual([]);
+    expect(apply(`words|${url}`).lines).toEqual([]); // no leftover target
+    expect(apply(`${url}|https://other.example.org/x|target='_blank'`).lines).toEqual([]); // two different addresses
+    expect(apply(`mid line words|${url}|target='_blank']`).lines).toEqual([]); // not at the start of the line
+    expect(apply(`- see [a] words|${url}|target='_blank']`).lines).toEqual([]); // text holds brackets
+  });
+
+  it('never touches code', () => {
+    const url = 'https://www.example.org/report';
+    expect(apply(`\`\`\`\nText|${url}|target='_blank']\n\`\`\``).lines).toEqual([]);
+    expect(apply(`\`Text|${url}|target='_blank']\``).lines).toEqual([]);
+    expect(apply(`\`\`\`\n${url}|Wikipedia:${url}|target='_blank'\n\`\`\``).lines).toEqual([]);
+  });
+
+  it('a second half of a split link is still joined, not repaired as a lost bracket', () => {
+    const url = 'https://www.example.org/report';
+    expect(apply(`[A long title\n|${url}|target='_blank']`).content).toBe(`[A long title|${url}|target='_blank']`);
+    // a refused join leaves the second line as it was
+    expect(apply(`[{Plugin\n|${url}|target='_blank']`).lines).toEqual([]);
+  });
+
+  it('is idempotent', () => {
+    const body = "- A B|https://x.example.org/p|target='_blank'] c\n\n |https://y.example.org/q|target='_blank'] d\n\n- https://z.example.org/r|Wikipedia:https://z.example.org/r|target='_blank' e";
+    const once = apply(body).content;
+    expect(apply(once).lines).toEqual([]);
+  });
+});
+
 describe('registry', () => {
   it('selects every step by default', () => {
     expect(selectFixSteps()).toEqual(FIX_STEPS);
