@@ -749,6 +749,21 @@ describe('jspwiki-link-leftovers: links that lost their opening bracket (#2451)'
     }
   });
 
+  it('the label no longer starts with a quote marker: quotes keep working, and a line of them is read quickly', () => {
+    expect(apply("> a b|http://x|target='_blank']").content).toBe('> [a b](http://x)');
+    expect(apply("> > a b|http://x|target='_blank']").content).toBe('> > [a b](http://x)');
+    const body = `${'>'.repeat(9900)}|target=x\nhttp://z`;
+    const started = performance.now();
+    const r = apply(body);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(r.content).toBe(body);
+  });
+
+  it('an interwiki copy inside an open bracket keeps its closing bracket', () => {
+    expect(apply("[see https://a.com|Wikipedia:https://a.com|target='_blank'] end").content).toBe('[see https://a.com] end');
+    expect(apply("see [a] https://a.com|Wikipedia:https://a.com|target='_blank'] end").content).toBe('see [a] https://a.com end');
+  });
+
   it('a heading keeps its marker, and the link text follows it', () => {
     expect(apply("# foo|https://a.com/x|target='_blank']").content).toBe('# [foo](https://a.com/x)');
     expect(apply("### Two words|https://a.com/x|target='_blank'] tail").content).toBe('### [Two words](https://a.com/x) tail');
