@@ -1,6 +1,6 @@
 # Shared footnote sources: one index of sources across pages
 
-Design for [#2454](https://github.com/jwilleke/ngdpbase/issues/2454). It builds the requirements R1–R8 Jim confirmed on that issue ([comment](https://github.com/jwilleke/ngdpbase/issues/2454#issuecomment-7060680486)), with R5 as amended by his decision 8 ([comment](https://github.com/jwilleke/ngdpbase/issues/2454#issuecomment-7060704094)). Nothing here is built yet, and none of the open questions at the end is decided in it: where a choice is needed, the text says "depends on Qn". Typed citations ([#707](https://github.com/jwilleke/ngdpbase/issues/707)) are out of scope.
+Design for [#2454](https://github.com/jwilleke/ngdpbase/issues/2454). It builds the requirements R1–R8 Jim confirmed on that issue ([comment](https://github.com/jwilleke/ngdpbase/issues/2454#issuecomment-7060680486)), with R5 as amended by his decision 8 ([comment](https://github.com/jwilleke/ngdpbase/issues/2454#issuecomment-7060704094)). Nothing here is built yet. Jim answered the nine open questions on that issue ([comment](https://github.com/jwilleke/ngdpbase/issues/2454#issuecomment-7067455663)); [Decisions](#decisions) records each answer, and the text below follows them. Typed citations ([#707](https://github.com/jwilleke/ngdpbase/issues/707)) are out of scope.
 
 ## Prior work
 
@@ -20,7 +20,7 @@ Searched on 2026-11-21 at master `edfe9782`: `docs/` (guides, design, planning),
 | `BackgroundJobManager.registerJob` (line 437), `WikiRoutes.registerAdminJobs` (~23571)                                                        | Scheduled jobs with `schedule`, `catchUp`, `overlap`, `timeout`, `persist`                                                                                            | R3's weekly check                                                                                                                       |
 | `src/http/guardedFetch.ts:153`, `src/http/egressPolicy.ts:61`                                                                                 | The one allowed way to call out: SSRF-guarded, every redirect hop checked, `HEAD` allowed, a size and time limit                                                      | R3. Raw `fetch` is not allowed in `src/`                                                                                                |
 | `docs/design/required-pages-sync-states.md`, `required-pages/`                                                                                | How a shipped page is seeded and kept in step                                                                                                                         | R4: the __Sources__ page ships as a required page                                                                                       |
-| [docs/guides/storage-developer-guide.md](../guides/storage-developer-guide.md) line 160                                                       | The decision log already says "Footnotes are shared records used by many pages; editing one asks which pages take the new wording"                                    | The long-term intent. This design builds a smaller first step toward it, and says where it does not match (R7, Q3, Q4)                      |
+| [docs/guides/storage-developer-guide.md](../guides/storage-developer-guide.md) line 160                                                       | The decision log already says "Footnotes are shared records used by many pages; editing one asks which pages take the new wording"                                    | The long-term intent. This design builds a smaller first step toward it, and says where it does not match (R7)                      |
 | `AppHealthPlugin` broken-link check                                                                                                           | Finds broken internal page links                                                                                                                                      | Not external links. Nothing in the repo checks an outside URL                                                                           |
 | [#707](https://github.com/jwilleke/ngdpbase/issues/707)                                                                                       | Typed citations                                                                                                                                                       | Out of scope here, by Jim's decision                                                                                                    |
 
@@ -43,7 +43,7 @@ Not found anywhere: a shared source record, URL tidying, a link checker for outs
 
 - Allow and deny come only from `hasPermission` and `canAccess`, with the caller's context forwarded (P1, P2). A role name never decides. `holdsPermission` only decides whether to show a control; acting on the control asks `hasPermission`.
 - A page is read through the page door (`readPage`) and listed through `listPagesFor` or `filterPagesFor`.
-- A change to the permission or audit catalog is declared in configuration and regenerated, and needs Jim's approval (Q7).
+- A change to the permission or audit catalog is declared in configuration and regenerated, and needs Jim's approval. This design adds nothing to either catalog.
 - Each build slice ends with the guides' "How you know you are done" checks (see [Slicing](#slicing)).
 
 ## Data flow
@@ -64,7 +64,7 @@ flowchart LR
     EDITCHK["Page-edit check for each page<br/>(as the approving admin)"]
     TOPIC["Cache topic FootnoteManager<br/>(bumped on every source or footnote write)"]
     DOOR["listPagesFor / filterPagesFor<br/>(the reader's view permission)"]
-    AUD["Audit log: footnote-edit (page changes),<br/>source changes per Q7"]
+    AUD["Audit log: footnote-edit<br/>(page changes and source changes, no page for a source)"]
   end
 
   subgraph STORE["Site storage"]
@@ -127,7 +127,7 @@ A source record (one JSON file per source, `{SLOW_STORAGE}/footnote-sources/{sou
 
 | Field                    | Meaning                                                                                                                           |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                     | A UUID, stable for life                                                                                                           |
+| `id`                     | A UUID, stable for life. `SourceStore` makes it with `crypto.randomUUID()` when it creates the source, never from the link or from anything the request sends |
 | `title`                  | The name shown to readers                                                                                                         |
 | `url`                    | The address as an editor entered it. Only `http` or `https` (see [Links](#links-http-and-https-only))                             |
 | `urlKey`                 | The tidy form (R2), used to find the source again. Never shown                                                                    |
@@ -167,20 +167,21 @@ A new `SourceStore` inside `FootnoteManager` creates, reads and updates sources.
 - `http` and `https` are equal (the key stores `https`).
 - The host is lower case, a leading `www.` is dropped, and a trailing slash on the path is dropped.
 - Query parameters named `utm_*`, plus `fbclid` and `gclid`, are dropped. Other parameters stay, and the rest keep their order.
-- A fragment (`#section`): __depends on Q9.__ If the answer is "keep it", two links that differ only by fragment are two sources. If "drop it", they are one.
+- A fragment (`#section`) stays in the key, so `page#a` and `page#b` are two sources.
 - Anything else is left alone. A link that does not parse is not tidied and never matches another.
 
-The tidy form is a key for finding, not a rewrite of what the editor typed: the source keeps the address as entered, and the reader's link goes where the editor said. Adding a footnote whose link matches shows "You already have a source for this link: [title]. Use it?" before saving. The editor may decline and make a separate source; two sources with one key are better than refusing a person's wording. What happens to the key when someone edits a source's link, and whether two sources with one key are offered for merging, __depends on Q5.__
+The tidy form is a key for finding, not a rewrite of what the editor typed: the source keeps the address as entered, and the reader's link goes where the editor said. Adding a footnote whose link matches shows "You already have a source for this link: [title]. Use it?" before saving. The editor may decline and make a separate source; two sources with one key are better than refusing a person's wording. When someone edits a source's link so its key equals another source's, the key follows the new link and the editor is offered "This link is already a source" with a __Merge__ action (see [Merging](#merging-two-sources)). Nothing merges unless they press it.
 
 ### R3. Weekly check, flag only
 
 A job `footnotes.sources-check` is registered beside the other admin jobs (`WikiRoutes.registerAdminJobs`, ~23571), with `schedule` weekly, `catchUp: 'latest'`, `overlap: 'skip'`, a `timeout` of one hour and `persist: true`. `ngdpbase.jobs.footnotes.sources-check.schedule` and `.enabled` work like every other job's. For each source whose link passes `safeSourceUrl` and whose status is not `stale`:
 
 1. `guardedFetch(url, { method: 'HEAD', policy, timeoutMs, maxRedirects, maxBytes })` through `resolveEgressPolicy` (`egressPolicy.ts:61`). A `405`, `403` or `501` on HEAD is retried once as `GET`, because many servers refuse HEAD.
-2. A `2xx` after redirects updates `lastChecked` with the answer. On a `good` source that is all. On a `needs-checking` source it also changes nothing else: the flag stays until a person clears it.
+2. A `2xx` after redirects, not ending on the home page (step 4), updates `lastChecked` with the answer. On a `good` source that is all. On a `needs-checking` source it also changes nothing else: the flag stays until a person clears it.
 3. Anything else (a `4xx` or `5xx` after the retry, a refused connection, a timeout, a blocked address) sets `needs-checking`, sets `statusSince`, and records the reason in `flagReason` and `lastChecked`.
+4. A `2xx` that ended on the site's own home page also sets `needs-checking`, with the reason "redirects to the home page". It counts when the link's path was not the home page, and the address the answer came from (`finalUrl` on the `guardedFetch` result) is on the same host, with an empty path or `/` and no query. A link that is itself a home page is not flagged for this.
 
-What else counts as a failure beyond step 3, such as a redirect to a home page or a "not found" text on a 200 answer, __depends on Q1.__ With no extra detection, only step 3 flags.
+These are the only three kinds of failure: a connection error, a non-2xx answer, and a redirect to the site's home page. The check does not read the body, so it does not look for "not found" text or short pages (Jim's decision 1).
 
 Two rules keep the check from deciding anything a person should decide:
 
@@ -189,12 +190,18 @@ Two rules keep the check from deciding anything a person should decide:
 
 Politeness and safety: one request at a time per host, a pause between hosts, a total cap per run, no cookies and no request body. A source whose link is a private or non-routable address is flagged `needs-checking` with the reason "address not allowed" and never connected to. The job writes to the audit log once per run with counts, never per link.
 
+__Whose context reads pages.__ Each of the three readers uses a different one, and none reads a vault:
+
+- __The check and the index build__ run as the job's own context (`scheduleContext`, naming `job:footnotes.sources-check`, as `BackgroundJobManager` gives every scheduled run). They read the list of page names and each public page's uuid from the page index, and each page's footnote file by `{ name, uuid }`. They never read page text.
+- __The Sources page__ reads as the reader: `filterPagesFor` is called with the reader's own context (R4).
+- __The conversion__ reads and writes each page as the approving admin's context, through `readPage` and the page's edit check (R5). A page that context may not read or edit is skipped and listed.
+
 ### Caching: what invalidates what
 
-A cached render is dropped when a topic it declared has a new version. `PAGE_DATA_TOPIC` is in every render already (`BASE_RENDER_TOPICS`, `src/cache/CacheDependencies.ts:36`), and a source write bumps nothing on it. So a source edit, a status change by the job and a "mark out of date" would leave the Sources page and each citing page showing the old status. The design adds a topic:
+A cached render is dropped when a topic it declared has a new version. `PAGE_DATA_TOPIC` is in every render already (`BASE_RENDER_TOPICS`, `src/cache/CacheDependencies.ts:41`), and a source write bumps nothing on it. So a source edit, a status change by the job and a "mark out of date" would leave the Sources page and each citing page showing the old status. The design adds a topic:
 
 - `FOOTNOTE_DATA_TOPIC = 'FootnoteManager'` in `CacheDependencies.ts`, named for its owner as the others are.
-- `FootnoteManager` calls `CacheManager.bump(FOOTNOTE_DATA_TOPIC)` after: every source write (create, update, fix the link, declare stale, clear the flag, restore from history); every write to a page's footnote file (add, update, delete, import, transfer, and the move into or out of a vault); and the weekly job's status changes. The job bumps once when a run ends (also when it ends on its timeout), not once per link.
+- `FootnoteManager` calls `CacheManager.bump(FOOTNOTE_DATA_TOPIC)` after: every source write (create, update, fix the link, declare stale, clear the flag, merge, delete, restore from history); every write to a page's footnote file (add, update, delete, import, transfer, and the move into or out of a vault); and the weekly job's status changes. The job bumps once when a run ends (also when it ends on its timeout), not once per link.
 - `SourcesPlugin` and `FootnotesPlugin` both call `context.dependsOn(FOOTNOTE_DATA_TOPIC)` before they read.
 
 The cache key is per viewer (`MarkupParser.ts:1183`), so the per-reader filter in R4 stays correct once the topic is right. A page's access rules change `PAGE_DATA_TOPIC`, so a change to who may view a citing page also drops the render.
@@ -204,9 +211,9 @@ The cache key is per viewer (`MarkupParser.ts:1183`), so the per-reader filter i
 A required page named __Sources__ (one new file in `required-pages/`, with a fresh uuid, synced as `docs/design/required-pages-sync-states.md` says) contains one plugin call, `[{SourcesPlugin}]`. The plugin is a new `src/plugins/SourcesPlugin.ts` (`SimplePlugin`, like `FootnotesPlugin.ts:284`). It depends on the topic above, so a status change shows at once.
 
 - The page is readable by anyone who can read the site (the page's own view permission, as every shipped page).
-- The list shows every source: title, link (only when `safeSourceUrl` passes), status, last-checked date, and the pages that cite it.
+- The list shows the sources the reader may see: title, link (only when `safeSourceUrl` passes), status, last-checked date, and the pages that cite it. A source with no citing page at all is shown as "Not used" (see R6).
 - __The cited-by column passes through `filterPagesFor`__ (`PageManager.ts:4207`) with the reader's context, so a reader sees only the citing pages they may view. The same call gives the count shown to readers.
-- A source cited only by pages the reader may not view: __depends on Q2.__ Either it shows with its title and link and the line "Also used on {N} pages you can't see", with no page names, or it is not listed for that reader at all.
+- __A source cited only by pages the reader may not view is not listed for that reader at all.__ It shows no title, no link, no count and no page name. A source cited by at least one page the reader may view is listed, with only those pages named.
 - __For a reader the page-edit check would allow__ (shown with `holdsPermission('page-edit')`, an affordance only), a block at the top lists the sources that are `needs-checking`, with the reason and the date, and the actions from R7. Other readers see no such block. Acting on a button asks the real check, in R7.
 - A `stale` source shows "Out of date since {date}" to everyone (R3).
 - No vault page is ever in the list, because no vault page has a source.
@@ -229,7 +236,7 @@ __Step 1, dry run. Writes nothing to any page, footnote file or source.__ It lis
 
 __The JSPWiki form.__ The existing rule (`JSPWikiConverter.convertFootnotes`, lines 443-466) turns every `[1]` into `[^1]`, which would also change a page link `[1]` to a page named "1". The conversion does not reuse it. By decision 8 it converts a `[n]` mark only on a page that has a matching `[#n] text` line. If a page named "n" also exists, the dry run lists that mark as "needs a person" and writes nothing for it. A `[n]` with no `[#n]` line is left alone.
 
-__Id clashes.__ The conversion does not renumber anything. If a page's footnote file already has the id a definition uses, `transferFromContent` keeps the definition in the page text and warns, and the report lists it as "needs a person". The marks in the page text are never rewritten except `[n]` to `[^n]` as above, so no mark can end up pointing at the wrong footnote.
+__Id clashes.__ The conversion does not renumber anything. If a page's footnote file already has the id a definition uses, `transferFromContent` keeps the definition in the page text and warns, and the report lists it as "needs a person". A JSPWiki `[#n]` id that clashes with another footnote on the same page (one in its footnote file, or a `[^n]` already in its text) blocks that page's mark rewrite: the page is skipped, nothing on it is written, and the report lists it with the reason "footnote number {n} is already used on this page". The marks in the page text are never rewritten except `[n]` to `[^n]` on a page with no clash, so no mark can end up pointing at the wrong footnote.
 
 __Step 2, approved apply.__ The apply takes the report id and nothing else; it re-reads no page list of its own. For each page in that report:
 
@@ -241,7 +248,7 @@ The check in step 1 and the write in step 3 are not one atomic step: a page edit
 
 The apply's own report (what was written, skipped and why) is stored with the report so the admin can see what was done. Each page can be undone through page history.
 
-__Pages it skips, and says so:__ every vault page, chosen by name (R6); every page where footnotes are turned off (`isAllowedOn`, `FootnoteManager.ts:215`), whose definitions stay as written (the warning `transferFromContent` already returns).
+__Pages it skips, and says so:__ every vault page, chosen by name (R6); every page where footnotes are turned off (`isAllowedOn`, `FootnoteManager.ts:215`), whose definitions stay as written (the warning `transferFromContent` already returns). Such a page still counts as citing for any source it already has (R6).
 
 Repeating it is safe: a page already converted has nothing left to convert.
 
@@ -254,14 +261,26 @@ Four rules, each a test:
 - The source store lives in public storage and holds no vault page's data: no page name, no uuid, no page text. The conversion report lists public pages only.
 - The index is kept current by `FootnoteManager` on each footnote write, and by the same hooks `PageManager` already uses when a page moves (`movePageFootnotes`, `PageManager.ts:3766-3772`), extended to page delete, restore and rename. A page that moves into a vault leaves the index. A change to who may view a page needs no index change, because the reader's filter runs at read time (R4). The index is rebuilt from the page list at start-up as well, so a missed hook heals on restart.
 
-When a page moves into a vault, its footnotes are copied as page notes with the source's title and link written into them, and the page's `sourceId`s are dropped. A source nobody cites any more: __depends on Q6.__
+When a page moves into a vault, its footnotes are copied as page notes with the source's title and link written into them, and the page's `sourceId`s are dropped. A source nobody cites any more is handled as below.
+
+__A source no page cites.__ It is kept, and the Sources page marks it "Not used". Anyone holding the footnote-edit permission (defined in R7) may delete it. Deleting it appends the record to its history file and writes an audit record (R7). A page where footnotes are turned off still counts as citing: its footnotes still carry their `sourceId`, so a source only those pages cite is never "Not used" because of the setting.
 
 ### R7. Who can change a source, and how it is recorded
 
-- __Permission.__ Changing a source, declaring it stale, fixing its link and clearing its flag take the check that edits footnotes today, which is the `page-edit` permission (the routes call `permitted(wikiContext, 'page-edit', ...)` and then the page's own edit check). `footnote-edit` is an audit event, not a permission, and is not asked. A source spans many pages and `page-edit` is checked per page, so which page or pages the check is asked about is open: __depends on Q3.__ Either `canAccess('edit', page)` passes on at least one page that cites the source, or on every page that cites it. The citing pages come from the index, so only public pages are asked.
-- __Edit screen.__ It shows "Used on N pages" before saving. Whether N counts every citing page or only those the editor may view: __depends on Q4.__
+- __Permission.__ Changing a source, declaring it stale, fixing its link, clearing its flag and merging it take two checks, both asked as the person acting. The first is what this design calls the __footnote-edit permission__: the check that edits footnotes today, which is the `page-edit` permission (the routes call `permitted(wikiContext, 'page-edit', ...)`; `footnote-edit` itself is an audit event, not a permission, so no permission is added). The second is `canAccess('edit', page)` passing on at least one page that cites the source. The citing pages come from the index, so only public pages are asked. Deleting an unused source needs only the footnote-edit permission, because no page cites it.
+- __Edit screen.__ It shows "Used on N pages" before saving. N counts every public page that cites the source, including pages the editor may not view (Jim's decision 4), and shows a number only, never page names. A page where footnotes are turned off still counts.
 - __History.__ Each change appends the old record to the source's history file, `{sourceId}.history.json`, with who and when, so an earlier version can be restored from the edit screen.
-- __Audit.__ A change writes one audit record with the source id, the action (`create`, `update`, `stale`, `fix`, `clear`) and the actor. No title, no link, no page name. Which event carries it __depends on Q7__: a new event `source-edit`, or the existing `footnote-edit` event with no page. The existing event's description is page-scoped (`config/app-default-config.json:2194`). A new event is declared in configuration and regenerated with `npm run generate:permissions`, and needs Jim's approval first.
+- __Audit.__ There is no new audit event. Each source change (edit, stale, fix, merge, delete) is logged under the existing `footnote-edit` event with no page, naming the source id, the action (`create`, `update`, `stale`, `fix`, `clear`, `merge`, `delete`) and the actor. No title, no link, no page name. The event's description is page-scoped (`config/app-default-config.json:2194`), so the slice that writes the first source record also widens that description in configuration to say it covers source changes; it adds no event and no permission.
+
+### Merging two sources
+
+When an edited link's key equals another source's, the editor is offered "This link is already a source" with a __Merge__ action. Pressing it:
+
+- repoints every citing page's footnote to the surviving source (the one the editor kept);
+- keeps the other source's record in the history file, so it can be restored;
+- records the merge in the source history and in the audit log (R7).
+
+If the editor does not press it, nothing changes: the key follows the new link and both sources stay.
 
 ### R8. The Footnotes tab
 
@@ -269,7 +288,7 @@ The tab stays where it is, defined by `Template:PageTabs`. In its add form, "Add
 
 ### Plain-language text
 
-All of it is shown to a home-user admin or editor, so no issue numbers, file names or "see the log". A row marked with a question number is shown only if that question is answered that way.
+All of it is shown to a home-user admin or editor, so no issue numbers, file names or "see the log".
 
 | Where                          | Text                                                                                                                                                  |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -277,12 +296,13 @@ All of it is shown to a home-user admin or editor, so no issue numbers, file nam
 | Add form, search box           | "Search your sources by name or link"                                                                                                                 |
 | Add form, no link              | "A note for this page only"                                                                                                                           |
 | Add form, bad link             | "A source's link must start with http:// or https://. Add it as a note on this page instead."                                                         |
-| Source edit screen             | "This source is used on {N} pages. Changing it changes it on all of them." (what N counts: Q4)                                                        |
+| Source edit screen             | "This source is used on {N} pages. Changing it changes it on all of them." (N counts every public page that cites it, as a number only)                                                        |
 | Status labels                  | __Good__, __Needs checking__, __Out of date__                                                                                                         |
 | Needs checking, with reason    | "This link was flagged on {date}: {reason}. Last checked {date}: {answer}. Check it, fix the link, or mark it out of date."                           |
 | Actions                        | __Fix the link__, __Mark out of date__, __Clear the flag__                                                                                            |
 | Reader, out-of-date source     | "Link out of date since {date}"                                                                                                                       |
-| Sources page, hidden pages (Q2) | "Also used on {N} pages you can't see"                                                                                                               |
+| Edit screen, link matches another | "This link is already a source: __{title}__." Button: __Merge__                                                                                    |
+| Sources page, unused source    | __Not used__ (with a __Delete__ action for anyone with the footnote-edit permission)                                                                |
 | Private page, picking a source | "Sources are shared across the site, so they can't be used on private pages. Add the link as a note on this page instead."                            |
 | Convert, dry run               | "This is a preview. Nothing has been changed. {N} footnotes on {M} pages would become {S} shared sources. {K} need you to look at them."              |
 | Convert, apply                 | __Convert {N} footnotes__ (asks first). After: "Converted {N} footnotes on {M} pages. You can undo any page from its history."                        |
@@ -298,25 +318,26 @@ The word "wiki" appears nowhere in the text in this table.
 | R1 shared sources, page-local notes       | The records; `sourceId` on a page footnote; a footnote with no link has no `sourceId`; the source wins over a stored copy                            |
 | R2 tidy links, offer the match            | `tidyUrl`; the "You already have a source" prompt in the add form; only http and https accepted (Links)                                               |
 | R3 weekly check, flag only                | `footnotes.sources-check` job; it never sets `stale` and never clears a flag; the cache topic shows a stale source on every citing page with its date |
-| R4 Sources page                           | The required page and `SourcesPlugin`; `filterPagesFor` per reader (Q2); the needs-checking block for those the `page-edit` check allows            |
+| R4 Sources page                           | The required page and `SourcesPlugin`; `filterPagesFor` per reader, a source cited only by hidden pages is not listed; "Not used" sources; the needs-checking block for those the `page-edit` check allows            |
 | R5 convert, dry run then approve          | __Admin → Convert footnotes__; the apply takes the report id, skips changed pages, writes each page as the admin with the page-edit check; vault pages excluded |
 | R6 vault pages separate                   | Index built from the page list by name; no `sourceId` on a vault footnote; the store holds no vault data                                             |
-| R7 same permission, count, history, audit | The `page-edit` check (Q3); "Used on N pages" (Q4); source history file; audit record (Q7)                                                           |
+| R7 same permission, count, history, audit | The `page-edit` check plus an edit check on at least one citing page; "Used on N pages" counts every public citing page; merge; source history file; audit record under `footnote-edit`                                                           |
 | R8 Footnotes tab stays                    | Search sources first in the add form; the reader's list at the bottom is unchanged                                                                   |
 
 ## Tests
 
 Written first and run to fail, as the repo's TDD rule says. Unit tests (`tests/unit/`):
 
-- `tidyUrl`: http and https match; trailing slash, `www.` and `utm_*` ignored; a real query parameter is kept; an invalid link never matches; two tidy forms that differ stay different. The fragment case is written once Q9 is answered.
+- `tidyUrl`: http and https match; trailing slash, `www.` and `utm_*` ignored; a real query parameter is kept; an invalid link never matches; two tidy forms that differ stay different. `page#a` and `page#b` give two different keys.
 - `safeSourceUrl`: `http` and `https` pass; `javascript:`, `data:`, `file:` and an unparseable value fail. `SourceStore` refuses a failing link on create and update. `renderFootnoteRow` and `SourcesPlugin` print a stored `javascript:` link as text with no `href`. The job skips a source with a failing link and never calls `guardedFetch` for it.
 - `SourceStore`: create, find by key, update with history, restore from history. A footnote whose source differs from its stored copy renders the source's title and link; with the source file missing it renders the stored copy.
+- Source changes: a change needs the footnote-edit permission and an edit check on at least one citing page (a holder with no edit right on any citing page is refused); "Used on N pages" counts a citing page the editor may not view and shows no name; an edited link that matches another source offers Merge and changes nothing until it is pressed; Merge repoints the citing pages, keeps the other record in history and writes history and audit; every source change writes a `footnote-edit` audit record with no page; deleting an unused source is allowed with the footnote-edit permission and refused for a source a page cites.
 - `FootnoteManager`: a footnote with a `sourceId` renders with the source's title; a footnote with no link has no `sourceId`; a vault page refuses a `sourceId`.
 - Reverse index: it never lists a vault page. With a stray vault footnote file placed in the public footnote folder, the index, the Sources page, the job and the dry run never read or list it. Delete, restore, rename and move of a page update the index; a rebuild matches the files.
-- Link check: 2xx sets `good` and `lastChecked`; 404 sets `needs-checking` with a reason; a HEAD refusal retries as GET; a flagged source that answers stays flagged; the job never writes `stale`; a stale source is skipped; a blocked address is flagged and never connected to (with the `guardedFetch` test transport).
+- Link check: 2xx sets `good` and `lastChecked`; 404 sets `needs-checking` with a reason; a 2xx that ends on the site's home page sets `needs-checking`, and a link that is itself the home page does not; a 200 page that says "not found" or is very short stays `good`; a HEAD refusal retries as GET; a flagged source that answers stays flagged; the job never writes `stale`; a stale source is skipped; a blocked address is flagged and never connected to (with the `guardedFetch` test transport).
 - Caching: with a cached Sources page and a cached citing page, a person's source edit, a "mark out of date", and the job's flag each change what both show on the next request, with no page edit in between.
-- Sources page: a reader without view permission on a citing page does not see its name or count; a reader the `page-edit` check allows sees the needs-checking block and another reader does not.
-- Conversion: the dry run writes nothing (file hashes before and after are equal) and stores a report; the apply with no report id or an unknown one is refused; a page edited after the preview is skipped and the rest are written; a page the admin may not edit is skipped even for an `admin-system` holder; pages are saved as the admin, not the system; each of the three forms converts; a JSPWiki `[1]` with no `[#1]` line, and one that also matches a page named "1", are not rewritten; an id clash keeps the body definition and changes no mark; a vault page and a footnotes-off page are skipped and reported; the apply is repeatable.
+- Sources page: a reader without view permission on a citing page does not see its name; a source cited only by pages the reader may not view is not listed for that reader, with no title, link or count; a source no page cites shows "Not used" and a reader with the footnote-edit permission may delete it; a source cited only by a footnotes-off page is not "Not used"; a reader the `page-edit` check allows sees the needs-checking block and another reader does not.
+- Conversion: the dry run writes nothing (file hashes before and after are equal) and stores a report; the apply with no report id or an unknown one is refused; a page edited after the preview is skipped and the rest are written; a page the admin may not edit is skipped even for an `admin-system` holder; pages are saved as the admin, not the system; each of the three forms converts; a JSPWiki `[1]` with no `[#1]` line, and one that also matches a page named "1", are not rewritten; an id clash keeps the body definition and changes no mark; a JSPWiki `[#n]` that clashes with another footnote on the page skips that page with the reason and rewrites none of its marks; a vault page and a footnotes-off page are skipped and reported; the apply is repeatable.
 
 An end-to-end check in the build slice for the Sources page and the add form. Tests that use a real clock or network use the transport and clock seams, never the real internet.
 
@@ -324,24 +345,24 @@ An end-to-end check in the build slice for the Sources page and the add form. Te
 
 Each slice is its own pull request, and each is checked on its own. Each slice also passes the guides' "How you know you are done" checks that apply to it: `npm run lint:permission-subject`, `lint:page-door`, `lint:signed-out-writes`, `lint:http`, `lint:csrf` and the permission tests from the security guide, and `npm run lint:audit`, `lint:audit-attribution`, `docs:audit:check` and `audit:coverage` from the audit guide.
 
-1. __Records, safe links and tidy links.__ `tidyUrl`, `safeSourceUrl` (save and render), `SourceStore`, `sourceId` on `PageFootnote`, the in-memory index built by name, the cache topic, backup folder. No screens. Needs Q9 for the fragment rule.
-2. __Add form and edit screen.__ Search sources first, "Used on N pages", history, audit. Needs Q3, Q4, Q5 and Q7 answered.
-3. __Sources page.__ The plugin and the required page, with the per-reader filter. Needs Q2 and Q8.
-4. __Weekly check.__ The job, the flag and its text on the Sources page. Needs Q1.
-5. __Convert footnotes.__ The dry run and stored report, the apply that takes the report id, the skip report. Needs no open question.
+1. __Records, safe links and tidy links.__ `tidyUrl`, `safeSourceUrl` (save and render), `SourceStore`, `sourceId` on `PageFootnote`, the in-memory index built by name, the cache topic, backup folder. No screens.
+2. __Add form and edit screen.__ Search sources first, "Used on N pages", history, merge, delete of an unused source, audit under `footnote-edit`.
+3. __Sources page.__ The plugin and the required page, with the per-reader filter and the "Not used" mark.
+4. __Weekly check.__ The job, the flag and its text on the Sources page.
+5. __Convert footnotes.__ The dry run and stored report, the apply that takes the report id, the skip report.
 
 The guides change in the slice that changes the behaviour: `docs/managers/FootnoteManager.md`, `docs/plugins/FootnotesPlugin.md`, `docs/guides/ncm-developer-guide.md` (footnote lines 10, 53, 170, 181), `docs/guides/storage-developer-guide.md` (120, 160-161, 187-189), `docs/private-stores.md` and `docs/guides/backup-restore-guide.md`.
 
-## Open questions for Jim
+## Decisions
 
-Only Jim can answer these. The design builds none of them. Where the design needs a choice, the text above says "depends on Qn" and the branches are the options here.
+Jim answered the nine questions this design opened with, on [#2454](https://github.com/jwilleke/ngdpbase/issues/2454#issuecomment-7067455663). The sections above follow them:
 
-1. __How careful is the weekly check?__ A page that answers slowly, or sends the reader to a login or "page not found" screen with a normal 200 reply, can look fine to the check. Options: (a) only a connection failure or a non-2xx answer counts (simplest, misses some dead links); (b) also flag a link that redirects to the site's home page; (c) also flag a page that answers 200 but is very short or says "not found".
-2. __Does a source cited only by pages a reader can't view show on the Sources page?__ Options: (a) show it with its title and link and "Also used on {N} pages you can't see", with no names; (b) hide it from that reader entirely. (a) reveals that the source exists and its link; (b) reveals nothing.
-3. __When someone changes a source, which citing pages must they be allowed to edit?__ The `page-edit` check is per page and a source spans many. Options: (a) at least one page that cites it; (b) every page that cites it (safest, but a popular source can never be changed by most editors).
-4. __What does "Used on N pages" on the edit screen count?__ Options: (a) every public page that cites the source, even those the editor can't view (an editor sees how wide a change goes; reveals only a number); (b) only the pages the editor may view (reveals nothing, but understates the reach of a change).
-5. __When someone edits a source's link so it now matches another source, what happens?__ Options: (a) the match key follows the new link and the two sources are offered for merging, never merged on their own (a merge is more than the requirements ask for); (b) the key follows the new link and nothing is offered, so two sources can share a key; (c) the key stays as it was.
-6. __What happens to a source no page cites any more?__ Options: (a) keep it, and offer nothing (the requirements add no delete); (b) keep it, list it as "not used" and let footnote editors delete it; (c) delete it after N days.
-7. __May a new audit event, `source-edit`, be added?__ It changes the permission and audit catalog, which needs your approval. The alternative is to record source changes under the existing `footnote-edit` event, with no page.
-8. __Do footnotes on a page where footnotes are turned off still count as citations?__ Options: (a) yes, the source is still listed with that page, since the footnotes exist but are hidden; (b) no, a turned-off page counts as not citing. The requirements do not say, so this stays a question.
-9. __Does a `#section` at the end of a link make it a different source?__ R2 lists `http`/`https`, a trailing slash, `www.` and tracking parameters, and does not mention the fragment. Options: (a) keep it, so `page#a` and `page#b` are two sources (as R2 is written); (b) drop it, so they are one.
+1. __Weekly check.__ It flags connection errors, non-2xx answers, and links that redirect to the site's own home page. It does not look for short pages or "not found" text (R3).
+2. __Sources cited only by pages a reader can't view.__ Not listed for that reader at all (R4).
+3. __Who may change a source.__ The footnote-edit permission and the page's edit check (`page-edit`) on at least one page that cites it (R7).
+4. __"Used on N pages".__ Counts every public page that cites the source, including pages the editor can't view, and shows a number only (R7).
+5. __An edited link that matches another source.__ The key follows the new link and the editor is offered "This link is already a source" with a Merge action. Nothing merges unless they press it (R2, Merging).
+6. __A source no page cites.__ Kept, marked "Not used", and anyone with the footnote-edit permission may delete it; the deletion is recorded in history and audit (R6).
+7. __Audit.__ No new event. Source changes are logged under the existing `footnote-edit` event with no page, naming the source id (R7).
+8. __Pages with footnotes turned off.__ They still count as citing, so their sources are never "Not used" because of it (R6).
+9. __A `#fragment`.__ It stays in the key, so `page#a` and `page#b` are two sources (R2).
