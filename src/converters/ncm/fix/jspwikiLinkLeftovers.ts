@@ -127,9 +127,30 @@ export function fixLinkLeftoversInLine(line: string, lostBrackets = true): strin
 /** The second half of a split link: an address and the closing `]`, nothing else. */
 const SECOND_HALF = new RegExp(`^\\s*(\\|)?${URL}(?:${TARGET_BLANK})?\\]`);
 
-/** Text of a line outside its code spans, with each span blanked to spaces. */
+/**
+ * Text of a line outside its code spans, with each span blanked to spaces.
+ * Code spans are found as {@link fixLinkLeftoversInLine} finds them: a run of
+ * backticks, then the next run of the same length; an unmatched run is plain text.
+ */
 function withoutCodeSpans(line: string): string {
-  return line.replace(/(`+)(?:(?!\1).)*?\1/g, (m: string) => ' '.repeat(m.length));
+  let out = '';
+  let i = 0;
+  while (i < line.length) {
+    const tick = line.indexOf('`', i);
+    if (tick === -1) break;
+    let run = tick;
+    while (line[run] === '`') run++;
+    const fence = line.slice(tick, run);
+    const close = line.indexOf(fence, run);
+    if (close === -1) {
+      out += line.slice(i, run);
+      i = run;
+      continue;
+    }
+    out += line.slice(i, tick) + ' '.repeat(close + fence.length - tick);
+    i = close + fence.length;
+  }
+  return out + line.slice(i);
 }
 
 /** Does a line, outside its code spans, hold more `[` than `]`? */
