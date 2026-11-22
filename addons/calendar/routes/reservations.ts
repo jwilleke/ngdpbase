@@ -6,6 +6,7 @@ import type CalendarDataManager from '../managers/CalendarDataManager.js';
 import type EmailManager from '../../../dist/src/managers/EmailManager.js';
 import type { CalendarConfig } from '../managers/CalendarConfig.js';
 import { viewerOf } from './api.js';
+import { calendarGate, currentCalendarConfig, entryOf } from '../managers/calendarVisibility.js';
 
 /**
  * Reservation routes for the calendar add-on.
@@ -37,13 +38,14 @@ export default function reservationRoutes(
     return typeof v === 'string' ? v : undefined;
   }
 
-  /** Return the config entry for a calendar, or undefined if not found. */
-  function calendarConfig(calendarId: string): CalendarConfig | undefined {
-    const calendars = config['calendars'];
-    if (!calendars || typeof calendars !== 'object') return undefined;
-    const entry = (calendars as Record<string, unknown>)[calendarId];
-    if (!entry || typeof entry !== 'object') return undefined;
-    return entry as CalendarConfig;
+  /** The add-on's configuration as it is now, so a changed setting applies on the next request. */
+  function currentConfig(): Record<string, unknown> {
+    return currentCalendarConfig(engine, config);
+  }
+
+  /** The config entry for a calendar, or undefined if the configuration does not name it. */
+  function calendarConfig(current: Record<string, unknown>, calendarId: string): CalendarConfig | undefined {
+    return entryOf(current, calendarId) as CalendarConfig | undefined;
   }
 
   // ── POST /api/calendar/reservations ──────────────────────────────────────
@@ -70,9 +72,15 @@ export default function reservationRoutes(
       if (!start)      { res.status(400).json({ error: 'start is required' });      return; }
       if (!end)        { res.status(400).json({ error: 'end is required for reservations' }); return; }
 
-      // 3. Calendar must have workflow: reservation
-      const calCfg = calendarConfig(calendarId);
-      if (!calCfg || calCfg.workflow !== 'reservation') {
+      // 3. The calendar must be one the requester may see (its visibility and
+      // enabled settings, as the read routes apply them) and have workflow:
+      // reservation. A calendar the requester may not see, a disabled one and
+      // one the configuration does not name all get the same answer, and this
+      // comes before the conflict check.
+      const current = currentConfig();
+      const calCfg = calendarConfig(current, calendarId);
+      const mayUse = await calendarGate(p => ctx.hasPermission(p), current)(calendarId);
+      if (!mayUse || !calCfg || calCfg.workflow !== 'reservation') {
         res.status(400).json({ error: `Calendar '${calendarId}' does not accept reservations` });
         return;
       }

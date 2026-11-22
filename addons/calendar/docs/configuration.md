@@ -6,7 +6,7 @@ All keys live under `ngdpbase.addons.calendar` in `app-custom-config.json`.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `enabled` | boolean | Whether this calendar is active. A calendar set to `false` is left out of the API, the `.ics` feed, the marquee text and the admin dashboard, for everyone. |
+| `enabled` | boolean | `false` | Enable the calendar add-on |
 | `dataPath` | string | `./data/calendar` | Directory for per-calendar JSON files. Supports `${FAST_STORAGE}` expansion. |
 | `clubhouse-manager-email` | string | — | Email address that receives reservation notification copies |
 | `calendars` | object | — | Map of calendar IDs to `CalendarConfig` objects (see below) |
@@ -37,7 +37,7 @@ All keys live under `ngdpbase.addons.calendar` in `app-custom-config.json`.
 |-------|--------|-------------|
 | `workflow` | `reservation` \| `managed` | __reservation__: members submit booking requests via `POST /api/calendar/reservations`; conflict detection enforced; events stored as `CLASS: CONFIDENTIAL`. __managed__: admin/clubhouse-manager create events directly via `POST /api/calendar/events`. |
 | `visibility` | `public` \| `authenticated` \| `private` | Who may see the calendar's events, in the calendar view, the API, the `.ics` feed and the marquee text. __public__: any visitor. __authenticated__: people holding the `calendar-read` permission, which the add-on grants to every signed-in account. __private__: holders of the `calendar-manage` permission. A configured calendar with no `visibility` is public. A value that is none of the three is read as `private`. |
-| `enabled` | boolean | Whether this calendar is active. Disabled calendars are excluded from all API responses and the admin dashboard. |
+| `enabled` | boolean | Whether this calendar is active. It counts as enabled only when it is missing or `true`; any other value leaves the calendar out of the API, the `.ics` feed, the marquee text, reservations and the admin dashboard, for everyone. |
 
 ### Calendars the configuration does not name
 
@@ -53,7 +53,9 @@ The Clubhouse reservation form saves its events to the calendar `clubhouse`. A s
 
 ### When a change applies
 
-`visibility` and `enabled` are read from the current configuration on each request, so a change applies on the next request, with no restart. `workflow` and `clubhouse-manager-email` are read when the site starts.
+`visibility`, `enabled` and `workflow` are read from the current configuration on each request, so a change applies on the next request, with no restart; that includes the admin dashboard and `POST /api/calendar/reservations`. `clubhouse-manager-email` is read when the site starts.
+
+Reservations follow the same two settings. `POST /api/calendar/reservations` answers "does not accept reservations" (400) for a calendar the requester may not see under its `visibility`, for a disabled one and for an id the configuration does not name, with the same message for all three. So a reservation calendar needs a `visibility` its requesters meet.
 
 ## Full example
 
@@ -125,7 +127,7 @@ Used in the `[{MarqueePlugin}]` `fetch` param.
 | `separator` | `•` (bullet) | Text between items |
 | `limit` | `0` (unlimited) | Max number of items |
 
-Events with `class: CONFIDENTIAL` are always excluded from the marquee output.
+Events with `class: CONFIDENTIAL` are always excluded from the marquee output. So are the events of a calendar the viewer may not see under its `visibility`, and of a disabled one; `limit` counts only what is left. A visitor who is not signed in gets the public calendars only.
 
 ## Email notifications
 

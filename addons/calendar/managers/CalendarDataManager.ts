@@ -470,8 +470,9 @@ class CalendarDataManager {
    *
    * Events with `class: CONFIDENTIAL` are always excluded. So are the events of
    * a calendar the viewer may not see under its `visibility` setting, and of a
-   * disabled one; the limit counts only what is left. With no viewer given, or
-   * before `setReadGate` has been called, only public calendars are read.
+   * disabled one; the limit counts only what is left. With no viewer given, only
+   * public calendars are read. Before `setReadGate` has been called it returns
+   * nothing.
    *
    * The viewer is the one MarqueePlugin passes (the requester's context). The page
    * cache keys a render by viewer and roles and re-renders it when configuration

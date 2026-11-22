@@ -73,6 +73,13 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     return calendarGate(p => ctx.hasPermission(p), currentCalendarConfig(engine, config));
   }
 
+  /**
+   * What each answer holds depends on who asks, so a shared cache must not keep it.
+   */
+  function privateCache(res: Response): void {
+    res.setHeader('Cache-Control', 'private');
+  }
+
   /** Safely extract a scalar string from req.query — discards arrays/objects. */
   function qs(v: unknown): string | undefined {
     return typeof v === 'string' ? v : undefined;
@@ -103,6 +110,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         end:        qs(req.query['end']),
         calendarId: qs(req.query['calendarId'])
       }), gateFor(ctx));
+      privateCache(res);
       res.json(events.map(e => m.toFullCalendar(e, viewer)));
     } catch (err) {
       handleError(err, res);
@@ -119,6 +127,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       const results = m
         ? (await onlyVisible(m.search(q), gateFor(ctx))).map(e => m.toFullCalendar(e, viewer))
         : [];
+      privateCache(res);
       res.json({ results });
     } catch (err) {
       handleError(err, res);
@@ -148,6 +157,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       const ctx = ApiContext.from(req, engine);
       const viewer = await viewerOf(ctx, engine, host);
       const event = m.getById(String(req.params['id']));
+      privateCache(res);
       if (!event || !(await gateFor(ctx)(event.calendarId))) { res.status(404).json({ error: 'Event not found' }); return; }
       res.json(m.toFullCalendar(event, viewer));
     } catch (err) {
@@ -197,6 +207,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
 
       const ctx = ApiContext.from(req, engine);
       const calendarId = String(req.params['calendarId']);
+      privateCache(res);
       if (!(await gateFor(ctx)(calendarId))) { res.status(404).json({ error: 'Calendar not found' }); return; }
       const events = m.query({ calendarId })
         .filter(e => e.class !== 'CONFIDENTIAL');

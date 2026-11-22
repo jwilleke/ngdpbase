@@ -19,9 +19,10 @@ export type HoldsPermission = (permission: string) => Promise<boolean>;
 export type CalendarGate = (calendarId: string) => Promise<boolean>;
 
 /** What the add-on's configuration holds for `calendarId`, when it is an object. */
-function entryOf(config: Record<string, unknown>, calendarId: string): Record<string, unknown> | undefined {
+export function entryOf(config: Record<string, unknown>, calendarId: string): Record<string, unknown> | undefined {
   const calendars = config['calendars'];
-  const entry = calendars && typeof calendars === 'object'
+  // Own names only: `__proto__` or `constructor` is a calendar the configuration does not name.
+  const entry = calendars && typeof calendars === 'object' && Object.hasOwn(calendars, calendarId)
     ? (calendars as Record<string, unknown>)[calendarId]
     : undefined;
   return entry && typeof entry === 'object' ? entry as Record<string, unknown> : undefined;
@@ -41,9 +42,13 @@ export function visibilityOf(config: Record<string, unknown>, calendarId: string
   return setting === 'authenticated' ? 'authenticated' : 'private';
 }
 
-/** A calendar set to `enabled: false` is left out everywhere. */
-function isDisabled(config: Record<string, unknown>, calendarId: string): boolean {
-  return entryOf(config, calendarId)?.['enabled'] === false;
+/**
+ * A calendar is enabled only when its `enabled` setting is missing or `true`;
+ * any other value leaves it out everywhere.
+ */
+export function isDisabled(config: Record<string, unknown>, calendarId: string): boolean {
+  const enabled = entryOf(config, calendarId)?.['enabled'];
+  return enabled !== undefined && enabled !== true;
 }
 
 /**

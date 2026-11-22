@@ -4,6 +4,7 @@ import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type CalendarDataManager from '../managers/CalendarDataManager.js';
 import type { CalendarConfig } from '../managers/CalendarConfig.js';
+import { currentCalendarConfig, isDisabled } from '../managers/calendarVisibility.js';
 
 /**
  * Admin routes for the calendar add-on.
@@ -24,9 +25,9 @@ export default function adminRoutes(
     return engine.getManager<CalendarDataManager>('CalendarDataManager');
   }
 
-  /** Read calendars config map. */
-  function calendarsConfig(): Record<string, CalendarConfig> {
-    const raw = config['calendars'];
+  /** Read the calendars config map out of the configuration. */
+  function calendarsConfig(current: Record<string, unknown>): Record<string, CalendarConfig> {
+    const raw = current['calendars'];
     if (!raw || typeof raw !== 'object') return {};
     return raw as Record<string, CalendarConfig>;
   }
@@ -38,11 +39,13 @@ export default function adminRoutes(
       await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
 
       const m = mgr();
-      const cfgs = calendarsConfig();
+      // The configuration as it is now, so a changed setting shows on the next load.
+      const current = currentCalendarConfig(engine, config);
+      const cfgs = calendarsConfig(current);
 
       // Build per-calendar sections
       const calendarSections = Object.entries(cfgs)
-        .filter(([, cfg]) => cfg.enabled !== false)
+        .filter(([calendarId]) => !isDisabled(current, calendarId))
         .map(([calendarId, cfg]) => {
           const events = m ? m.query({ calendarId }) : [];
           return {
