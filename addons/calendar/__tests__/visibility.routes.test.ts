@@ -335,3 +335,34 @@ describe('GET /api/calendar/:calendarId/feed.ics', () => {
     expect(res.text).toContain('e-staff');
   });
 });
+
+describe('caching', () => {
+  test('the list, search, single-event and feed answers are marked private', async () => {
+    signedOut();
+    const answers = [
+      await request(app).get('/api/calendar/events'),
+      await request(app).get('/api/calendar/events/search').query({ q: 'Title' }),
+      await request(app).get('/api/calendar/events/e-pub'),
+      await request(app).get('/api/calendar/open/feed.ics')
+    ];
+    for (const res of answers) {
+      expect(res.status).toBe(200);
+      expect(res.headers['cache-control']).toMatch(/\bprivate\b/);
+    }
+  });
+
+  test('a not-found answer is marked private too', async () => {
+    signedOut();
+    expect((await request(app).get('/api/calendar/events/e-staff')).headers['cache-control']).toMatch(/\bprivate\b/);
+    expect((await request(app).get('/api/calendar/staff/feed.ics')).headers['cache-control']).toMatch(/\bprivate\b/);
+  });
+});
+
+describe('a calendar named __proto__', () => {
+  test('is treated like one the configuration does not name', async () => {
+    signedOut();
+    expect((await request(app).get('/api/calendar/__proto__/feed.ics')).status).toBe(404);
+    member();
+    expect((await request(app).get('/api/calendar/__proto__/feed.ics')).status).toBe(404);
+  });
+});
