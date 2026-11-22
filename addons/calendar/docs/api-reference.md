@@ -13,7 +13,7 @@ Authentication uses the ngdpbase session cookie (same as the wiki UI).
 
 Return events as a FullCalendar-compatible JSON array.
 
-__Auth__: none for `public` calendars; session required for `authenticated`/`private`.
+__Auth__: none for `public` calendars. Events of an `authenticated` calendar are returned to holders of `calendar-read` (every signed-in account), and events of a `private` calendar to holders of `calendar-manage`. Events of a calendar the caller may not see are left out of the list, whatever `calendarId` asks for.
 
 #### Query parameters
 
@@ -83,7 +83,7 @@ __Response__ `201 Created` — full `FullCalendarEvent` object.
 
 Keyword search across event titles and descriptions.
 
-__Auth__: none for `public` calendars.
+__Auth__: none for `public` calendars. Results are limited to the calendars the caller may see, as for the list endpoint.
 
 #### Query parameters
 
@@ -104,7 +104,7 @@ __Auth__: same visibility rules as the list endpoint.
 
 __Response__ `200 OK` — single `FullCalendarEvent`.
 
-__Errors__: `404` if not found.
+__Errors__: `404` if not found, or if the event's calendar is not visible to the caller (an `authenticated` calendar to a caller without `calendar-read`, a `private` one without `calendar-manage`).
 
 ---
 
@@ -187,7 +187,7 @@ __Errors__: `401`, `403`, `404`.
 RFC 5545 iCalendar subscription feed for a single calendar. `CONFIDENTIAL` events
 are excluded. Subscribe from Apple Calendar, Google Calendar, or any CalDAV client.
 
-__Auth__: none for `public` calendars; session required for `authenticated`/`private`.
+__Auth__: none for `public` calendars. An `authenticated` calendar's feed needs `calendar-read` (a signed-in account) and a `private` calendar's `calendar-manage`; for anyone else the feed answers `404`. A calendar app that cannot sign in to the site therefore cannot subscribe to a calendar that is not public.
 
 __Response__ `200 OK` with `Content-Type: text/calendar`
 

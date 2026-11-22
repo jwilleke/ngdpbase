@@ -36,7 +36,7 @@ All keys live under `ngdpbase.addons.calendar` in `app-custom-config.json`.
 | Field | Values | Description |
 |-------|--------|-------------|
 | `workflow` | `reservation` \| `managed` | __reservation__: members submit booking requests via `POST /api/calendar/reservations`; conflict detection enforced; events stored as `CLASS: CONFIDENTIAL`. __managed__: admin/clubhouse-manager create events directly via `POST /api/calendar/events`. |
-| `visibility` | `public` \| `authenticated` \| `private` | __public__: any visitor. __authenticated__: logged-in users. __private__: `admin` or `clubhouse-manager` roles only. |
+| `visibility` | `public` \| `authenticated` \| `private` | Who may see the calendar's events, in the calendar view, the API and the `.ics` feed. __public__: any visitor. __authenticated__: people holding the `calendar-read` permission, which the add-on grants to every signed-in account. __private__: holders of the `calendar-manage` permission. A calendar with no `visibility` is public. A value that is none of the three is read as `private`. |
 | `enabled` | boolean | Whether this calendar is active. Disabled calendars are excluded from all API responses and the admin dashboard. |
 
 ## Full example

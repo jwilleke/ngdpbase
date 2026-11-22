@@ -16,9 +16,11 @@
  *   "managed"     — admin/clubhouse-manager create/edit/delete events
  *
  * visibility:
- *   "public"        — anyone can view events
- *   "authenticated" — must be logged in to view
- *   "private"       — admin/clubhouse-manager only
+ *   "public"        — anyone can view events (also when no visibility is set)
+ *   "authenticated" — holders of calendar-read, granted to every signed-in account
+ *   "private"       — holders of calendar-manage
+ *
+ * The API and the .ics feed honour it (routes/api.ts).
  *
  * Maps to RFC 5545:
  *   workflow=reservation  → CLASS: CONFIDENTIAL, TRANSP: OPAQUE
@@ -36,7 +38,7 @@ export interface CalendarConfig {
 
   /**
    * Who can view events on this calendar.
-   * public: anonymous, authenticated: logged-in users, private: privileged roles only.
+   * public: anyone, authenticated: holders of calendar-read, private: holders of calendar-manage.
    */
   visibility: 'public' | 'authenticated' | 'private';
 }

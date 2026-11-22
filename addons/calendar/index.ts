@@ -9,7 +9,7 @@
  *   ngdpbase.addons.calendar.dataPath                       — JSON store root (default: ./data/calendar)
  *   ngdpbase.addons.calendar.clubhouse-manager-email        — email for reservation notifications
  *   ngdpbase.addons.calendar.calendars.<id>.workflow        — reservation | managed
- *   ngdpbase.addons.calendar.calendars.<id>.visibility      — public | authenticated | private
+ *   ngdpbase.addons.calendar.calendars.<id>.visibility      — public | authenticated | private (honoured by the API and the .ics feed)
  *   ngdpbase.addons.calendar.calendars.<id>.enabled         — true/false
  *
  * API routes (mounted at /api/calendar):

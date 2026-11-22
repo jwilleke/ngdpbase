@@ -73,8 +73,8 @@ All routes use `ApiContext.from(req, engine)`. Guards:
 | Action | Requirement |
 |--------|-------------|
 | Read public events | none |
-| Read authenticated-visibility events | authenticated |
-| Read private-visibility events | `admin` or `clubhouse-manager` |
+| Read authenticated-visibility events (calendar view, API, `.ics` feed) | the `calendar-read` permission, granted to every signed-in account |
+| Read private-visibility events (calendar view, API, `.ics` feed) | the `calendar-manage` permission |
 | Create / update / delete managed events | `admin` or `clubhouse-manager` |
 | Submit a reservation | authenticated |
 | Cancel own reservation | authenticated (owner) |
