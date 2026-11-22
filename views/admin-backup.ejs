@@ -550,7 +550,9 @@ document.querySelectorAll('input.restore-confirm').forEach(function (input) {
 // A link to /admin/backup#<id> (the recovery-words reminder, the redirects after making words or
 // folders) lands on visible content: open the card that holds the element the fragment names.
 function openCardFromHash() {
-    const el = location.hash.length > 1 ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;
+    let id = '';
+    try { id = decodeURIComponent(location.hash.slice(1)); } catch (e) { return; } // a malformed fragment changes nothing
+    const el = id ? document.getElementById(id) : null;
     const details = el && (el.classList.contains('status-card') ? el.querySelector('details') : el.closest('details'));
     if (details && !details.open) {
         details.open = true;
