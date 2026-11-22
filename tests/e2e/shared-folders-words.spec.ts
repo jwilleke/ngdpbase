@@ -101,6 +101,7 @@ test.describe('Shared folders key and recovery words (#2124, #2144)', () => {
     await typeBack(page, words);
     await page.check('#recovery-words-saved');
     await Promise.all([page.waitForURL(/\/admin\/backup\?success=/), finish.click()]);
+    await openStatusCards(page); // the redirect reloaded the page: its cards are closed again (#2470)
     await expect(page.locator('#shared-folders-words-made')).toBeVisible();
     await expect(page.locator('#shared-folders-words-confirmed')).toBeVisible();
     await expect(page.locator('#shared-folders-words-make')).toHaveCount(0);
@@ -115,6 +116,7 @@ test.describe('Shared folders key and recovery words (#2124, #2144)', () => {
     await signInAgainIfAsked(page);
     if (!/\/admin\/backup\/shared-folders\/words\/new$/.test(page.url())) {
       // Back from the fresh sign-in on Admin → Backup: ask again.
+      await openStatusCards(page);
       await Promise.all([page.waitForURL(/\/words\/new$/), page.locator('#shared-folders-words-new button').click()]);
     }
     await expect(page.locator('#shared-folders-words-warning')).toContainText('the old words keep working');
@@ -130,6 +132,7 @@ test.describe('Shared folders key and recovery words (#2124, #2144)', () => {
     await page.check('#recovery-words-saved');
     await Promise.all([page.waitForURL(/\/admin\/backup\?success=/), finish.click()]);
     await expect(page.locator('.alert-success')).toContainText('old words no longer open the shared folders');
+    await openStatusCards(page);
     await expect(page.locator('#shared-folders-words-confirmed')).toBeVisible();
 
     test.skip(process.env.E2E_CONSENT_BUMP !== '1', 'raises the shared-folders recovery-words version: set E2E_CONSENT_BUMP=1 on a throwaway instance');

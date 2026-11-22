@@ -90,17 +90,20 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
       await page.check('#recovery-words-saved');
       await Promise.all([page.waitForURL(/\/admin\/backup\?success=/), page.getByRole('button', { name: 'I have saved them — finish' }).click()]);
     }
+    await openStatusCards(page); // the redirect back to /admin/backup reloaded the page: its cards are closed again (#2470)
     await expect(page.locator('#shared-folders-words-confirmed')).toBeVisible();
     if (!(await page.locator('#shared-folders-list a[href="/shared/default"]').count())) {
       await page.locator('#shared-folders-create input[name="name"]').fill('default');
       await Promise.all([page.waitForURL(/\/admin\/backup\?success=/), page.locator('#shared-folders-create button').click()]);
     }
+    await openStatusCards(page);
     await expect(page.locator('#shared-folders-list a[href="/shared/default"]')).toBeVisible();
     // #2095: made with default, with no one asking for it.
     await expect(page.locator('#shared-folders-list a[href="/shared/executive"]')).toBeVisible();
 
     await page.locator('#shared-folders-create input[name="name"]').fill(CLOSED);
     await Promise.all([page.waitForURL(/\/admin\/backup\?success=/), page.locator('#shared-folders-create button').click()]);
+    await openStatusCards(page);
     await expect(page.locator(`#shared-folders-list a[href="/shared/${CLOSED}"]`)).toBeVisible();
   });
 

@@ -25,9 +25,12 @@
     <%# #2470: the state of each card, worked out in one place. A card is one of
         ok (green, collapsed), attention (amber, open: the admin has something to do),
         broken (red, open) or idle (grey, collapsed: not used on this site).
-        The five STATE_ lines are decisions still open with the operator: change the one line. %>
+        Four decisions are still open with the operator (Auto Backup off, Manual Backup with no stored
+        backup, Shared folders key with no folders, Shared-folders manager absent). Each is set by the
+        STATE_ lines below; the Manual Backup one takes two lines. Change the line, and the matching case
+        in src/__tests__/adminBackupStatusCards.test.ts. %>
     <%
-        const STATE_AUTO_OFF = 'attention';                     // Auto Backup is switched off
+        const STATE_AUTO_OFF = 'attention';                     // Auto Backup is switched off and the last good backup is recent (once it is not, backupHealth.fault makes it red)
         const STATE_MANUAL_NONE_WHEN_AUTO_OK = 'ok';            // no stored backup, automatic backups working
         const STATE_MANUAL_NONE_OTHERWISE = 'attention';        // no stored backup, automatic backups not working
         const STATE_SHARED_FOLDERS_UNUSED = 'idle';             // no recovery words and no shared folder yet
@@ -47,7 +50,6 @@
 
         const autoCard = (cardHealth && cardHealth.fault) ? { state: 'broken', badge: 'Not working', hint: 'Backups are not working' }
             : !status.config.enabled ? { state: STATE_AUTO_OFF, badge: 'Off', hint: 'Off: no backup is made on its own' }
-            : (cardHealth && !cardHealth.lastGood) ? { state: 'attention', badge: 'No backup yet', hint: 'On, but no backup has been made yet' }
             : (cardHealth && cardHealth.lastGood) ? { state: 'ok', badge: 'On', hint: 'On, last backup', hintTime: cardHealth.lastGood.at }
             : { state: 'ok', badge: 'On', hint: 'On' };
 
@@ -58,9 +60,12 @@
                 hint: autoCard.state === 'ok' ? 'No backup kept on this server yet, automatic backups are on' : 'No backup kept on this server yet' };
 
         const cardEnvChanged = Boolean(cardKeys && (cardKeys.added.length > 0 || cardKeys.removed.length > 0));
+        // The "I have saved .env off the server" button sits in the Backup key card, so that card needs the admin whenever the button is shown.
+        const cardEnvConfirm = Boolean(cardKeys && (cardEnvChanged || (backupKey.set && !backupKey.saved && cardKeys.holdsBackupKey) || (sfKey.set && !sfKey.saved && cardKeys.holdsSharedFoldersKey)));
         const keyCard = !backupKey.set ? { state: 'broken', badge: 'No key', hint: 'This site has no backup key' }
             : !backupKey.saved ? { state: 'attention', badge: 'Save it', hint: 'Not yet saved off this server' }
             : cardEnvChanged ? { state: 'attention', badge: 'Save .env', hint: 'The keys in .env changed: save a new copy' }
+            : cardEnvConfirm ? { state: 'attention', badge: 'Save .env', hint: '.env, which holds the keys, is not yet saved off this server' }
             : { state: 'ok', badge: 'Saved', hint: 'Saved off this server, fingerprint ' + backupKey.fingerprint };
 
         const sharedCard = locals.sharedFoldersAbsent ? { state: STATE_SHARED_FOLDERS_ABSENT, badge: 'Not available', hint: 'Shared folders are not available on this site' }
@@ -79,6 +84,7 @@
         const dbCard = locals.databaseUnavailable ? { state: 'broken', badge: "Can't open", hint: "The application database can't be opened" }
             : stagedRestore ? { state: 'attention', badge: 'Restart needed', hint: 'A restore is staged and waits for the restart' }
             : restoreRunning ? { state: 'attention', badge: 'Preparing', hint: 'A restore is being prepared' }
+            : stagedSite ? { state: 'ok', badge: 'Ready', hint: 'A whole-site restore is waiting for the restart, and it includes the databases' }
             : { state: 'ok', badge: 'Ready', hint: 'No restore waiting' };
 
         const card = function (part, id, icon, title, c) { return include('_status-card', Object.assign({ part: part, id: id, icon: icon, title: title, helpSlug: 'Backup' }, c || {})); };
@@ -282,8 +288,7 @@
                 </div>
                 <% } %>
                 <a class="btn btn-outline-danger btn-sm" id="backup-env-download" href="/admin/backup/env"><i class="fas fa-file-download"></i> Download .env</a>
-                <% const _sfKey = locals.sharedFoldersKey || { set: false, fingerprint: null, saved: false }; %>
-                <% if (envKeys && (envChanged || (backupKey.set && !backupKey.saved && envKeys.holdsBackupKey) || (_sfKey.set && !_sfKey.saved && envKeys.holdsSharedFoldersKey))) { %>
+                <% if (cardEnvConfirm) { %>
                 <form method="POST" action="/admin/backup/key/saved" id="backup-env-confirm" class="d-inline">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                     <input type="hidden" name="fingerprint" value="<%= backupKey.fingerprint || '' %>">
@@ -542,6 +547,18 @@ document.querySelectorAll('input.restore-confirm').forEach(function (input) {
     update();
 });
 // When "Custom" radio is selected, build the autoBackupDays value from checked day checkboxes on submit
+// A link to /admin/backup#<id> (the recovery-words reminder, the redirects after making words or
+// folders) lands on visible content: open the card that holds the element the fragment names.
+function openCardFromHash() {
+    const el = location.hash.length > 1 ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;
+    const details = el && (el.classList.contains('status-card') ? el.querySelector('details') : el.closest('details'));
+    if (details && !details.open) {
+        details.open = true;
+        el.scrollIntoView();
+    }
+}
+openCardFromHash();
+window.addEventListener('hashchange', openCardFromHash);
 document.querySelector('form[action="/admin/backup/config"]').addEventListener('submit', function(e) {
     const customRadio = document.getElementById('days_custom');
     if (customRadio && customRadio.checked) {
