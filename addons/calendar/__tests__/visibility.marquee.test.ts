@@ -76,22 +76,21 @@ beforeEach(async () => {
 afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 
 describe('toMarqueeText applies each calendar\'s visibility setting', () => {
-  test('a signed-out visitor reads only the public calendars', async () => {
+  test('a signed-out visitor reads only the public calendars, not one with no setting', async () => {
     const text = await marquee(anonymous);
     expect(text).toContain('T-pub');
-    expect(text).toContain('T-plain');
-    for (const hidden of ['T-mem', 'T-staff', 'T-nowhere', 'T-off']) expect(text).not.toContain(hidden);
+    for (const hidden of ['T-plain', 'T-mem', 'T-staff', 'T-nowhere', 'T-off']) expect(text).not.toContain(hidden);
   });
 
   test('a signed-in account also reads the calendars shown to signed-in people', async () => {
     const text = await marquee(reader);
     expect(text).toContain('T-mem');
-    for (const hidden of ['T-staff', 'T-nowhere', 'T-off']) expect(text).not.toContain(hidden);
+    for (const hidden of ['T-plain', 'T-staff', 'T-nowhere', 'T-off']) expect(text).not.toContain(hidden);
   });
 
   test('a holder of calendar-manage reads the private and unconfigured calendars, but not a disabled one', async () => {
     const text = await marquee(admin);
-    for (const shown of ['T-pub', 'T-mem', 'T-staff', 'T-nowhere']) expect(text).toContain(shown);
+    for (const shown of ['T-pub', 'T-mem', 'T-staff', 'T-plain', 'T-nowhere']) expect(text).toContain(shown);
     expect(text).not.toContain('T-off');
   });
 

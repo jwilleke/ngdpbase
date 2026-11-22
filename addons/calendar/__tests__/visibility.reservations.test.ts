@@ -119,6 +119,15 @@ describe('POST /api/calendar/reservations', () => {
     expect((await request(app).post('/api/calendar/reservations').send(body('hall'))).status).toBe(400);
   });
 
+  test('a reservation calendar with no visibility setting takes reservations only from a holder of calendar-manage', async () => {
+    live = { calendars: { ...CONFIG.calendars, hall: { workflow: 'reservation', enabled: true } } };
+    expect((await request(app).post('/api/calendar/reservations').send(body('hall'))).status).toBe(400);
+    who.permissions = new Set(['calendar-reserve', 'calendar-read']);
+    expect((await request(app).post('/api/calendar/reservations').send(body('hall'))).status).toBe(400);
+    who.permissions = new Set(['calendar-reserve', 'calendar-manage']);
+    expect((await request(app).post('/api/calendar/reservations').send(body('hall'))).status).toBe(201);
+  });
+
   test('the workflow is read on each request too', async () => {
     live = { calendars: { ...CONFIG.calendars, hall: { workflow: 'managed', visibility: 'public', enabled: true } } };
     const res = await request(app).post('/api/calendar/reservations').send(body('hall'));

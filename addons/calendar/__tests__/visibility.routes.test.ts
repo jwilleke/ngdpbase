@@ -9,7 +9,7 @@
  *   public         anyone
  *   authenticated  holders of calendar-read (every signed-in account by default)
  *   private        holders of calendar-manage
- *   no setting     public, as before (a calendar named in the config)
+ *   no setting     private: only holders of calendar-manage, like a value that is none of the three
  *   not configured public no more: read as private
  *   enabled: false  nobody, as docs/configuration.md says
  *
@@ -111,11 +111,11 @@ const manager = () => { who.signedIn = true; who.permissions = new Set(['calenda
 const noPermissions = () => { who.signedIn = true; who.permissions = new Set(); };
 
 describe('GET /api/calendar/events', () => {
-  test('signed out: only public calendars and calendars with no setting', async () => {
+  test('signed out: only public calendars, not one with no setting', async () => {
     signedOut();
     const res = await request(app).get('/api/calendar/events');
     expect(res.status).toBe(200);
-    expect(ids(res.body)).toEqual(['e-pub', 'e-plain'].sort());
+    expect(ids(res.body)).toEqual(['e-pub']);
   });
 
   test('signed out, asking for a non-public calendar by name: nothing', async () => {
@@ -130,13 +130,13 @@ describe('GET /api/calendar/events', () => {
   test('signed in without the permission: no members-only and no private events', async () => {
     noPermissions();
     const res = await request(app).get('/api/calendar/events');
-    expect(ids(res.body)).toEqual(['e-pub', 'e-plain'].sort());
+    expect(ids(res.body)).toEqual(['e-pub']);
   });
 
   test('signed in with calendar-read: also the members-only calendar, not the private one', async () => {
     member();
     const res = await request(app).get('/api/calendar/events');
-    expect(ids(res.body)).toEqual(['e-mem', 'e-pub', 'e-plain'].sort());
+    expect(ids(res.body)).toEqual(['e-mem', 'e-pub']);
   });
 
   test('a holder of calendar-manage sees the private calendar too', async () => {
@@ -196,13 +196,13 @@ describe('GET /api/calendar/events/search', () => {
     signedOut();
     const res = await request(app).get('/api/calendar/events/search').query({ q: 'Title' });
     expect(res.status).toBe(200);
-    expect(ids(res.body.results)).toEqual(['e-pub', 'e-plain'].sort());
+    expect(ids(res.body.results)).toEqual(['e-pub']);
   });
 
   test('signed in without the permission: no members-only or private results', async () => {
     noPermissions();
     const res = await request(app).get('/api/calendar/events/search').query({ q: 'Title' });
-    expect(ids(res.body.results)).toEqual(['e-pub', 'e-plain'].sort());
+    expect(ids(res.body.results)).toEqual(['e-pub']);
   });
 
   test('a disabled calendar gives no results, a manager included', async () => {
@@ -281,8 +281,12 @@ describe('GET /api/calendar/:calendarId/feed.ics', () => {
     expect(res.text).toContain('e-pub');
   });
 
-  test('a calendar with no setting keeps its feed', async () => {
-    signedOut();
+  test('a calendar with no setting has no feed for a visitor or a member, and one for a manager', async () => {
+    for (const as of [signedOut, member]) {
+      as();
+      expect((await request(app).get('/api/calendar/plain/feed.ics')).status).toBe(404);
+    }
+    manager();
     const res = await request(app).get('/api/calendar/plain/feed.ics');
     expect(res.status).toBe(200);
     expect(res.text).toContain('e-plain');

@@ -36,12 +36,12 @@ All keys live under `ngdpbase.addons.calendar` in `app-custom-config.json`.
 | Field | Values | Description |
 |-------|--------|-------------|
 | `workflow` | `reservation` \| `managed` | __reservation__: members submit booking requests via `POST /api/calendar/reservations`; conflict detection enforced; events stored as `CLASS: CONFIDENTIAL`. __managed__: admin/clubhouse-manager create events directly via `POST /api/calendar/events`. |
-| `visibility` | `public` \| `authenticated` \| `private` | Who may see the calendar's events, in the calendar view, the API, the `.ics` feed and the marquee text. __public__: any visitor. __authenticated__: people holding the `calendar-read` permission, which the add-on grants to every signed-in account. __private__: holders of the `calendar-manage` permission. A configured calendar with no `visibility` is public. A value that is none of the three is read as `private`. |
+| `visibility` | `public` \| `authenticated` \| `private` | Who may see the calendar's events, in the calendar view, the API, the `.ics` feed and the marquee text. __public__: any visitor. __authenticated__: people holding the `calendar-read` permission, which the add-on grants to every signed-in account. __private__: holders of the `calendar-manage` permission. Every calendar must have a `visibility`. A calendar with no `visibility`, or with a value that is none of the three, is read as `private`: only holders of `calendar-manage` see it, and the calendar admin page names each calendar that has no setting. |
 | `enabled` | boolean | Whether this calendar is active. It counts as enabled only when it is missing or `true`; any other value leaves the calendar out of the API, the `.ics` feed, the marquee text, reservations and the admin dashboard, for everyone. |
 
 ### Calendars the configuration does not name
 
-Only a calendar named under `calendars` can be public. A calendar with events but no entry here (an id mistyped, or an entry removed) is read as `private`, so only holders of `calendar-manage` see its events. This includes the `default` calendar that holds an event created without a `calendarId`.
+Only a calendar named under `calendars`, with `visibility` set to `public`, can be public. A calendar with events but no entry here (an id mistyped, or an entry removed) is read as `private`, so only holders of `calendar-manage` see its events. This includes the `default` calendar that holds an event created without a `calendarId`.
 
 The Clubhouse reservation form saves its events to the calendar `clubhouse`. A site that uses it must have a `clubhouse` entry, with the `visibility` its members should have, or the reservations show only to holders of `calendar-manage`:
 

@@ -54,7 +54,7 @@ addons/calendar/
 
 Add one entry to `ngdpbase.addons.calendar.calendars` in `app-custom-config.json`.
 No code changes required. Storage file `data/calendar/<id>.json` is created
-automatically on first write.
+automatically on first write. Every calendar needs a `visibility` (`public`, `authenticated` or `private`): a calendar with none is visible only to holders of `calendar-manage`, and the calendar admin page names it.
 
 ```json
 "ngdpbase.addons.calendar.calendars": {

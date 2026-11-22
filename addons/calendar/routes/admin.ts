@@ -4,7 +4,7 @@ import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type CalendarDataManager from '../managers/CalendarDataManager.js';
 import type { CalendarConfig } from '../managers/CalendarConfig.js';
-import { currentCalendarConfig, isDisabled } from '../managers/calendarVisibility.js';
+import { currentCalendarConfig, isDisabled, unsetVisibilityCalendars } from '../managers/calendarVisibility.js';
 
 /**
  * Admin routes for the calendar add-on.
@@ -60,6 +60,7 @@ export default function adminRoutes(
       res.render('admin-calendar', { ...(await engine.templateData?.(req)),
         currentUser:      req.userContext,
         calendarSections,
+        unsetVisibility:  unsetVisibilityCalendars(current),
         successMessage:   req.query['success'] ?? null,
         errorMessage:     req.query['error']   ?? null
       });

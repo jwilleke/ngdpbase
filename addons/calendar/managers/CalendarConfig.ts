@@ -16,7 +16,7 @@
  *   "managed"     — admin/clubhouse-manager create/edit/delete events
  *
  * visibility:
- *   "public"        — anyone can view events (also when a configured calendar has no visibility)
+ *   "public"        — anyone can view events
  *   "authenticated" — holders of calendar-read, granted to every signed-in account
  *   "private"       — holders of calendar-manage
  *

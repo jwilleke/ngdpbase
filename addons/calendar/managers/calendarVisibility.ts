@@ -30,17 +30,28 @@ export function entryOf(config: Record<string, unknown>, calendarId: string): Re
 }
 
 /**
- * A calendar's `visibility` setting. A configured calendar with no setting is
- * `public`; a setting that is not one of the three is read as `private`, and so
- * is a calendar the configuration does not name, so a typo or a missing entry
- * never opens a calendar.
+ * A calendar's `visibility` setting: `public`, `authenticated` or `private`.
+ * Anything else is read as `private`: a setting that is none of the three, a
+ * configured calendar with no setting, and a calendar the configuration does
+ * not name. Nothing falls back to public, so a typo or a missing setting never
+ * opens a calendar.
  */
 export function visibilityOf(config: Record<string, unknown>, calendarId: string): CalendarConfig['visibility'] {
-  const entry = entryOf(config, calendarId);
-  if (!entry) return 'private';
-  const setting = entry['visibility'];
-  if (setting === undefined || setting === 'public') return 'public';
-  return setting === 'authenticated' ? 'authenticated' : 'private';
+  const setting = entryOf(config, calendarId)?.['visibility'];
+  return setting === 'public' || setting === 'authenticated' ? setting : 'private';
+}
+
+/**
+ * The ids of the configured, enabled calendars that have no `visibility`
+ * setting at all, in the order the configuration lists them. Each is visible
+ * only to holders of `calendar-manage` until a setting is added. A setting that
+ * is present but wrong is not listed: it is a typo, not a missing setting.
+ */
+export function unsetVisibilityCalendars(config: Record<string, unknown>): string[] {
+  const calendars = config['calendars'];
+  if (!calendars || typeof calendars !== 'object' || Array.isArray(calendars)) return [];
+  return Object.keys(calendars).filter(id =>
+    entryOf(config, id) !== undefined && !isDisabled(config, id) && entryOf(config, id)?.['visibility'] === undefined);
 }
 
 /**
