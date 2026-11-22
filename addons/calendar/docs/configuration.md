@@ -57,7 +57,7 @@ The Clubhouse reservation form saves its events to the calendar `clubhouse`. A s
 
 Reservations follow the same two settings. `POST /api/calendar/reservations` answers "does not accept reservations" (400) for a calendar the requester may not see under its `visibility`, for a disabled one and for an id the configuration does not name, with the same message for all three. So a reservation calendar needs a `visibility` its requesters meet.
 
-The Clubhouse reservation form follows them too: it reserves only on a `clubhouse` calendar that the submitter may see, that is enabled and that has `workflow: reservation`. Otherwise it answers "This calendar does not accept reservations.", the same text for every case and whether the time is taken or free.
+The Clubhouse reservation form follows them too: it reserves only on a `clubhouse` calendar that the person may see, that is enabled and that has `workflow: reservation`. For a submission that is held for review (a form set to need review), the person checked is the reviewer who approves it, not the submitter: a reviewer who may see the calendar carries the reservation out, and one who may not gets the same refusal. Otherwise it answers "This calendar does not accept reservations.", the same text for every case and whether the time is taken or free.
 
 A site policy with no `actions`, or with `*`, grants `calendar-read`, `calendar-reserve` and `calendar-manage` alike, so scope each policy to the actions it means to grant.
 
