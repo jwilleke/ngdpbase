@@ -25,6 +25,8 @@ import type IdentityManager from './IdentityManager.js';
 import { systemContext } from '../context/bootActions.js';
 import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
 import { FootnoteLinkError, safeSourceUrl } from '../utils/footnoteLinks.js';
+import { SourceStore, SourceMissingError, SourceOnPrivatePageError, type SourceRecord } from '../utils/footnoteSources.js';
+import { parsePrivatePageName } from '../utils/privateStorePath.js';
 import { FOOTNOTE_DATA_TOPIC } from '../cache/CacheDependencies.js';
 
 /** Legacy `createdBy` written when footnotes were migrated out of page markup (#128): "no recorded creator", not a username. */
@@ -40,6 +42,21 @@ export interface PageFootnote {
   /** Who added it: their identity `@id` (#2041); a username on a note written before and not yet converted (a vault page's), or one with no account. */
   createdBy: string;
   createdAt: string;
+  /**
+   * The shared source this footnote points at (#2454), when it has one. While the
+   * source's record exists its title and link are what is shown; `display` and
+   * `url` are the copy from the last save, shown when the record is gone. Never
+   * set on a vault page's footnote (R6).
+   */
+  sourceId?: string;
+}
+
+/** What a footnote is saved with. A `sourceId` makes the source decide the title and link; any `display` or `url` sent with it is ignored. */
+export interface FootnoteInput {
+  display?: string;
+  url?: string;
+  note: string;
+  sourceId?: string | null;
 }
 
 type FootnoteMap = Record<string, PageFootnote>;
@@ -52,6 +69,7 @@ interface FootnotePlace {
 
 export default class FootnoteManager extends BaseManager {
   private storageDir: string = './data/footnotes';
+  private sourcesDir: string = './data/footnote-sources';
   private enabled: boolean = true;
   /** Vault pages whose footnotes are still in the public folder (#1839), and the repair's re-check (#1842). */
   private readonly outsideCheck = new VaultPageNotesCheck(this.engine, () => this.roots(), {
@@ -70,6 +88,7 @@ export default class FootnoteManager extends BaseManager {
     if (configManager) {
       this.enabled = configManager.getProperty('ngdpbase.footnotes.enabled', true) as boolean;
       this.storageDir = this.configuredDir();
+      this.sourcesDir = this.configuredSourcesDir();
     }
     if (this.enabled) {
       const preflight = this.preflightConfiguredPath(
@@ -82,6 +101,7 @@ export default class FootnoteManager extends BaseManager {
         return;
       }
       fs.mkdirSync(this.storageDir, { recursive: true });
+      fs.mkdirSync(this.sourcesDir, { recursive: true });
       await this.convertCreatorsToIdentityIds();
       await this.outsideCheck.run({ notify: true });
       logger.debug('FootnoteManager initialized');
@@ -174,14 +194,50 @@ export default class FootnoteManager extends BaseManager {
     return this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getResolvedDataPath('ngdpbase.footnotes.storagedir', './data/footnotes') ?? this.storageDir;
   }
 
+  /** `ngdpbase.footnotes.sources.storagedir`, resolved (#2454): the shared source records, one file each. */
+  private configuredSourcesDir(): string {
+    return this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getResolvedDataPath('ngdpbase.footnotes.sources.storagedir', './data/footnote-sources') ?? this.sourcesDir;
+  }
+
   /**
    * The public folder is in the backup (#1876), as `<stem>.footnotes.tar` beside
    * the document: the public pages' footnotes. A vault page's are in its vault, which
-   * PageManager backs up with the vault, sealed as stored. BackupManager backs
-   * it up, stages it, and puts it in place at the next start (#1985).
+   * PageManager backs up with the vault, sealed as stored. The shared source
+   * records are a part of their own, `<stem>.footnote-sources.tar` (#2454),
+   * optional: a backup made before sources existed has none, and restoring it
+   * leaves the folder as it is. BackupManager backs
+   * them up, stages them, and puts them in place at the next start (#1985).
    */
   override backupFolders(): BackupFolder[] {
-    return [{ part: 'footnotes', folder: this.configuredDir() }];
+    return [
+      { part: 'footnotes', folder: this.configuredDir() },
+      { part: 'footnote-sources', folder: this.configuredSourcesDir(), optional: true }
+    ];
+  }
+
+  private sources(): SourceStore {
+    return new SourceStore(this.sourcesDir);
+  }
+
+  /**
+   * Makes a shared footnote source (#2454): a title and an http or https link,
+   * kept in its own folder, announced to the cache and recorded as
+   * `footnote-edit` / `create`. Who may make one is the caller's to decide.
+   *
+   * @throws FootnoteLinkError when the link is not http or https
+   */
+  async createSource(data: { title: string; url: string }, ctx: ActorContext): Promise<SourceRecord> {
+    const createdBy = (await this.engine.getManager<IdentityManager>('IdentityManager')
+      ?.identityIdOf(systemContext(this.engine, 'store a footnote source creator: identity @id (#2454)'), ctx.username)) ?? ctx.username;
+    const source = await this.sources().create({ title: data.title, url: data.url, createdBy });
+    await this.bumpFootnotes();
+    await this.recordSourceEdit('create', source.id, ctx);
+    return source;
+  }
+
+  /** The source with this id, or null. */
+  getSource(id: string): Promise<SourceRecord | null> {
+    return this.sources().get(id);
   }
 
   isEnabled(): boolean {
@@ -260,11 +316,34 @@ export default class FootnoteManager extends BaseManager {
    */
   async getFootnotes(page: PageRef, ctx: ActorContext): Promise<PageFootnote[]> {
     const map = await this.readMap(await this.place(page, ctx));
-    return Object.values(map).sort((a, b) => {
+    const notes = Object.values(map).sort((a, b) => {
       const na = parseInt(a.id, 10), nb = parseInt(b.id, 10);
       if (!isNaN(na) && !isNaN(nb)) return na - nb;
       return a.id.localeCompare(b.id);
     });
+    return Promise.all(notes.map((n) => this.withSource(n)));
+  }
+
+  /**
+   * Which copy wins (#2454): while the footnote's source has a record, its
+   * title and link are shown; with no record, the footnote's stored copy.
+   */
+  private async withSource(note: PageFootnote): Promise<PageFootnote> {
+    if (!note.sourceId) return note;
+    const source = await this.sources().get(note.sourceId);
+    return source ? { ...note, display: source.title, url: source.url } : note;
+  }
+
+  /**
+   * The title and link a footnote saves for `sourceId`: the source's now. Vault
+   * pages never use a source (R6), so that is refused first, whether or not
+   * the source exists; then a source with no record is refused.
+   */
+  private async sourceCopy(page: PageRef, sourceId: string): Promise<{ sourceId: string; display: string; url: string }> {
+    if (parsePrivatePageName(page.name)) throw new SourceOnPrivatePageError();
+    const source = await this.sources().get(sourceId);
+    if (!source) throw new SourceMissingError();
+    return { sourceId: source.id, display: source.title, url: source.url };
   }
 
   /**
@@ -276,12 +355,13 @@ export default class FootnoteManager extends BaseManager {
    */
   async addFootnote(
     page: PageRef,
-    data: { display: string; url: string; note: string },
+    data: FootnoteInput,
     ctx: ActorContext
   ): Promise<PageFootnote> {
     const pageUuid = page.uuid;
     await this.refuseWhenOff(page, ctx);
-    const url = this.checkedUrl(data.url);
+    const source = data.sourceId ? await this.sourceCopy(page, data.sourceId) : null;
+    const url = source ? source.url : this.checkedUrl(data.url ?? '');
     // #2041: the creator by identity @id; a name with no account as given.
     const createdBy = (await this.engine.getManager<IdentityManager>('IdentityManager')
       ?.identityIdOf(systemContext(this.engine, 'store a footnote creator: identity @id (#2041)'), ctx.username)) ?? ctx.username;
@@ -294,11 +374,12 @@ export default class FootnoteManager extends BaseManager {
 
     const footnote: PageFootnote = {
       id: nextId,
-      display: data.display.trim(),
+      display: source ? source.display : (data.display ?? '').trim(),
       url,
       note: data.note.trim(),
       createdBy,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      ...(source ? { sourceId: source.sourceId } : {})
     };
 
     map[nextId] = footnote;
@@ -409,22 +490,37 @@ export default class FootnoteManager extends BaseManager {
   async updateFootnote(
     page: PageRef,
     id: string,
-    data: { display: string; url: string; note: string },
+    data: FootnoteInput,
     ctx: ActorContext
   ): Promise<PageFootnote | null> {
     const pageUuid = page.uuid;
     await this.refuseWhenOff(page, ctx);
-    const url = this.checkedUrl(data.url);
+    // A new source decides the title and link. `null` makes the footnote a page note again, with the title
+    // and link given (checked like any link) or, when none are given, the stored copy. With no `sourceId`
+    // at all, a sourced footnote keeps its source and only its note changes; a page note changes as it always did.
+    const source = data.sourceId ? await this.sourceCopy(page, data.sourceId) : null;
     const place = await this.place(page, ctx);
     const map = await this.readMap(place);
-    if (!map[id]) return null;
-
-    map[id] = {
-      ...map[id],
-      display: data.display.trim(),
-      url,
-      note: data.note.trim()
-    };
+    if (!map[id]) {
+      if (!source) this.checkedUrl(data.url ?? '');
+      return null;
+    }
+    const { sourceId: current, ...rest } = map[id];
+    const keepSource = !source && data.sourceId === undefined && Boolean(current);
+    if (source) {
+      map[id] = { ...rest, display: source.display, url: source.url, note: data.note.trim(), sourceId: source.sourceId };
+    } else if (keepSource) {
+      const shown = await this.withSource(map[id]);
+      map[id] = { ...rest, display: shown.display, url: shown.url, note: data.note.trim(), sourceId: current };
+    } else {
+      const toPageNote = data.sourceId === null && data.display === undefined && data.url === undefined;
+      map[id] = {
+        ...rest,
+        display: toPageNote ? rest.display : (data.display ?? '').trim(),
+        url: toPageNote ? rest.url : this.checkedUrl(data.url ?? ''),
+        note: data.note.trim()
+      };
+    }
     await this.writeMap(place, map);
     this.invalidateHandlerCache(pageUuid);
     await this.recordEdit('update', pageUuid, ctx, { footnoteId: id });
@@ -479,6 +575,22 @@ export default class FootnoteManager extends BaseManager {
     }, (err) => logger.warn(`[FootnoteManager] Audit record failed for footnote-edit/${action} on ${pageUuid}:`, err));
   }
 
+  /** `footnote-edit` for a source change (#2454): the source's id only, never its title or link, and no page. */
+  private async recordSourceEdit(action: 'create', sourceId: string, ctx: ActorContext): Promise<void> {
+    const who = actorOf(ctx);
+    const sink = (this.engine?.getManager?.('AuditManager')) ?? null;
+    await recordAuditEvent(sink, {
+      eventType: AUDIT_EVENT.FOOTNOTE_EDIT,
+      ...who,
+      action,
+      result: 'success',
+      severity: 'low',
+      resource: sourceId,
+      resourceType: 'footnote-source',
+      metadata: { ...who.metadata, sourceId }
+    }, (err) => logger.warn(`[FootnoteManager] Audit record failed for footnote-edit/${action} on source ${sourceId}:`, err));
+  }
+
   async hasFootnotes(page: PageRef, ctx: ActorContext): Promise<boolean> {
     return Object.keys(await this.readMap(await this.place(page, ctx))).length > 0;
   }
@@ -492,8 +604,29 @@ export default class FootnoteManager extends BaseManager {
    */
   async movePageFootnotes(uuid: string, fromName: string, toName: string, ctx: ActorContext): Promise<boolean> {
     const moved = await movePageNotes(ctx, uuid, fromName, toName, this.roots());
+    if (moved && parsePrivatePageName(toName) && !parsePrivatePageName(fromName)) await this.stripSources({ name: toName, uuid }, ctx);
     if (moved) await this.bumpFootnotes();
     return moved;
+  }
+
+  /**
+   * R6 (#2454): a page that has just moved into a vault keeps no source. Each
+   * footnote that had one becomes a page note carrying the source's title and
+   * link as they are now (the stored copy when the record is gone), written
+   * back through the vault's own I/O.
+   */
+  private async stripSources(page: PageRef, ctx: ActorContext): Promise<void> {
+    const place = await this.place(page, ctx);
+    const map = await this.readMap(place);
+    let changed = false;
+    for (const note of Object.values(map)) {
+      if (!note.sourceId) continue;
+      const shown = await this.withSource(note);
+      map[note.id] = { ...note, display: shown.display, url: shown.url };
+      delete map[note.id].sourceId;
+      changed = true;
+    }
+    if (changed) await place.io.writeText(place.path, JSON.stringify(map, null, 2));
   }
 
   /** Vault pages whose footnotes the last check found in the public folder (#1839): owner, vault, page uuid. */

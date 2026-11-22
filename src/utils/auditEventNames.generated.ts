@@ -71,7 +71,7 @@ export const AUDIT_EVENT = {
   EMAILCHANGE_REQUEST: 'emailchange-request',
   /** Executive Hub read; not recorded, read volume */
   EXECUTIVE_READ: 'executive-read',
-  /** A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) */
+  /** A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) — or a shared footnote source was changed: action create (#2454) */
   FOOTNOTE_EDIT: 'footnote-edit',
   /** Identity record or organization created, changed, deleted or linked to an account (recorded as contact-manage before #2038); metadata names the kind (person or organization), the operation and the fields changed, never their values */
   IDENTITY_MANAGE: 'identity-manage',
