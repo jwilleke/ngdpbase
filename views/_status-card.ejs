@@ -1,0 +1,24 @@
+<%# #2470: one status card, shared by the admin and profile pages. A collapsible card whose
+    header line is views/_card-summary.ejs (icon, name, grey note, badge on the right, help
+    link) and whose edge and badge show the state:
+      ok (green, collapsed), attention (amber, open), broken (red, open), idle (grey, collapsed).
+    A page where every card is collapsed means all is well.
+    Include it twice, because EJS has no slots: with part 'start' it opens the card, the card's
+    content follows, and with part 'end' it closes it.
+    Locals for 'start': id, icon (a Font Awesome name), title, state, badge, and optionally hint
+    (the grey note, in words), hintTime (an ISO time shown after the hint in the viewer's own
+    time zone) and helpSlug (a help link to that wiki page). %>
+<% if (locals.part === 'start') {
+    const tone = { ok: 'success', attention: 'warning', broken: 'danger', idle: 'secondary' }[locals.state] || 'secondary';
+%>
+<div class="card mb-4 status-card border-start border-4 border-<%= tone %>" id="<%= locals.id %>" data-status="<%= locals.state %>">
+    <div class="card-body py-2">
+        <details<%= (locals.state === 'attention' || locals.state === 'broken') ? ' open' : '' %>>
+            <%- include('_card-summary', { icon: locals.icon, title: locals.title, hint: locals.hint, hintTime: locals.hintTime, badge: locals.badge, badgeClass: 'bg-' + tone + (tone === 'warning' ? ' text-dark' : ''), helpSlug: locals.helpSlug }) %>
+            <div class="mt-3">
+<% } else { %>
+            </div>
+        </details>
+    </div>
+</div>
+<% } %>

@@ -1,7 +1,7 @@
 ---
 name: Backup and restore guide
 description: How a site is backed up and restored today — triggers, files, retention, the staged databases restore and the staged site restore, what a backup holds and what it doesn't, what an operator must do to have a restorable site, the rules for developers and add-on authors, and every known gap
-dateModified: 2026-10-30
+dateModified: 2026-11-22
 category: guides
 relatedModules: [BackupManager, BaseManager, BackgroundJobManager, DatabaseManager, PageManager, AttachmentManager, UserManager, ConfigurationManager, RoleManager, IdentityManager, OrganizationManager, FootnoteManager, CommentManager, AuthManager, AuditManager]
 ---
@@ -49,6 +49,12 @@ In short: __a site can be backed up, and Admin → Backup can restore the whole 
   - A backup folder that can't be used at start (for example an unmounted volume): `BackupManager` is marked degraded, which the `/admin` dashboard shows, and backups are off until restart (`BaseManager.preflightConfiguredPath`).
 - __Shown__ (#1563): Admin → Backup and the `/admin` dashboard show the last successful backup (time in the viewer's local zone, size, location), the next automatic backup, and free space at the destination (`BackupManager.getBackupHealth`, `views/_backup-health.ejs`).
 - `ngdpbase.backup.compress` and `ngdpbase.backup.auto-backup-interval` are in the default config but nothing reads them. Compression is always on and the schedule is the time and days settings.
+
+### The Admin → Backup page is six status cards ([#2470](https://github.com/jwilleke/ngdpbase/issues/2470))
+
+- __The cards, in order:__ Auto Backup (with the backup-health lines from `BackupManager.getBackupHealth()`), Manual Backup, Backup key, Shared folders key, Restore the whole site and Restore the databases only (the last only where databases are enabled or the application database can't be opened). `views/admin-backup.ejs` draws each with the shared partial `views/_status-card.ejs`, which is built on `views/_card-summary.ejs` (#1541): an icon, a name, a grey note in words (`hint`, with `hintTime` shown in the viewer's own time zone), a badge on the right, an optional help link and a coloured left edge.
+- __The state of a card__ is worked out in one block at the top of `admin-backup.ejs`: `ok` (green, collapsed: done or on), `attention` (amber, open: the admin has something to do), `broken` (red, open) or `idle` (grey, collapsed: not used on this site). A page where every card is collapsed means all is well. Auto Backup is amber when it is off or has made no backup yet, and red while `fault` is set. Manual Backup is amber with no stored backup only while automatic backups are not working. The backup key card is amber until the key is saved off the server or while the `.env` key set has changed, and red with no key. The shared folders key card is amber while the recovery words are not made or not confirmed, or `.env` is not yet saved; red when `SharedFolderManager` reports its keys unusable; grey ("Not in use") on a site with no recovery words and no folder, and grey ("Not available") when the manager is missing. Each restore card opens on its own while a restore is staged or being prepared; the whole-site card goes red when the staged-restore record can't be read, the databases card when the application database can't be opened. The `STATE_` constants at the top of that block are the decisions that were not settled when this shipped.
+- __Tests:__ `src/__tests__/adminBackupStatusCards.test.ts` pins the order, the colours and which cards start open. An e2e step that works with a card's content calls `openStatusCards(page)` (`tests/e2e/fixtures/helpers.ts`) after `page.goto`, since a closed `<details>` can't be filled or clicked.
 
 ## What a backup holds
 

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { openStatusCards } from './fixtures/helpers';
 import fs from 'fs';
 
 /**
@@ -47,6 +48,7 @@ test.describe('Shared folders key and recovery words (#2124, #2144)', () => {
 
   test('Admin → Backup shows the shared-folders key\'s fingerprint, never the key', async ({ page }) => {
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     const card = page.locator('#shared-folders-key');
     await expect(card).toBeVisible();
     await expect(page.locator('#shared-folders-key-fingerprint')).toHaveText(/^[0-9a-f]{16}$/);
@@ -56,6 +58,7 @@ test.describe('Shared folders key and recovery words (#2124, #2144)', () => {
   test('the words: downloaded, printed, typed back; nothing saved without the tick or with wrong words; once saved the folders are made; a new set replaces them', async ({ page }) => {
     test.skip(process.env.E2E_SHARED_FOLDERS_WORDS !== '1', 'makes the site\'s shared-folders recovery words, once per site: set E2E_SHARED_FOLDERS_WORDS=1 on a throwaway instance');
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     await expect(page.locator('#shared-folders-words-none')).toBeVisible();
 
     // Shown once: 12 words, with Download and Print.
@@ -147,6 +150,7 @@ test.describe('Shared folders key and recovery words (#2124, #2144)', () => {
     await expect(page.locator('[data-shared-folders-words-banner]')).toHaveCount(0);
     // The set protects folders, so it cannot be discarded; a new set replaces it.
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     await expect(page.locator('#shared-folders-words-unconfirmed')).toBeVisible();
     await expect(page.locator('#shared-folders-words-discard')).toHaveCount(0);
     await expect(page.locator('#shared-folders-words-new button')).toBeVisible();

@@ -76,10 +76,10 @@ describe('#2470 Admin → Backup status cards', () => {
       expect(summary, id).not.toBeNull();
       expect(summary.querySelector(':scope > i.fas'), id).not.toBeNull();
       expect(text(summary.querySelector(':scope > h6')), id).not.toBe('');
-      expect(text(summary.querySelector(':scope > .text-muted')), id).not.toBe('');
+      expect(text(summary.querySelector(':scope > span.text-muted')), id).not.toBe('');
       const badge = summary.querySelector(':scope > .badge.ms-auto');
       expect(text(badge), id).not.toBe('');
-      expect(['ok', 'attention', 'broken'], id).toContain(statusOf(doc, id));
+      expect(['ok', 'attention', 'broken', 'idle'], id).toContain(statusOf(doc, id));
       expect(card(doc, id).querySelector(':scope > .card-body > details > div.mt-3'), id).not.toBeNull();
     }
   });
@@ -92,7 +92,7 @@ describe('#2470 Admin → Backup status cards', () => {
       expect(card(doc, id).classList.contains('border-success'), id).toBe(true);
       expect(card(doc, id).querySelector('summary .badge')!.classList.contains('bg-success'), id).toBe(true);
     }
-    expect(text(card(doc, 'auto-backup-card').querySelector('summary .text-muted'))).toMatch(/^On, last backup /);
+    expect(text(card(doc, 'auto-backup-card').querySelector('summary > span.text-muted'))).toMatch(/^On, last backup /);
   });
 
   test('Auto Backup: off or no backup yet needs the admin (amber, open); a backup fault is red and open', async () => {
@@ -114,11 +114,14 @@ describe('#2470 Admin → Backup status cards', () => {
     expect(card(broken, 'auto-backup-card').querySelector('#backup-health')).not.toBeNull();
   });
 
-  test('Manual Backup: collapsed once a backup is stored; open while none is', async () => {
+  test('Manual Backup: collapsed once a backup is stored; with none, collapsed while automatic backups work and open while they do not', async () => {
     expect(isOpen(await render(), 'manual-backup-card')).toBe(false);
-    const none = await render({ recentBackups: [] });
-    expect(statusOf(none, 'manual-backup-card')).toBe('attention');
-    expect(isOpen(none, 'manual-backup-card')).toBe(true);
+    const noneAutoOk = await render({ recentBackups: [] });
+    expect(statusOf(noneAutoOk, 'manual-backup-card')).toBe('ok');
+    expect(isOpen(noneAutoOk, 'manual-backup-card')).toBe(false);
+    const noneAutoOff = await render({ recentBackups: [], status: { config: { enabled: false, time: '03:00', days: 'daily', maxBackups: 10, directory: '/b' }, lastBackup: null } });
+    expect(statusOf(noneAutoOff, 'manual-backup-card')).toBe('attention');
+    expect(isOpen(noneAutoOff, 'manual-backup-card')).toBe(true);
   });
 
   test('Backup key: collapsed once set up; open and amber until saved or after .env keys changed; red with no key', async () => {
@@ -137,15 +140,23 @@ describe('#2470 Admin → Backup status cards', () => {
     expect(isOpen(missing, 'backup-key-card')).toBe(true);
   });
 
-  test('Shared folders key: collapsed once set up; open and amber with no recovery words, unconfirmed words or an unsaved .env; red when the keys cannot be used', async () => {
+  test('Shared folders key: collapsed once set up; open and amber with unconfirmed words or an unsaved .env; red when the keys cannot be used; grey and collapsed when not in use or not available', async () => {
     expect(isOpen(await render(), 'shared-folders-key')).toBe(false);
 
-    const noWords = await render({ sharedFoldersWords: null, sharedFolderNames: [] });
-    expect(statusOf(noWords, 'shared-folders-key')).toBe('attention');
-    expect(isOpen(noWords, 'shared-folders-key')).toBe(true);
+    const unused = await render({ sharedFoldersWords: null, sharedFolderNames: [] });
+    expect(statusOf(unused, 'shared-folders-key')).toBe('idle');
+    expect(isOpen(unused, 'shared-folders-key')).toBe(false);
+    expect(text(card(unused, 'shared-folders-key').querySelector('summary .badge'))).toBe('Not in use');
+    expect(card(unused, 'shared-folders-key').querySelector('summary .badge')!.classList.contains('bg-secondary')).toBe(true);
+
+    const absent = await render({ sharedFoldersWords: null, sharedFolderNames: [], sharedFoldersAbsent: true, sharedFoldersUnavailable: 'Shared folders are not available on this site' });
+    expect(statusOf(absent, 'shared-folders-key')).toBe('idle');
+    expect(isOpen(absent, 'shared-folders-key')).toBe(false);
+    expect(text(card(absent, 'shared-folders-key').querySelector('summary .badge'))).toBe('Not available');
 
     const pending = await render({ sharedFoldersWords: { madeAt: '2026-11-01T10:00:00.000Z', shownTo: 'jim', pending: ['jim'], protectsFolders: false } });
     expect(statusOf(pending, 'shared-folders-key')).toBe('attention');
+    expect(isOpen(pending, 'shared-folders-key')).toBe(true);
 
     const unsaved = await render({ sharedFoldersKey: { set: true, fingerprint: 'fedcba9876543210', saved: false } });
     expect(statusOf(unsaved, 'shared-folders-key')).toBe('attention');
@@ -164,7 +175,7 @@ describe('#2470 Admin → Backup status cards', () => {
     const siteStaged = await render({ stagedSiteRestore: { state: 'staged', backup: '2026-11-20T02:00:00Z', source: 'x.json.gz', stagedAt: '2026-11-21T09:00:05Z', stagedBy: 'jim' } });
     expect(statusOf(siteStaged, 'site-restore-card')).toBe('attention');
     expect(isOpen(siteStaged, 'site-restore-card')).toBe(true);
-    expect(text(card(siteStaged, 'site-restore-card').querySelector('summary .text-muted'))).toMatch(/waits for the restart/);
+    expect(text(card(siteStaged, 'site-restore-card').querySelector('summary > span.text-muted'))).toMatch(/waits for the restart/);
 
     const dbStaged = await render({ stagedRestore: stagedDb });
     expect(statusOf(dbStaged, 'restore-card')).toBe('attention');

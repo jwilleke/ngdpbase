@@ -22,395 +22,71 @@
         </div>
     <% } %>
 
+    <%# #2470: the state of each card, worked out in one place. A card is one of
+        ok (green, collapsed), attention (amber, open: the admin has something to do),
+        broken (red, open) or idle (grey, collapsed: not used on this site).
+        The five STATE_ lines are decisions still open with the operator: change the one line. %>
+    <%
+        const STATE_AUTO_OFF = 'attention';                     // Auto Backup is switched off
+        const STATE_MANUAL_NONE_WHEN_AUTO_OK = 'ok';            // no stored backup, automatic backups working
+        const STATE_MANUAL_NONE_OTHERWISE = 'attention';        // no stored backup, automatic backups not working
+        const STATE_SHARED_FOLDERS_UNUSED = 'idle';             // no recovery words and no shared folder yet
+        const STATE_SHARED_FOLDERS_ABSENT = 'idle';             // the shared-folders manager is not there
+
+        const backupKey = locals.backupKey || { set: false, fingerprint: null, saved: false };
+        const sfKey = locals.sharedFoldersKey || { set: false, fingerprint: null, saved: false };
+        const sfWords = locals.sharedFoldersWords || null;
+        const sfUnavailable = locals.sharedFoldersUnavailable || null;
+        const siteScope = locals.siteRestoreScope || { restored: [], notRestored: [] };
+        const stagedSite = locals.stagedSiteRestore || null;
+        const cardKeys = locals.envKeys || null;
+        const cardHealth = locals.backupHealth || null;
+        const cardStored = recentBackups || [];
+        const cardFolders = locals.sharedFolderNames || [];
+        const iso = function (d) { return new Date(d).toISOString(); };
+
+        const autoCard = (cardHealth && cardHealth.fault) ? { state: 'broken', badge: 'Not working', hint: 'Backups are not working' }
+            : !status.config.enabled ? { state: STATE_AUTO_OFF, badge: 'Off', hint: 'Off: no backup is made on its own' }
+            : (cardHealth && !cardHealth.lastGood) ? { state: 'attention', badge: 'No backup yet', hint: 'On, but no backup has been made yet' }
+            : (cardHealth && cardHealth.lastGood) ? { state: 'ok', badge: 'On', hint: 'On, last backup', hintTime: cardHealth.lastGood.at }
+            : { state: 'ok', badge: 'On', hint: 'On' };
+
+        const newestStored = cardStored.reduce(function (n, b) { return !n || new Date(b.created) > new Date(n.created) ? b : n; }, null);
+        const manualCard = newestStored ? { state: 'ok', badge: 'Ready', hint: 'Last backup kept here', hintTime: iso(newestStored.created) }
+            : { state: autoCard.state === 'ok' ? STATE_MANUAL_NONE_WHEN_AUTO_OK : STATE_MANUAL_NONE_OTHERWISE,
+                badge: autoCard.state === 'ok' ? 'Ready' : 'No backup yet',
+                hint: autoCard.state === 'ok' ? 'No backup kept on this server yet, automatic backups are on' : 'No backup kept on this server yet' };
+
+        const cardEnvChanged = Boolean(cardKeys && (cardKeys.added.length > 0 || cardKeys.removed.length > 0));
+        const keyCard = !backupKey.set ? { state: 'broken', badge: 'No key', hint: 'This site has no backup key' }
+            : !backupKey.saved ? { state: 'attention', badge: 'Save it', hint: 'Not yet saved off this server' }
+            : cardEnvChanged ? { state: 'attention', badge: 'Save .env', hint: 'The keys in .env changed: save a new copy' }
+            : { state: 'ok', badge: 'Saved', hint: 'Saved off this server, fingerprint ' + backupKey.fingerprint };
+
+        const sharedCard = locals.sharedFoldersAbsent ? { state: STATE_SHARED_FOLDERS_ABSENT, badge: 'Not available', hint: 'Shared folders are not available on this site' }
+            : sfUnavailable ? { state: 'broken', badge: 'Not working', hint: 'The shared-folders keys cannot be used' }
+            : (!sfWords && cardFolders.length === 0) ? { state: STATE_SHARED_FOLDERS_UNUSED, badge: 'Not in use', hint: 'No shared folder has been made yet' }
+            : !sfWords ? { state: 'attention', badge: 'Make words', hint: 'The recovery words are not made yet' }
+            : sfWords.pending.length > 0 ? { state: 'attention', badge: 'Confirm words', hint: 'The recovery words are not confirmed as saved yet' }
+            : (sfKey.set && !sfKey.saved) ? { state: 'attention', badge: 'Save .env', hint: '.env, which holds the key, is not yet saved off this server' }
+            : { state: 'ok', badge: 'Set up', hint: cardFolders.length + (cardFolders.length === 1 ? ' shared folder' : ' shared folders') };
+
+        const siteCard = locals.stagedSiteRestoreError ? { state: 'broken', badge: "Can't read", hint: "The record of a staged restore can't be read" }
+            : stagedSite ? { state: 'attention', badge: 'Restart needed', hint: stagedSite.state === 'staged' ? 'A restore is staged and waits for the restart' : 'A restore was not finished being prepared' }
+            : restoreRunning ? { state: 'attention', badge: 'Preparing', hint: 'A restore is being prepared' }
+            : { state: 'ok', badge: 'Ready', hint: cardStored.length > 0 ? 'No restore waiting' : 'No backup kept on this server yet' };
+
+        const dbCard = locals.databaseUnavailable ? { state: 'broken', badge: "Can't open", hint: "The application database can't be opened" }
+            : stagedRestore ? { state: 'attention', badge: 'Restart needed', hint: 'A restore is staged and waits for the restart' }
+            : restoreRunning ? { state: 'attention', badge: 'Preparing', hint: 'A restore is being prepared' }
+            : { state: 'ok', badge: 'Ready', hint: 'No restore waiting' };
+
+        const card = function (part, id, icon, title, c) { return include('_status-card', Object.assign({ part: part, id: id, icon: icon, title: title, helpSlug: 'Backup' }, c || {})); };
+    %>
     <!-- ================================================================ -->
-    <!-- Backup key (#1876): the one thing to save off the server          -->
+    <!-- Auto Backup, with its backup health (#1563) -->
     <!-- ================================================================ -->
-    <% const backupKey = locals.backupKey || { set: false, fingerprint: null, saved: false }; %>
-    <div class="card mb-4" id="backup-key-card">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-key"></i> Backup key</h5>
-        </div>
-        <div class="card-body">
-            <% if (!backupKey.set) { %>
-            <div class="alert alert-danger mb-0" id="backup-key-missing">
-                This site has <strong>no backup key</strong> (<code>NGDPBASE_BACKUP_KEY</code>). Backups are not encrypted, and they leave out the sign-in credentials (passkeys, authenticator apps), the databases and the <code>.env</code> keys. Restart the site to have one made.
-            </div>
-            <% } else { %>
-            <% const keyEnv = locals.envKeys || null; %>
-            <p id="backup-key-where">Every backup is encrypted with this site's backup key. The key is kept only on this server, <% if (!keyEnv) { %>in its <code>.env</code> file or its environment<% } else if (keyEnv.holdsBackupKey) { %>in its <code>.env</code> file<% } else { %>in its environment (it is not in its <code>.env</code> file)<% } %>. <strong>No backup contains it</strong>, so if this server is lost, the only copies are the ones you saved. Keep it somewhere safe off this server (a password manager, or on paper): a restore on a new server needs it, and without it no backup can be read.</p>
-            <p class="mb-2" id="backup-key-fingerprint-note">Fingerprint: <code id="backup-key-fingerprint"><%= backupKey.fingerprint %></code> <span class="text-muted small">— a short check, not the key: the key cannot be worked out from it. Each backup notes the fingerprint of the key it was made with, so a restore with a different key is refused. A site you restore to should show the same fingerprint here.</span></p>
-            <% if (backupKey.saved) { %>
-            <p class="text-success mb-0" id="backup-key-saved"><i class="fas fa-check-circle"></i> An admin confirmed this key is saved off the server.</p>
-            <% } else { %>
-            <div class="alert alert-warning" id="backup-key-not-saved">
-                <strong>Save the backup key now.</strong> No admin has confirmed it is saved off this server yet.
-            </div>
-            <a class="btn btn-outline-primary btn-sm" id="backup-key-show" href="/admin/backup/key"><i class="fas fa-eye"></i> Show the key to copy it</a>
-            <% } %>
-            <% } %>
-            <hr>
-            <div id="backup-env">
-                <p class="mb-2">You can also download a copy of the site's <code>.env</code> file.<% if (backupKey.set && locals.envKeys) { %> <span id="backup-env-holds-key"><% if (locals.envKeys.holdsBackupKey) { %>This file includes the backup key (the copy of <code>.env</code> inside a backup does not).<% } else { %>This file does not include the backup key, because this site's key is set outside it: save the key itself as well.<% } %></span><% } %></p>
-                <div class="alert alert-warning mb-2" id="backup-env-warning">
-                    <i class="fas fa-exclamation-triangle"></i> This file holds every secret of the site in plain text — keep it somewhere as safe as a password manager, never in an ordinary folder or an email.
-                </div>
-                <% const envKeys = locals.envKeys || null; %>
-                <% const envChanged = Boolean(envKeys && (envKeys.added.length > 0 || envKeys.removed.length > 0)); %>
-                <% if (envChanged) { %>
-                <div class="alert alert-warning mb-2" id="backup-env-changed">
-                    <strong>Save a new copy of .env.</strong> The keys in it changed since an admin last saved it<% if (envKeys.added.length > 0) { %> — added: <% envKeys.added.forEach(function (n, i) { %><%= i > 0 ? ', ' : '' %><code><%= n %></code><% }) %><% } %><% if (envKeys.removed.length > 0) { %> — removed: <% envKeys.removed.forEach(function (n, i) { %><%= i > 0 ? ', ' : '' %><code><%= n %></code><% }) %><% } %>. Download it, keep the copy off this server, then confirm below.
-                </div>
-                <% } %>
-                <a class="btn btn-outline-danger btn-sm" id="backup-env-download" href="/admin/backup/env"><i class="fas fa-file-download"></i> Download .env</a>
-                <% const _sfKey = locals.sharedFoldersKey || { set: false, fingerprint: null, saved: false }; %>
-                <% if (envKeys && (envChanged || (backupKey.set && !backupKey.saved && envKeys.holdsBackupKey) || (_sfKey.set && !_sfKey.saved && envKeys.holdsSharedFoldersKey))) { %>
-                <form method="POST" action="/admin/backup/key/saved" id="backup-env-confirm" class="d-inline">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <input type="hidden" name="fingerprint" value="<%= backupKey.fingerprint || '' %>">
-                    <input type="hidden" name="envFingerprint" value="<%= envKeys.fingerprint %>">
-                    <button type="submit" class="btn btn-success btn-sm"<%- lockedUnless('config-manage') %>><i class="fas fa-check"></i> I have saved .env off the server</button>
-                </form>
-                <% } %>
-            </div>
-        </div>
-    </div>
-
-    <!-- ================================================================ -->
-    <!-- Shared folders key and recovery words (#2124, epic #1775)         -->
-    <!-- ================================================================ -->
-    <% const sfKey = locals.sharedFoldersKey || { set: false, fingerprint: null, saved: false }; %>
-    <% const sfWords = locals.sharedFoldersWords || null; %>
-    <% const sfUnavailable = locals.sharedFoldersUnavailable || null; %>
-    <div class="card mb-4" id="shared-folders-key">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-folder"></i> Shared folders key</h5>
-        </div>
-        <div class="card-body">
-            <p>Each shared folder is locked with its own key, kept under this site's shared-folders key (<code>NGDPBASE_SHARED_FOLDERS_KEY</code>, in <code>.env</code>) and under the organization's 12 recovery words.</p>
-            <% if (sfUnavailable) { %>
-            <div class="alert alert-danger" id="shared-folders-unavailable"><%= sfUnavailable %></div>
-            <% } %>
-            <% if (sfKey.set) { %>
-            <p class="mb-2">Fingerprint: <code id="shared-folders-key-fingerprint"><%= sfKey.fingerprint %></code></p>
-            <% if (sfKey.saved) { %>
-            <p class="text-success" id="shared-folders-key-saved"><i class="fas fa-check-circle"></i> An admin confirmed a saved copy of <code>.env</code> holding this key.</p>
-            <% } else { %>
-            <div class="alert alert-warning" id="shared-folders-key-not-saved">
-                <strong>Save <code>.env</code> off this server.</strong> It holds the shared-folders key, and no admin has confirmed a saved copy of it yet. Use <em>Download .env</em> above, then <em>I have saved .env off the server</em>.
-            </div>
-            <% } %>
-            <% } %>
-            <h6 class="mt-3">Recovery words</h6>
-            <% if (!sfWords) { %>
-            <p id="shared-folders-words-none">Not made yet. They are needed before the first shared folder can be made. You will be shown them once: have paper ready.</p>
-            <form method="POST" action="/admin/backup/shared-folders/words" id="shared-folders-words-make">
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <button type="submit" class="btn btn-outline-primary btn-sm"<%- lockedUnless('admin-system') %><%= sfUnavailable ? ' disabled' : '' %>><i class="fas fa-key"></i> Make the recovery words</button>
-            </form>
-            <% } else { %>
-            <p class="mb-1" id="shared-folders-words-made">Made <time datetime="<%= sfWords.madeAt %>" data-local-time><%= sfWords.madeAt.slice(0, 16).replace('T', ' ') %> UTC</time> and shown once to <strong><%= sfWords.shownTo %></strong>.</p>
-            <% if (sfWords.pending.length === 0) { %>
-            <p class="text-success mb-0" id="shared-folders-words-confirmed"><i class="fas fa-check-circle"></i> <%= sfWords.shownTo %> confirmed they are saved.</p>
-            <% } else { %>
-            <div class="alert alert-warning mb-2" id="shared-folders-words-unconfirmed"><%= sfWords.shownTo %> has not confirmed saving them yet. Until they do, administrators see a reminder, and no shared folder can be made.</div>
-            <% if (!sfWords.protectsFolders) { %>
-            <p class="small mb-1">If <%= sfWords.shownTo %> cannot confirm (the words were lost, or the account is gone), discard this set and make a new one; you then confirm the new set yourself.</p>
-            <form method="POST" action="/admin/backup/shared-folders/words/discard" id="shared-folders-words-discard" class="mb-0">
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <button type="submit" class="btn btn-outline-danger btn-sm"<%- lockedUnless('admin-system') %>><i class="fas fa-trash"></i> Discard these words</button>
-            </form>
-            <% } %>
-            <% } %>
-            <% if (sfWords.pending.length === 0 || sfWords.protectsFolders) { %>
-            <%# #2144: a new set replaces this one; asks for a fresh sign-in. The old words work until the new set is typed back. %>
-            <p class="small mt-2 mb-1">Lost the words, or no longer sure they are safe? Make a new set: you are asked to sign in again, the new words are shown once to you, and when you have typed them back every shared folder is locked under them and the old words stop working. Until then the old words stay.</p>
-            <form method="POST" action="/admin/backup/shared-folders/words/new" id="shared-folders-words-new" class="mb-0">
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <button type="submit" class="btn btn-outline-warning btn-sm"<%- lockedUnless('admin-system') %><%= sfUnavailable ? ' disabled' : '' %>><i class="fas fa-redo"></i> Make a new set of recovery words</button>
-            </form>
-            <% } %>
-            <% } %>
-            <% const sfNames = locals.sharedFolderNames || []; %>
-            <h6 class="mt-3">Folders</h6>
-            <% if (sfNames.length === 0) { %>
-            <p class="mb-2" id="shared-folders-none">No shared folder yet. The first one, <code>default</code>, is made when the recovery words are confirmed; it is open to every signed-in user.</p>
-            <% } else { %>
-            <ul class="mb-2" id="shared-folders-list">
-                <% sfNames.forEach(function (n) { %><li><a href="/shared/<%= encodeURIComponent(n) %>"><code>/shared/<%= n %></code></a></li><% }) %>
-            </ul>
-            <% } %>
-            <% if (sfWords && sfWords.pending.length === 0) { %>
-            <form method="POST" action="/admin/backup/shared-folders/folders" id="shared-folders-create" class="row g-2 mb-0">
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <div class="col-auto"><input type="text" name="name" class="form-control form-control-sm" placeholder="<%= sfNames.includes('default') ? 'folder name' : 'default' %>" value="<%= sfNames.includes('default') ? '' : 'default' %>" pattern="[a-z0-9]+(-[a-z0-9]+)*" required aria-label="Folder name"></div>
-                <div class="col-auto"><button type="submit" class="btn btn-outline-primary btn-sm"<%- lockedUnless('admin-system') %><%= sfUnavailable ? ' disabled' : '' %>><i class="fas fa-folder-plus"></i> Make a shared folder</button></div>
-            </form>
-            <p class="small text-muted mt-1 mb-0">Administrators can read every folder. Who else may read and add to each folder is set on <a href="/admin/shared-folders">Admin → Shared folders</a>.</p>
-            <% } %>
-        </div>
-    </div>
-
-    <!-- ================================================================ -->
-    <!-- Manual Backup                                                     -->
-    <!-- ================================================================ -->
-    <div class="card mb-4">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-download"></i> Manual Backup</h5>
-        </div>
-        <div class="card-body">
-            <p>Creates a backup and downloads it to your browser immediately, as one <code>.tar</code> file: the backup document and the files kept beside it (attachments, records, sign-in credentials, the audit log, job state, add-on files and, when the site keeps databases, a copy of each). With the backup key (<code>NGDPBASE_BACKUP_KEY</code>) set, every one of them is encrypted with it; without it nothing is encrypted and the sign-in credentials and databases are left out.</p>
-
-            <h6 class="mt-3">What is included</h6>
-            <ul>
-                <li>Configuration settings</li>
-                <li>User accounts and roles</li>
-                <li>Access control lists (ACLs)</li>
-                <li>Attachment metadata (filenames, page links, hashes)</li>
-                <li>Search index</li>
-                <li>Page files and their version history</li>
-            </ul>
-
-            <h6 class="mt-3">What is <strong>not</strong> included</h6>
-            <ul class="text-warning-emphasis">
-                <li><strong>Page version history of private stores</strong> — back up <code>$SLOW_STORAGE/pages/vaults/</code> separately</li>
-                <li><strong>Attachment binary files</strong> — back up <code>$SLOW_STORAGE/attachments/</code> separately</li>
-                <li><strong>Media files</strong> — back up your media source folders independently</li>
-            </ul>
-
-            <div class="alert alert-warning mt-3 mb-3" role="alert">
-                <i class="fas fa-exclamation-triangle"></i>
-                <strong>This is not a complete backup.</strong>
-                See the <a href="/view/Backup" class="alert-link">Backup wiki page</a> for the full recommended backup process.
-            </div>
-
-            <div class="d-flex flex-wrap align-items-center gap-3">
-                <form method="POST" action="/admin/backup/create">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
-                        <i class="fas fa-database"></i> Create &amp; Download Backup
-                    </button>
-                </form>
-                <% if (databasesEnabled) { %>
-                <p class="small text-muted mb-0" id="backup-key-note">
-                    <i class="fas fa-key"></i> The download is encrypted with the backup key (<code>NGDPBASE_BACKUP_KEY</code>), which is <strong>not</strong> in the file. Keep a copy of the key somewhere other than this server: without it nothing in a backup can be restored.
-                </p>
-                <% } %>
-            </div>
-
-            <% if (recentBackups && recentBackups.length > 0) { %>
-            <h6 class="mt-4">Backups stored on the server</h6>
-            <table class="table table-sm table-striped mt-2" id="stored-backups">
-                <thead><tr><th>Backup</th><th>Created</th><th>Size</th><th>Databases</th><th></th></tr></thead>
-                <tbody>
-                <% recentBackups.forEach(function(b) { %>
-                    <tr data-backup="<%= b.filename %>">
-                        <td><code style="font-size:0.8em;"><%= b.filename %></code></td>
-                        <td><%= new Date(b.created).toLocaleString() %></td>
-                        <td><%= Math.max(1, Math.round(b.totalSize / 1024)) %> KB</td>
-                        <td><%= b.databases.length > 0 ? b.databases.join(', ') : '—' %><% if (b.encrypted === false) { %> <span class="badge bg-warning text-dark keyless-backup" title="Taken without the backup key: not encrypted, and without the sign-in credentials">no sign-in credentials</span><% } %></td>
-                        <td class="text-nowrap">
-                            <a class="btn btn-sm btn-outline-primary" href="/admin/backup/download/<%= encodeURIComponent(b.filename) %>"><i class="fas fa-download"></i> Download</a>
-                        </td>
-                    </tr>
-                <% }); %>
-                </tbody>
-            </table>
-            <% } %>
-        </div>
-    </div>
-
-    <!-- ================================================================ -->
-    <!-- Restore the whole site (#1945)                                   -->
-    <!-- ================================================================ -->
-    <% const siteScope = locals.siteRestoreScope || { restored: [], notRestored: [] }; %>
-    <% const stagedSite = locals.stagedSiteRestore || null; %>
-    <div class="card mb-4" id="site-restore-card">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-undo"></i> Restore the whole site</h5>
-        </div>
-        <div class="card-body">
-            <p>Puts the site back as it was in a backup stored on this server.</p>
-            <div class="row">
-                <div class="col-md-6">
-                    <h6>What it puts back</h6>
-                    <ul id="site-restore-restored">
-                        <% siteScope.restored.forEach(function(item) { %><li><%= item %></li><% }); %>
-                        <li>the site's keys and secrets (its <code>.env</code> file), but <strong>only from an encrypted backup</strong>: one taken while this site had its backup key</li>
-                    </ul>
-                </div>
-                <div class="col-md-6">
-                    <h6>What it does not put back</h6>
-                    <p class="small text-muted mb-1">These stay as they are on this site now:</p>
-                    <ul id="site-restore-not-restored">
-                        <% siteScope.notRestored.forEach(function(item) { %><li><%= item %></li><% }); %>
-                    </ul>
-                </div>
-            </div>
-            <ul id="site-restore-how">
-                <li>An encrypted backup can be restored only on a server that has <strong>the same backup key</strong> it was taken with. On a new server, put the key you saved in place first.</li>
-                <li>A fresh backup of the current data is taken first. Restoring that backup undoes this restore.</li>
-                <li>Everything is then prepared beside the current data. Nothing changes until the site is <strong>restarted</strong>, which you do yourself: the site never restarts on its own.</li>
-                <li>At the restart everything is put in place together, or nothing is. The current data is kept beside it.</li>
-            </ul>
-
-            <% if (!backupKey.set) { %>
-            <div class="alert alert-danger" id="restore-no-key">
-                <h6 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> This site has no backup key</h6>
-                <p class="mb-0">After a restore, passwords return to what they were on the backup date. Passkeys and authenticator apps are not restored. On a new server, admins sign in with a password only, and won't have admin rights until they set up a passkey again.</p>
-            </div>
-            <% } %>
-
-            <% if (restoreRunning) { %>
-            <div class="alert alert-info" id="restore-running"><i class="fas fa-spinner"></i> A restore is being prepared. You will get a notification when it is ready, or if it fails.</div>
-            <% } %>
-
-            <% if (locals.stagedSiteRestoreError) { %>
-            <div class="alert alert-danger" id="staged-site-restore-unreadable">The record of a staged restore can't be read: <%= stagedSiteRestoreError %></div>
-            <% } %>
-
-            <% if (stagedSite) { %>
-            <div class="alert alert-warning" id="staged-site-restore">
-                <h6 class="alert-heading"><i class="fas fa-hourglass-half"></i> <%= stagedSite.state === 'staged' ? 'A whole-site restore is staged and waits for the restart' : 'A whole-site restore was not finished being prepared' %></h6>
-                <table class="table table-sm mb-2" style="max-width:640px;">
-                    <tr><th>Backup</th><td><code><%= stagedSite.source || stagedSite.backup %></code></td></tr>
-                    <tr><th>Backup taken</th><td><%= stagedSite.backup ? new Date(stagedSite.backup).toLocaleString() : '—' %></td></tr>
-                    <tr><th>Staged</th><td><%= new Date(stagedSite.stagedAt).toLocaleString() %></td></tr>
-                    <tr><th>Staged by</th><td><%= stagedSite.stagedBy || '—' %></td></tr>
-                    <% if (stagedSite.safetyBackup) { const siteSafety = (recentBackups || []).find(function(b) { return b.filename === stagedSite.safetyBackup; }); %>
-                    <tr id="site-safety-backup"><th>Safety backup</th><td>Your data as it was before this restore was saved as <code><%= stagedSite.safetyBackup %></code><%= siteSafety ? ' (' + new Date(siteSafety.created).toLocaleString() + ')' : '' %>. It is in the list above; restore it to undo this restore.</td></tr>
-                    <% } %>
-                </table>
-                <p class="mb-2"><%= stagedSite.state === 'staged' ? 'Restart the site to apply it, or cancel it.' : 'It will not be applied. Cancel it to clear it away.' %> To restore a different backup instead, use <strong>Replace it</strong> below.</p>
-                <form method="POST" action="/admin/backup/restore/cancel" id="cancel-staged-site-restore">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <button type="submit" class="btn btn-sm btn-outline-danger"<%- lockedUnless('config-manage') %>>
-                        <i class="fas fa-times"></i> Cancel staged restore
-                    </button>
-                </form>
-            </div>
-            <% } %>
-
-            <% if (!recentBackups || recentBackups.length === 0) { %>
-            <p class="text-muted mb-0" id="site-restore-none"><em>No backup is stored on this server yet.</em></p>
-            <% } else { %>
-            <form method="POST" action="/admin/backup/restore" id="site-restore-form" class="border rounded p-3" style="max-width:640px;">
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <input type="hidden" name="scope" value="site">
-                <% if (stagedSite || stagedRestore) { %><input type="hidden" name="replace" value="true"><% } %>
-                <% if (!stagedSite && stagedRestore) { %>
-                <p class="small" id="site-restore-replaces-databases">A databases-only restore is staged (below). Restoring the whole site replaces it.</p>
-                <% } %>
-                <div class="mb-3">
-                    <label for="siteRestoreBackup" class="form-label">Backup to restore</label>
-                    <select class="form-select" id="siteRestoreBackup" name="backup">
-                        <% recentBackups.forEach(function(b) { %>
-                        <option value="<%= b.filename %>"><%= new Date(b.created).toLocaleString() %><%= b.encrypted === false ? ' — not encrypted: no sign-in credentials, no keys' : '' %></option>
-                        <% }); %>
-                    </select>
-                </div>
-                <div class="mb-3">
-                    <label for="siteRestoreConfirm" class="form-label">Type the site name, <strong><%= siteName %></strong>, to confirm</label>
-                    <input type="text" class="form-control restore-confirm" id="siteRestoreConfirm" name="confirm" autocomplete="off" required data-expected="<%= siteName %>" data-submit="site-restore-submit">
-                </div>
-                <button type="submit" class="btn btn-danger" id="site-restore-submit"<%- lockedUnless('config-manage') || ' disabled' %>>
-                    <i class="fas fa-undo"></i> <%= (stagedSite || stagedRestore) ? 'Replace it' : 'Restore the whole site' %>
-                </button>
-            </form>
-            <% } %>
-        </div>
-    </div>
-
-    <!-- ================================================================ -->
-    <!-- Restore the databases only: the second option (#1723, #1945)    -->
-    <!-- ================================================================ -->
-    <% if (databasesEnabled || locals.databaseUnavailable) { %>
-    <div class="card mb-4" id="restore-card">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-database"></i> Restore the databases only</h5>
-        </div>
-        <div class="card-body">
-            <p class="fw-bold" id="restore-scope">Restores the databases only. Pages, users and settings are not changed.</p>
-            <p>Puts the site's databases back as they were in a backup stored on this server. The whole-site restore above includes them; use this to put back the databases alone.</p>
-            <ul>
-                <li>A fresh backup of the current data is taken first.</li>
-                <li>The backup's databases are then prepared beside the current ones. Nothing changes until the site is <strong>restarted</strong>, which you do yourself: the site never restarts on its own.</li>
-                <li>At the restart the prepared databases take the place of the current ones, which are kept beside them.</li>
-            </ul>
-
-            <% if (locals.databaseUnavailable) { %>
-            <div class="alert alert-danger" id="restore-database-unavailable">
-                <h6 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> The application database can't be opened</h6>
-                <p class="mb-2">A restore still works, with one difference: <strong>the fresh backup taken first leaves the databases out</strong>, because they can't be read. The current database files are not lost: at the restart they are kept beside the restored ones as <code>*.pre-restore</code>.</p>
-                <p class="mb-0 small">The restore needs <code>NGDPBASE_DATABASE_KEY</code> to be set. If the problem is a missing or wrong key, set or correct the key and restart instead: no restore is needed.</p>
-            </div>
-            <% } %>
-
-            <% if (stagedSite) { %>
-            <p class="text-muted mb-0" id="database-restore-blocked"><em>A whole-site restore is staged, and it includes the databases. Cancel it above to restore the databases alone.</em></p>
-            <% } else { %>
-            <% if (stagedRestore) { %>
-            <div class="alert alert-warning" id="staged-restore">
-                <h6 class="alert-heading"><i class="fas fa-hourglass-half"></i> A restore is staged and waits for the restart</h6>
-                <table class="table table-sm mb-2" style="max-width:640px;">
-                    <tr><th>Backup</th><td><code><%= stagedRestore.source || stagedRestore.backup %></code></td></tr>
-                    <tr><th>Backup taken</th><td><%= stagedRestore.backup ? new Date(stagedRestore.backup).toLocaleString() : '—' %></td></tr>
-                    <tr><th>Staged</th><td><%= new Date(stagedRestore.stagedAt).toLocaleString() %></td></tr>
-                    <tr><th>Staged by</th><td><%= stagedRestore.stagedBy || '—' %></td></tr>
-                    <% if (stagedRestore.safetyBackup) { const safety = (recentBackups || []).find(function(b) { return b.filename === stagedRestore.safetyBackup; }); %>
-                    <tr id="safety-backup"><th>Safety backup</th><td>Your data as it was before this restore was saved as <code><%= stagedRestore.safetyBackup %></code><%= safety ? ' (' + new Date(safety.created).toLocaleString() + ')' : '' %>. It is in the list above<% if (safety && safety.databases.length === 0) { %>. <span id="safety-backup-no-databases">It holds no databases: they could not be opened when it was taken, so the current database files are kept as <code>*.pre-restore</code> at the restart instead. To undo this restore, put those files back with the server stopped.</span><% } else { %>; restore it to undo this restore.<% } %></td></tr>
-                    <% } %>
-                    <tr><th>Databases</th><td><%= stagedRestore.databases.map(function(d) { return d.name; }).join(', ') %></td></tr>
-                </table>
-                <p class="mb-2">Restart the site to apply it, or cancel it. To restore a different backup instead, use <strong>Replace it</strong> below.</p>
-                <form method="POST" action="/admin/backup/restore/cancel" id="cancel-staged-restore">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <button type="submit" class="btn btn-sm btn-outline-danger"<%- lockedUnless('config-manage') %>>
-                        <i class="fas fa-times"></i> Cancel staged restore
-                    </button>
-                </form>
-            </div>
-            <% } %>
-
-            <% const restorable = (recentBackups || []).filter(function(b) { return b.databases.length > 0; }); %>
-            <% if (restorable.length === 0) { %>
-            <p class="text-muted mb-0"><em>No backup on this server holds databases yet.</em></p>
-            <% } else { %>
-            <form method="POST" action="/admin/backup/restore" id="restore-form" class="border rounded p-3" style="max-width:640px;">
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <% if (stagedRestore) { %><input type="hidden" name="replace" value="true"><% } %>
-                <div class="mb-3">
-                    <label for="restoreBackup" class="form-label">Backup to restore</label>
-                    <select class="form-select" id="restoreBackup" name="backup">
-                        <% restorable.forEach(function(b) { %>
-                        <option value="<%= b.filename %>"><%= new Date(b.created).toLocaleString() %> — <%= b.databases.join(', ') %></option>
-                        <% }); %>
-                    </select>
-                </div>
-                <div class="mb-3">
-                    <label for="restoreConfirm" class="form-label">Type the site name, <strong><%= siteName %></strong>, to confirm</label>
-                    <input type="text" class="form-control restore-confirm" id="restoreConfirm" name="confirm" autocomplete="off" required data-expected="<%= siteName %>" data-submit="restore-submit">
-                </div>
-                <button type="submit" class="btn btn-danger" id="restore-submit"<%- lockedUnless('config-manage') || ' disabled' %>>
-                    <i class="fas fa-undo"></i> <%= stagedRestore ? 'Replace it' : 'Restore' %>
-                </button>
-            </form>
-            <% } %>
-            <% } %>
-        </div>
-    </div>
-    <% } %>
-
-    <!-- ================================================================ -->
-    <!-- Auto Backup                                                       -->
-    <!-- ================================================================ -->
-    <div class="card mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 class="mb-0"><i class="fas fa-clock"></i> Auto Backup</h5>
-            <span class="badge <%= status.config.enabled ? 'bg-success' : 'bg-secondary' %>">
-                <%= status.config.enabled ? 'Enabled' : 'Disabled' %>
-            </span>
-        </div>
-        <div class="card-body">
+    <%- card('start', 'auto-backup-card', 'fa-clock', 'Auto Backup', autoCard) %>
             <%# #1563: whether backups work — BackupManager's answer. %>
             <% if (typeof backupHealth !== 'undefined' && backupHealth) { %>
                 <div class="mb-3"><%- include('_backup-health', { health: backupHealth, formatBytes: formatBytes }) %></div>
@@ -505,8 +181,354 @@
                     </form>
                 </div>
             </div>
-        </div>
-    </div>
+    <%- card('end') %>
+
+    <!-- ================================================================ -->
+    <!-- Manual Backup -->
+    <!-- ================================================================ -->
+    <%- card('start', 'manual-backup-card', 'fa-download', 'Manual Backup', manualCard) %>
+            <p>Creates a backup and downloads it to your browser immediately, as one <code>.tar</code> file: the backup document and the files kept beside it (attachments, records, sign-in credentials, the audit log, job state, add-on files and, when the site keeps databases, a copy of each). With the backup key (<code>NGDPBASE_BACKUP_KEY</code>) set, every one of them is encrypted with it; without it nothing is encrypted and the sign-in credentials and databases are left out.</p>
+
+            <h6 class="mt-3">What is included</h6>
+            <ul>
+                <li>Configuration settings</li>
+                <li>User accounts and roles</li>
+                <li>Access control lists (ACLs)</li>
+                <li>Attachment metadata (filenames, page links, hashes)</li>
+                <li>Search index</li>
+                <li>Page files and their version history</li>
+            </ul>
+
+            <h6 class="mt-3">What is <strong>not</strong> included</h6>
+            <ul class="text-warning-emphasis">
+                <li><strong>Page version history of private stores</strong> — back up <code>$SLOW_STORAGE/pages/vaults/</code> separately</li>
+                <li><strong>Attachment binary files</strong> — back up <code>$SLOW_STORAGE/attachments/</code> separately</li>
+                <li><strong>Media files</strong> — back up your media source folders independently</li>
+            </ul>
+
+            <div class="alert alert-warning mt-3 mb-3" role="alert">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>This is not a complete backup.</strong>
+                See the <a href="/view/Backup" class="alert-link">Backup wiki page</a> for the full recommended backup process.
+            </div>
+
+            <div class="d-flex flex-wrap align-items-center gap-3">
+                <form method="POST" action="/admin/backup/create">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
+                        <i class="fas fa-database"></i> Create &amp; Download Backup
+                    </button>
+                </form>
+                <% if (databasesEnabled) { %>
+                <p class="small text-muted mb-0" id="backup-key-note">
+                    <i class="fas fa-key"></i> The download is encrypted with the backup key (<code>NGDPBASE_BACKUP_KEY</code>), which is <strong>not</strong> in the file. Keep a copy of the key somewhere other than this server: without it nothing in a backup can be restored.
+                </p>
+                <% } %>
+            </div>
+
+            <% if (recentBackups && recentBackups.length > 0) { %>
+            <h6 class="mt-4">Backups stored on the server</h6>
+            <table class="table table-sm table-striped mt-2" id="stored-backups">
+                <thead><tr><th>Backup</th><th>Created</th><th>Size</th><th>Databases</th><th></th></tr></thead>
+                <tbody>
+                <% recentBackups.forEach(function(b) { %>
+                    <tr data-backup="<%= b.filename %>">
+                        <td><code style="font-size:0.8em;"><%= b.filename %></code></td>
+                        <td><%= new Date(b.created).toLocaleString() %></td>
+                        <td><%= Math.max(1, Math.round(b.totalSize / 1024)) %> KB</td>
+                        <td><%= b.databases.length > 0 ? b.databases.join(', ') : '—' %><% if (b.encrypted === false) { %> <span class="badge bg-warning text-dark keyless-backup" title="Taken without the backup key: not encrypted, and without the sign-in credentials">no sign-in credentials</span><% } %></td>
+                        <td class="text-nowrap">
+                            <a class="btn btn-sm btn-outline-primary" href="/admin/backup/download/<%= encodeURIComponent(b.filename) %>"><i class="fas fa-download"></i> Download</a>
+                        </td>
+                    </tr>
+                <% }); %>
+                </tbody>
+            </table>
+            <% } %>
+    <%- card('end') %>
+
+    <!-- ================================================================ -->
+    <!-- Backup key (#1876): the one thing to save off the server -->
+    <!-- ================================================================ -->
+    <%- card('start', 'backup-key-card', 'fa-key', 'Backup key', keyCard) %>
+            <% if (!backupKey.set) { %>
+            <div class="alert alert-danger mb-0" id="backup-key-missing">
+                This site has <strong>no backup key</strong> (<code>NGDPBASE_BACKUP_KEY</code>). Backups are not encrypted, and they leave out the sign-in credentials (passkeys, authenticator apps), the databases and the <code>.env</code> keys. Restart the site to have one made.
+            </div>
+            <% } else { %>
+            <% const keyEnv = locals.envKeys || null; %>
+            <p id="backup-key-where">Every backup is encrypted with this site's backup key. The key is kept only on this server, <% if (!keyEnv) { %>in its <code>.env</code> file or its environment<% } else if (keyEnv.holdsBackupKey) { %>in its <code>.env</code> file<% } else { %>in its environment (it is not in its <code>.env</code> file)<% } %>. <strong>No backup contains it</strong>, so if this server is lost, the only copies are the ones you saved. Keep it somewhere safe off this server (a password manager, or on paper): a restore on a new server needs it, and without it no backup can be read.</p>
+            <p class="mb-2" id="backup-key-fingerprint-note">Fingerprint: <code id="backup-key-fingerprint"><%= backupKey.fingerprint %></code> <span class="text-muted small">— a short check, not the key: the key cannot be worked out from it. Each backup notes the fingerprint of the key it was made with, so a restore with a different key is refused. A site you restore to should show the same fingerprint here.</span></p>
+            <% if (backupKey.saved) { %>
+            <p class="text-success mb-0" id="backup-key-saved"><i class="fas fa-check-circle"></i> An admin confirmed this key is saved off the server.</p>
+            <% } else { %>
+            <div class="alert alert-warning" id="backup-key-not-saved">
+                <strong>Save the backup key now.</strong> No admin has confirmed it is saved off this server yet.
+            </div>
+            <a class="btn btn-outline-primary btn-sm" id="backup-key-show" href="/admin/backup/key"><i class="fas fa-eye"></i> Show the key to copy it</a>
+            <% } %>
+            <% } %>
+            <hr>
+            <div id="backup-env">
+                <p class="mb-2">You can also download a copy of the site's <code>.env</code> file.<% if (backupKey.set && locals.envKeys) { %> <span id="backup-env-holds-key"><% if (locals.envKeys.holdsBackupKey) { %>This file includes the backup key (the copy of <code>.env</code> inside a backup does not).<% } else { %>This file does not include the backup key, because this site's key is set outside it: save the key itself as well.<% } %></span><% } %></p>
+                <div class="alert alert-warning mb-2" id="backup-env-warning">
+                    <i class="fas fa-exclamation-triangle"></i> This file holds every secret of the site in plain text — keep it somewhere as safe as a password manager, never in an ordinary folder or an email.
+                </div>
+                <% const envKeys = locals.envKeys || null; %>
+                <% const envChanged = Boolean(envKeys && (envKeys.added.length > 0 || envKeys.removed.length > 0)); %>
+                <% if (envChanged) { %>
+                <div class="alert alert-warning mb-2" id="backup-env-changed">
+                    <strong>Save a new copy of .env.</strong> The keys in it changed since an admin last saved it<% if (envKeys.added.length > 0) { %> — added: <% envKeys.added.forEach(function (n, i) { %><%= i > 0 ? ', ' : '' %><code><%= n %></code><% }) %><% } %><% if (envKeys.removed.length > 0) { %> — removed: <% envKeys.removed.forEach(function (n, i) { %><%= i > 0 ? ', ' : '' %><code><%= n %></code><% }) %><% } %>. Download it, keep the copy off this server, then confirm below.
+                </div>
+                <% } %>
+                <a class="btn btn-outline-danger btn-sm" id="backup-env-download" href="/admin/backup/env"><i class="fas fa-file-download"></i> Download .env</a>
+                <% const _sfKey = locals.sharedFoldersKey || { set: false, fingerprint: null, saved: false }; %>
+                <% if (envKeys && (envChanged || (backupKey.set && !backupKey.saved && envKeys.holdsBackupKey) || (_sfKey.set && !_sfKey.saved && envKeys.holdsSharedFoldersKey))) { %>
+                <form method="POST" action="/admin/backup/key/saved" id="backup-env-confirm" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="fingerprint" value="<%= backupKey.fingerprint || '' %>">
+                    <input type="hidden" name="envFingerprint" value="<%= envKeys.fingerprint %>">
+                    <button type="submit" class="btn btn-success btn-sm"<%- lockedUnless('config-manage') %>><i class="fas fa-check"></i> I have saved .env off the server</button>
+                </form>
+                <% } %>
+            </div>
+    <%- card('end') %>
+
+    <!-- ================================================================ -->
+    <!-- Shared folders key and recovery words (#2124, epic #1775) -->
+    <!-- ================================================================ -->
+    <%- card('start', 'shared-folders-key', 'fa-folder', 'Shared folders key', sharedCard) %>
+            <p>Each shared folder is locked with its own key, kept under this site's shared-folders key (<code>NGDPBASE_SHARED_FOLDERS_KEY</code>, in <code>.env</code>) and under the organization's 12 recovery words.</p>
+            <% if (sfUnavailable) { %>
+            <div class="alert alert-danger" id="shared-folders-unavailable"><%= sfUnavailable %></div>
+            <% } %>
+            <% if (sfKey.set) { %>
+            <p class="mb-2">Fingerprint: <code id="shared-folders-key-fingerprint"><%= sfKey.fingerprint %></code></p>
+            <% if (sfKey.saved) { %>
+            <p class="text-success" id="shared-folders-key-saved"><i class="fas fa-check-circle"></i> An admin confirmed a saved copy of <code>.env</code> holding this key.</p>
+            <% } else { %>
+            <div class="alert alert-warning" id="shared-folders-key-not-saved">
+                <strong>Save <code>.env</code> off this server.</strong> It holds the shared-folders key, and no admin has confirmed a saved copy of it yet. Use <em>Download .env</em> above, then <em>I have saved .env off the server</em>.
+            </div>
+            <% } %>
+            <% } %>
+            <h6 class="mt-3">Recovery words</h6>
+            <% if (!sfWords) { %>
+            <p id="shared-folders-words-none">Not made yet. They are needed before the first shared folder can be made. You will be shown them once: have paper ready.</p>
+            <form method="POST" action="/admin/backup/shared-folders/words" id="shared-folders-words-make">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button type="submit" class="btn btn-outline-primary btn-sm"<%- lockedUnless('admin-system') %><%= sfUnavailable ? ' disabled' : '' %>><i class="fas fa-key"></i> Make the recovery words</button>
+            </form>
+            <% } else { %>
+            <p class="mb-1" id="shared-folders-words-made">Made <time datetime="<%= sfWords.madeAt %>" data-local-time><%= sfWords.madeAt.slice(0, 16).replace('T', ' ') %> UTC</time> and shown once to <strong><%= sfWords.shownTo %></strong>.</p>
+            <% if (sfWords.pending.length === 0) { %>
+            <p class="text-success mb-0" id="shared-folders-words-confirmed"><i class="fas fa-check-circle"></i> <%= sfWords.shownTo %> confirmed they are saved.</p>
+            <% } else { %>
+            <div class="alert alert-warning mb-2" id="shared-folders-words-unconfirmed"><%= sfWords.shownTo %> has not confirmed saving them yet. Until they do, administrators see a reminder, and no shared folder can be made.</div>
+            <% if (!sfWords.protectsFolders) { %>
+            <p class="small mb-1">If <%= sfWords.shownTo %> cannot confirm (the words were lost, or the account is gone), discard this set and make a new one; you then confirm the new set yourself.</p>
+            <form method="POST" action="/admin/backup/shared-folders/words/discard" id="shared-folders-words-discard" class="mb-0">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button type="submit" class="btn btn-outline-danger btn-sm"<%- lockedUnless('admin-system') %>><i class="fas fa-trash"></i> Discard these words</button>
+            </form>
+            <% } %>
+            <% } %>
+            <% if (sfWords.pending.length === 0 || sfWords.protectsFolders) { %>
+            <%# #2144: a new set replaces this one; asks for a fresh sign-in. The old words work until the new set is typed back. %>
+            <p class="small mt-2 mb-1">Lost the words, or no longer sure they are safe? Make a new set: you are asked to sign in again, the new words are shown once to you, and when you have typed them back every shared folder is locked under them and the old words stop working. Until then the old words stay.</p>
+            <form method="POST" action="/admin/backup/shared-folders/words/new" id="shared-folders-words-new" class="mb-0">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button type="submit" class="btn btn-outline-warning btn-sm"<%- lockedUnless('admin-system') %><%= sfUnavailable ? ' disabled' : '' %>><i class="fas fa-redo"></i> Make a new set of recovery words</button>
+            </form>
+            <% } %>
+            <% } %>
+            <% const sfNames = locals.sharedFolderNames || []; %>
+            <h6 class="mt-3">Folders</h6>
+            <% if (sfNames.length === 0) { %>
+            <p class="mb-2" id="shared-folders-none">No shared folder yet. The first one, <code>default</code>, is made when the recovery words are confirmed; it is open to every signed-in user.</p>
+            <% } else { %>
+            <ul class="mb-2" id="shared-folders-list">
+                <% sfNames.forEach(function (n) { %><li><a href="/shared/<%= encodeURIComponent(n) %>"><code>/shared/<%= n %></code></a></li><% }) %>
+            </ul>
+            <% } %>
+            <% if (sfWords && sfWords.pending.length === 0) { %>
+            <form method="POST" action="/admin/backup/shared-folders/folders" id="shared-folders-create" class="row g-2 mb-0">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <div class="col-auto"><input type="text" name="name" class="form-control form-control-sm" placeholder="<%= sfNames.includes('default') ? 'folder name' : 'default' %>" value="<%= sfNames.includes('default') ? '' : 'default' %>" pattern="[a-z0-9]+(-[a-z0-9]+)*" required aria-label="Folder name"></div>
+                <div class="col-auto"><button type="submit" class="btn btn-outline-primary btn-sm"<%- lockedUnless('admin-system') %><%= sfUnavailable ? ' disabled' : '' %>><i class="fas fa-folder-plus"></i> Make a shared folder</button></div>
+            </form>
+            <p class="small text-muted mt-1 mb-0">Administrators can read every folder. Who else may read and add to each folder is set on <a href="/admin/shared-folders">Admin → Shared folders</a>.</p>
+            <% } %>
+    <%- card('end') %>
+
+    <!-- ================================================================ -->
+    <!-- Restore the whole site (#1945) -->
+    <!-- ================================================================ -->
+    <%- card('start', 'site-restore-card', 'fa-undo', 'Restore the whole site', siteCard) %>
+            <p>Puts the site back as it was in a backup stored on this server.</p>
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>What it puts back</h6>
+                    <ul id="site-restore-restored">
+                        <% siteScope.restored.forEach(function(item) { %><li><%= item %></li><% }); %>
+                        <li>the site's keys and secrets (its <code>.env</code> file), but <strong>only from an encrypted backup</strong>: one taken while this site had its backup key</li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <h6>What it does not put back</h6>
+                    <p class="small text-muted mb-1">These stay as they are on this site now:</p>
+                    <ul id="site-restore-not-restored">
+                        <% siteScope.notRestored.forEach(function(item) { %><li><%= item %></li><% }); %>
+                    </ul>
+                </div>
+            </div>
+            <ul id="site-restore-how">
+                <li>An encrypted backup can be restored only on a server that has <strong>the same backup key</strong> it was taken with. On a new server, put the key you saved in place first.</li>
+                <li>A fresh backup of the current data is taken first. Restoring that backup undoes this restore.</li>
+                <li>Everything is then prepared beside the current data. Nothing changes until the site is <strong>restarted</strong>, which you do yourself: the site never restarts on its own.</li>
+                <li>At the restart everything is put in place together, or nothing is. The current data is kept beside it.</li>
+            </ul>
+
+            <% if (!backupKey.set) { %>
+            <div class="alert alert-danger" id="restore-no-key">
+                <h6 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> This site has no backup key</h6>
+                <p class="mb-0">After a restore, passwords return to what they were on the backup date. Passkeys and authenticator apps are not restored. On a new server, admins sign in with a password only, and won't have admin rights until they set up a passkey again.</p>
+            </div>
+            <% } %>
+
+            <% if (restoreRunning) { %>
+            <div class="alert alert-info" id="restore-running"><i class="fas fa-spinner"></i> A restore is being prepared. You will get a notification when it is ready, or if it fails.</div>
+            <% } %>
+
+            <% if (locals.stagedSiteRestoreError) { %>
+            <div class="alert alert-danger" id="staged-site-restore-unreadable">The record of a staged restore can't be read: <%= stagedSiteRestoreError %></div>
+            <% } %>
+
+            <% if (stagedSite) { %>
+            <div class="alert alert-warning" id="staged-site-restore">
+                <h6 class="alert-heading"><i class="fas fa-hourglass-half"></i> <%= stagedSite.state === 'staged' ? 'A whole-site restore is staged and waits for the restart' : 'A whole-site restore was not finished being prepared' %></h6>
+                <table class="table table-sm mb-2" style="max-width:640px;">
+                    <tr><th>Backup</th><td><code><%= stagedSite.source || stagedSite.backup %></code></td></tr>
+                    <tr><th>Backup taken</th><td><%= stagedSite.backup ? new Date(stagedSite.backup).toLocaleString() : '—' %></td></tr>
+                    <tr><th>Staged</th><td><%= new Date(stagedSite.stagedAt).toLocaleString() %></td></tr>
+                    <tr><th>Staged by</th><td><%= stagedSite.stagedBy || '—' %></td></tr>
+                    <% if (stagedSite.safetyBackup) { const siteSafety = (recentBackups || []).find(function(b) { return b.filename === stagedSite.safetyBackup; }); %>
+                    <tr id="site-safety-backup"><th>Safety backup</th><td>Your data as it was before this restore was saved as <code><%= stagedSite.safetyBackup %></code><%= siteSafety ? ' (' + new Date(siteSafety.created).toLocaleString() + ')' : '' %>. It is in the list above; restore it to undo this restore.</td></tr>
+                    <% } %>
+                </table>
+                <p class="mb-2"><%= stagedSite.state === 'staged' ? 'Restart the site to apply it, or cancel it.' : 'It will not be applied. Cancel it to clear it away.' %> To restore a different backup instead, use <strong>Replace it</strong> below.</p>
+                <form method="POST" action="/admin/backup/restore/cancel" id="cancel-staged-site-restore">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-sm btn-outline-danger"<%- lockedUnless('config-manage') %>>
+                        <i class="fas fa-times"></i> Cancel staged restore
+                    </button>
+                </form>
+            </div>
+            <% } %>
+
+            <% if (!recentBackups || recentBackups.length === 0) { %>
+            <p class="text-muted mb-0" id="site-restore-none"><em>No backup is stored on this server yet.</em></p>
+            <% } else { %>
+            <form method="POST" action="/admin/backup/restore" id="site-restore-form" class="border rounded p-3" style="max-width:640px;">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="scope" value="site">
+                <% if (stagedSite || stagedRestore) { %><input type="hidden" name="replace" value="true"><% } %>
+                <% if (!stagedSite && stagedRestore) { %>
+                <p class="small" id="site-restore-replaces-databases">A databases-only restore is staged (below). Restoring the whole site replaces it.</p>
+                <% } %>
+                <div class="mb-3">
+                    <label for="siteRestoreBackup" class="form-label">Backup to restore</label>
+                    <select class="form-select" id="siteRestoreBackup" name="backup">
+                        <% recentBackups.forEach(function(b) { %>
+                        <option value="<%= b.filename %>"><%= new Date(b.created).toLocaleString() %><%= b.encrypted === false ? ' — not encrypted: no sign-in credentials, no keys' : '' %></option>
+                        <% }); %>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="siteRestoreConfirm" class="form-label">Type the site name, <strong><%= siteName %></strong>, to confirm</label>
+                    <input type="text" class="form-control restore-confirm" id="siteRestoreConfirm" name="confirm" autocomplete="off" required data-expected="<%= siteName %>" data-submit="site-restore-submit">
+                </div>
+                <button type="submit" class="btn btn-danger" id="site-restore-submit"<%- lockedUnless('config-manage') || ' disabled' %>>
+                    <i class="fas fa-undo"></i> <%= (stagedSite || stagedRestore) ? 'Replace it' : 'Restore the whole site' %>
+                </button>
+            </form>
+            <% } %>
+    <%- card('end') %>
+
+    <!-- ================================================================ -->
+    <!-- Restore the databases only: the second option (#1723, #1945) -->
+    <!-- ================================================================ -->
+    <% if (databasesEnabled || locals.databaseUnavailable) { %>
+    <%- card('start', 'restore-card', 'fa-database', 'Restore the databases only', dbCard) %>
+            <p class="fw-bold" id="restore-scope">Restores the databases only. Pages, users and settings are not changed.</p>
+            <p>Puts the site's databases back as they were in a backup stored on this server. The whole-site restore above includes them; use this to put back the databases alone.</p>
+            <ul>
+                <li>A fresh backup of the current data is taken first.</li>
+                <li>The backup's databases are then prepared beside the current ones. Nothing changes until the site is <strong>restarted</strong>, which you do yourself: the site never restarts on its own.</li>
+                <li>At the restart the prepared databases take the place of the current ones, which are kept beside them.</li>
+            </ul>
+
+            <% if (locals.databaseUnavailable) { %>
+            <div class="alert alert-danger" id="restore-database-unavailable">
+                <h6 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> The application database can't be opened</h6>
+                <p class="mb-2">A restore still works, with one difference: <strong>the fresh backup taken first leaves the databases out</strong>, because they can't be read. The current database files are not lost: at the restart they are kept beside the restored ones as <code>*.pre-restore</code>.</p>
+                <p class="mb-0 small">The restore needs <code>NGDPBASE_DATABASE_KEY</code> to be set. If the problem is a missing or wrong key, set or correct the key and restart instead: no restore is needed.</p>
+            </div>
+            <% } %>
+
+            <% if (stagedSite) { %>
+            <p class="text-muted mb-0" id="database-restore-blocked"><em>A whole-site restore is staged, and it includes the databases. Cancel it above to restore the databases alone.</em></p>
+            <% } else { %>
+            <% if (stagedRestore) { %>
+            <div class="alert alert-warning" id="staged-restore">
+                <h6 class="alert-heading"><i class="fas fa-hourglass-half"></i> A restore is staged and waits for the restart</h6>
+                <table class="table table-sm mb-2" style="max-width:640px;">
+                    <tr><th>Backup</th><td><code><%= stagedRestore.source || stagedRestore.backup %></code></td></tr>
+                    <tr><th>Backup taken</th><td><%= stagedRestore.backup ? new Date(stagedRestore.backup).toLocaleString() : '—' %></td></tr>
+                    <tr><th>Staged</th><td><%= new Date(stagedRestore.stagedAt).toLocaleString() %></td></tr>
+                    <tr><th>Staged by</th><td><%= stagedRestore.stagedBy || '—' %></td></tr>
+                    <% if (stagedRestore.safetyBackup) { const safety = (recentBackups || []).find(function(b) { return b.filename === stagedRestore.safetyBackup; }); %>
+                    <tr id="safety-backup"><th>Safety backup</th><td>Your data as it was before this restore was saved as <code><%= stagedRestore.safetyBackup %></code><%= safety ? ' (' + new Date(safety.created).toLocaleString() + ')' : '' %>. It is in the list above<% if (safety && safety.databases.length === 0) { %>. <span id="safety-backup-no-databases">It holds no databases: they could not be opened when it was taken, so the current database files are kept as <code>*.pre-restore</code> at the restart instead. To undo this restore, put those files back with the server stopped.</span><% } else { %>; restore it to undo this restore.<% } %></td></tr>
+                    <% } %>
+                    <tr><th>Databases</th><td><%= stagedRestore.databases.map(function(d) { return d.name; }).join(', ') %></td></tr>
+                </table>
+                <p class="mb-2">Restart the site to apply it, or cancel it. To restore a different backup instead, use <strong>Replace it</strong> below.</p>
+                <form method="POST" action="/admin/backup/restore/cancel" id="cancel-staged-restore">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-sm btn-outline-danger"<%- lockedUnless('config-manage') %>>
+                        <i class="fas fa-times"></i> Cancel staged restore
+                    </button>
+                </form>
+            </div>
+            <% } %>
+
+            <% const restorable = (recentBackups || []).filter(function(b) { return b.databases.length > 0; }); %>
+            <% if (restorable.length === 0) { %>
+            <p class="text-muted mb-0"><em>No backup on this server holds databases yet.</em></p>
+            <% } else { %>
+            <form method="POST" action="/admin/backup/restore" id="restore-form" class="border rounded p-3" style="max-width:640px;">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <% if (stagedRestore) { %><input type="hidden" name="replace" value="true"><% } %>
+                <div class="mb-3">
+                    <label for="restoreBackup" class="form-label">Backup to restore</label>
+                    <select class="form-select" id="restoreBackup" name="backup">
+                        <% restorable.forEach(function(b) { %>
+                        <option value="<%= b.filename %>"><%= new Date(b.created).toLocaleString() %> — <%= b.databases.join(', ') %></option>
+                        <% }); %>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="restoreConfirm" class="form-label">Type the site name, <strong><%= siteName %></strong>, to confirm</label>
+                    <input type="text" class="form-control restore-confirm" id="restoreConfirm" name="confirm" autocomplete="off" required data-expected="<%= siteName %>" data-submit="restore-submit">
+                </div>
+                <button type="submit" class="btn btn-danger" id="restore-submit"<%- lockedUnless('config-manage') || ' disabled' %>>
+                    <i class="fas fa-undo"></i> <%= stagedRestore ? 'Replace it' : 'Restore' %>
+                </button>
+            </form>
+            <% } %>
+            <% } %>
+    <%- card('end') %>
+    <% } %>
 
 </div>
 
