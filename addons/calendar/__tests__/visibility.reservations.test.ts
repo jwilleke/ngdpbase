@@ -18,19 +18,19 @@ import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
 
 const host = () => buildAddonHost('calendar', {});
 
-const who = vi.hoisted(() => ({ permissions: new Set<string>() }));
+const who = vi.hoisted(() => ({ permissions: new Set<string>(), username: 'ann' }));
 vi.mock('../../../dist/src/context/ApiContext', async () => {
   const real = await vi.importActual<typeof import('../../../dist/src/context/ApiContext.js')>('../../../dist/src/context/ApiContext.js');
   return {
     ...real,
     ApiContext: {
       from: () => ({
-        username: 'ann',
+        username: who.username,
         email: undefined,
         displayName: 'Ann',
         isAuthenticated: true,
         getActor: () => ({}),
-        actingUsername: () => 'ann',
+        actingUsername: () => who.username,
         hasPermission: async (p: string) => who.permissions.has(p),
         requirePermission: async (p: string) => {
           if (!who.permissions.has(p)) throw new real.ApiError(403, 'Forbidden');
@@ -60,6 +60,7 @@ let live: Record<string, unknown>;
 beforeEach(async () => {
   live = CONFIG;
   who.permissions = new Set(['calendar-reserve']);
+  who.username = 'ann';
   dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'cal-reservations-'));
   const manager = new CalendarDataManager(dir);
   await manager.load();
@@ -129,5 +130,39 @@ describe('POST /api/calendar/reservations', () => {
     const res = await request(app).post('/api/calendar/reservations').send(body('__proto__'));
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/does not accept reservations/);
+  });
+});
+
+describe('DELETE /api/calendar/reservations/:id', () => {
+  const reserve = async (calendarId = 'hall') => {
+    const res = await request(app).post('/api/calendar/reservations').send(body(calendarId));
+    expect(res.status).toBe(201);
+    return res.body.id as string;
+  };
+
+  test('a caller who is neither the requester nor a manager gets the same 404 whether the reservation exists or not', async () => {
+    const id = await reserve();
+    who.username = 'bob';
+    const existing = await request(app).delete(`/api/calendar/reservations/${id}`);
+    const missing = await request(app).delete('/api/calendar/reservations/no-such-id');
+    expect(existing.status).toBe(404);
+    expect(missing.status).toBe(404);
+    expect(existing.body).toEqual(missing.body);
+    who.username = 'ann';
+    expect((await request(app).delete(`/api/calendar/reservations/${id}`)).status).toBe(204);
+  });
+
+  test('the requester and a manager can still cancel', async () => {
+    const mine = await reserve();
+    expect((await request(app).delete(`/api/calendar/reservations/${mine}`)).status).toBe(204);
+    const other = await reserve();
+    who.username = 'bob';
+    who.permissions = new Set(['calendar-reserve', 'calendar-manage']);
+    expect((await request(app).delete(`/api/calendar/reservations/${other}`)).status).toBe(204);
+  });
+
+  test('a manager asking for a reservation that does not exist still gets 404', async () => {
+    who.permissions = new Set(['calendar-reserve', 'calendar-manage']);
+    expect((await request(app).delete('/api/calendar/reservations/no-such-id')).status).toBe(404);
   });
 });

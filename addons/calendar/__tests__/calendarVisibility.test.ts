@@ -7,7 +7,7 @@
  * - `enabled` counts as enabled only when it is missing or `true`; any other
  *   value leaves the calendar out.
  */
-import { calendarGate, visibilityOf } from '../managers/calendarVisibility';
+import { calendarGate, entryOf, visibilityOf } from '../managers/calendarVisibility';
 
 const everything = async () => true;
 
@@ -33,5 +33,25 @@ describe('enabled', () => {
 
   test.each([[false], ['false'], ['true'], [0], [1], [null], [''], [{}]])('%j leaves the calendar out', async (value) => {
     expect(await gate(value)('c')).toBe(false);
+  });
+});
+
+describe('an array is not a configuration entry', () => {
+  test('a calendars list is read as naming no calendar', async () => {
+    const config = { calendars: [{ visibility: 'public' }] };
+    expect(entryOf(config, '0')).toBeUndefined();
+    expect(visibilityOf(config, '0')).toBe('private');
+    expect(await calendarGate(async () => false, config)('0')).toBe(false);
+  });
+
+  test('a calendar whose entry is a list is read as unnamed', async () => {
+    const config = { calendars: { odd: ['public'] } };
+    expect(entryOf(config, 'odd')).toBeUndefined();
+    expect(visibilityOf(config, 'odd')).toBe('private');
+    expect(await calendarGate(async () => false, config)('odd')).toBe(false);
+  });
+
+  test('an object entry is still found', () => {
+    expect(entryOf({ calendars: { ok: { visibility: 'public' } } }, 'ok')).toEqual({ visibility: 'public' });
   });
 });
