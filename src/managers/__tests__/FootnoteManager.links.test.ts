@@ -157,6 +157,20 @@ describe('FootnoteManager link rules and cache topic (#2454 S1)', () => {
       expect(mockCache.bump).not.toHaveBeenCalled();
     });
 
+    test('any write through the manager\'s file writer bumps the topic', async () => {
+      const place = { path: path.join(tmpDir, 'footnotes', 'w1.json'), io: { writeText: async (p: string, t: string) => fs.writeFileSync(p, t) } };
+      await (fm as unknown as { writeMap(p: unknown, m: unknown): Promise<void> }).writeMap(place, { 1: { id: '1' } });
+      expect(mockCache.bump).toHaveBeenCalledTimes(1);
+      expect(mockCache.bump).toHaveBeenCalledWith(FOOTNOTE_DATA_TOPIC);
+    });
+
+    test('deleting the last footnote removes the file and bumps once', async () => {
+      const fn = await fm.addFootnote(pub('b8'), GOOD, WHO);
+      mockCache.bump.mockClear();
+      await fm.deleteFootnote(pub('b8'), fn.id, WHO);
+      expect(mockCache.bump).toHaveBeenCalledTimes(1);
+    });
+
     test('a bump that fails does not fail the write', async () => {
       mockCache.bump.mockRejectedValueOnce(new Error('cache down'));
       const fn = await fm.addFootnote(pub('b7'), GOOD, WHO);

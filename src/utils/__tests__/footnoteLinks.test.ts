@@ -102,6 +102,23 @@ describe('tidyUrl', () => {
     expect(tidyUrl('file:///etc/hosts')).toBeNull();
   });
 
+  test('a port is part of the key, and the scheme is not: http and https on one port match', () => {
+    expect(tidyUrl('http://a.com:443/x')).toBe(tidyUrl('https://a.com:443/x'));
+    expect(tidyUrl('https://a.com:8443/x')).toBe('https://a.com:8443/x');
+    expect(tidyUrl('https://a.com:8443/x')).not.toBe(tidyUrl('https://a.com:9443/x'));
+    expect(tidyUrl('https://a.com:8443/x')).not.toBe(tidyUrl('https://a.com/x'));
+  });
+
+  test('the host is lower case with its port kept, and www. is still dropped', () => {
+    expect(tidyUrl('http://WWW.A.com:8080/x')).toBe('https://a.com:8080/x');
+  });
+
+  test('a user:password@ part is left out of the key', () => {
+    expect(tidyUrl('https://bob:secret@example.com/a')).toBe('https://example.com/a');
+    expect(tidyUrl('https://bob@example.com/a')).toBe(tidyUrl('https://example.com/a'));
+    expect(tidyUrl('https://bob:secret@example.com/a')).not.toContain('secret');
+  });
+
   test('two tidy forms that differ stay different', () => {
     expect(tidyUrl('https://example.com/a')).not.toBe(tidyUrl('https://example.org/a'));
     expect(tidyUrl('https://example.com/a')).not.toBe(tidyUrl('https://example.com/b'));

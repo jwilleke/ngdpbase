@@ -478,3 +478,45 @@ describe('execute() — link rules (#2454 S1)', () => {
     expect(order).toEqual(['dependsOn:FootnoteManager', 'read']);
   });
 });
+
+describe('execute() — the older footnote list links only http and https addresses (#2454 S1)', () => {
+  const renderOlderList = async (line: string, sites: Record<string, unknown> = {}) => {
+    const pageManager = { readPage: vi.fn().mockResolvedValue({ ok: true, value: { rawContent: `* [^1] - ${line}` } }) };
+    const config = { getProperty: vi.fn().mockReturnValue(sites) };
+    return FootnotesPlugin.execute({
+      engine: makeEngine({ PageManager: pageManager, ConfigurationManager: config }),
+      pageName: 'TestPage',
+      pageMetadata: {}
+    }, {});
+  };
+  const sites = {
+    Good: { url: 'https://example.org/wiki/%s', enabled: true },
+    Odd: { url: 'ftp://example.org/%s', enabled: true }
+  };
+
+  test('a [display|target] with an https target still links', async () => {
+    const result = await renderOlderList('[Source|https://example.com/a]');
+    expect(result).toContain('<a href="https://example.com/a" target="_blank" rel="noopener noreferrer">Source</a>');
+  });
+
+  test.each(['javascript:alert(1)', 'data:text/html,x', 'file:///etc/hosts', 'PageName'])(
+    'a [display|target] whose target is %s shows its text with no link',
+    async (target) => {
+      const result = await renderOlderList(`[Source|${target}]`);
+      expect(result).toContain('Source');
+      expect(result).not.toContain('<a href');
+      expect(result).not.toContain(`href="${target}"`);
+    }
+  );
+
+  test('an inter-wiki site whose address is https still links', async () => {
+    const result = await renderOlderList('[Rocket|Good:Rocket]', sites);
+    expect(result).toContain('<a href="https://example.org/wiki/Rocket" target="_blank" rel="noopener noreferrer">Rocket</a>');
+  });
+
+  test('an inter-wiki site whose address is not http or https shows its text with no link', async () => {
+    const result = await renderOlderList('[Rocket|Odd:Rocket]', sites);
+    expect(result).toContain('Rocket');
+    expect(result).not.toContain('<a href');
+  });
+});
