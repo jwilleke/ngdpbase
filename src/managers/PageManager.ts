@@ -11,7 +11,7 @@ import { shippedPageState, keptInputs, pageSourceHash, REQUIRED_SOURCE_HASH_KEY,
 import { workingParts } from '../utils/pluginCalls.js';
 import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import { limitsLeftByUpgrade, type AccessLimits } from '../utils/legacyPageAccess.js';
-import { adminsAreRoleAdmin, backUpBeforeRewrite, exactReplacement, withReplacement, type Replacement } from '../utils/upgradeLeftovers.js';
+import { adminsAreRoleAdmin, backUpBeforeRewrite, clipText, exactReplacement, withReplacement, type Replacement } from '../utils/upgradeLeftovers.js';
 import BaseManager, { BackupData, type ManagerStats, type ManagerStatus } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -141,6 +141,12 @@ export interface PageSaveOptions {
    * Recent Changes.
    */
   preserveLastModified?: boolean;
+  /**
+   * The caller already holds this page's write lock ({@link PageManager.pageWrite}),
+   * so the save does not queue for it again. For a start-up rewrite that reads the
+   * page, compares it and saves it as one step (#2466); an ordinary save never sets it.
+   */
+  writeLockHeld?: boolean;
   /**
    * Keep the page's stored `editor` — who is recorded as having written this
    * version — instead of taking it from the acting context (#1354).
@@ -2955,9 +2961,10 @@ class PageManager extends BaseManager implements CatalogSource {
     // conversion (which runs while the site serves) never writes over a save.
     const provider = this.provider;
     const writeKey = existingPage?.uuid ?? ((enrichedMetadata as Record<string, unknown>).uuid as string | undefined) ?? pageName;
-    const saved = await this.pageWrite(writeKey, () => (Object.keys(providerOptions).length > 0
+    const writeProvider = (): Promise<{ name: string; uuid: string }> => (Object.keys(providerOptions).length > 0
       ? provider.savePage(pageName, content, enrichedMetadata, ctx, providerOptions)
-      : provider.savePage(pageName, content, enrichedMetadata, ctx)));
+      : provider.savePage(pageName, content, enrichedMetadata, ctx));
+    const saved = await (options.writeLockHeld ? writeProvider() : this.pageWrite(writeKey, writeProvider));
 
     // #1462: the shared indexes follow the save here, and nowhere else.
     const previousName = existingPage ? this.nameOf(options.moveFrom ?? pageName, existingPage) : null;
@@ -4297,7 +4304,7 @@ class PageManager extends BaseManager implements CatalogSource {
       : 'Ask whoever runs the server to add an access rule.';
     const reason = `${total} ${one ? 'page has' : 'pages have'} a limit on who can use ${one ? 'it' : 'them'} that the site no longer applies, so ${one ? 'it follows' : 'they follow'} the site's access rules instead. ${open}`;
     const words = (limits: AccessLimits): string => (limits.length > 1 ? `${limits.slice(0, -1).join(', ')} and ${limits[limits.length - 1]}` : limits[0]);
-    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title, limits }) => `${title}: limited who could ${words(limits)} it`);
+    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title, limits }) => `${clipText(title)}: limited who could ${words(limits)} it`);
     const more = named.length - details.length;
     if (more > 0) details.push(`and ${more} more ${more === 1 ? 'page' : 'pages'}`);
     const hidden = total - named.length;
@@ -4314,7 +4321,7 @@ class PageManager extends BaseManager implements CatalogSource {
     if (all.length === 0) return [];
     const one = all.length === 1;
     const named = [...all].sort((a, b) => a.title.localeCompare(b.title));
-    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title }) => `${title}: now has an Author Lock, so only its author and administrators can change it`);
+    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title }) => `${clipText(title)}: now has an Author Lock, so only its author and administrators can change it`);
     const more = named.length - details.length;
     if (more > 0) details.push(`and ${more} more ${more === 1 ? 'page' : 'pages'}`);
     return [{
@@ -4375,29 +4382,41 @@ class PageManager extends BaseManager implements CatalogSource {
         try {
           const replacement = await exactReplacement(info.metadata, site);
           if (!replacement) { left++; continue; }
-          const text = await fse.readFile(info.filePath, 'utf8');
-          const page = await this.getPage(info.title, ctx);
-          // The page is read again so the replacement is judged on what is stored now, and it must be the page whose file is copied.
-          const fresh = page ? await exactReplacement(page.metadata, site) : null;
-          if (!page || !fresh || (info.uuid && page.uuid !== info.uuid)) { left++; continue; }
-          // The file is unchanged since it was copied, so the copy is what the save overwrites.
-          if (await fse.readFile(info.filePath, 'utf8') !== text) { left++; continue; }
-          backUpBeforeRewrite(backups, `${info.uuid || 'page'}.md`, text);
-          await this.savePage(info.title, page.content ?? '', withReplacement({ ...page.metadata }, fresh), ctx, {
-            preserveLastModified: true,
-            preserveEditor: true
+          // Read, compared, copied and saved as one step, so a save made meanwhile is never written over.
+          const fresh = await this.pageWrite(info.uuid || info.title, async () => {
+            const text = await fse.readFile(info.filePath, 'utf8');
+            const page = await this.getPage(info.title, ctx);
+            // The page is read again so the replacement is judged on what is stored now, and it must be the page whose file is copied.
+            const now = page ? await exactReplacement(page.metadata, site) : null;
+            if (!page || !now || (info.uuid && page.uuid !== info.uuid)) return null;
+            // The file is unchanged since it was copied, so the copy is what the save overwrites.
+            if (await fse.readFile(info.filePath, 'utf8') !== text) return null;
+            const copy = backUpBeforeRewrite(backups, `${info.uuid || 'page'}.md`, text);
+            try {
+              await this.savePage(info.title, page.content ?? '', withReplacement({ ...page.metadata }, now), ctx, {
+                preserveLastModified: true,
+                preserveEditor: true,
+                writeLockHeld: true
+              });
+            } catch (err) {
+              // The page is as it was, so the copy made a moment ago is not kept: a page that fails every start would add one every time.
+              fse.removeSync(copy);
+              throw err;
+            }
+            return now;
           });
+          if (!fresh) { left++; continue; }
           this.legacyAccessConverted.push({ title: info.title, replacement: fresh });
           converted++;
-          logger.info(`[PageManager] Moved the old access limit on '${info.title}' to its Author Lock; the file as it was is saved in the upgrade backups`);
+          logger.info(`[PageManager] Moved the old access limit on '${clipText(info.title)}' to its Author Lock; the file as it was is saved in the upgrade backups`);
         } catch (err) {
           left++;
           // One page must not stop the rest; it stays listed and is tried again at the next start. A page with an error is not named: it may be private.
-          logger.warn(`[PageManager] The old access limit on a page could not be moved, so it is left as it is: ${err instanceof Error ? err.message : String(err)}`);
+          logger.warn(`[PageManager] The old access limit on a page could not be moved, so it is left as it is: ${clipText(err)}`);
         }
       }
     } catch (err) {
-      logger.warn(`[PageManager] Old access limits were not converted: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(`[PageManager] Old access limits were not converted: ${clipText(err)}`);
     }
     if (converted > 0 || left > 0) logger.info(`[PageManager] Old access limits at start: ${converted} moved to an Author Lock, ${left} left as they are`);
     return { converted, left };

@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes
 
-- __#2466__ — at start, the update removes the old `priority` from your own access rules (each logged, the file copied first to the `upgrade-backups` folder of the data folder) and converts a page's old `access:` limit to an Author Lock only where that limits exactly the same people (an edit limit of administrators only). Pages with no exact match are left as they were and stay in Admin → needs attention. Nothing for you to do; running again changes nothing.
+- __#2466__ — at start, the update removes the old `priority` from your own access rules (each logged, the file copied first to the `upgrade-backups` folder of the data folder) and converts a page's old `access:` limit to an Author Lock only where it limited editing to administrators alone and the page's author, if it has one, is an administrator. Since #2255 the old `access:` has not been read, so this narrows who can edit such a page today: a page that any editor could change now only its author and administrators can change, and nothing else about the page changes. Pages with no exact match are left as they were and stay in Admin → needs attention. Nothing for you to do; running again changes nothing.
 
 ### Planned
 

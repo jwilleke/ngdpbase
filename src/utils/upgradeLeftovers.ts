@@ -34,6 +34,20 @@ import { SECRET_DIR_MODE, SECRET_FILE_MODE } from './secretFileMode.js';
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** The longest piece of a name or message that goes into a log line or the admin banner. */
+export const CLIP_MAX = 200;
+
+/**
+ * Text from a file or an error for a log line or the banner: line breaks and
+ * other control characters become a space, and it is cut at {@link CLIP_MAX}.
+ */
+export function clipText(value: unknown, max: number = CLIP_MAX): string {
+  const text = (typeof value === 'string' ? value : value instanceof Error ? value.message : String(value))
+    // eslint-disable-next-line no-control-regex -- control characters are what is being removed
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ');
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
 /** The name of a rule in a list: its id, or its place in the list when it has none. */
 function ruleName(policy: Record<string, unknown>, index: number): string {
   return typeof policy.id === 'string' && policy.id ? policy.id : `rule ${index + 1}`;
@@ -104,7 +118,7 @@ function names(list: unknown): string[] | null {
  * when there is none (see the file's note on what exact means).
  */
 export async function exactReplacement(
-  metadata: { access?: unknown; author?: unknown; audience?: unknown } | null | undefined,
+  metadata: { access?: unknown; author?: unknown } | null | undefined,
   site: SiteFacts
 ): Promise<Replacement | null> {
   const access = metadata?.access;

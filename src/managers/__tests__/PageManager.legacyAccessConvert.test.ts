@@ -197,11 +197,15 @@ describe('PageManager converts old access: limits that have an exact replacement
     expect(bannerText(m)).toContain('Board Notes');
   });
 
-  test('R3: a page that already has an Audience of its own is not converted', async () => {
-    await add('Has Audience', { access: { view: ['admin'], edit: ['admin'] }, audience: ['editor'] });
+  test('a very long page title is cut in the banner', async () => {
+    const long = `Board ${'Notes '.repeat(80)}`.trim();
+    await add(long, { access: { edit: ['admin'] }, author: ADMIN_ID });
+    await add('Read Limit', { access: { view: ['editor'] } });
     const m = manager();
-    expect((await start(m)).converted).toBe(0);
-    expect(saved).toEqual([]);
+    await start(m);
+    const lines = m.getAttentionItems().flatMap((i) => i.details ?? []);
+    expect(lines.some((l) => l.startsWith('Board Notes Notes'))).toBe(true);
+    expect(Math.max(...lines.map((l) => l.length))).toBeLessThan(300);
   });
 
   test('R6: a copy of the file as it was is written before the page is rewritten', async () => {

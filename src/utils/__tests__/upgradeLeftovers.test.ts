@@ -1,7 +1,8 @@
 /**
  * #2466: what start-up may fix on its own. A rule's `priority` is removed; a
- * page's `access:` becomes an Audience or Author Lock only when that lets in
- * exactly the people the old limit did.
+ * page's `access:` becomes an Author Lock only when `edit` is limited to admin
+ * alone and that lets in exactly the people the old limit did. Nothing becomes
+ * an Audience.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -9,6 +10,7 @@ import path from 'node:path';
 import {
   adminsAreRoleAdmin,
   backUpBeforeRewrite,
+  clipText,
   exactReplacement,
   stripPolicyPriority,
   withReplacement,
@@ -100,10 +102,6 @@ describe('exactReplacement (R2, R3)', () => {
   test('no replacement where administrators are not provably the admin role', async () => {
     expect(await exactReplacement({ access: { edit: ['admin'] } }, site({ adminsAreRoleAdmin: false }))).toBeNull();
   });
-
-  test('no replacement when the page already has an Audience of its own', async () => {
-    expect(await exactReplacement({ access: { view: ['admin'], edit: ['admin'] }, audience: ['editor'] }, site())).toBeNull();
-  });
 });
 
 describe('withReplacement', () => {
@@ -138,5 +136,23 @@ describe('backUpBeforeRewrite (R6)', () => {
   test('a name with path characters stays inside the folder', () => {
     const file = backUpBeforeRewrite(path.join(dir, 'b'), '../../etc/passwd', 'x');
     expect(path.dirname(file)).toBe(path.join(dir, 'b'));
+  });
+});
+
+describe('clipText', () => {
+  test('cuts long text at 200 characters and says it was cut', () => {
+    const out = clipText('x'.repeat(500));
+    expect(out).toBe(`${'x'.repeat(200)}...`);
+    expect(clipText('short')).toBe('short');
+  });
+
+  test('line breaks and other control characters become a space, so a value cannot start a line of its own', () => {
+    expect(clipText('a\nb\r\nc\u0000d\u2028e')).toBe('a b c d e');
+  });
+
+  test('an error gives its message, and anything else its text', () => {
+    expect(clipText(new Error('disk full'))).toBe('disk full');
+    expect(clipText(new Error('y'.repeat(300))).length).toBe(203);
+    expect(clipText(undefined)).toBe('undefined');
   });
 });
