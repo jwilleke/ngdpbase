@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes
 
-- __#2391__ — the calendar API and the `.ics` feed now honour each calendar's `visibility` setting, as the calendar view's settings already described. A calendar set to `authenticated` shows its events to signed-in accounts; one set to `private` shows them to holders of `calendar-manage`; a calendar with no `visibility` stays public. A calendar app that cannot sign in to the site can subscribe only to a public calendar's `.ics` address. The add-on adds one permission, `calendar-read`, granted to every signed-in account.
+- __#2391__ — the calendar API and the `.ics` feed now honour each calendar's `visibility` setting, as the calendar view's settings already described. A calendar set to `authenticated` shows its events to signed-in accounts; one set to `private` shows them to holders of `calendar-manage`; a configured calendar with no `visibility` stays public. A calendar the configuration does not name is read as private, so a site's `clubhouse` calendar needs an entry under `calendars` with the `visibility` its members should have, or only holders of `calendar-manage` see its events. A calendar set to `enabled: false` is left out of the API, the `.ics` feed and the marquee text. The marquee text applies the setting for the viewer. A changed `visibility` or `enabled` applies on the next request, with no restart. A calendar app that cannot sign in to the site can subscribe only to a public calendar's `.ics` address. The add-on adds one permission, `calendar-read`, granted to every signed-in account.
 
 ### Planned
 

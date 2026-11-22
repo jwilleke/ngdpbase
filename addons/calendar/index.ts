@@ -9,8 +9,8 @@
  *   ngdpbase.addons.calendar.dataPath                       — JSON store root (default: ./data/calendar)
  *   ngdpbase.addons.calendar.clubhouse-manager-email        — email for reservation notifications
  *   ngdpbase.addons.calendar.calendars.<id>.workflow        — reservation | managed
- *   ngdpbase.addons.calendar.calendars.<id>.visibility      — public | authenticated | private (honoured by the API and the .ics feed)
- *   ngdpbase.addons.calendar.calendars.<id>.enabled         — true/false
+ *   ngdpbase.addons.calendar.calendars.<id>.visibility      — public | authenticated | private (honoured by the API, the .ics feed and the marquee text; read live)
+ *   ngdpbase.addons.calendar.calendars.<id>.enabled         — true/false (false: left out of the API, feed and marquee text)
  *
  * API routes (mounted at /api/calendar):
  *   GET    /api/calendar/events                  — FullCalendar event feed (stripPrivate applied)
@@ -43,6 +43,7 @@ import type { AddonHost } from '../../dist/src/utils/addonHost.js';
 import type IdentityManager from '../../dist/src/managers/IdentityManager.js';
 import CalendarDataManager from './managers/CalendarDataManager.js';
 import CalendarPlugin from './plugins/CalendarPlugin.js';
+import { calendarGate, currentCalendarConfig } from './managers/calendarVisibility.js';
 import apiRoutes from './routes/api.js';
 import reservationRoutes from './routes/reservations.js';
 import adminRoutes from './routes/admin.js';
@@ -75,6 +76,15 @@ const calendarAddon = {
       engine.getManager<IdentityManager>('IdentityManager'),
       host.systemContext('calendar: convert people from username to identity @id (#2041)')
     );
+    // The marquee text asks the same question the API does, for the viewer MarqueePlugin
+    // passes, over the configuration as it is now.
+    dataManager.setReadGate((viewer) => {
+      const pdp = engine.getManager<{ permits(subject: unknown, action: string): Promise<boolean> }>('PolicyDecisionPoint');
+      return calendarGate(
+        permission => (viewer && pdp ? pdp.permits(viewer, permission) : Promise.resolve(false)),
+        currentCalendarConfig(engine, config)
+      );
+    });
     engine.registerManager('CalendarDataManager', dataManager);
 
     // ── 2. Register markup plugin ────────────────────────────────────────────

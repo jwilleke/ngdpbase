@@ -58,7 +58,7 @@ The add-on never names a role (#1198, #1220).
 
 ### Who may see a calendar
 
-Each calendar's `visibility` setting (see [configuration](docs/configuration.md)) applies to the calendar view, the API (`/api/calendar/events`, `/events/search`, `/events/:id`) and the `.ics` feed alike. A `public` calendar, or one with no setting, is shown to everyone. An `authenticated` calendar is shown to holders of the `calendar-read` permission, which this add-on grants to every signed-in account. A `private` calendar is shown to holders of `calendar-manage`. A calendar the viewer may not see shows no events, and its single-event and `.ics` addresses answer as not found.
+Each calendar's `visibility` setting (see [configuration](docs/configuration.md)) applies to the calendar view, the API (`/api/calendar/events`, `/events/search`, `/events/:id`) and the `.ics` feed alike. A `public` calendar, or a configured one with no setting, is shown to everyone. A calendar the configuration does not name is read as `private`, and one set to `enabled: false` is shown to no one. An `authenticated` calendar is shown to holders of the `calendar-read` permission, which this add-on grants to every signed-in account. A `private` calendar is shown to holders of `calendar-manage`. A calendar the viewer may not see shows no events, including in the marquee text, and its single-event and `.ics` addresses answer as not found. A changed `visibility` or `enabled` setting applies on the next request, with no restart.
 
 ## Markup Directive
 

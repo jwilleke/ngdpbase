@@ -104,7 +104,7 @@ __Auth__: same visibility rules as the list endpoint.
 
 __Response__ `200 OK` — single `FullCalendarEvent`.
 
-__Errors__: `404` if not found, or if the event's calendar is not visible to the caller (an `authenticated` calendar to a caller without `calendar-read`, a `private` one without `calendar-manage`).
+__Errors__: `404` if not found, or if the event's calendar is not visible to the caller (an `authenticated` calendar to a caller without `calendar-read`, a `private` one or one the configuration does not name without `calendar-manage`, and a disabled one to anyone).
 
 ---
 
