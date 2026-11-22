@@ -4314,16 +4314,13 @@ class PageManager extends BaseManager implements CatalogSource {
     if (all.length === 0) return [];
     const one = all.length === 1;
     const named = [...all].sort((a, b) => a.title.localeCompare(b.title));
-    const list = (names: string[]): string => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0]);
-    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title, replacement }) => (replacement.kind === 'author-lock'
-      ? `${title}: now has an Author Lock, so only its author and administrators can change it`
-      : `${title}: now has an Audience of ${list(replacement.audience ?? [])}`));
+    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title }) => `${title}: now has an Author Lock, so only its author and administrators can change it`);
     const more = named.length - details.length;
     if (more > 0) details.push(`and ${more} more ${more === 1 ? 'page' : 'pages'}`);
     return [{
       state: 'degraded',
       kind: 'attention',
-      reason: `The update moved the old access limit on ${all.length} ${one ? 'page to its' : 'pages to their'} Audience or Author Lock, so the same people are limited as before. Nothing else on ${one ? 'it' : 'them'} changed.`,
+      reason: `The update moved the old access limit on ${all.length} ${one ? 'page to its' : 'pages to their'} Author Lock, so the same people are limited as before. Nothing else on ${one ? 'it' : 'them'} changed.`,
       details
     }];
   }
@@ -4345,7 +4342,7 @@ class PageManager extends BaseManager implements CatalogSource {
 
   /**
    * At start-up, once required pages are seeded (#2466): move a page's old
-   * `access:` limit to its Audience or Author Lock, but only where that limits
+   * `access:` limit to its Author Lock, but only where that limits
    * exactly the people the old limit did ({@link exactReplacement}). Any other
    * page is left as it is and stays in the needs-attention list. Each page is
    * saved through the door with its last-modified and editor kept, after a copy
@@ -4367,7 +4364,7 @@ class PageManager extends BaseManager implements CatalogSource {
       const site = { adminsAreRoleAdmin: adminsAreRoleAdmin(policies), authorHoldsAdmin: (author: string) => this.authorHoldsAdmin(author) };
       const record = await this.loadSeededRecord();
       const defaultCategory = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager')?.getDefaultSystemCategory?.();
-      const ctx = systemContext(this.engine, 'move old access limits to an Audience or Author Lock (#2466)');
+      const ctx = systemContext(this.engine, 'move old access limits to an Author Lock (#2466)');
       const backups = path.join(configManager.getInstanceDataFolder(), 'upgrade-backups');
       for (const info of await provider.getAllPageInfo()) {
         if (info.metadata?.access === undefined || parsePrivatePageName(info.title)) continue;
@@ -4380,9 +4377,11 @@ class PageManager extends BaseManager implements CatalogSource {
           if (!replacement) { left++; continue; }
           const text = await fse.readFile(info.filePath, 'utf8');
           const page = await this.getPage(info.title, ctx);
-          // The page is read again so the replacement is judged on what is stored now.
+          // The page is read again so the replacement is judged on what is stored now, and it must be the page whose file is copied.
           const fresh = page ? await exactReplacement(page.metadata, site) : null;
-          if (!page || !fresh) { left++; continue; }
+          if (!page || !fresh || (info.uuid && page.uuid !== info.uuid)) { left++; continue; }
+          // The file is unchanged since it was copied, so the copy is what the save overwrites.
+          if (await fse.readFile(info.filePath, 'utf8') !== text) { left++; continue; }
           backUpBeforeRewrite(backups, `${info.uuid || 'page'}.md`, text);
           await this.savePage(info.title, page.content ?? '', withReplacement({ ...page.metadata }, fresh), ctx, {
             preserveLastModified: true,
@@ -4390,7 +4389,7 @@ class PageManager extends BaseManager implements CatalogSource {
           });
           this.legacyAccessConverted.push({ title: info.title, replacement: fresh });
           converted++;
-          logger.info(`[PageManager] Moved the old access limit on '${info.title}' to its ${fresh.kind === 'author-lock' ? 'Author Lock' : 'Audience'}; the file as it was is saved in the upgrade backups`);
+          logger.info(`[PageManager] Moved the old access limit on '${info.title}' to its Author Lock; the file as it was is saved in the upgrade backups`);
         } catch (err) {
           left++;
           // One page must not stop the rest; it stays listed and is tried again at the next start. A page with an error is not named: it may be private.
@@ -4400,6 +4399,7 @@ class PageManager extends BaseManager implements CatalogSource {
     } catch (err) {
       logger.warn(`[PageManager] Old access limits were not converted: ${err instanceof Error ? err.message : String(err)}`);
     }
+    if (converted > 0 || left > 0) logger.info(`[PageManager] Old access limits at start: ${converted} moved to an Author Lock, ${left} left as they are`);
     return { converted, left };
   }
 

@@ -19,17 +19,14 @@
  *   ({@link adminsAreRoleAdmin}), and the old limit let `admin` in.
  * - `edit: [admin]` alone is an Author Lock: the page's author and
  *   administrators may change it. Exact when the page has no author, or its
- *   author is an administrator.
- * - `view` and `edit` naming the same people, `admin` among them, is an
- *   Audience of those people: an Audience refuses everyone outside it every
- *   action, which is what the two lists together did. `view` alone is not
- *   exact: an Audience would also stop the people outside it changing the page,
- *   and the old limit did not.
- * - Whoever is let in still needs the site's access rules to allow the action,
- *   as on every page since the site stopped reading `access:`. The old
- *   limit's own grant is not brought back.
- * - Anything else (another action, another name, an Audience already on the
- *   page) has no exact replacement.
+ *   author is an administrator. An Author Lock only refuses; it never lets
+ *   anyone in, so it cannot widen access.
+ * - Nothing becomes an Audience. An Audience lets a person it names view the
+ *   page outright, past the site's access rules (a deny, a condition, a role
+ *   with no read), so converting a `view` list could let in someone the rules
+ *   keep out today. Those pages stay in the needs-attention list.
+ * - Anything else (another action, another name, a `view` list) has no exact
+ *   replacement.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -92,11 +89,9 @@ export interface SiteFacts {
 
 /** The exact replacement for a page's `access:`. */
 export interface Replacement {
-  kind: 'author-lock' | 'audience';
+  kind: 'author-lock';
   /** The frontmatter it sets; `access` is removed. */
   set: Record<string, unknown>;
-  /** The names the new Audience lists, when it is one. */
-  audience?: string[];
 }
 
 /** A non-empty list of non-empty strings, or null when it is not one. */
@@ -127,14 +122,6 @@ export async function exactReplacement(
     return { kind: 'author-lock', set: { 'author-lock': true } };
   }
 
-  if (view && edit && edit.includes('admin')) {
-    const same = new Set(view).size === new Set(edit).size && view.every((n) => edit.includes(n));
-    const existing = metadata?.audience;
-    const hasAudience = Array.isArray(existing) ? existing.length > 0 : existing !== undefined && existing !== null && existing !== '';
-    if (!same || hasAudience) return null;
-    const audience = [...new Set(view)];
-    return { kind: 'audience', set: { audience }, audience };
-  }
   return null;
 }
 
@@ -153,6 +140,8 @@ export function withReplacement<T extends Record<string, unknown>>(metadata: T, 
  */
 export function backUpBeforeRewrite(folder: string, name: string, text: string, now: Date = new Date()): string {
   fs.mkdirSync(folder, { recursive: true, mode: SECRET_DIR_MODE });
+  // A folder that was there already keeps its own mode through mkdir; the copies can hold secrets.
+  if (process.platform !== 'win32') fs.chmodSync(folder, SECRET_DIR_MODE);
   const safe = name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 80) || 'file';
   const file = path.join(folder, `${now.toISOString().replace(/[:.]/g, '-')}-${safe}`);
   fs.writeFileSync(file, text, { flag: 'wx', mode: SECRET_FILE_MODE });

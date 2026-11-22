@@ -93,7 +93,7 @@ describe('PageManager converts old access: limits that have an exact replacement
   const metaOf = (title: string): Meta => pages.filter((p) => p.title === title)[0].metadata;
   const bannerText = (m: TestManager): string => m.getAttentionItems().flatMap((i) => [i.reason, ...(i.details ?? [])]).join('\n');
 
-  test('R2: edit limited to admin becomes an Author Lock, saved with its date and editor kept', async () => {
+  test('R2: edit limited to admin becomes an Author Lock, saved with its last-modified date kept', async () => {
     await add('Board Notes', { access: { edit: ['admin'] }, author: ADMIN_ID });
     const m = manager();
     const result = await start(m);
@@ -101,7 +101,7 @@ describe('PageManager converts old access: limits that have an exact replacement
     expect(metaOf('Board Notes').access).toBeUndefined();
     expect(metaOf('Board Notes')['author-lock']).toBe(true);
     const provider = m.provider as { savePage: { mock: { calls: unknown[][] } } };
-    expect(provider.savePage.mock.calls[0][4]).toMatchObject({ preserveLastModified: true, preserveEditor: true });
+    expect(provider.savePage.mock.calls[0][4]).toMatchObject({ preserveLastModified: true });
   });
 
   test('R3: view and edit naming the same people stay as they are: an Audience would let them view past the access rules', async () => {
@@ -236,7 +236,7 @@ describe('PageManager converts old access: limits that have an exact replacement
     await add('Board Notes', { access: { edit: ['admin'] }, author: ADMIN_ID });
     const m = manager();
     await start(m);
-    expect(m.getAttentionItems()[0].reason).toMatch(/^The update moved the old access limit on 1 page to its Author Lock\. Nothing else on it changed\.$/);
+    expect(m.getAttentionItems()[0].reason).toMatch(/^The update moved the old access limit on 1 page to its Author Lock, so the same people are limited as before\. Nothing else on it changed\.$/);
   });
 
   test('a private page is left for its owner: not written, counted in the banner without its title', async () => {

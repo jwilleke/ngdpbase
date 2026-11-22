@@ -654,9 +654,20 @@ class ConfigurationManager extends BaseManager {
       const stored = JSON.parse(text) as Record<string, unknown>;
       const fromFile = stripPolicyPriority(stored[key]);
       if (fromFile.removed.length === 0) return;
-      const copy = backUpBeforeRewrite(path.join(this.instanceDataFolder, 'upgrade-backups'), path.basename(this.customConfigPath), text);
       stored[key] = fromFile.policies;
-      fs.writeFileSync(this.customConfigPath, `${JSON.stringify(stored, null, 2)}\n`);
+      // Written whole to a file beside it first, so a full disk or a read-only folder shows before anything is copied, and the file is never half-written.
+      const temp = `${this.customConfigPath}.${process.pid}.tmp`;
+      let copy = '';
+      try {
+        fs.writeFileSync(temp, `${JSON.stringify(stored, null, 2)}\n`, { mode: fs.statSync(this.customConfigPath).mode & 0o777 });
+        copy = backUpBeforeRewrite(path.join(this.instanceDataFolder, 'upgrade-backups'), path.basename(this.customConfigPath), text);
+        fs.renameSync(temp, this.customConfigPath);
+      } catch (err) {
+        // The file is as it was, so a copy of it made a moment ago is not kept: a failing start would add one every time.
+        fs.rmSync(temp, { force: true });
+        if (copy) fs.rmSync(copy, { force: true });
+        throw err;
+      }
       for (const id of fromFile.removed) logger.info(`[config] Removed the old priority from access rule '${id}' in ${this.customConfigPath}; it changed nothing. The file as it was is saved as ${copy}`);
       this.priorityRulesRemoved = fromFile.removed;
     } catch (err) {
@@ -670,6 +681,8 @@ class ConfigurationManager extends BaseManager {
     const { policies, removed } = stripPolicyPriority(this.mergedConfig[POLICIES_KEY]);
     if (removed.length === 0) return;
     this.mergedConfig[POLICIES_KEY] = policies;
+    // What the layers beneath hold, so a later save of the list does not bring the priority back.
+    if (this.declaredConfig) this.declaredConfig[POLICIES_KEY] = stripPolicyPriority(this.declaredConfig[POLICIES_KEY]).policies;
     logger.info(`[config] Ignoring the old priority on access rule ${removed.map((id) => `'${id}'`).join(', ')}; it changes nothing (#2466)`);
   }
 
@@ -686,7 +699,10 @@ class ConfigurationManager extends BaseManager {
       state: 'degraded',
       kind: 'attention',
       reason: `The update cleaned up ${names.length} access ${one ? 'rule' : 'rules'}: it removed an old priority that never had any effect. Nothing about who can do what changed.`,
-      details: names.map((n) => `${n}: removed an old priority that had no effect`)
+      details: [
+        ...names.slice(0, 50).map((n) => `${clip(n)}: removed an old priority that had no effect`),
+        ...(names.length > 50 ? [`and ${names.length - 50} more ${names.length - 50 === 1 ? 'rule' : 'rules'}`] : [])
+      ]
     }];
   }
 
