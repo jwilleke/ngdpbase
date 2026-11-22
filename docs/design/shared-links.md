@@ -67,6 +67,14 @@ Jim's six answers on how Q4 works (all 2026-11-22, by Slack button; the ones mar
 | [E](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080267477) | Share links of a kind the person may no longer make are hidden from that person's Shared links page. They already stop working, and an administrator can revoke them (recommended) | [Permission checks](#permission-checks) |
 | [F](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080272999) | With "admins can enter private areas" off, administrators can still revoke links to private-area pages, because revoking does not show them the page (recommended) | [Security](#security-the-everyones-links-permission) |
 
+### Choices for approval with this design
+
+These three choices are made by this design and are not in answers A–F. Jim approves them with the design.
+
+1. A manager revoking someone else's private-area link in slice 4 needs `share-manage-all` and `share-revoke`, and not `profile-manage`. Why: `profile-manage` is the permission to manage your own profile, and today's private-area route asks for it because that route is the owner's page; the manager opens no one's area, so asking for it would refuse a manager who lacks it for a reason that has nothing to do with revoking.
+2. In slice 3 a holder of `share-manage-all` who may make no kind can open the page and sees an empty own view with no Share… and no switch. Why: the page is the way into the all-users view, so it opens for a manager, and the switch ships only in slice 4, so until then the manager sees only their own, empty, view.
+3. `GET /shares?keyword=X` redirects for a holder of `admin-system` too, while a bare `GET /shares` stays today's page for them in slice 3. Why: `keyword` only fills in the create form, so the redirect loses nothing, and the bare page keeps the administrator's list of everyone's tag links until slice 4 replaces it.
+
 ## Data flow
 
 ```mermaid
@@ -181,9 +189,9 @@ Each existing entry opens `/my/shares` with the choice made, using query values 
 
 The media tag page's button today makes a link in one click. After this it opens the form with the tag chosen and asks for an expiry, as every other entry does. That is a small loss of speed and it is what R6 asks for.
 
-Old addresses (R7): `GET /shares?keyword=X` redirects (302), for a holder of `admin-system` too, to `/my/shares?share=tag&tag=X`; `GET /my/vaults/links?page=P` to `/my/shares?share=page&page=P`; the same for a bare `?vault=`. The old `POST` routes (`/shares/create`, `/shares/:id/revoke`, `/my/vaults/links` and its `extend` and `revoke`) answer 307 to the new routes, so a form left open in a browser tab still works, and every permission check runs again at the new route.
+Old addresses (R7): `GET /shares?keyword=X` redirects (302), for a holder of `admin-system` too, to `/my/shares?share=tag&tag=X`; `GET /my/vaults/links?page=P` to `/my/shares?share=page&page=P`; the same for a bare `?vault=`. The old `POST` routes that create and extend (`/shares/create`, `/my/vaults/links` and its `extend`) answer 307 to the new routes, so a form left open in a browser tab still works, and every permission check runs again at the new route. The two revoke routes, `POST /shares/:id/revoke` and `POST /my/vaults/links/:id/revoke`, are not redirected and not renamed: they stay, each with today's order of checks (see [The manager's revoke](#the-managers-revoke)), and the page posts to the one for the link's kind.
 
-__The administrator's list of everyone's tag links stays until slice 4 replaces it.__ Slice 3 redirects a bare `GET /shares` for everyone except a holder of `admin-system`, who keeps today's page there (`GET /shares?keyword=X` redirects for everyone, because `keyword` only prefills the create form), with its list of every user's tag links and its revoke (`POST /shares/:id/revoke`, still under today's `admin-system` rule, so it is not redirected in slice 3; it passes `asManager: true` from slice 2 when the clicker did not make the link). The admin dashboard card keeps opening `/shares`. Slice 4 adds the All users view, then turns `GET /shares` into a redirect to `/my/shares?view=all`, `POST /shares/:id/revoke` into a 307, and repoints the dashboard card. An administrator therefore never loses the ability to see and revoke other users' tag links between releases.
+__The administrator's list of everyone's tag links stays until slice 4 replaces it.__ Slice 3 redirects a bare `GET /shares` for everyone except a holder of `admin-system`, who keeps today's page there (`GET /shares?keyword=X` redirects for everyone, because `keyword` only prefills the create form), with its list of every user's tag links and its revoke (`POST /shares/:id/revoke`, which keeps today's `admin-system` rule until slice 4 and passes `asManager: true` from slice 2 when the clicker did not make the link). The admin dashboard card keeps opening `/shares`. Slice 4 adds the All users view, then turns `GET /shares` into a redirect to `/my/shares?view=all`, moves that route's check for another user's link from `admin-system` to `share-manage-all`, and repoints the dashboard card. `POST /shares/:id/revoke` stays a revoke route in every slice. An administrator therefore never loses the ability to see and revoke other users' tag links between releases.
 
 ### Permission checks
 
@@ -198,7 +206,7 @@ All checks use `hasPermission` for what a person is shown and the same permissio
 | Revoke your own tag link                 | `share-revoke`, and the user made the link (today's `sharesRevoke`)                                         | `revoke(id, actor)`                                   |
 | Revoke your own private-area link        | `profile-manage`, and the user made the link. No `share-revoke` check, as today's `myVaultLinksRevoke` (R10: unchanged) | `revoke(id, actor)`                                   |
 | See every user's links                   | `share-manage-all`                                                                                          | `list()` with no owner, as the admin list does today  |
-| Revoke another user's link               | `share-revoke` and `share-manage-all` (a new path for private-area links; for tag links it replaces `admin-system` in slice 4). Not governed by the "admins can enter private areas" setting ([F](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080272999))   | `revoke(id, actor)` with `actor.asManager`            |
+| Revoke another user's link               | `share-revoke` and `share-manage-all`, on the revoke route for the link's kind (a new path for private-area links, where it needs no `profile-manage`; for tag links it replaces `admin-system` in slice 4). Not governed by the "admins can enter private areas" setting ([F](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080272999))   | `revoke(id, actor)` with `actor.asManager`            |
 | Extend, or make, a link for someone else | nobody                                                                                                      | refused, unchanged                                    |
 
 `share-revoke`'s catalog description today ends "revoking anyone's also needs admin-system". In slice 4, when the route's check moves from `admin-system` to `share-manage-all`, the description changes to "also needs share-manage-all". The default result is the same (the administrator policy grants both) and it stops tying a link action to the system-administration permission.
@@ -215,11 +223,49 @@ A manager's revoke does not depend on the "admins can enter private areas" setti
 
 On a manager's revoke of an encrypted-area link, the manager needs no key: the server drops the lockboxes it holds (`dropLockboxes`), as it does for the owner's own revoke. The link is dead; the pages stay sealed.
 
-__Response codes: each kind keeps what its route answers today.__ The two routes differ now, and the new revoke route keeps each difference, so no owner gains or loses the ability to revoke their own link (R10).
+__Two revoke routes, one per kind, each keeping today's order of checks.__ There is no new revoke route. The two routes that exist keep their addresses and their order, so no owner gains or loses the ability to revoke their own link (R10). A tag id and a private-area id cannot share one route: the check that comes first on the tag route (`share-revoke`) is one the private-area route never makes, and until the record is read the route does not know which kind an id is. The page therefore posts a row's Revoke to the route for its kind: `POST /shares/:id/revoke` for a tag link, `POST /my/vaults/links/:id/revoke` for a chosen-pages or whole-area link. Both take `revoke(id, actor)`. After a revoke each sends the person back to the page they came from with the "revoked" notice.
 
-- __A tag-link id__ (today's `sharesRevoke`): `share-revoke` is checked first, before the record is read, and a user without it gets 403 "Access denied". Then a missing record, or a private-area record, gets 404. Then a user who did not make the link and is not a manager gets 403 (today the manager check is `admin-system`; it becomes `share-manage-all` in slice 4).
-- __A private-area id__ (today's `myVaultLinksRevoke`): `profile-manage` is checked first, with today's refusal for a user who lacks it; then the switched-off setting gives 404; then a missing record, a tag-link record, or a link the user did not make gives 404, so the id does not confirm that the link exists. There is no `share-revoke` check, so an owner without `share-revoke` can still revoke their own private-area link, as today.
-- __New in slice 4, a manager's revoke of someone else's private-area link:__ a user who holds `share-manage-all` and `share-revoke` may revoke it, and does not need `profile-manage`, because the manager touches no area. A user who lacks either permission is treated as a non-owner and gets 404. It adds a path for holders of the new permission and changes nothing for anyone else, so it is a feature, not a change to today's revoke.
+In this section, a __manager__ is a user who holds both `share-manage-all` and `share-revoke`.
+
+__Tag route, `POST /shares/:id/revoke` (`sharesRevoke`).__ Checks, in this order; the first that fails answers:
+
+1. The user lacks `share-revoke`: 403 "Access denied", before the record is read, so the answer is the same for an id that exists and one that does not.
+2. Share links are switched off: 404.
+3. The record is missing, or is a private-area record: 404.
+4. The user did not make the link and is not allowed to revoke others': 403 "Access denied". Today "allowed" means holding `admin-system`. In slice 4 it means holding `share-manage-all`, which together with step 1 makes a manager.
+5. Otherwise the link is revoked. With `actor.asManager` when the user did not make it.
+
+__Private-area route, `POST /my/vaults/links/:id/revoke` (`myVaultLinksRevoke`, through `vaultLinkRequest`).__ This route never checks `share-revoke` for an owner. Checks, in this order:
+
+Slices 2 and 3 (today's order):
+
+1. The user lacks `profile-manage`, or is not signed in: today's refusal (`permitted` answers it, including the step-up prompt for a user who holds the permission but not freshly).
+2. Share links are switched off: 404.
+3. The record is missing, is a tag record, or is a link the user did not make: 404, so the id does not confirm that the link exists.
+4. Otherwise the link is revoked.
+
+Slice 4 changes only steps 1 and 3, and only for a manager:
+
+1. A user who lacks `profile-manage` is refused as today, unless they are a manager, who goes on to step 2.
+2. Unchanged: switched off gives 404.
+3. A missing or tag record gives 404. For a link the user did not make, a manager revokes it (with `actor.asManager`) and anyone else gets 404. A manager needs no `profile-manage` here, because the manager touches no area.
+4. Otherwise the link is revoked.
+
+__What each caller gets.__ "Today" means the same answer as before this design; the rows that say "new" are the only changes, and they apply to a manager (a holder of the new permission) who lacks the permission the route used to ask for first.
+
+| Caller | Tag id, tag route | Private-area id, private-area route |
+| ------ | ----------------- | ----------------------------------- |
+| Owner of the link | Needs `share-revoke`: without it 403; with it, revoked (today) | Needs `profile-manage`: without it, today's refusal; with it, revoked. `share-revoke` is not checked (today) |
+| Another user, not a manager, holding the route's first permission | Holds `share-revoke`: 403 (today) | Holds `profile-manage`: 404 (today) |
+| Another user, not a manager, lacking the route's first permission | Lacks `share-revoke`: 403 (today) | Lacks `profile-manage`: today's refusal (today) |
+| Manager, slice 4 | Revoked; before slice 4, the same for a holder of `admin-system` and `share-revoke` | Revoked, whether or not they hold `profile-manage` (new, slice 4) |
+| Holder of `share-manage-all` without `share-revoke`, slice 4 | 403 at step 1 | With `profile-manage`: 404 for another user's link. Without it: today's refusal |
+| Any user, an id that does not exist | Without `share-revoke`: 403. With it: 404 (today) | Without `profile-manage` and not a manager: today's refusal. Otherwise 404 (today) |
+| Any user, an id of the other route's kind | With `share-revoke`: 404. Without it: 403 (today) | With `profile-manage` or as a manager: 404. Otherwise today's refusal (today) |
+
+The page never posts a link to the wrong route, so the last row is a stale form or a hand-made request.
+
+__What this changes for existing users.__ Nothing, except that a manager who lacks `profile-manage` is no longer refused on the private-area route. A user who held `share-manage-all` before this change does not exist: the permission is new, and the administrator policy that carries it is added in slice 2.
 
 ### The new permission
 
@@ -297,6 +343,18 @@ If an administrator revoked a link, its status reads "Page not available (404)" 
 |                                [ Share… ]                                 |  R12
 +----------------------------------------------------------------------------+
 ```
+
+Variant, for a holder of `share-manage-all` who may make no kind (slice 3, own view only; the switch ships in slice 4):
+
+```text
++----------------------------------------------------------------------------+
+| Shared links                                          (no Share… button)   |  R9
++----------------------------------------------------------------------------+
+| You have no shared links, and you may not make any.                        |  R9, R12
++----------------------------------------------------------------------------+
+```
+
+There is no Share… button and no All users switch. From slice 4 the switch appears here.
 
 ### Frame 3: long list [R1]
 
@@ -457,8 +515,8 @@ __What can go wrong, and what stops it.__
 | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | An administrator learns the name of someone's private area ("Medical") and that it is shared                                      | The row shows the area name and a count, not titles ([answer A](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080121413)). The area name is still visible to the holder, and Jim chose that                                                          |
 | An administrator stops a link out of spite or by mistake                                                                           | The confirm names the owner (R14); the audit record names the administrator; the owner's list shows the link as "Page not available (404)" with no administrator name ([answer D](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080256567)), so the owner learns the link stopped but not who stopped it                  |
-| Someone guesses a link id and revokes it                                                                                            | Another user's link needs `share-revoke` and `share-manage-all`; without them a tag id answers 403 and a private-area id answers 404 (see the response codes above); CSRF is checked on every POST                         |
-| A stale form or old bookmark skips the new checks                                                                                  | Old `POST` routes answer 307 to the new ones, and every check runs at the new route                                                                                               |
+| Someone guesses a link id and revokes it                                                                                            | Another user's link needs `share-revoke` and `share-manage-all`; without them a tag id answers 403, and a private-area id answers 404 for a user who holds `profile-manage` and today's refusal for one who does not (see the response codes above); CSRF is checked on every POST                         |
+| A stale form or old bookmark skips the new checks                                                                                  | Old create and extend `POST` routes answer 307 to the new ones, and every check runs at the new route. The two revoke routes are not redirected; each runs its own checks |
 | The permission quietly widens into entering a private area                                                                         | A test lists the manager's code path against the container check: revoke and list never call the vault read functions; a test with `vault-admin-access` off still passes the revoke |
 | An administrator looks at everyone's links and nobody can tell                                                                    | Accepted by Jim ([answer C](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080212680)). The view shows no title, token or address; only revokes are recorded. Reversible later with an audit event                               |
 | A site's stored copy of the administrator policy hides the new grant                                                                | The grant is in a new policy id, which the merge adds                                                                                                                              |
@@ -477,7 +535,7 @@ A security review of this design happens before build, as Jim's Q4 answer says. 
 | R4  | One Share… action, frames 6 and 7; settings by kind ([Share… by kind](#share-by-kind)); Q2 for public pages                                          |
 | R5  | One row function for the page and the Profile card; frame 9; test pins equal counts                                                                  |
 | R6  | [Entry points](#entry-points-r6-r7) table; frame 10                                                                                                  |
-| R7  | 302 for old `GET`s with the query kept, 307 for old `POST`s                                                                                         |
+| R7  | 302 for old `GET`s with the query kept, 307 for the old create and extend `POST`s; the two revoke routes stay as they are |
 | R8  | [The rename](#the-rename-r8); frames 9 and 10; the help page retitled through Required Pages Sync                                                    |
 | R9  | Page opens for either kind's permission; Share… offers only kinds allowed; [Permission checks](#permission-checks); Q3                               |
 | R10 | No limit, exposure, audit event or encrypted-area flow changes, and the stored record gains only the optional `revokedByManager` flag (answer D); existing `shareCeiling`, `ShareManager` and `shareDoors` tests stay unchanged and green |
@@ -502,16 +560,17 @@ Each is written to fail first, in the same pull request as the change, and commi
 - `GET /shares?keyword=X`, `GET /my/vaults/links?page=P` and the three old `POST` families redirect as designed (R7).
 - A required-pages fixture from v5.46.0 shows "Share Links" (new title "Shared links") and "Your Consents" as Update ready (never edited) and Edited here, not confirmed (edited), and Sync All brings the new text.
 - Slice 3 leaves `/shares` showing a holder of `admin-system` every user's tag links, and `POST /shares/:id/revoke` still revokes another user's tag link for that holder; for everyone else the bare `GET /shares` redirects. `GET /shares?keyword=X` redirects for everyone, a holder of `admin-system` included, because `keyword` only prefills the create form (frame 6's tag choice).
-- In slices 2 and 3 the retained `POST /shares/:id/revoke` passes `asManager: true` when the clicker did not make the link (the route's `admin-system` check is the only way past), so the audit record carries `byManager: true`, the record sets `revokedByManager`, and the owner sees "Page not available (404)", the same before and after slice 4.
+- From slice 2 the existing `POST /shares/:id/revoke` passes `asManager: true` when the clicker did not make the link (the route's `admin-system` check is the only way past), so the audit record carries `byManager: true` and the record sets `revokedByManager`. From slice 3, when the row function exists, the owner's list shows "Page not available (404)"; in slice 2 the owner still sees the old `/shares` page, which shows "Revoked". The owner's view is the same in slices 3 and 4.
+- In slice 3 a Revoke on a tag row of the page posts to `POST /shares/:id/revoke`, and on a chosen-pages or whole-area row to `POST /my/vaults/links/:id/revoke`; neither route is redirected.
 - Rewrites of the tests that pin today's wording: `profileCardsView.test.ts` (the "Share Links" card), `WikiRoutes.myVaults.test.ts` (the button).
 
 ### The manager (slices 2 and 4)
 
 - Slice 4: a holder of `share-manage-all` who holds neither kind's permission opens the page, sees the All users switch, and can switch to it (R9, R13, Q3).
 - The catalog entry and the new policy id pass `npm run lint:permissions` (the registry-drift check); a test in `permissionCatalog.test.ts` shows the policy grants the permission to the administrator role and to nobody else.
-- A holder of `share-manage-all` and `share-revoke` revokes another user's tag link and private-area link. For a tag id: a user without `share-revoke` gets 403 "Access denied" before the record is read, whether or not the id exists, and a user with `share-revoke` who is not the maker and not a manager gets 403. For a private-area id: a user who is not the maker and not a manager gets 404, a user with `share-manage-all` but without `share-revoke` gets 404, and an owner without `share-revoke` can still revoke their own link (today's behaviour, pinned so the new route does not add a `share-revoke` check).
+- A holder of `share-manage-all` and `share-revoke` revokes another user's tag link (on `POST /shares/:id/revoke`) and private-area link (on `POST /my/vaults/links/:id/revoke`). The two routes keep today's codes, pinned case by case in this order. Tag route: a user without `share-revoke` gets 403 "Access denied" before the record is read, whether or not the id exists; with it, a switched-off setting or a missing or private-area record gives 404; a user who did not make the link and is not a manager gets 403. Private-area route: a user without `profile-manage` who is not a manager gets today's refusal, whether or not the id exists; with it, a switched-off setting or a missing or tag record gives 404; a user who did not make the link and is not a manager gets 404, including a holder of `share-manage-all` without `share-revoke`; an owner without `share-revoke` can still revoke their own link (today's behaviour, pinned so no `share-revoke` check is added). A manager who lacks `profile-manage` revokes another user's private-area link (slice 4, new), and gets 404 for an unknown id or a tag id on that route.
 - The audit record of a manager revoke has the clicker as actor, `createdBy` of the owner and `byManager: true`; an own revoke has no `byManager`.
-- If the audit write fails the link stays live and the person sees "Nothing changed" (existing behaviour, re-pinned on the new route).
+- If the audit write fails the link stays live and the person sees "Nothing changed" (existing behaviour, re-pinned on both revoke routes).
 - A manager revoke of an encrypted-area link works with no key and drops the lockboxes.
 - The all-users page HTML contains no token from the store, no link address, and no page title from a private area (searched for by value). For another user's private-area link it shows the area name, page count, expiry, status and owner (answer A).
 - Opening the all-users view writes no audit record; a manager revoke writes one (answer C).
@@ -533,9 +592,9 @@ Each is written to fail first, in the same pull request as the change, and commi
 Four pull requests, each under the usual review, each with its guides and required pages in the same pull request.
 
 1. __Rename (R8).__ Wording in code and templates, the "My Links" help page (retitled "Pinned pages"), the tests above. The other two required pages wait for slice 3. No behaviour change. Independent of the others. *Verified when:* on a site upgraded from v5.46.0 the sidebar shows "Pinned pages" and no longer shows "My Links"; an unedited help page shows Update ready.
-2. __The manager and the permission (no screen).__ `revoke(id, actor)`, `byManager`, the `revokedByManager` flag, the catalog entry, the new policy id, tests. The retained `POST /shares/:id/revoke` passes `asManager: true` when an `admin-system` holder revokes a tag link they did not make, so the audit record and the owner's list are the same from this slice on. The route's check and the catalog description of `share-revoke` change in slice 4, not here. Built to answers B (new permission), C (no new audit event) and F (works with the vault setting off). *Verified when:* on a site upgraded from v5.46.0, the Roles and Permissions page (`/admin/roles`) lists `share-manage-all` under the administrator role and under no other role, and `npx vitest run src/managers/__tests__/ShareManager.test.ts src/utils/__tests__/permissionCatalog.test.ts` passes with the new cases (a revoke by a holder is recorded with `byManager` and sets `revokedByManager`; the retained `POST /shares/:id/revoke` does the same when an `admin-system` holder revokes another user's tag link), and `npm run lint:permissions` (the registry-drift check, `generate-permission-types.ts --check`) passes with the new catalog entry and policy.
-3. __The Shared links page, own view (R1–R7, R9, R12).__ The row function (including "Page not available (404)" for a link a manager revoked, and hiding links of a kind the user may no longer make), `/my/shares`, the Share… flow, the redirects, the entry points, the Profile card, and the "Share Links" (retitled "Shared links") and "Your Consents" help pages. `/shares` keeps the administrator's list of every user's tag links, and its revoke, until slice 4 replaces them (a bare `GET /shares` is not redirected for a holder of `admin-system`; `GET /shares?keyword=X` is redirected for everyone). Needs slice 1 for the names. *Verified when:* a user with one link of each kind sees three rows, the Profile card's counts equal them, an administrator still sees every user's tag links at `/shares`, and on a site upgraded from v5.46.0 the "Share Links" help page shows Update ready under the new title "Shared links".
-4. __All users (R13, R14).__ The switch, the all-users view (area name and count, no titles), the confirm, the move of the route's check for revoking another user's link from `admin-system` to `share-manage-all`, the `share-revoke` description change and release note, and the replacement of the old `/shares` admin list by a redirect to the all-users view (the dashboard card repointed). The security review of the pull request. Needs slices 2 and 3. *Verified when:* an administrator stops another user's private-area link, the owner's list shows it as "Page not available (404)", the audit log shows the administrator and the owner, opening the all-users view adds no audit entry, and `/shares` now redirects to the all-users view.
+2. __The manager and the permission (no screen).__ `revoke(id, actor)`, `byManager`, the `revokedByManager` flag, the catalog entry, the new policy id, tests. The existing `POST /shares/:id/revoke` passes `asManager: true` when an `admin-system` holder revokes a tag link they did not make, so the audit record and the stored record carry the manager facts from this slice on. The owner's list shows "Page not available (404)" only from slice 3, when the row function exists; in slice 2 the owner still sees the old `/shares` page, which shows "Revoked". The route's check and the catalog description of `share-revoke` change in slice 4, not here. Built to answers B (new permission), C (no new audit event) and F (works with the vault setting off). *Verified when:* on a site upgraded from v5.46.0, the Roles and Permissions page (`/admin/roles`) lists `share-manage-all` under the administrator role and under no other role, and `npx vitest run src/managers/__tests__/ShareManager.test.ts src/utils/__tests__/permissionCatalog.test.ts` passes with the new cases (a revoke by a holder is recorded with `byManager` and sets `revokedByManager`; `POST /shares/:id/revoke` does the same when an `admin-system` holder revokes another user's tag link), and `npm run lint:permissions` (the registry-drift check, `generate-permission-types.ts --check`) passes with the new catalog entry and policy.
+3. __The Shared links page, own view (R1–R7, R9, R12).__ The row function (including "Page not available (404)" for a link a manager revoked, and hiding links of a kind the user may no longer make), `/my/shares`, the Share… flow, the redirects, the entry points, the Profile card, and the "Share Links" (retitled "Shared links") and "Your Consents" help pages. `/shares` keeps the administrator's list of every user's tag links, and its revoke, until slice 4 replaces them; the page's Revoke posts to the existing revoke route for each link's kind (a bare `GET /shares` is not redirected for a holder of `admin-system`; `GET /shares?keyword=X` is redirected for everyone). Needs slice 1 for the names. *Verified when:* a user with one link of each kind sees three rows, the Profile card's counts equal them, an administrator still sees every user's tag links at `/shares`, and on a site upgraded from v5.46.0 the "Share Links" help page shows Update ready under the new title "Shared links".
+4. __All users (R13, R14).__ The switch, the all-users view (area name and count, no titles), the confirm, the move of the tag route's check for revoking another user's link from `admin-system` to `share-manage-all`, the manager path on the private-area revoke route (a manager who lacks `profile-manage` is no longer refused there), the `share-revoke` description change and release note, and the replacement of the old `/shares` admin list by a redirect to the all-users view (the dashboard card repointed). The security review of the pull request. Needs slices 2 and 3. *Verified when:* an administrator stops another user's private-area link, the owner's list shows it as "Page not available (404)", the audit log shows the administrator and the owner, opening the all-users view adds no audit entry, and `/shares` now redirects to the all-users view.
 
 Slices 1 and 2 can be built at once. Slices 3 and 4 follow in order. Slice 3 is safe to release alone, because the old administrator list stays until slice 4 replaces it.
 
