@@ -172,6 +172,20 @@ describe('PageManager converts old access: limits that have an exact replacement
     expect(backups()).toEqual([]);
   });
 
+  test('R6: a save that fails after the file was rewritten keeps the copy, the only copy of the original', async () => {
+    const info = await add('Broken', { access: { edit: ['admin'] }, author: ADMIN_ID });
+    const original = await fs.readFile(info.filePath, 'utf8');
+    const m = manager();
+    const provider = m.provider as { savePage: ReturnType<typeof vi.fn> };
+    provider.savePage.mockImplementation(async () => {
+      await fs.writeFile(info.filePath, '---\ntitle: Broken\nuuid: u1\nauthor-lock: true\n---\nbody text\n');
+      throw new Error('indexing failed after the write');
+    });
+    expect(await start(m)).toEqual({ converted: 0, left: 1 });
+    expect(backups()).toHaveLength(1);
+    expect(await fs.readFile(path.join(backupDir(), backups()[0]), 'utf8')).toBe(original);
+  });
+
   test('R3: a page with no exact replacement is not written and stays in the banner', async () => {
     await add('Read Limit', { access: { view: ['editor'] } });
     await add('Different Lists', { access: { view: ['admin', 'editor'], edit: ['admin'] } });
@@ -271,11 +285,29 @@ describe('PageManager converts old access: limits that have an exact replacement
     expect(text).not.toMatch(/#\d|docs\/|github|\.md\b|\blog\b|frontmatter|access:|urn:uuid/i);
   });
 
-  test('R4: one converted page reads in the singular', async () => {
+  test('R4: one converted page reads in the singular, and says the update changed who can edit it', async () => {
     await add('Board Notes', { access: { edit: ['admin'] }, author: ADMIN_ID });
     const m = manager();
     await start(m);
-    expect(m.getAttentionItems()[0].reason).toMatch(/^The update moved the old access limit on 1 page to its Author Lock, so the same people are limited as before\. Nothing else on it changed\.$/);
+    expect(m.getAttentionItems()[0].reason).toMatch(/^The update moved the old access limit on 1 page to its Author Lock\. The old limit had stopped applying, so this is a change: only its author and administrators can change it now\. Nothing else on it changed\.$/);
+  });
+
+  test('R4: two converted pages read in the plural, and say the update changed who can edit them', async () => {
+    await add('Board Notes', { access: { edit: ['admin'] }, author: ADMIN_ID });
+    await add('Team Plan', { access: { edit: ['admin'] } });
+    const m = manager();
+    await start(m);
+    expect(m.getAttentionItems()[0].reason).toMatch(/^The update moved the old access limit on 2 pages to their Author Lock\. The old limits had stopped applying, so this is a change: only their authors and administrators can change them now\. Nothing else on them changed\.$/);
+  });
+
+  test('a page with no uuid is left alone: the write lock is keyed on the uuid, never the title', async () => {
+    const info = await add('Board Notes', { access: { edit: ['admin'] }, author: ADMIN_ID });
+    info.uuid = '';
+    delete info.metadata.uuid;
+    const m = manager();
+    expect(await m.convertLegacyAccessAtBoot()).toEqual({ converted: 0, left: 1 });
+    expect(saved).toEqual([]);
+    expect(backups()).toEqual([]);
   });
 
   test('a private page is left for its owner: not written, counted in the banner without its title', async () => {
