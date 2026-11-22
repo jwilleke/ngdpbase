@@ -1,0 +1,135 @@
+/**
+ * #2466: what start-up may fix on its own. A rule's `priority` is removed; a
+ * page's `access:` becomes an Audience or Author Lock only when that lets in
+ * exactly the people the old limit did.
+ */
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {
+  adminsAreRoleAdmin,
+  backUpBeforeRewrite,
+  exactReplacement,
+  stripPolicyPriority,
+  withReplacement,
+  type SiteFacts
+} from '../upgradeLeftovers';
+
+const adminRule = { id: 'admin-full-access', effect: 'allow', subjects: [{ type: 'role', value: 'admin' }], actions: ['admin-system', 'page-read'] };
+
+describe('stripPolicyPriority (R1)', () => {
+  test('removes priority from each rule that has one and names it', () => {
+    const rules = [{ id: 'a', effect: 'allow', priority: 100 }, { id: 'b', effect: 'deny' }, { effect: 'deny', priority: 0 }];
+    const { policies, removed } = stripPolicyPriority(rules);
+    expect(removed).toEqual(['a', 'rule 3']);
+    expect(policies).toEqual([{ id: 'a', effect: 'allow' }, { id: 'b', effect: 'deny' }, { effect: 'deny' }]);
+  });
+
+  test('a priority of 0 or null still counts as present', () => {
+    expect(stripPolicyPriority([{ id: 'z', priority: 0 }, { id: 'n', priority: null }]).removed).toEqual(['z', 'n']);
+  });
+
+  test('does not change its input, and a list without priority comes back as it is (idempotent)', () => {
+    const rules = [{ id: 'a', priority: 1 }];
+    const first = stripPolicyPriority(rules);
+    expect(rules).toEqual([{ id: 'a', priority: 1 }]);
+    const second = stripPolicyPriority(first.policies);
+    expect(second.removed).toEqual([]);
+    expect(second.policies).toBe(first.policies);
+  });
+
+  test('anything that is not a list of rules is returned untouched', () => {
+    expect(stripPolicyPriority(undefined)).toEqual({ policies: undefined, removed: [] });
+    expect(stripPolicyPriority([null, 'x', 3]).removed).toEqual([]);
+  });
+});
+
+describe('adminsAreRoleAdmin', () => {
+  test('true when the only rule that grants admin-system names the admin role', () => {
+    expect(adminsAreRoleAdmin([adminRule, { id: 'r', effect: 'allow', subjects: [{ type: 'role', value: 'reader' }], actions: ['page-read'] }])).toBe(true);
+  });
+
+  test('false when another rule gives admin-system to someone else, or a wildcard action reaches it', () => {
+    expect(adminsAreRoleAdmin([adminRule, { id: 'x', effect: 'allow', subjects: [{ type: 'user', value: 'bob' }], actions: ['admin-system'] }])).toBe(false);
+    expect(adminsAreRoleAdmin([adminRule, { id: 'w', effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], actions: ['*'] }])).toBe(false);
+  });
+
+  test('false when the admin rule has a condition, or no rule grants it, or the rules cannot be read', () => {
+    expect(adminsAreRoleAdmin([{ ...adminRule, condition: { fn: 'eq' } }])).toBe(false);
+    expect(adminsAreRoleAdmin([{ id: 'r', effect: 'allow', subjects: [{ type: 'role', value: 'reader' }], actions: ['page-read'] }])).toBe(false);
+    expect(adminsAreRoleAdmin(undefined)).toBe(false);
+  });
+});
+
+describe('exactReplacement (R2, R3)', () => {
+  const site = (over: Partial<SiteFacts> = {}): SiteFacts => ({ adminsAreRoleAdmin: true, authorHoldsAdmin: async () => true, ...over });
+
+  test('edit limited to admin alone is an Author Lock', async () => {
+    const r = await exactReplacement({ access: { edit: ['admin'] }, author: 'urn:uuid:1' }, site());
+    expect(r).toEqual({ kind: 'author-lock', set: { 'author-lock': true } });
+  });
+
+  test('edit limited to admin on a page with no author is an Author Lock', async () => {
+    expect((await exactReplacement({ access: { edit: ['admin'] } }, site()))?.kind).toBe('author-lock');
+  });
+
+  test('an Author Lock would let a non-admin author in, so there is none', async () => {
+    expect(await exactReplacement({ access: { edit: ['admin'] }, author: 'urn:uuid:1' }, site({ authorHoldsAdmin: async () => false }))).toBeNull();
+  });
+
+  test('view and edit naming the same people, admin among them, is an Audience of those people', async () => {
+    const r = await exactReplacement({ access: { view: ['admin', 'editor'], edit: ['editor', 'admin'] } }, site());
+    expect(r?.kind).toBe('audience');
+    expect([...(r?.audience ?? [])].sort()).toEqual(['admin', 'editor']);
+  });
+
+  test.each([
+    ['view alone (an Audience would also stop outsiders changing it)', { view: ['admin', 'editor'] }],
+    ['view and edit naming different people', { view: ['admin', 'editor'], edit: ['admin'] }],
+    ['both lists without admin (the old limit bound administrators too)', { view: ['editor'], edit: ['editor'] }],
+    ['edit limited to someone other than admin', { edit: ['editor'] }],
+    ['edit naming admin and others without view', { edit: ['admin', 'editor'] }],
+    ['an action Audience cannot express', { edit: ['admin'], delete: ['admin'] }],
+    ['an action Audience cannot express, alone', { publish: ['admin'] }],
+    ['no list at all', { edit: [] }],
+    ['a list that is not names', { edit: [{ role: 'admin' }] }],
+    ['an access that is not a table', ['admin']]
+  ])('no replacement for %s', async (_why, access) => {
+    expect(await exactReplacement({ access }, site())).toBeNull();
+  });
+
+  test('no replacement where administrators are not provably the admin role', async () => {
+    expect(await exactReplacement({ access: { edit: ['admin'] } }, site({ adminsAreRoleAdmin: false }))).toBeNull();
+  });
+
+  test('no replacement when the page already has an Audience of its own', async () => {
+    expect(await exactReplacement({ access: { view: ['admin'], edit: ['admin'] }, audience: ['editor'] }, site())).toBeNull();
+  });
+});
+
+describe('withReplacement', () => {
+  test('takes access out, puts the replacement in and keeps every other field', () => {
+    const out = withReplacement({ title: 'T', access: { edit: ['admin'] }, tags: ['a'] }, { kind: 'author-lock', set: { 'author-lock': true } });
+    expect(out).toEqual({ title: 'T', tags: ['a'], 'author-lock': true });
+  });
+});
+
+describe('backUpBeforeRewrite (R6)', () => {
+  let dir: string;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'upgrade-backup-2466-')); });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+  test('writes the text as it was, owner-only, and never over an earlier copy', () => {
+    const when = new Date('2026-11-22T10:00:00Z');
+    const first = backUpBeforeRewrite(path.join(dir, 'b'), 'Board Notes.md', 'old text', when);
+    expect(fs.readFileSync(first, 'utf8')).toBe('old text');
+    if (process.platform !== 'win32') expect(fs.statSync(first).mode & 0o077).toBe(0);
+    expect(() => backUpBeforeRewrite(path.join(dir, 'b'), 'Board Notes.md', 'other', when)).toThrow();
+    expect(fs.readFileSync(first, 'utf8')).toBe('old text');
+  });
+
+  test('a name with path characters stays inside the folder', () => {
+    const file = backUpBeforeRewrite(path.join(dir, 'b'), '../../etc/passwd', 'x');
+    expect(path.dirname(file)).toBe(path.join(dir, 'b'));
+  });
+});
