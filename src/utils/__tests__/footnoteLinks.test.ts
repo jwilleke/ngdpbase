@@ -103,14 +103,14 @@ describe('tidyUrl', () => {
   });
 
   test('a port is part of the key, and the scheme is not: http and https on one port match', () => {
-    expect(tidyUrl('http://a.com:443/x')).toBe(tidyUrl('https://a.com:443/x'));
-    expect(tidyUrl('https://a.com:8443/x')).toBe('https://a.com:8443/x');
-    expect(tidyUrl('https://a.com:8443/x')).not.toBe(tidyUrl('https://a.com:9443/x'));
-    expect(tidyUrl('https://a.com:8443/x')).not.toBe(tidyUrl('https://a.com/x'));
+    expect(tidyUrl('http://example.com:443/x')).toBe(tidyUrl('https://example.com:443/x'));
+    expect(tidyUrl('https://example.com:8443/x')).toBe('https://example.com:8443/x');
+    expect(tidyUrl('https://example.com:8443/x')).not.toBe(tidyUrl('https://example.com:9443/x'));
+    expect(tidyUrl('https://example.com:8443/x')).not.toBe(tidyUrl('https://example.com/x'));
   });
 
   test('the host is lower case with its port kept, and www. is still dropped', () => {
-    expect(tidyUrl('http://WWW.A.com:8080/x')).toBe('https://a.com:8080/x');
+    expect(tidyUrl('http://WWW.Example.com:8080/x')).toBe('https://example.com:8080/x');
   });
 
   test('a user:password@ part is left out of the key', () => {
