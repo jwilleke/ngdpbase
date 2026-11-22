@@ -1672,7 +1672,8 @@ summary {
    theme's ordinary card border, so a card that needs the admin stands out against quiet ones. The
    chevron after the badge turns when the card is open; the summary shows a 2px focus ring for a
    keyboard. Below 576px the grey note drops to its own full-width line under the title, badge and
-   chevron, so the title keeps its width. */
+   chevron; the title wraps inside its own column, and the badge and chevron never leave the first
+   line. */
 .status-card { border-left-width: 4px; }
 .status-card-success { border-left-color: var(--bs-success); }
 .status-card-warning { border-left-color: var(--bs-warning); }
@@ -1684,6 +1685,9 @@ details[open] > .card-summary .card-summary-chevron { transform: rotate(180deg);
 @media (max-width: 575.98px) {
   .status-card .card-summary { flex-wrap: wrap; }
   .status-card .card-summary > span.text-muted { order: 1; flex-basis: 100%; }
+  .status-card .card-summary > h6 { flex: 1 1 0; min-width: 0; }
+  .status-card .card-summary > .badge,
+  .status-card .card-summary > .card-summary-chevron { flex: 0 0 auto; }
 }
 
 
