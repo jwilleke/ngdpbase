@@ -1,15 +1,15 @@
 # Shared links: one area for page, chosen-page and whole-vault links
 
-Design for [#2247](https://github.com/jwilleke/ngdpbase/issues/2247). It builds the requirements R1–R12 from the [draft on that issue](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-6994410061) and Jim's six decisions (Q1–Q6, comments of 2026-11-19 and 2026-11-22, listed under [Decisions already made](#decisions-already-made)), plus the [design input on the Q5 rename](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7077160895). Nothing here is built. Jim approves this design before any build.
+Design for [#2247](https://github.com/jwilleke/ngdpbase/issues/2247). It builds the requirements R1–R12 from the [draft on that issue](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-6994410061) and Jim's six decisions (Q1–Q6, comments of 2026-11-19 and 2026-11-22) and his six answers A–F on Q4 (2026-11-22), all listed under [Decisions already made](#decisions-already-made), plus the [design input on the Q5 rename](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7077160895). Nothing here is built. Jim approves this design before any build. Every question this design asked has an answer, recorded in the section it belongs to.
 
 Two follow-ups are out of scope and not designed here: [#2464](https://github.com/jwilleke/ngdpbase/issues/2464) (a link to one public page) and [#2465](https://github.com/jwilleke/ngdpbase/issues/2465) (extend and visit lists for tag links).
 
-__Two requirements are proposed by this design, not yet confirmed.__ Jim's Q4 answer (see and revoke every user's links, including links into another user's private area) moved a thing from "out of scope" to "in scope" without a numbered requirement. R13 and R14 below write it down. They become requirements when Jim confirms them with this design.
+__Two requirements are proposed by this design, not yet confirmed.__ Jim's Q4 answer (see and revoke every user's links, including links into another user's private area) moved a thing from "out of scope" to "in scope" without a numbered requirement. R13 and R14 below write it down, with the answers A–F built in. They become requirements when Jim confirms them with this design.
 
 | ID  | Requirement (proposed from Q4)                                                                                                                                                                                                                                                | Problem |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| R13 | A user who holds the permission "see and revoke everyone's shared links" can switch the Shared links page to every user's links, tag links and private-area links alike, and revoke any of them. Each row says who made it. Without that permission the switch does not exist. | P1      |
-| R14 | Revoking another user's link is recorded in the audit log with who revoked it and whose link it was, and the owner's row says an administrator stopped it. The row asks for confirmation first and names the owner.                                                           | (safety) |
+| R13 | A user who holds the permission "see and revoke everyone's shared links" can switch the Shared links page to every user's links, tag links and private-area links alike, and revoke any of them. Each row says who made it. For another user's private-area link a row shows the area name, the number of pages, the expiry, the status and the owner, and no page title ([A](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080121413)). Without that permission the switch does not exist. | P1      |
+| R14 | Revoking another user's link is recorded in the audit log with who revoked it and whose link it was. Opening the all-users view is not recorded ([C](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080212680)). The owner's list shows the revoked link as "Page not available (404)", with no administrator name and no "revoked by" wording ([D](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080256567)). The row asks for confirmation first and names the owner.                                                           | (safety) |
 
 ## Prior work
 
@@ -19,7 +19,7 @@ Searched on 2026-11-22 at master `c34f43d`: `docs/` (guides, design, planning), 
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | [#2247](https://github.com/jwilleke/ngdpbase/issues/2247)                                                                                                                                                                                                          | The request, the requirements draft and Jim's answers                                                                                                                                           | This design                                                                                                                                  |
 | [#2245](https://github.com/jwilleke/ngdpbase/issues/2245) (closed), [#2253](https://github.com/jwilleke/ngdpbase/pull/2253) (merged)                                                                                                                              | The private pages list at `/my/vaults` and its "Links you've shared" button                                                                                                                     | The button R6 repoints. No design for a combined list                                                                                        |
-| [#1388](https://github.com/jwilleke/ngdpbase/issues/1388) work: `src/managers/ShareManager.ts` (`issueVaultShare`, `extend`, `revoke`, `list`), `src/types/Share.ts`                                                                                                | One store for both kinds of link. A record keeps its kind (`keyword` or `vault`), so one list is a view change, not a new store                                                                 | The records this design reads. It adds no field to a stored record                                                                           |
+| [#1388](https://github.com/jwilleke/ngdpbase/issues/1388) work: `src/managers/ShareManager.ts` (`issueVaultShare`, `extend`, `revoke`, `list`), `src/types/Share.ts`                                                                                                | One store for both kinds of link. A record keeps its kind (`keyword` or `vault`), so one list is a view change, not a new store                                                                 | The records this design reads. It adds one optional flag to a revoked record, for the owner's list ([D](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080256567))                                                                           |
 | [#842](https://github.com/jwilleke/ngdpbase/issues/842), [#854](https://github.com/jwilleke/ngdpbase/issues/854) (tag links), `views/shares.ejs`                                                                                                                  | The tag-link list, its create form and the media tag page's Share button                                                                                                                        | The second list R1 merges in                                                                                                                 |
 | The vault rules: `docs/guides/security-developer-guide.md` ("a vault is a container only its owner enters"), `src/utils/privateStoreAccess.ts`, setting `ngdpbase.vaults.admin-access` ([#2255](https://github.com/jwilleke/ngdpbase/issues/2255)) | The container rule, and the one door an administrator may use to enter an unencrypted vault, recorded as `vault-admin-access`                                                                   | The rule Q4's permission must not break (see [Security](#security-the-everyones-links-permission))                                          |
 | `docs/design/required-pages-sync-states.md`                                                                                                                                                                                                                        | The six states of a shipped page and which of them Sync replaces on its own                                                                                                                     | How upgraded sites get the new help pages (see [Upgrading an existing site](#upgrading-an-existing-site))                                    |
@@ -52,9 +52,20 @@ Not found anywhere: a combined list of link kinds, a permission to manage other 
 | Q1  | One list for tag links and private-area links (2026-11-19)                                                                                                | R1, R2: [The page](#the-page-r1-r2-r3-r12)                              |
 | Q2  | Tags only on a public page: Share… offers that page's tags, or nothing if it has none (2026-11-22)                                                       | R4: frame 6, [Share… by kind](#share-by-kind)                           |
 | Q3  | The page shows to anyone who may make either kind, and offers only the kinds they may make (2026-11-22)                                                   | R9: [Permission checks](#permission-checks)                             |
-| Q4  | The link management page can see and revoke any user's link, including links to another user's private-area pages; a permission check gates it (2026-11-22) | R13, R14: [Security](#security-the-everyones-links-permission)          |
+| Q4  | The link management page can see and revoke any user's link, including links to another user's private-area pages; a permission check gates it (2026-11-22) | R13, R14, and answers A–F below: [Security](#security-the-everyones-links-permission) |
 | Q5  | "Pinned pages" replaces "My Links" everywhere a person sees it (2026-11-22)                                                                               | R8: [The rename](#the-rename-r8)                                        |
 | Q6  | Tag links get no extend or visit list in this change (2026-11-22)                                                                                         | R3: a row shows only the actions its kind has                           |
+
+Jim's six answers on how Q4 works (all 2026-11-22, by Slack button; the ones marked recommended took my recommended option):
+
+| Answer | What Jim decided | Where the design meets it |
+| ------ | ---------------- | ------------------------- |
+| [A](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080121413) | For someone else's private-area link, a manager sees the area name, the number of pages, the expiry, the status and the owner. No page titles | [The page](#the-page-r1-r2-r3-r12), [Security](#security-the-everyones-links-permission) |
+| [B](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080185251) | Administrators may revoke other people's share links, through a new access rule (permission) the site can change (recommended) | [The new permission](#the-new-permission) |
+| [C](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080212680) | Opening the all-users view is not recorded; only revokes are. An administrator can look at everyone's share links without leaving a trace | [Security](#security-the-everyones-links-permission) |
+| [D](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080256567) | When an administrator revokes an owner's link, the owner's list shows it as "Page not available (404)". No administrator name, no "revoked by" wording | [The page](#the-page-r1-r2-r3-r12), frames 1, 4 and 5 |
+| [E](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080267477) | Share links of a kind the person may no longer make are hidden from that person's Shared links page. They already stop working, and an administrator can revoke them (recommended) | [Permission checks](#permission-checks) |
+| [F](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080272999) | With "admins can enter private areas" off, administrators can still revoke links to private-area pages, because revoking does not show them the page (recommended) | [Security](#security-the-everyones-links-permission) |
 
 ## Data flow
 
@@ -75,7 +86,7 @@ flowchart LR
     CHECK["Permission checks per action:<br/>share-create / share-extend / share-revoke<br/>+ share-manage-all for other people's links"]
     ROWS["Row builder: one function, used by the page and the Profile card<br/>(never a token, never a page title for other people's links)"]
     SM["ShareManager<br/>(records, issue, extend, revoke)"]
-    AUD["Audit log: share-create / share-extend / share-revoke<br/>(refuse the change if the record cannot be written)<br/>+ who-for-whom on a manager revoke"]
+    AUD["Audit log: share-create / share-extend / share-revoke<br/>(refuse the change if the record cannot be written)<br/>+ who-for-whom on a manager revoke<br/>(opening the all-users view is NOT recorded)"]
     DOOR["Container rule: only the owner enters a private area<br/>(NOT consulted by listing or revoking; revoking reads no page)"]
   end
 
@@ -102,7 +113,7 @@ Where the lines are:
 
 - __Credentials:__ the link's token lives only in its record and in the link itself. No list, row, audit record or log line holds it. The management id (`id`) is the handle in every URL and form. For an encrypted private area the private key is made and kept in the owner's browser, after the `#`, and the server only stores lockboxes.
 - __What the manager of everyone's links cannot reach:__ page text, page titles inside another user's private area, any token, any key, and the ability to make or extend a link for someone else. The new permission lets them see that a link exists and stop it. It never opens a private area.
-- __Where a person approves:__ the owner makes, extends and revokes their own links as today. A manager revoking someone else's link confirms on the row, which names the owner (R14). Jim approves this design, the new permission entry and any new audit event before they are built.
+- __Where a person approves:__ the owner makes, extends and revokes their own links as today. A manager revoking someone else's link confirms on the row, which names the owner (R14). Jim approves this design and the new permission entry before they are built (he chose the permission in answer B). There is no new audit event: a revoke reuses `share-revoke`, and opening the all-users view is not recorded (answer C).
 - __Where it can still fail closed:__ if the audit record for a revoke cannot be written, the link stays live and the person sees "Nothing changed".
 
 ## Design
@@ -115,7 +126,7 @@ Why `/my/shares` and not `/shares`: `/my/*` is already where a signed-in user's 
 
 ### The page (R1, R2, R3, R12)
 
-__The records.__ No stored record changes. The page builds a row for each record, in memory, with one function used by the page and the Profile card:
+__The records.__ The page builds a row for each record, in memory, with one function used by the page and the Profile card. Apart from the one flag described below, no stored record changes:
 
 ```text
 SharedLinkRow {
@@ -124,16 +135,19 @@ SharedLinkRow {
   what          "Everything tagged X"
                 | "N pages in your X vault"   (own view)  /  "N pages in Sam's X vault" (all view)
                 | "All of your X vault"       (own view)  /  "All of Sam's X vault"     (all view)
-  status        'active' | 'expired' | 'revoked' | 'revoked by an administrator'
+  status        'active' | 'expired' | 'revoked' | 'page not available'
+                (own view only: shown as "Page not available (404)" for a link an administrator revoked)
   expiresAt     ISO date or null ("Until cancelled")
   madeBy        the creator (shown only in the all view)
   actions       tag: [revoke];  chosen-pages / whole-area: [extend, visits, revoke]
 }
 ```
 
-`what` for chosen pages counts the page uuids in the record. It reads no page, so it names no title. `actions` come from the kind, so a later follow-up (#2465) adds actions to a kind without touching the page.
+`what` for chosen pages counts the page uuids in the record. It reads no page, so it names no title. In the all view the area name and the owner are shown for another user's private-area link, and nothing else about it ([answer A](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080121413)).
 
-__Which links are listed.__ The user's own links of the kinds they may make (Q3, R9). For a holder of the new permission with the switch on, every record. Newest first, as the manager sorts them today. There is no paging, filter or search: the lists today have none and no requirement asks for one (see [Not drawn](#not-drawn)).
+__What the owner sees after an administrator revokes a link.__ The owner's own list shows that row's status as "Page not available (404)" ([answer D](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080256567)). There is no administrator name, no "revoked by" wording and no email. A link the owner revoked shows "Revoked", as today. To tell the two apart the row builder needs one fact the record does not hold today, so the revoke sets one optional flag on the record, `revokedByManager: true`, and never the administrator's name. This is the only stored-record change in this design; it is read only by the row builder, and the audit record already has the same fact (`byManager`). In the all-users view both cases show "Revoked". `actions` come from the kind, so a later follow-up (#2465) adds actions to a kind without touching the page.
+
+__Which links are listed.__ The user's own links of the kinds they may make (Q3, R9). Links of a kind the user may no longer make are hidden from them ([answer E](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080267477)). For a holder of the new permission with the switch on, every record, hidden ones included. Newest first, as the manager sorts them today. There is no paging, filter or search: the lists today have none and no requirement asks for one (see [Not drawn](#not-drawn)).
 
 __The Profile card (R5).__ Its numbers are `rows.filter(active).length` and `rows.length` from the same function, on the same input as the page's own view. The page's default view is the user's own, so the card and the page cannot disagree. A test pins this.
 
@@ -181,16 +195,18 @@ All checks use `hasPermission` for what a person is shown and the same permissio
 | Extend a link                            | `share-extend`, and the user made the link                                                                  | `extend` still refuses anyone but the creator         |
 | Revoke your own link                     | `share-revoke`, and the user made the link                                                                  | `revoke(id, actor)`                                   |
 | See every user's links                   | `share-manage-all`                                                                                          | `list()` with no owner, as the admin list does today  |
-| Revoke another user's link               | `share-revoke` and `share-manage-all`                                                                       | `revoke(id, actor)` with `actor.asManager`            |
+| Revoke another user's link               | `share-revoke` and `share-manage-all`. Not governed by the "admins can enter private areas" setting ([F](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080272999))   | `revoke(id, actor)` with `actor.asManager`            |
 | Extend, or make, a link for someone else | nobody                                                                                                      | refused, unchanged                                    |
 
 `share-revoke`'s catalog description today ends "revoking anyone's also needs admin-system". It changes to "also needs share-manage-all". That is the same default result (the administrator policy grants both) and it stops tying a link action to the system-administration permission.
 
-A user who has live links of a kind they may no longer make does not see them on the page (R9 as written). That is [Question E](#questions-for-jim).
+A user who has live links of a kind they may no longer make does not see them on their page (R9 as written, [answer E](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080267477)). The links already stop working, because a link resolves only while its maker still holds the action. A holder of `share-manage-all` still sees them in the all-users view and can revoke them.
 
 ### The manager's revoke
 
-`revoke(id, revokedBy: string)` becomes `revoke(id, actor: { username: string; asManager?: boolean })`. The audit actor stays the person who clicked. The audit metadata already carries `createdBy` and the scope; it gains `byManager: true` when the actor is not the creator, so a reader of the log never has to infer it. The event is still `share-revoke`, with on-failure `refuse`.
+`revoke(id, revokedBy: string)` becomes `revoke(id, actor: { username: string; asManager?: boolean })`. The audit actor stays the person who clicked. The audit metadata already carries `createdBy` and the scope; it gains `byManager: true` when the actor is not the creator, so a reader of the log never has to infer it. The record gets the optional flag `revokedByManager: true` for the owner's list ([answer D](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080256567)); no name is stored in it. The event is still `share-revoke`, with on-failure `refuse`. No new audit event is added, and opening the all-users view is not recorded ([answer C](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080212680)).
+
+A manager's revoke does not depend on the "admins can enter private areas" setting. With the setting off, a holder of the permission can still revoke a link to a private-area page, because revoking shows no page ([answer F](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080272999)).
 
 On a manager's revoke of an encrypted-area link, the manager needs no key: the server drops the lockboxes it holds (`dropLockboxes`), as it does for the owner's own revoke. The link is dead; the pages stay sealed.
 
@@ -200,7 +216,7 @@ A non-owner, non-manager who asks to revoke a private-area link by id gets 404, 
 
 `share-manage-all`, label "See and revoke everyone's shared links". It ships as a new catalog entry and in __a new policy id__ for the administrator role, never as an edit to `admin-full-access`: policies merge by `id`, so a site holding a stored copy of `admin-full-access` would never see an edit, while a new id is added. The catalog entry carries no `step-up` flag (revoking is reversible by making a new link) and no new audit event for the revoke, which reuses `share-revoke`.
 
-The catalog, the policy and any new audit event need Jim's approval before the pull request (the security guide's "Permissions and policies are configuration" rule). That is [Question B](#questions-for-jim) and [Question C](#questions-for-jim).
+Jim chose this route in [answer B](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080185251): administrators may revoke other people's links through a new access rule the site can change. The catalog entry and the policy still go through his review of the pull request (the security guide's "Permissions and policies are configuration" rule). No new audit event is needed ([answer C](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080212680)).
 
 ### The rename (R8)
 
@@ -257,6 +273,8 @@ Low fidelity: boxes and plain copy, no styling. The tag in brackets after an ele
 
 The Profile card's "N active of M" is these rows' count (frame 9).
 
+If an administrator revoked a link, its status reads "Page not available (404)" in place of "Revoked", with no administrator name and no "revoked by" wording ([D](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080256567)). Links of a kind the person may no longer make are not listed ([E](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080267477)).
+
 ### Frame 2: empty [R12]
 
 ```text
@@ -297,10 +315,11 @@ The same table at any length. No paging, search or filter is drawn, because no r
 |                                                             [ Visits ]     |        titles for
 |                                                             [ Revoke ]     |        other people's)
 | lee      Everything tagged Trip         Revoked  --         (none)         |  R2
-| lee      All of Lee's Medical vault     Revoked  --         Stopped by an  |  R14
-|                                                             administrator  |
+| lee      All of Lee's Medical vault     Revoked  --         (none)         |  R14
 +----------------------------------------------------------------------------+
 ```
+
+The all view shows another user's private-area link by area name, page count, expiry, status and owner, and nothing else ([A](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080121413)). Opening this view is not recorded in the audit log ([C](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080212680)). A revoked link reads "Revoked" here whoever revoked it.
 
 ### Frame 5: confirm a revoke of someone else's link [R14]
 
@@ -308,13 +327,13 @@ The same table at any length. No paging, search or filter is drawn, because no r
 +------------------------------------------------+
 | Stop Sam's link?                               |  R14
 | "3 pages in Sam's Journal vault" stops working |  R14
-| for everyone who has it. Sam will see that an  |  R14
-| administrator stopped it.                      |  R14
+| for everyone who has it. Sam's list will show  |  R14
+| it as "Page not available (404)".              |  R14
 |           [ Cancel ]   [ Stop link ] primary   |  R14
 +------------------------------------------------+
 ```
 
-Revoking your own link keeps today's behaviour and does not use this frame.
+Revoking your own link keeps today's behaviour and does not use this frame. The confirm names the owner and says what the owner will see ([D](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080256567)); it does not put the administrator's name anywhere the owner can read it.
 
 ### Frame 6: Share…, step 1 [R4, R9, Q2, Q3]
 
@@ -404,32 +423,33 @@ Paging, search, a filter bar, a "Past links" fold, an email to the owner, and a 
 
 __What it allows.__
 
-- See, for every link: who made it, what it covers in words (kind, area name, count of chosen pages), status and expiry. Nothing else about a private-area link.
-- Revoke any link (R13). On an encrypted area's link that drops the server's lockboxes.
+- See, for every link: who made it, what it covers in words (kind, area name, count of chosen pages), status and expiry. Nothing else about a private-area link, and no page titles ([answer A](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080121413)).
+- Revoke any link (R13, [answer B](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080185251)). On an encrypted area's link that drops the server's lockboxes.
 
 __What it does not allow.__
 
-- Read a page, a page title, a history entry, or anything inside any private area. Listing and revoking read no page, so the container rule is untouched. The permission does not need the `vault-admin-access` door and is not governed by it (Question F asks whether it should be).
+- Read a page, a page title, a history entry, or anything inside any private area. Listing and revoking read no page, so the container rule is untouched. The permission does not need the `vault-admin-access` door and is not governed by it: with "admins can enter private areas" off, an administrator can still revoke a link to a private-area page, because revoking shows no page ([answer F](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080272999)).
 - See a token, a link address, a key or a visit list of another user's link. The row builder has no field for them, and a test renders the all-users page and searches the HTML for every token in the store.
 - Make or extend a link for someone else. `issue` and `extend` stay creator-only.
 
-__Who holds it.__ The administrator role, through a new policy id, and nobody else by default. A site can remove it by editing that policy; an operator can grant it to another role the same way. Whether a user holds it is a permission check, never a role name in code (Question B asks whether the default is right).
+__Who holds it.__ The administrator role, through a new policy id, and nobody else by default. A site can remove it by editing that policy; an operator can grant it to another role the same way. Whether a user holds it is a permission check, never a role name in code ([answer B](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080185251)).
 
 __What is audited.__
 
 - Every revoke, as `share-revoke`: the person who clicked is the actor; `createdBy`, the scope and `byManager: true` are in the metadata. It refuses the revoke if the record cannot be written, as today.
-- Opening the all-users view is a door onto other people's private-area metadata. Whether it is recorded, and whether it refuses on failure, is [Question C](#questions-for-jim). The page's own "All users" switch is an affordance and records nothing.
+- Opening the all-users view is __not__ recorded ([answer C](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080212680)). Only revokes are. Said plainly: an administrator who holds this permission can look at everyone's share links, including the area names and owners of private-area links, without leaving a trace. The view shows no page title, token or link address, so what can be seen is limited, but the looking itself is invisible. This is Jim's decision, and it can be reversed later by adding an audit event and a refuse-on-failure rule.
 - Nothing audited ever holds a token.
 
 __What can go wrong, and what stops it.__
 
 | Risk                                                                                                                                | Stopped or limited by                                                                                                                                                              |
 | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| An administrator learns the name of someone's private area ("Medical") and that it is shared                                      | The row shows the area name and a count, not titles. Whether even the name should show is [Question A](#questions-for-jim)                                                          |
-| An administrator stops a link out of spite or by mistake                                                                           | The confirm names the owner (R14); the owner's row says an administrator stopped it ([Question D](#questions-for-jim)); the audit record names the administrator                  |
+| An administrator learns the name of someone's private area ("Medical") and that it is shared                                      | The row shows the area name and a count, not titles ([answer A](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080121413)). The area name is still visible to the holder, and Jim chose that                                                          |
+| An administrator stops a link out of spite or by mistake                                                                           | The confirm names the owner (R14); the audit record names the administrator; the owner's list shows the link as "Page not available (404)" with no administrator name ([answer D](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080256567)), so the owner learns the link stopped but not who stopped it                  |
 | Someone guesses a link id and revokes it                                                                                            | The route needs `share-revoke`, and for another user's link `share-manage-all`; without both a private-area id answers 404; CSRF is checked on every POST                         |
 | A stale form or old bookmark skips the new checks                                                                                  | Old `POST` routes answer 307 to the new ones, and every check runs at the new route                                                                                               |
 | The permission quietly widens into entering a private area                                                                         | A test lists the manager's code path against the container check: revoke and list never call the vault read functions; a test with `vault-admin-access` off still passes the revoke |
+| An administrator looks at everyone's links and nobody can tell                                                                    | Accepted by Jim ([answer C](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080212680)). The view shows no title, token or address; only revokes are recorded. Reversible later with an audit event                               |
 | A site's stored copy of the administrator policy hides the new grant                                                                | The grant is in a new policy id, which the merge adds                                                                                                                              |
 | A holder revokes a link and the recipient still has the page open                                                                  | A link is resolved live at every request, so the next request is refused. A page already loaded stays on screen, as for the owner's own revoke today                              |
 | The log or a message leaks a token                                                                                                  | The row builder and the audit metadata have no token field; a test checks that no token reaches the log or the audit record on this path                                                          |
@@ -449,11 +469,11 @@ A security review of this design happens before build, as Jim's Q4 answer says. 
 | R7  | 302 for old `GET`s with the query kept, 307 for old `POST`s                                                                                         |
 | R8  | [The rename](#the-rename-r8); frames 9 and 10; the help page retitled through Required Pages Sync                                                    |
 | R9  | Page opens for either kind's permission; Share… offers only kinds allowed; [Permission checks](#permission-checks); Q3                               |
-| R10 | No stored record, limit, exposure, audit event or encrypted-area flow changes; existing `shareCeiling`, `ShareManager` and `shareDoors` tests stay unchanged and green |
+| R10 | No limit, exposure, audit event or encrypted-area flow changes, and the stored record gains only the optional `revokedByManager` flag (answer D); existing `shareCeiling`, `ShareManager` and `shareDoors` tests stay unchanged and green |
 | R11 | Three required pages and the docs listed under [Docs changed](#docs-changed-in-the-same-pull-requests), each in the pull request that changes its screen |
 | R12 | Frame 2                                                                                                                                               |
-| R13 | `share-manage-all`, the All users switch, frame 4, [Security](#security-the-everyones-links-permission) (proposed)                                    |
-| R14 | `byManager` in the audit metadata, frames 4 and 5, "revoked by an administrator" on the owner's row (proposed)                                         |
+| R13 | `share-manage-all` (answer B), the All users switch, frame 4 (answer A: area name and count, no titles), [Security](#security-the-everyones-links-permission) (proposed)                                    |
+| R14 | `byManager` in the audit metadata (revokes only; opening the view is not recorded, answer C), frames 4 and 5, "Page not available (404)" on the owner's row (answer D) (proposed)                                         |
 
 ## Tests
 
@@ -462,6 +482,8 @@ Each is written to fail first, in the same pull request as the change, and commi
 ### Row function and page (slice 3)
 
 - A user with one tag link, one chosen-pages link and one whole-area link sees three rows with the right `what` text (R1, R2).
+- A user who has lost the permission to make one kind no longer sees their links of that kind, and those links no longer resolve (answer E).
+- A link revoked by its owner shows "Revoked"; one revoked by a manager shows "Page not available (404)" and the row holds no administrator name and no "revoked by" wording (answer D).
 - The Profile card's counts equal the page's rows for the same user, including with a revoked and an expired link (R5).
 - A user with `share-create` only sees only the tag choice; a user with the private-area permission only sees only the private-area choices; a user with neither gets today's refusal (R9, Q3).
 - A public page with tags offers its tags and no "This page"; one with no tags offers the sentence (Q2).
@@ -476,8 +498,10 @@ Each is written to fail first, in the same pull request as the change, and commi
 - The audit record of a manager revoke has the clicker as actor, `createdBy` of the owner and `byManager: true`; an own revoke has no `byManager`.
 - If the audit write fails the link stays live and the person sees "Nothing changed" (existing behaviour, re-pinned on the new route).
 - A manager revoke of an encrypted-area link works with no key and drops the lockboxes.
-- The all-users page HTML contains no token from the store, no link address, and no page title from a private area (searched for by value).
-- The manager's code path never calls a vault read; with `ngdpbase.vaults.admin-access` off, the all-users view and the revoke still work (pinned as the answer to Question F; reversed if Jim chooses otherwise).
+- The all-users page HTML contains no token from the store, no link address, and no page title from a private area (searched for by value). For another user's private-area link it shows the area name, page count, expiry, status and owner (answer A).
+- Opening the all-users view writes no audit record; a manager revoke writes one (answer C).
+- A holder of the permission sees, and can revoke, links of a kind their owner may no longer make (answer E).
+- The manager's code path never calls a vault read; with `ngdpbase.vaults.admin-access` off, the all-users view and the revoke still work (pins answer F).
 - The extend and issue routes still refuse anyone but the creator.
 
 ### The rename (slice 1)
@@ -494,38 +518,11 @@ Each is written to fail first, in the same pull request as the change, and commi
 Four pull requests, each under the usual review, each with its guides and required pages in the same pull request.
 
 1. __Rename (R8).__ Wording in code and templates, the three required pages, the tests above. No behaviour change. Independent of the others. *Verified when:* on a site upgraded from v5.46.0 the sidebar shows "Pinned pages" and no longer shows "My Links"; an unedited help page shows Update ready.
-2. __The manager and the permission (no screen).__ `revoke(id, actor)`, `byManager`, the catalog entry, the new policy id, the catalog description change, tests. Needs Jim's approval of Questions B and C first. *Verified when:* the new policy is on a site upgraded from v5.46.0 and a unit-level revoke by a holder is recorded with `byManager`.
-3. __The Shared links page, own view (R1–R7, R9, R12).__ The row function, `/my/shares`, the Share… flow, the redirects, the entry points, the Profile card. Needs slice 1 for the names. *Verified when:* a user with one link of each kind sees three rows, and the Profile card's counts equal them.
-4. __All users (R13, R14).__ The switch, the all-users view, the confirm, the owner's "Stopped by an administrator" text, the security review of the pull request. Needs slices 2 and 3. *Verified when:* an administrator stops another user's private-area link, the owner's row says so, and the audit log shows the administrator and the owner.
+2. __The manager and the permission (no screen).__ `revoke(id, actor)`, `byManager`, the `revokedByManager` flag, the catalog entry, the new policy id, the catalog description change, tests. Built to answers B (new permission), C (no new audit event) and F (works with the vault setting off). *Verified when:* the new policy is on a site upgraded from v5.46.0 and a unit-level revoke by a holder is recorded with `byManager` and sets `revokedByManager`.
+3. __The Shared links page, own view (R1–R7, R9, R12).__ The row function (including "Page not available (404)" for a link a manager revoked, and hiding links of a kind the user may no longer make), `/my/shares`, the Share… flow, the redirects, the entry points, the Profile card. Needs slice 1 for the names. *Verified when:* a user with one link of each kind sees three rows, and the Profile card's counts equal them.
+4. __All users (R13, R14).__ The switch, the all-users view (area name and count, no titles), the confirm, the security review of the pull request. Needs slices 2 and 3. *Verified when:* an administrator stops another user's private-area link, the owner's list shows it as "Page not available (404)", the audit log shows the administrator and the owner, and opening the all-users view adds no audit entry.
 
 Slices 1 and 2 can be built at once. Slices 3 and 4 follow in order.
-
-## Questions for Jim
-
-Each has my recommendation first. None is decided.
-
-- __Question A: what may a manager see of another user's private-area link?__
-  1. __Area name, count of pages, expiry, status, owner (recommended).__ Enough to decide to stop it; names the area (for example "Medical").
-  2. Only "a private-area link, owner Sam, expires 26 Nov": no area name, no count. The least revealed; harder to decide which link to stop.
-  3. Also the page titles, for areas that are not encrypted. Reads inside the area, which this design avoids.
-- __Question B: how is the new permission granted?__
-  1. __A new permission, `share-manage-all`, granted to the administrator role by a new policy (recommended).__ Same result as today for administrators; a site can move it.
-  2. Reuse `admin-system` with `share-revoke`, with no new catalog entry. Less to approve; the permission to run the site would also be the permission to stop anyone's private-area links.
-  3. A new permission granted to no one by default. The safest; an administrator who wants Q4 must grant it first.
-- __Question C: is opening the all-users view recorded?__
-  1. __Yes: a new audit event that continues if it cannot be written (recommended).__ Matches how `vault-admin-access` records, and does not stop an administrator who needs to stop a link in an emergency.
-  2. Yes, and the view refuses if the record cannot be written. Strictest; an audit outage locks administrators out of the page.
-  3. No. Only the revoke is recorded. Smallest change; an administrator can look at everyone's private-area links with no trace.
-- __Question D: what does the owner see when an administrator stops their link?__
-  1. __The row says "Stopped by an administrator" (recommended).__ No email, no name.
-  2. The row says just "Revoked". The owner cannot tell it was not them.
-  3. The row says "Stopped by <administrator's name>". The most open; names a person to the owner.
-- __Question E: a user has live links of a kind they can no longer make. Do they see them?__
-  1. __No: the page follows R9 as written (recommended).__ Those links already stop working (a link resolves only while its maker still holds the action), and a manager can revoke them.
-  2. Yes: anyone with an own active link sees the page, with revoke only. A change to R9.
-- __Question F: does the `vault-admin-access` setting also govern this permission?__ That setting, when off, says no role reaches into a vault.
-  1. __No: it governs reading pages; this permission reads none and is its own permission check (recommended).__ An administrator can still stop a leaked link with the setting off.
-  2. Yes: with it off, the all-users view shows only tag links and an administrator cannot stop a private-area link. Stricter; a leaked link then can only be stopped by its owner.
 
 ## Out of scope
 
