@@ -38,6 +38,8 @@ let dir: string;
 let live: Record<string, unknown>;
 let handler: Handler;
 let manager: CalendarDataManager;
+// What the policy manager grants a reviewer; undefined means no policy manager is registered.
+let reviewer: Set<string> | undefined;
 
 const submission = {
   submittedBy: 'ann', submitterName: 'Ann',
@@ -52,6 +54,10 @@ async function start(calendars: Record<string, unknown> | unknown[] | undefined)
     AddonsManager: { getAddonConfig: () => live, registerStylesheet: () => undefined, registerDashboardCard: () => undefined },
     FormsAddon: { registerHandler: (id: string, h: Handler) => { if (id === 'clubhouse-reservation') handler = h; } }
   };
+  if (reviewer) {
+    const granted = reviewer;
+    managers['PolicyDecisionPoint'] = { permits: async (_subject: unknown, action: string) => granted.has(action) };
+  }
   const engine = {
     getManager: (name: string) => managers[name],
     registerManager: (name: string, m: unknown) => { managers[name] = m; },
@@ -66,6 +72,7 @@ async function start(calendars: Record<string, unknown> | unknown[] | undefined)
 
 beforeEach(async () => {
   who.permissions = new Set(['form-submit']);
+  reviewer = undefined;
   dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'cal-clubhouse-'));
 });
 afterEach(async () => { await fsp.rm(dir, { recursive: true, force: true }); });
@@ -145,5 +152,56 @@ describe('the clubhouse reservation form handler', () => {
     await start({ clubhouse: entry('private') });
     who.permissions = new Set(['form-submit', 'calendar-manage']);
     expect((await submit()).ok).toBe(true);
+  });
+
+  describe('a held submission carried out by a reviewer', () => {
+    const held = (context: Record<string, unknown>) => handler(submission, { engine: {}, ...context });
+    const reviewerContext = { req: undefined, decider: { username: 'rita' } };
+
+    test('a reviewer who may see the calendar carries it out, whatever the submitter may see', async () => {
+      reviewer = new Set(['calendar-manage']);
+      who.permissions = new Set();
+      await start({ clubhouse: entry('private') });
+      const done = await held(reviewerContext);
+      expect(done.ok).toBe(true);
+      expect(stored()).toBe(1);
+    });
+
+    test('a reviewer who may not see the calendar gets the identical refusal and creates nothing', async () => {
+      await start({ clubhouse: entry('private') });
+      const refusedForSubmitter = await submit();
+      await fsp.rm(dir, { recursive: true, force: true });
+      dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'cal-clubhouse-'));
+      reviewer = new Set(['calendar-read']);
+      who.permissions = new Set(['form-submit', 'calendar-manage']);
+      await start({ clubhouse: entry('private') });
+      const refused = await held(reviewerContext);
+      expect(refused.ok).toBe(false);
+      expect(refused).toEqual(refusedForSubmitter);
+      expect(stored()).toBe(0);
+    });
+
+    test('the reviewer, not the submitter, is the one checked', async () => {
+      reviewer = new Set();
+      who.permissions = new Set(['form-submit', 'calendar-manage']);
+      await start({ clubhouse: entry('private') });
+      expect((await held({ req: {}, decider: { username: 'rita' } })).ok).toBe(false);
+      expect(stored()).toBe(0);
+    });
+
+    test('with no policy manager the handler refuses', async () => {
+      reviewer = undefined;
+      who.permissions = new Set(['form-submit', 'calendar-manage']);
+      await start({ clubhouse: entry('private') });
+      expect((await held(reviewerContext)).ok).toBe(false);
+      expect(stored()).toBe(0);
+    });
+
+    test('with neither a submitter request nor a reviewer the handler refuses', async () => {
+      who.permissions = new Set(['form-submit', 'calendar-manage']);
+      await start({ clubhouse: entry('private') });
+      expect((await held({ req: undefined, decider: null })).ok).toBe(false);
+      expect(stored()).toBe(0);
+    });
   });
 });
