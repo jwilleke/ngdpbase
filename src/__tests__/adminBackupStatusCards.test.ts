@@ -268,6 +268,19 @@ describe('#2470 Admin → Backup status cards', () => {
       }
     });
 
+    test('a fragment that cannot be decoded changes nothing and does not stop the rest of the page script', () => {
+      const dom = renderAt('#%E0%A4%A');
+      const doc = dom.window.document;
+      for (const id of ORDER) expect(isOpen(doc, id), id).toBe(false);
+      // The script after it still ran: the Custom days handler builds the value on submit.
+      const custom = doc.getElementById('days_custom') as HTMLInputElement;
+      expect(custom).not.toBeNull();
+      custom.checked = true;
+      custom.value = 'unchanged';
+      doc.querySelector('form[action="/admin/backup/config"]')!.dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+      expect(custom.value).toBe('daily');
+    });
+
     test('moving to a card after the page loaded opens it too', async () => {
       const dom = renderAt('', closed);
       dom.window.location.hash = '#shared-folders-key';
@@ -281,6 +294,9 @@ describe('#2470 Admin → Backup status cards', () => {
     expect(css).toMatch(/\.status-card\s*\{[^}]*border-left-width:\s*4px/);
     for (const tone of ['success', 'warning', 'danger', 'secondary']) expect(css).toMatch(new RegExp(`\\.status-card-${tone}\\s*\\{[^}]*border-left-color`));
     expect(css).toMatch(/details\[open\][^{]*\.card-summary-chevron\s*\{[^}]*rotate\(180deg\)/);
+    // Below 576px the grey note drops to its own full-width line under the title, badge and chevron.
+    expect(css).toMatch(/@media \(max-width: 575\.98px\)\s*\{[^@]*\.status-card \.card-summary\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(css).toMatch(/@media \(max-width: 575\.98px\)\s*\{[^@]*\.status-card \.card-summary > span\.text-muted\s*\{[^}]*flex-basis:\s*100%/);
     expect(css).toMatch(/\.card-summary:focus-visible\s*\{[^}]*outline/);
   });
 });
