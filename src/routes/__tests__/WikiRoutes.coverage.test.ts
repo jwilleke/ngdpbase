@@ -12,6 +12,7 @@ import { policyShaped } from './__fixtures__/policyShaped';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { FootnoteLinkError } from '../../utils/footnoteLinks';
 import { doorSaveResult } from './__fixtures__/pageDoor';
 import { readDoor } from './__fixtures__/pageReadDoor';
 
@@ -638,6 +639,17 @@ describe('WikiRoutes — additional coverage', () => {
       expect(res.status).toBe(404);
     });
 
+    test('answers 400 with the plain-language reason when the manager refuses the link (#2454)', async () => {
+      mockFootnoteManager.addFootnote.mockRejectedValue(new FootnoteLinkError());
+
+      const res = await request(app)
+        .post('/api/footnotes/uuid-123')
+        .send({ display: 'Note', url: 'javascript:1', _csrf: csrf });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ success: false, error: new FootnoteLinkError().message });
+    });
+
     test('creates footnote and returns it on success', async () => {
       mockFootnoteManager.addFootnote.mockResolvedValue({ id: 'fn-1', display: 'Note', url: 'http://a.com', note: '' });
 
@@ -684,6 +696,17 @@ describe('WikiRoutes — additional coverage', () => {
         .send({ display: '', url: '', _csrf: csrf });
 
       expect(res.status).toBe(400);
+    });
+
+    test('answers 400 with the plain-language reason when the manager refuses the link (#2454)', async () => {
+      mockFootnoteManager.updateFootnote.mockRejectedValue(new FootnoteLinkError());
+
+      const res = await request(app)
+        .put('/api/footnotes/uuid-123/fn-1')
+        .send({ display: 'Note', url: 'javascript:1', _csrf: csrf });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ success: false, error: new FootnoteLinkError().message });
     });
 
     test('returns 404 when footnote is not found', async () => {

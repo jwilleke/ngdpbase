@@ -24,6 +24,8 @@ import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import type { PageRef } from '../utils/pageNotes.js';
 import { jsonForScript } from '../utils/jsonForScript.js';
+import { safeSourceUrl } from '../utils/footnoteLinks.js';
+import { FOOTNOTE_DATA_TOPIC } from '../cache/CacheDependencies.js';
 
 interface PageManagerLike {
   // #1422: the real signature takes the caller's context. Typed without it,
@@ -72,12 +74,15 @@ function renderWikiLink(f: PluginFormatters, raw: string, interWikiSites: Map<st
       const pagePart = target.slice(colonIdx + 1).replace(/\/+$/, '');
       const site = interWikiSites.get(prefix) ?? interWikiSites.get(prefix.toLowerCase());
       if (site?.enabled !== false && site?.url) {
-        const resolvedUrl = site.url.replace(/%s/g, encodeURIComponent(pagePart));
+        const resolvedUrl = safeSourceUrl(site.url.replace(/%s/g, encodeURIComponent(pagePart)));
+        if (!resolvedUrl) return escapeHtml(display);
         const newWindow = site.openInNewWindow !== false;
         return `<a href="${escapeHtml(resolvedUrl)}"${newWindow ? ' target="_blank" rel="noopener noreferrer"' : ''}>${escapeHtml(display)}</a>`;
       }
     }
-    return `<a href="${escapeHtml(target)}" target="_blank" rel="noopener noreferrer">${escapeHtml(display)}</a>`;
+    const href = safeSourceUrl(target);
+    if (!href) return escapeHtml(display);
+    return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(display)}</a>`;
   });
 }
 
@@ -121,9 +126,11 @@ async function readLegacyFootnotes(
 
 function renderFootnoteRow(f: PluginFormatters, fn: PageFootnote, canEdit: boolean, canDelete: boolean, pageUuid: string): string {
   const { escapeHtml } = f;
-  const urlHtml = fn.url
-    ? `<a href="${escapeHtml(fn.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(fn.display || fn.url)}</a>`
-    : escapeHtml(fn.display);
+  // #2454: only an http or https address becomes a link; any other stored value shows as text.
+  const href = safeSourceUrl(fn.url);
+  const urlHtml = href
+    ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(fn.display || href)}</a>`
+    : escapeHtml(fn.display || fn.url);
   const noteHtml = fn.note ? ` <span class="footnote-note text-muted small">— ${escapeHtml(fn.note)}</span>` : '';
   const actions: string[] = [];
   if (canEdit) {
@@ -291,6 +298,8 @@ const FootnotesPlugin: SimplePlugin = {
     const { parseBoolParam, escapeHtml } = context.formatters;
     const engine = context.engine;
     if (!engine) return '';
+    // #2454: a cached page re-renders when FootnoteManager writes a page's footnote file. Declared before any read.
+    context.dependsOn?.(FOOTNOTE_DATA_TOPIC);
 
     const pageName = context.pageName;
     const pageMetadata = context.pageMetadata as { uuid?: string } | undefined;

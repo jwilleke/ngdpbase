@@ -24,6 +24,8 @@ import type { StoreFileIO } from '../utils/privateStoreFiles.js';
 import type IdentityManager from './IdentityManager.js';
 import { systemContext } from '../context/bootActions.js';
 import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
+import { FootnoteLinkError, safeSourceUrl } from '../utils/footnoteLinks.js';
+import { FOOTNOTE_DATA_TOPIC } from '../cache/CacheDependencies.js';
 
 /** Legacy `createdBy` written when footnotes were migrated out of page markup (#128): "no recorded creator", not a username. */
 const LEGACY_NO_CREATOR = 'migrated';
@@ -234,6 +236,21 @@ export default class FootnoteManager extends BaseManager {
   private async writeMap(place: FootnotePlace, map: FootnoteMap): Promise<void> {
     await fs.ensureDir(path.dirname(place.path));
     await place.io.writeText(place.path, JSON.stringify(map, null, 2));
+    await this.bumpFootnotes();
+  }
+
+  /** A page's footnote file changed: every cached render that read footnotes re-renders (#2454). A failed bump never fails the write. */
+  private async bumpFootnotes(): Promise<void> {
+    try {
+      await this.engine.getManager<{ bump(topic: string): Promise<string> }>('CacheManager')?.bump(FOOTNOTE_DATA_TOPIC);
+    } catch { /* the write stands; a render may stay stale until its next change */ }
+  }
+
+  /** A footnote's link, as it is stored: empty (a note with no link) or an http or https address; anything else is refused. */
+  private checkedUrl(url: string): string {
+    const trimmed = url.trim();
+    if (trimmed && !safeSourceUrl(trimmed)) throw new FootnoteLinkError();
+    return trimmed;
   }
 
   /**
@@ -264,6 +281,7 @@ export default class FootnoteManager extends BaseManager {
   ): Promise<PageFootnote> {
     const pageUuid = page.uuid;
     await this.refuseWhenOff(page, ctx);
+    const url = this.checkedUrl(data.url);
     // #2041: the creator by identity @id; a name with no account as given.
     const createdBy = (await this.engine.getManager<IdentityManager>('IdentityManager')
       ?.identityIdOf(systemContext(this.engine, 'store a footnote creator: identity @id (#2041)'), ctx.username)) ?? ctx.username;
@@ -277,7 +295,7 @@ export default class FootnoteManager extends BaseManager {
     const footnote: PageFootnote = {
       id: nextId,
       display: data.display.trim(),
-      url: data.url.trim(),
+      url,
       note: data.note.trim(),
       createdBy,
       createdAt: new Date().toISOString()
@@ -396,6 +414,7 @@ export default class FootnoteManager extends BaseManager {
   ): Promise<PageFootnote | null> {
     const pageUuid = page.uuid;
     await this.refuseWhenOff(page, ctx);
+    const url = this.checkedUrl(data.url);
     const place = await this.place(page, ctx);
     const map = await this.readMap(place);
     if (!map[id]) return null;
@@ -403,7 +422,7 @@ export default class FootnoteManager extends BaseManager {
     map[id] = {
       ...map[id],
       display: data.display.trim(),
-      url: data.url.trim(),
+      url,
       note: data.note.trim()
     };
     await this.writeMap(place, map);
@@ -426,6 +445,7 @@ export default class FootnoteManager extends BaseManager {
     if (Object.keys(map).length === 0) {
       // Remove the file entirely when no footnotes remain
       await fs.remove(place.path);
+      await this.bumpFootnotes();
     } else {
       await this.writeMap(place, map);
     }
@@ -471,7 +491,9 @@ export default class FootnoteManager extends BaseManager {
    * nothing.
    */
   async movePageFootnotes(uuid: string, fromName: string, toName: string, ctx: ActorContext): Promise<boolean> {
-    return movePageNotes(ctx, uuid, fromName, toName, this.roots());
+    const moved = await movePageNotes(ctx, uuid, fromName, toName, this.roots());
+    if (moved) await this.bumpFootnotes();
+    return moved;
   }
 
   /** Vault pages whose footnotes the last check found in the public folder (#1839): owner, vault, page uuid. */
@@ -498,7 +520,9 @@ export default class FootnoteManager extends BaseManager {
     ctx: ActorContext,
     opts: { dryRun?: boolean } = {}
   ): Promise<number> {
-    return moveOutsideNotesIntoVault(ctx, vault, uuid, this.roots(), opts);
+    const moved = await moveOutsideNotesIntoVault(ctx, vault, uuid, this.roots(), opts);
+    if (moved > 0 && !opts.dryRun) await this.bumpFootnotes();
+    return moved;
   }
 
   async shutdown(): Promise<void> {}

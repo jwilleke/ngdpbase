@@ -232,6 +232,7 @@ import type MetricsManager from '../managers/MetricsManager.js';
 import type CommentManager from '../managers/CommentManager.js';
 import type FootnoteManager from '../managers/FootnoteManager.js';
 import { PageNotesTurnedOffError, type PageNotesKind, type PageRef } from '../utils/pageNotes.js';
+import { FootnoteLinkError } from '../utils/footnoteLinks.js';
 import type NotificationManager from '../managers/NotificationManager.js';
 import type PolicyValidator from '../managers/PolicyValidator.js';
 import type RenderingManager from '../managers/RenderingManager.js';
@@ -12792,6 +12793,8 @@ ${panes}
     } catch (err: unknown) {
       // #1951: the manager refused — that kind is turned off for this page.
       if (err instanceof PageNotesTurnedOffError) return res.status(403).json({ success: false, error: err.message });
+      // #2454: the footnote's link is not an http or https address — the editor's to correct.
+      if (err instanceof FootnoteLinkError) return res.status(400).json({ success: false, error: err.message });
       logger.error('Error adding footnote:', err);
       // #709: surface the underlying reason so the client dialog shows
       // something actionable instead of an opaque "Failed to add footnote".
@@ -12828,6 +12831,7 @@ ${panes}
     } catch (err: unknown) {
       // #1951: the manager refused — that kind is turned off for this page.
       if (err instanceof PageNotesTurnedOffError) return res.status(403).json({ success: false, error: err.message });
+      if (err instanceof FootnoteLinkError) return res.status(400).json({ success: false, error: err.message });
       logger.error('Error updating footnote:', err);
       // #709 (same family): surface the underlying reason.
       const reason = err instanceof Error ? err.message : String(err);
