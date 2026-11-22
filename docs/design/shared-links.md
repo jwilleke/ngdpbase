@@ -4,9 +4,9 @@ Design for [#2247](https://github.com/jwilleke/ngdpbase/issues/2247). It builds 
 
 Two follow-ups are out of scope and not designed here: [#2464](https://github.com/jwilleke/ngdpbase/issues/2464) (a link to one public page) and [#2465](https://github.com/jwilleke/ngdpbase/issues/2465) (extend and visit lists for tag links).
 
-__Two requirements are proposed by this design, not yet confirmed.__ Jim's Q4 answer (see and revoke every user's links, including links into another user's private area) moved a thing from "out of scope" to "in scope" without a numbered requirement. R13 and R14 below write it down, with the answers A–F built in. They become requirements when Jim confirms them with this design.
+__Two requirements come from Jim's Q4 answer.__ It (see and revoke every user's links, including links into another user's private area) moved a thing from "out of scope" to "in scope" without a numbered requirement. R13 and R14 below write it down. His answers A–F on Q4 settle them, so they are confirmed. The one step left is Jim's approval of this design.
 
-| ID  | Requirement (proposed from Q4)                                                                                                                                                                                                                                                | Problem |
+| ID  | Requirement (from Q4, settled by A–F)                                                                                                                                                                                                                                                | Problem |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | R13 | A user who holds the permission "see and revoke everyone's shared links" can switch the Shared links page to every user's links, tag links and private-area links alike, and revoke any of them. Each row says who made it. For another user's private-area link a row shows the area name, the number of pages, the expiry, the status and the owner, and no page title ([A](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080121413)). Without that permission the switch does not exist. | P1      |
 | R14 | Revoking another user's link is recorded in the audit log with who revoked it and whose link it was. Opening the all-users view is not recorded ([C](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080212680)). The owner's list shows the revoked link as "Page not available (404)", with no administrator name and no "revoked by" wording ([D](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080256567)). The row asks for confirmation first and names the owner.                                                           | (safety) |
@@ -176,12 +176,14 @@ Each existing entry opens `/my/shares` with the choice made, using query values 
 | Page menu "Share 'tag'…" (up to 6)                     | `/my/shares?share=tag&tag=<tag>`                               |
 | Private pages list button "Links you've shared"          | `/my/shares`                                                   |
 | Media tag page Share button                              | `/my/shares?share=tag&tag=<tag>`                               |
-| Admin dashboard "Manage Share Links" card                | `/my/shares?view=all` (a user without the permission gets own) |
+| Admin dashboard "Manage Share Links" card                | `/my/shares?view=all` from slice 4 (a user without the permission gets own). Until then it keeps opening `/shares` |
 | Profile card                                             | `/my/shares`                                                   |
 
 The media tag page's button today makes a link in one click. After this it opens the form with the tag chosen and asks for an expiry, as every other entry does. That is a small loss of speed and it is what R6 asks for.
 
 Old addresses (R7): `GET /shares?keyword=X` redirects (302) to `/my/shares?share=tag&tag=X`; `GET /my/vaults/links?page=P` to `/my/shares?share=page&page=P`; the same for a bare `?vault=`. The old `POST` routes (`/shares/create`, `/shares/:id/revoke`, `/my/vaults/links` and its `extend` and `revoke`) answer 307 to the new routes, so a form left open in a browser tab still works, and every permission check runs again at the new route.
+
+__The administrator's list of everyone's tag links stays until slice 4 replaces it.__ Slice 3 redirects `GET /shares` for everyone except a holder of `admin-system`, who keeps today's page there, with its list of every user's tag links and its revoke (`POST /shares/:id/revoke`, still under today's `admin-system` rule, so it is not redirected in slice 3). The admin dashboard card keeps opening `/shares`. Slice 4 adds the All users view, then turns `GET /shares` into a redirect to `/my/shares?view=all`, `POST /shares/:id/revoke` into a 307, and repoints the dashboard card. An administrator therefore never loses the ability to see and revoke other users' tag links between releases.
 
 ### Permission checks
 
@@ -189,7 +191,7 @@ All checks use `hasPermission` for what a person is shown and the same permissio
 
 | Action                                   | Check at the route                                                                                          | Check in the manager                                  |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| Open the page                            | `share-create` (tag) or `profile-manage` plus `share-create` in a private area (private-area kind), at least one | none                                                  |
+| Open the page                            | `share-create` (tag), or `profile-manage` plus `share-create` in a private area (private-area kind), or `share-manage-all`; at least one | none                                                  |
 | Make a tag link                          | `share-create`                                                                                              | as today                                              |
 | Make a private-area link                 | `profile-manage`, then `share-create` inside that area (`permitsInVault`), owner's own area only            | as today, including the ceiling on days               |
 | Extend a link                            | `share-extend`, and the user made the link                                                                  | `extend` still refuses anyone but the creator         |
@@ -198,7 +200,9 @@ All checks use `hasPermission` for what a person is shown and the same permissio
 | Revoke another user's link               | `share-revoke` and `share-manage-all`. Not governed by the "admins can enter private areas" setting ([F](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080272999))   | `revoke(id, actor)` with `actor.asManager`            |
 | Extend, or make, a link for someone else | nobody                                                                                                      | refused, unchanged                                    |
 
-`share-revoke`'s catalog description today ends "revoking anyone's also needs admin-system". It changes to "also needs share-manage-all". That is the same default result (the administrator policy grants both) and it stops tying a link action to the system-administration permission.
+`share-revoke`'s catalog description today ends "revoking anyone's also needs admin-system". In slice 4, when the route's check moves from `admin-system` to `share-manage-all`, the description changes to "also needs share-manage-all". The default result is the same (the administrator policy grants both) and it stops tying a link action to the system-administration permission.
+
+__Release note (slice 4):__ "Revoking another user's tag link now needs the permission 'See and revoke everyone's shared links' instead of the system-administration permission. A site that uses the default administrator policy sees no change. A site where a custom policy gives system administration to someone without the new permission loses that person's ability to revoke other users' tag links until the policy grants it."
 
 A user who has live links of a kind they may no longer make does not see them on their page (R9 as written, [answer E](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080267477)). The links already stop working, because a link resolves only while its maker still holds the action. A holder of `share-manage-all` still sees them in the all-users view and can revoke them.
 
@@ -233,21 +237,23 @@ Internal names do not change: the route `/my/links`, the plugin name and the sto
 
 The sidebar heading, the menu entries, the cards and the page title are code and templates. A site gets them by upgrading, with nothing to sync. That includes the Verified-when check Jim asked for: on a site upgraded from v5.46.0, the sidebar shows "Pinned pages" and no longer shows "My Links".
 
-Three required pages are help text, and they go through Required Pages Sync:
+Three required pages are help text, and they go through Required Pages Sync. Each ships in the pull request that changes its screen (R11), so a site never reads help for a screen it does not have yet:
 
-| Page (uuid prefix)                       | Change                                                                                                    | A site that never edited it                       | A site that edited it                                                                                |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| "My Links" (`36c9c6ed-…`)                | Retitled "Pinned pages"; body says "Pinned pages"; slug stays `my-links`                                  | Update ready, then replaced by Sync All           | Edited here, not confirmed: an admin reads the review and picks *Use shipped version* or keeps theirs |
-| "Share Links" (`d428a9ed-…`)             | Retitled "Shared links"; describes the one page, its three kinds and the Share… action; slug unchanged     | The same                                          | The same                                                                                             |
-| "Your Consents" (`06c1cba1-…`)           | The line that mentions the Share Links page names Shared links                                            | The same                                          | The same                                                                                             |
+| Page (uuid prefix)                       | Ships in | Change                                                                                                    | A site that never edited it                       | A site that edited it                                                                                |
+| ---------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| "My Links" (`36c9c6ed-…`)                | Slice 1  | Retitled "Pinned pages"; body says "Pinned pages"; slug stays `my-links`                                  | Update ready, then replaced by Sync All           | Edited here, not confirmed: an admin reads the review and picks *Use shipped version* or keeps theirs |
+| "Share Links" (`d428a9ed-…`)             | Slice 3  | Retitled "Shared links"; describes the one page, its three kinds and the Share… action; slug unchanged     | The same                                          | The same                                                                                             |
+| "Your Consents" (`06c1cba1-…`)           | Slice 3  | The line that mentions the Share Links page names Shared links and its Manage link                      | The same                                          | The same                                                                                             |
 
 The slug stays because `slug` is a front-matter key that changes behaviour in the sync rules (`WORKING_FRONTMATTER_KEYS`): changing it could take an unedited site's copy out of auto-sync and into admin review, and it would break the help icon's link. A page title is a wording key, so retitling alone does not do that. Slice 1 confirms with a test on an upgraded fixture that the synced copy carries the new title; if it does not, that is reported before the slice ships.
+
+Slice 1 carries only the "My Links" page, because the rename is the only screen it changes. The "Share Links" retitle and rewrite and the "Your Consents" line move with slice 3, where the one page, its three kinds and Share… first exist.
 
 Until an admin reviews an edited copy, that site's help page says "My Links" while the screens say "Pinned pages". The sync page already shows that state; the release notes mention it.
 
 ### Docs changed in the same pull requests
 
-`docs/sharing.md` (the "Managed at" row says vault links are owner-only; it becomes "owner extends and revokes; a holder of the everyone's-links permission also revokes"), `docs/private-stores.md`, `docs/managers/ShareManager.md` (the `revoke` signature and the row function), `docs/guides/security-developer-guide.md` (the vault-owner rule gains the sentence that a revoke is not entry, and the new permission is listed), the plugin docs for the rename, and the three required pages above (R11). The comment on `VaultShareScope.owner` ("the only one who may issue, extend or revoke it") changes to match.
+`docs/sharing.md` (the "Managed at" row says vault links are owner-only; it becomes "owner extends and revokes; a holder of the everyone's-links permission also revokes"), `docs/private-stores.md`, `docs/managers/ShareManager.md` (the `revoke` signature and the row function), `docs/guides/security-developer-guide.md` (the vault-owner rule gains the sentence that a revoke is not entry, and the new permission is listed), the plugin docs for the rename, and the three required pages above, each in the slice named in the table (R11). The comment on `VaultShareScope.owner` ("the only one who may issue, extend or revoke it") changes to match.
 
 ## Wireframes
 
@@ -304,7 +310,7 @@ The same table at any length. No paging, search or filter is drawn, because no r
 
 ```text
 +----------------------------------------------------------------------------+
-| Shared links: all users                       [ Share… ]  [ My links ]     |  R13
+| Shared links: all users                       [ Share… ]  [ My shared links ] |  R13
 | You are seeing every user's links.                                         |  R13
 +----------------------------------------------------------------------------+
 | Made by  What                           Status   Expires    Actions        |  R2, R13
@@ -470,10 +476,10 @@ A security review of this design happens before build, as Jim's Q4 answer says. 
 | R8  | [The rename](#the-rename-r8); frames 9 and 10; the help page retitled through Required Pages Sync                                                    |
 | R9  | Page opens for either kind's permission; Share… offers only kinds allowed; [Permission checks](#permission-checks); Q3                               |
 | R10 | No limit, exposure, audit event or encrypted-area flow changes, and the stored record gains only the optional `revokedByManager` flag (answer D); existing `shareCeiling`, `ShareManager` and `shareDoors` tests stay unchanged and green |
-| R11 | Three required pages and the docs listed under [Docs changed](#docs-changed-in-the-same-pull-requests), each in the pull request that changes its screen |
+| R11 | Three required pages (one in slice 1, two in slice 3) and the docs listed under [Docs changed](#docs-changed-in-the-same-pull-requests), each in the pull request that changes its screen |
 | R12 | Frame 2                                                                                                                                               |
-| R13 | `share-manage-all` (answer B), the All users switch, frame 4 (answer A: area name and count, no titles), [Security](#security-the-everyones-links-permission) (proposed)                                    |
-| R14 | `byManager` in the audit metadata (revokes only; opening the view is not recorded, answer C), frames 4 and 5, "Page not available (404)" on the owner's row (answer D) (proposed)                                         |
+| R13 | `share-manage-all` (answer B), the All users switch, frame 4 (answer A: area name and count, no titles), [Security](#security-the-everyones-links-permission)                                    |
+| R14 | `byManager` in the audit metadata (revokes only; opening the view is not recorded, answer C), frames 4 and 5, "Page not available (404)" on the owner's row (answer D)                                         |
 
 ## Tests
 
@@ -485,16 +491,18 @@ Each is written to fail first, in the same pull request as the change, and commi
 - A user who has lost the permission to make one kind no longer sees their links of that kind, and those links no longer resolve (answer E).
 - A link revoked by its owner shows "Revoked"; one revoked by a manager shows "Page not available (404)" and the row holds no administrator name and no "revoked by" wording (answer D).
 - The Profile card's counts equal the page's rows for the same user, including with a revoked and an expired link (R5).
-- A user with `share-create` only sees only the tag choice; a user with the private-area permission only sees only the private-area choices; a user with neither gets today's refusal (R9, Q3).
+- A user with `share-create` only sees only the tag choice; a user with the private-area permission only sees only the private-area choices; a user with none of the three permissions (`share-create`, the private-area pair, `share-manage-all`) gets today's refusal. A holder of `share-manage-all` who holds neither kind's permission opens the page, sees no Share… and an empty own view, and can switch to All users (R9, R13, Q3).
 - A public page with tags offers its tags and no "This page"; one with no tags offers the sentence (Q2).
 - An empty list shows the empty state and Share… (R12).
 - `GET /shares?keyword=X`, `GET /my/vaults/links?page=P` and the three old `POST` families redirect as designed (R7).
+- A required-pages fixture from v5.46.0 shows "Share Links" (new title "Shared links") and "Your Consents" as Update ready (never edited) and Edited here, not confirmed (edited), and Sync All brings the new text.
+- Slice 3 leaves `/shares` showing a holder of `admin-system` every user's tag links, and `POST /shares/:id/revoke` still revokes another user's tag link for that holder; for everyone else `GET /shares` redirects.
 - Rewrites of the tests that pin today's wording: `profileCardsView.test.ts` (the "Share Links" card), `WikiRoutes.myVaults.test.ts` (the button).
 
 ### The manager (slices 2 and 4)
 
 - The catalog entry, the new policy id and the registry-drift test pass; the policy grants the permission to the administrator role and to nobody else.
-- A holder revokes another user's tag link and private-area link; a non-holder gets 403 for the tag link and 404 for the private-area link; a user with `share-manage-all` but without `share-revoke` cannot revoke.
+- A holder revokes another user's tag link and private-area link; a user without `share-manage-all` who is not the link's maker gets 403 for the tag link and 404 for the private-area link; a user without `share-revoke` gets 403 "Access denied", for either kind of link, whoever made it (the route checks `share-revoke` first, before it reads the record, as `sharesRevoke` does today, so the answer says nothing about whether the id exists); a user with `share-manage-all` but without `share-revoke` gets the same 403.
 - The audit record of a manager revoke has the clicker as actor, `createdBy` of the owner and `byManager: true`; an own revoke has no `byManager`.
 - If the audit write fails the link stays live and the person sees "Nothing changed" (existing behaviour, re-pinned on the new route).
 - A manager revoke of an encrypted-area link works with no key and drops the lockboxes.
@@ -507,7 +515,7 @@ Each is written to fail first, in the same pull request as the change, and commi
 ### The rename (slice 1)
 
 - The sidebar, both menu entries, both cards and the list page render "Pinned pages", and no rendered page of these contains "My Links".
-- A required-pages fixture from v5.46.0 shows the three help pages as Update ready (never edited) and Edited here, not confirmed (edited), and Sync All brings the new title.
+- A required-pages fixture from v5.46.0 shows the "My Links" help page as Update ready (never edited) and Edited here, not confirmed (edited), and Sync All brings the new title "Pinned pages". The same fixture shows "Share Links" and "Your Consents" unchanged, because slice 1 does not touch them.
 
 ### Checks the guides require before the pull request is ready
 
@@ -517,12 +525,12 @@ Each is written to fail first, in the same pull request as the change, and commi
 
 Four pull requests, each under the usual review, each with its guides and required pages in the same pull request.
 
-1. __Rename (R8).__ Wording in code and templates, the three required pages, the tests above. No behaviour change. Independent of the others. *Verified when:* on a site upgraded from v5.46.0 the sidebar shows "Pinned pages" and no longer shows "My Links"; an unedited help page shows Update ready.
-2. __The manager and the permission (no screen).__ `revoke(id, actor)`, `byManager`, the `revokedByManager` flag, the catalog entry, the new policy id, the catalog description change, tests. Built to answers B (new permission), C (no new audit event) and F (works with the vault setting off). *Verified when:* the new policy is on a site upgraded from v5.46.0 and a unit-level revoke by a holder is recorded with `byManager` and sets `revokedByManager`.
-3. __The Shared links page, own view (R1–R7, R9, R12).__ The row function (including "Page not available (404)" for a link a manager revoked, and hiding links of a kind the user may no longer make), `/my/shares`, the Share… flow, the redirects, the entry points, the Profile card. Needs slice 1 for the names. *Verified when:* a user with one link of each kind sees three rows, and the Profile card's counts equal them.
-4. __All users (R13, R14).__ The switch, the all-users view (area name and count, no titles), the confirm, the security review of the pull request. Needs slices 2 and 3. *Verified when:* an administrator stops another user's private-area link, the owner's list shows it as "Page not available (404)", the audit log shows the administrator and the owner, and opening the all-users view adds no audit entry.
+1. __Rename (R8).__ Wording in code and templates, the "My Links" help page (retitled "Pinned pages"), the tests above. The other two required pages wait for slice 3. No behaviour change. Independent of the others. *Verified when:* on a site upgraded from v5.46.0 the sidebar shows "Pinned pages" and no longer shows "My Links"; an unedited help page shows Update ready.
+2. __The manager and the permission (no screen).__ `revoke(id, actor)`, `byManager`, the `revokedByManager` flag, the catalog entry, the new policy id, tests. The route's check and the catalog description of `share-revoke` change in slice 4, not here. Built to answers B (new permission), C (no new audit event) and F (works with the vault setting off). *Verified when:* on a site upgraded from v5.46.0, the Roles and Permissions page (`/admin/roles`) lists `share-manage-all` under the administrator role and under no other role, and `npx vitest run src/managers/__tests__/ShareManager.test.ts src/utils/__tests__/permissionCatalog.test.ts` passes with the new cases: a revoke by a holder is recorded with `byManager` and sets `revokedByManager`, and the catalog entry and policy pass the registry-drift test.
+3. __The Shared links page, own view (R1–R7, R9, R12).__ The row function (including "Page not available (404)" for a link a manager revoked, and hiding links of a kind the user may no longer make), `/my/shares`, the Share… flow, the redirects, the entry points, the Profile card, and the "Share Links" (retitled "Shared links") and "Your Consents" help pages. `/shares` keeps the administrator's list of every user's tag links, and its revoke, until slice 4 replaces them. Needs slice 1 for the names. *Verified when:* a user with one link of each kind sees three rows, the Profile card's counts equal them, an administrator still sees every user's tag links at `/shares`, and on a site upgraded from v5.46.0 the "Share Links" help page shows Update ready under the new title "Shared links".
+4. __All users (R13, R14).__ The switch, the all-users view (area name and count, no titles), the confirm, the move of the route's check for revoking another user's link from `admin-system` to `share-manage-all`, the `share-revoke` description change and release note, and the replacement of the old `/shares` admin list by a redirect to the all-users view (the dashboard card repointed). The security review of the pull request. Needs slices 2 and 3. *Verified when:* an administrator stops another user's private-area link, the owner's list shows it as "Page not available (404)", the audit log shows the administrator and the owner, opening the all-users view adds no audit entry, and `/shares` now redirects to the all-users view.
 
-Slices 1 and 2 can be built at once. Slices 3 and 4 follow in order.
+Slices 1 and 2 can be built at once. Slices 3 and 4 follow in order. Slice 3 is safe to release alone, because the old administrator list stays until slice 4 replaces it.
 
 ## Out of scope
 
