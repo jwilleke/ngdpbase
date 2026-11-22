@@ -9,7 +9,12 @@
  *   public         anyone
  *   authenticated  holders of calendar-read (every signed-in account by default)
  *   private        holders of calendar-manage
- *   no setting     public, as before
+ *   no setting     public, as before (a calendar named in the config)
+ *   not configured public no more: read as private
+ *   enabled: false  nobody, as docs/configuration.md says
+ *
+ * The setting is read from the add-on's current configuration on each request,
+ * so a changed setting applies without a restart.
  *
  * A request that may not see a calendar gets none of its events from the list
  * and search, and a not-found from the single-event and .ics routes.
@@ -50,7 +55,9 @@ const CONFIG = {
     members: { workflow: 'managed', visibility: 'authenticated', enabled: true },
     staff:   { workflow: 'managed', visibility: 'private',       enabled: true },
     typo:    { workflow: 'managed', visibility: 'privte',        enabled: true },
-    plain:   { workflow: 'managed',                               enabled: true }
+    plain:   { workflow: 'managed',                               enabled: true },
+    off:     { workflow: 'managed', visibility: 'public',        enabled: false },
+    weird:   'public'
   }
 };
 
@@ -65,13 +72,18 @@ const EVENTS = [
   ev('e-staff', 'staff'),
   ev('e-typo', 'typo'),
   ev('e-plain', 'plain'),
-  ev('e-unlisted', 'not-in-config')
+  ev('e-unlisted', 'not-in-config'),
+  ev('e-off', 'off'),
+  ev('e-weird', 'weird')
 ];
 
 let dir: string;
 let app: express.Application;
+// What the add-on's configuration holds now; a test may change it between requests.
+let live: Record<string, unknown>;
 
 beforeEach(async () => {
+  live = CONFIG;
   who.signedIn = false;
   who.permissions = new Set();
   dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'cal-visibility-'));
@@ -81,7 +93,8 @@ beforeEach(async () => {
   const manager = new CalendarDataManager(dir);
   await manager.load();
   const engine = {
-    getManager: (name: string) => (name === 'CalendarDataManager' ? manager : undefined),
+    getManager: (name: string) => (name === 'CalendarDataManager' ? manager
+      : name === 'AddonsManager' ? { getAddonConfig: () => live } : undefined),
     createRouter: () => express.Router()
   };
   app = express();
@@ -102,7 +115,7 @@ describe('GET /api/calendar/events', () => {
     signedOut();
     const res = await request(app).get('/api/calendar/events');
     expect(res.status).toBe(200);
-    expect(ids(res.body)).toEqual(['e-pub', 'e-plain', 'e-unlisted'].sort());
+    expect(ids(res.body)).toEqual(['e-pub', 'e-plain'].sort());
   });
 
   test('signed out, asking for a non-public calendar by name: nothing', async () => {
@@ -117,13 +130,13 @@ describe('GET /api/calendar/events', () => {
   test('signed in without the permission: no members-only and no private events', async () => {
     noPermissions();
     const res = await request(app).get('/api/calendar/events');
-    expect(ids(res.body)).toEqual(['e-pub', 'e-plain', 'e-unlisted'].sort());
+    expect(ids(res.body)).toEqual(['e-pub', 'e-plain'].sort());
   });
 
   test('signed in with calendar-read: also the members-only calendar, not the private one', async () => {
     member();
     const res = await request(app).get('/api/calendar/events');
-    expect(ids(res.body)).toEqual(['e-mem', 'e-pub', 'e-plain', 'e-unlisted'].sort());
+    expect(ids(res.body)).toEqual(['e-mem', 'e-pub', 'e-plain'].sort());
   });
 
   test('a holder of calendar-manage sees the private calendar too', async () => {
@@ -131,6 +144,36 @@ describe('GET /api/calendar/events', () => {
     const res = await request(app).get('/api/calendar/events');
     expect(ids(res.body)).toContain('e-staff');
     expect(ids(res.body)).toContain('e-mem');
+  });
+
+  test('a calendar missing from the configuration, or whose entry is not an object, is read as private', async () => {
+    signedOut();
+    expect(ids((await request(app).get('/api/calendar/events')).body)).not.toContain('e-unlisted');
+    expect(ids((await request(app).get('/api/calendar/events')).body)).not.toContain('e-weird');
+    member();
+    expect(ids((await request(app).get('/api/calendar/events')).body)).not.toContain('e-unlisted');
+    expect(ids((await request(app).get('/api/calendar/events')).body)).not.toContain('e-weird');
+    manager();
+    expect(ids((await request(app).get('/api/calendar/events')).body)).toEqual(expect.arrayContaining(['e-unlisted', 'e-weird']));
+  });
+
+  test('a calendar set to enabled: false is left out for everyone, a manager included', async () => {
+    for (const who of [signedOut, member, manager]) {
+      who();
+      expect(ids((await request(app).get('/api/calendar/events')).body)).not.toContain('e-off');
+      expect(ids((await request(app).get('/api/calendar/events').query({ calendarId: 'off' })).body)).toEqual([]);
+    }
+  });
+
+  test('a changed setting applies on the next request, with no restart', async () => {
+    signedOut();
+    expect(ids((await request(app).get('/api/calendar/events')).body)).toContain('e-pub');
+    live = { calendars: { ...CONFIG.calendars, open: { workflow: 'managed', visibility: 'private', enabled: true } } };
+    expect(ids((await request(app).get('/api/calendar/events')).body)).not.toContain('e-pub');
+    expect((await request(app).get('/api/calendar/events/e-pub')).status).toBe(404);
+    expect((await request(app).get('/api/calendar/open/feed.ics')).status).toBe(404);
+    live = CONFIG;
+    expect(ids((await request(app).get('/api/calendar/events')).body)).toContain('e-pub');
   });
 
   test('a setting that is not public, authenticated or private is read as private', async () => {
@@ -153,13 +196,19 @@ describe('GET /api/calendar/events/search', () => {
     signedOut();
     const res = await request(app).get('/api/calendar/events/search').query({ q: 'Title' });
     expect(res.status).toBe(200);
-    expect(ids(res.body.results)).toEqual(['e-pub', 'e-plain', 'e-unlisted'].sort());
+    expect(ids(res.body.results)).toEqual(['e-pub', 'e-plain'].sort());
   });
 
   test('signed in without the permission: no members-only or private results', async () => {
     noPermissions();
     const res = await request(app).get('/api/calendar/events/search').query({ q: 'Title' });
-    expect(ids(res.body.results)).toEqual(['e-pub', 'e-plain', 'e-unlisted'].sort());
+    expect(ids(res.body.results)).toEqual(['e-pub', 'e-plain'].sort());
+  });
+
+  test('a disabled calendar gives no results, a manager included', async () => {
+    manager();
+    const res = await request(app).get('/api/calendar/events/search').query({ q: 'Title' });
+    expect(ids(res.body.results)).not.toContain('e-off');
   });
 
   test('an empty query lists no more than the list route does', async () => {
@@ -207,6 +256,20 @@ describe('GET /api/calendar/events/:id', () => {
     manager();
     expect((await request(app).get('/api/calendar/events/e-staff')).status).toBe(200);
   });
+
+  test('an event of a calendar that is not configured is not found unless the viewer holds calendar-manage', async () => {
+    signedOut();
+    expect((await request(app).get('/api/calendar/events/e-unlisted')).status).toBe(404);
+    member();
+    expect((await request(app).get('/api/calendar/events/e-unlisted')).status).toBe(404);
+    manager();
+    expect((await request(app).get('/api/calendar/events/e-unlisted')).status).toBe(200);
+  });
+
+  test('an event of a disabled calendar is not found, a manager included', async () => {
+    manager();
+    expect((await request(app).get('/api/calendar/events/e-off')).status).toBe(404);
+  });
 });
 
 describe('GET /api/calendar/:calendarId/feed.ics', () => {
@@ -246,6 +309,23 @@ describe('GET /api/calendar/:calendarId/feed.ics', () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain('e-mem');
     expect((await request(app).get('/api/calendar/staff/feed.ics')).status).toBe(404);
+  });
+
+  test('a calendar that is not configured answers exactly as one hidden from the viewer does', async () => {
+    signedOut();
+    const unknown = await request(app).get('/api/calendar/nowhere/feed.ics');
+    const hidden = await request(app).get('/api/calendar/staff/feed.ics');
+    expect(unknown.status).toBe(404);
+    expect(hidden.status).toBe(404);
+    expect(unknown.body).toEqual(hidden.body);
+    expect(unknown.headers['content-type']).toBe(hidden.headers['content-type']);
+    member();
+    expect((await request(app).get('/api/calendar/nowhere/feed.ics')).status).toBe(404);
+  });
+
+  test('the feed of a disabled calendar is not found, a manager included', async () => {
+    manager();
+    expect((await request(app).get('/api/calendar/off/feed.ics')).status).toBe(404);
   });
 
   test('a holder of calendar-manage gets the private feed', async () => {
