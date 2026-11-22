@@ -74,12 +74,15 @@ function renderWikiLink(f: PluginFormatters, raw: string, interWikiSites: Map<st
       const pagePart = target.slice(colonIdx + 1).replace(/\/+$/, '');
       const site = interWikiSites.get(prefix) ?? interWikiSites.get(prefix.toLowerCase());
       if (site?.enabled !== false && site?.url) {
-        const resolvedUrl = site.url.replace(/%s/g, encodeURIComponent(pagePart));
+        const resolvedUrl = safeSourceUrl(site.url.replace(/%s/g, encodeURIComponent(pagePart)));
+        if (!resolvedUrl) return escapeHtml(display);
         const newWindow = site.openInNewWindow !== false;
         return `<a href="${escapeHtml(resolvedUrl)}"${newWindow ? ' target="_blank" rel="noopener noreferrer"' : ''}>${escapeHtml(display)}</a>`;
       }
     }
-    return `<a href="${escapeHtml(target)}" target="_blank" rel="noopener noreferrer">${escapeHtml(display)}</a>`;
+    const href = safeSourceUrl(target);
+    if (!href) return escapeHtml(display);
+    return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(display)}</a>`;
   });
 }
 

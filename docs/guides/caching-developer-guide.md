@@ -1,7 +1,7 @@
 ---
 name: Caching developer guide
 description: One page cache, keyed by the viewer and their roles, that follows every input it renders through data versions
-dateModified: 2026-10-23
+dateModified: 2026-11-22
 category: guides
 relatedModules: [CacheManager, MarkupParser, PluginManager, PageManager]
 ---

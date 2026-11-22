@@ -37,9 +37,10 @@ const TRACKING_PARAM = /^(utm_.*|fbclid|gclid)$/i;
 /**
  * The key two links share when they are "the same link" (R2): `http` and
  * `https` are equal (the key says `https`), the host is lower case without a
- * leading `www.`, a trailing slash on the path is dropped, and `utm_*`,
- * `fbclid` and `gclid` parameters are dropped. Other parameters keep their
- * order, and a fragment stays. It is a key for finding, not a rewrite: the
+ * leading `www.`, a port written in the address stays, a `user:password@` part
+ * is left out, a trailing slash on the path is dropped, and `utm_*`, `fbclid`
+ * and `gclid` parameters are dropped. Other parameters keep their order, and a
+ * fragment stays. It is a key for finding, not a rewrite: the
  * caller keeps the address as entered.
  *
  * @returns the key, or `null` when the value is not an http or https link (so it never matches another)
@@ -47,9 +48,15 @@ const TRACKING_PARAM = /^(utm_.*|fbclid|gclid)$/i;
 export function tidyUrl(url: unknown): string | null {
   const parsed = parseWebUrl(typeof url === 'string' ? url.trim() : url);
   if (!parsed) return null;
-  const userInfo = parsed.username ? `${parsed.username}${parsed.password ? `:${parsed.password}` : ''}@` : '';
-  const host = parsed.host.replace(/^www\./, '');
+  // A port written in the address stays in the key, whichever scheme it is on; the scheme's own default
+  // port is not shown by the parser, so read it again as a scheme with no defaults.
+  let port = parsed.port;
+  try {
+    const plain = new URL(String(url).trim().replace(/^https?:/i, 'x:'));
+    if (plain.hostname.toLowerCase() === parsed.hostname) port = plain.port;
+  } catch { /* keep the parsed port */ }
+  const host = parsed.hostname.replace(/^www\./, '') + (port ? `:${port}` : '');
   const path = parsed.pathname.replace(/\/$/, '');
   const query = parsed.search.slice(1).split('&').filter((p) => p && !TRACKING_PARAM.test(p.split('=')[0])).join('&');
-  return `https://${userInfo}${host}${path}${query ? `?${query}` : ''}${parsed.hash}`;
+  return `https://${host}${path}${query ? `?${query}` : ''}${parsed.hash}`;
 }

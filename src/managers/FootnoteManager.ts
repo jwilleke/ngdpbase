@@ -236,6 +236,7 @@ export default class FootnoteManager extends BaseManager {
   private async writeMap(place: FootnotePlace, map: FootnoteMap): Promise<void> {
     await fs.ensureDir(path.dirname(place.path));
     await place.io.writeText(place.path, JSON.stringify(map, null, 2));
+    await this.bumpFootnotes();
   }
 
   /** A page's footnote file changed: every cached render that read footnotes re-renders (#2454). A failed bump never fails the write. */
@@ -303,7 +304,6 @@ export default class FootnoteManager extends BaseManager {
     map[nextId] = footnote;
     await this.writeMap(place, map);
     this.invalidateHandlerCache(pageUuid);
-    await this.bumpFootnotes();
     await this.recordEdit('add', pageUuid, ctx, { footnoteId: nextId });
     return footnote;
   }
@@ -348,7 +348,6 @@ export default class FootnoteManager extends BaseManager {
     };
     await this.writeMap(place, map);
     this.invalidateHandlerCache(page.uuid);
-    await this.bumpFootnotes();
     return true;
   }
 
@@ -428,7 +427,6 @@ export default class FootnoteManager extends BaseManager {
     };
     await this.writeMap(place, map);
     this.invalidateHandlerCache(pageUuid);
-    await this.bumpFootnotes();
     await this.recordEdit('update', pageUuid, ctx, { footnoteId: id });
     return map[id];
   }
@@ -447,11 +445,11 @@ export default class FootnoteManager extends BaseManager {
     if (Object.keys(map).length === 0) {
       // Remove the file entirely when no footnotes remain
       await fs.remove(place.path);
+      await this.bumpFootnotes();
     } else {
       await this.writeMap(place, map);
     }
     this.invalidateHandlerCache(pageUuid);
-    await this.bumpFootnotes();
     await this.recordEdit('delete', pageUuid, ctx, { footnoteId: id, createdBy, ownFootnote });
     return true;
   }

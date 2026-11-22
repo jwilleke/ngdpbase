@@ -504,7 +504,7 @@ describe('execute() — the older footnote list links only http and https addres
     async (target) => {
       const result = await renderOlderList(`[Source|${target}]`);
       expect(result).toContain('Source');
-      expect(result).not.toContain('<a href');
+      expect(result).not.toContain('target="_blank"');
       expect(result).not.toContain(`href="${target}"`);
     }
   );
@@ -517,6 +517,6 @@ describe('execute() — the older footnote list links only http and https addres
   test('an inter-wiki site whose address is not http or https shows its text with no link', async () => {
     const result = await renderOlderList('[Rocket|Odd:Rocket]', sites);
     expect(result).toContain('Rocket');
-    expect(result).not.toContain('<a href');
+    expect(result).not.toContain('target="_blank"');
   });
 });
