@@ -219,13 +219,21 @@ describe('a v5.25.0 backup and the declared folders (#1985)', () => {
     const stem = (name: string): string => name.replace(/\.json\.gz\.enc$/, '');
     const suffixes = (directory: string, document: string): string[] =>
       fs.readdirSync(directory).filter((f) => f.startsWith(`${stem(document)}.`) && f !== document).map((f) => f.slice(stem(document).length)).sort();
-    expect(suffixes(p.backups, path.basename(file))).toEqual(suffixes(FIXTURE, fixtureDocument()));
+    // The one new archive since v5.25.0: the shared footnote sources (#2454), a part of FootnoteManager's own.
+    expect(suffixes(p.backups, path.basename(file))).toEqual([...suffixes(FIXTURE, fixtureDocument()), '.footnote-sources.tar.enc'].sort());
 
     const now = await documentOf(file);
     const then = await documentOf(path.join(FIXTURE, fixtureDocument()));
     for (const name of [...ENTRIES, 'FormsDataManager', 'CalendarDataManager', 'FeedManager', 'BackupManager']) {
+      if (name === 'FootnoteManager') continue;
       expect({ name, ...(shapeOf(now.managers[name]) as object) }).toEqual({ name, ...(shapeOf(then.managers[name]) as object) });
     }
+    // FootnoteManager has a second part now, so its parts are recorded under data[part]: the way v5.25.0's code
+    // reads a manager's parts when it has more than one, and its own `footnotes` record is the same as it was.
+    const footnotes = shapeOf(now.managers.FootnoteManager) as { entry: string[]; data: Record<string, string[]> };
+    expect(footnotes.entry).toEqual((shapeOf(then.managers.FootnoteManager) as { entry: string[] }).entry);
+    expect(Object.keys(footnotes.data).sort()).toEqual(['footnote-sources', 'footnotes']);
+    expect(footnotes.data.footnotes).toEqual(Object.keys((then.managers.FootnoteManager.data as object)).sort());
     expect(now.managers.RoleManager.data).toMatchObject({ format: 1, archive: `${stem(path.basename(file))}.roles.tar.enc`, files: 1 });
     expect(now.managers.FormsDataManager).toMatchObject({ managerName: 'FormsDataManager', data: { format: 1, archive: `${stem(path.basename(file))}.forms.tar.enc` } });
     await stop(restarted);

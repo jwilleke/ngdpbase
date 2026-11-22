@@ -130,6 +130,22 @@ describe('declared parts under the backup key (#1876, #1985)', () => {
     await expect(stageDeclaredParts('ExampleManager', two, backup, restoreOptions('ExampleManager'))).rejects.toThrow(/missing/);
     expect(fs.existsSync(path.join(dir, 'roles.staged'))).toBe(false);
   });
+
+  test('a backup made when the manager declared one part restores under a manager that has since gained an optional second (#2454)', async () => {
+    fs.mkdirSync(path.join(dir, 'extra'));
+    const [first] = roles();
+    const oneThenTwo: BackupFolder[] = [first, { part: 'extra', folder: path.join(dir, 'extra'), optional: true }];
+    // As written when the manager declared the first part alone: the entry's data is that part's record.
+    const old = await entry('ExampleManager', [first]);
+    expect(partRecordIn(old, oneThenTwo, 'roles')).toMatchObject({ format: 1, archive: 'b1.roles.tar.enc' });
+    expect(partRecordIn(old, oneThenTwo, 'extra')).toBeUndefined();
+
+    begin();
+    const outcome = await stageDeclaredParts('ExampleManager', oneThenTwo, old, restoreOptions('ExampleManager'));
+    expect(outcome).toEqual({ leftOut: ['extra'] });
+    expect(fs.readFileSync(path.join(dir, 'roles.staged', 'editor.json'), 'utf8')).toContain('alice');
+    expect(fs.existsSync(path.join(dir, 'extra.staged'))).toBe(false);
+  });
 });
 
 describe('applying declared parts at start (#1985)', () => {
