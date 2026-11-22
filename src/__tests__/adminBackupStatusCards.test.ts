@@ -299,4 +299,11 @@ describe('#2470 Admin → Backup status cards', () => {
     expect(css).toMatch(/@media \(max-width: 575\.98px\)\s*\{[^@]*\.status-card \.card-summary > span\.text-muted\s*\{[^}]*flex-basis:\s*100%/);
     expect(css).toMatch(/\.card-summary:focus-visible\s*\{[^}]*outline/);
   });
+
+  test('below 576px the title wraps inside its own column and the badge and chevron never leave the first line', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../../themes/core.css'), 'utf8');
+    const narrow = (css.match(/@media \(max-width: 575\.98px\)\s*\{[^@]*\}\s*\}/) || [''])[0];
+    expect(narrow).toMatch(/\.status-card \.card-summary > h6\s*\{[^}]*flex:\s*1 1 0[^}]*min-width:\s*0/);
+    expect(narrow).toMatch(/\.status-card \.card-summary > \.badge,\s*\.status-card \.card-summary > \.card-summary-chevron\s*\{[^}]*flex:\s*0 0 auto/);
+  });
 });
