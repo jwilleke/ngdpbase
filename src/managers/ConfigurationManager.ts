@@ -11,7 +11,7 @@ import {
 import { isDeepStrictEqual } from 'node:util';
 import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
-import BaseManager, { BackupData } from './BaseManager.js';
+import BaseManager, { BackupData, type ManagerStatus } from './BaseManager.js';
 import { configFilePaths, enabledEntries, installCompletePath, mergeArrays, readConfigFilesSync } from '../utils/configFiles.js';
 import {
   migrateStoredPageWritePolicies,
@@ -27,6 +27,7 @@ import {
   type NarrowedWrite
 } from '../utils/pageWritePolicies.js';
 import { legacyStoreKeys, legacyStoreKeysReason } from '../utils/legacyStoreKeys.js';
+import { backUpBeforeRewrite, stripPolicyPriority } from '../utils/upgradeLeftovers.js';
 import { mergeConfigWithAddons, type AddonDefaults } from '../utils/addonConfigLayer.js';
 import type { AddonDatabaseDeclaration } from '../utils/addonDatabaseRules.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -485,6 +486,9 @@ class ConfigurationManager extends BaseManager {
     // held on every page; they now come from the category policies.
     this.migrateStoredPageWritePolicies();
 
+    // #2466: the old `priority` on a stored rule changes nothing; take it out.
+    this.removePolicyPriorityFromCustomFile();
+
     // #1220: shipped ⊕ enabled addons' default-config.json ⊕ custom. The addon
     // layer sits beneath the operator's file, so an addon can add a permission
     // definition or a policy to the catalogs additively and the operator can
@@ -498,6 +502,7 @@ class ConfigurationManager extends BaseManager {
     const { merged, declared, addons, problems, refused, databases, siteCritical } = mergeConfigWithAddons(this.defaultConfig, this.customConfig, process.cwd(), this.instanceDataFolder);
     this.mergedConfig = merged;
     this.declaredConfig = declared;
+    this.stripPolicyPriorityFromMerged();
     this.applyNarrowedRoleWrites(detected);
     this.addonLayers = addons;
     this.systemCategoryProblems = problems;
@@ -624,6 +629,65 @@ class ConfigurationManager extends BaseManager {
     this.pageWritePolicyMigration = report.rewritten;
     this.pageWritePolicyMigrationShown = report.shown;
     for (const line of report.rewritten) logger.warn(`[config] ${line}. Save the policy list in Admin → Configuration to store the change`);
+  }
+
+  /** The rules whose old `priority` the update removed from the site's own file (#2466), for the needs-attention entry. */
+  private priorityRulesRemoved: string[] = [];
+
+  /**
+   * #2466: the site's own policy rules in the custom file carry `priority`
+   * from before #2330, which changes nothing now. Take it out of the file and
+   * out of what the site reads, one log line per rule. The file is read afresh
+   * and only that key is changed, so nothing else in it is touched, and a copy
+   * of it as it was goes into `upgrade-backups` first. With no copy possible
+   * the file is left as it is and the next start tries again. A file with no
+   * `priority` is not opened for writing, so a second start changes nothing.
+   */
+  private removePolicyPriorityFromCustomFile(): void {
+    const key = POLICIES_KEY;
+    if (!this.customConfig || !(key in this.customConfig)) return;
+    const { policies, removed } = stripPolicyPriority(this.customConfig[key]);
+    if (removed.length === 0) return;
+    this.customConfig[key] = policies;
+    try {
+      const text = fs.readFileSync(this.customConfigPath, 'utf8');
+      const stored = JSON.parse(text) as Record<string, unknown>;
+      const fromFile = stripPolicyPriority(stored[key]);
+      if (fromFile.removed.length === 0) return;
+      const copy = backUpBeforeRewrite(path.join(this.instanceDataFolder, 'upgrade-backups'), path.basename(this.customConfigPath), text);
+      stored[key] = fromFile.policies;
+      fs.writeFileSync(this.customConfigPath, `${JSON.stringify(stored, null, 2)}\n`);
+      for (const id of fromFile.removed) logger.info(`[config] Removed the old priority from access rule '${id}' in ${this.customConfigPath}; it changed nothing. The file as it was is saved as ${copy}`);
+      this.priorityRulesRemoved = fromFile.removed;
+    } catch (err) {
+      logger.warn(`[config] The old priority on ${removed.map((id) => `'${id}'`).join(', ')} could not be removed from ${this.customConfigPath}, so the file is unchanged and this is tried again at the next start (it changes nothing): ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** #2466: a rule from the default or an add-on's settings with a `priority`, dropped from what the site reads. Nothing is written. */
+  private stripPolicyPriorityFromMerged(): void {
+    if (!this.mergedConfig) return;
+    const { policies, removed } = stripPolicyPriority(this.mergedConfig[POLICIES_KEY]);
+    if (removed.length === 0) return;
+    this.mergedConfig[POLICIES_KEY] = policies;
+    logger.info(`[config] Ignoring the old priority on access rule ${removed.map((id) => `'${id}'`).join(', ')}; it changes nothing (#2466)`);
+  }
+
+  /**
+   * What this start changed that the administrator should know about (#2466),
+   * read live by `Engine.getDegradedManagers`. Empty when it changed nothing,
+   * so the next start shows none.
+   */
+  getAttentionItems(): ManagerStatus[] {
+    const names = this.priorityRulesRemoved;
+    if (names.length === 0) return [];
+    const one = names.length === 1;
+    return [{
+      state: 'degraded',
+      kind: 'attention',
+      reason: `The update cleaned up ${names.length} access ${one ? 'rule' : 'rules'}: it removed an old priority that never had any effect. Nothing about who can do what changed.`,
+      details: names.map((n) => `${n}: removed an old priority that had no effect`)
+    }];
   }
 
   /**

@@ -19,12 +19,13 @@ describe('WikiEngine runs the leftover access: scan after seeding (#2269)', () =
       AddonsManager: { initialize: async () => { calls.push('addons'); } },
       PageManager: {
         reportUnmatchableAddonAudiences: async () => { calls.push('audiences'); },
+        convertLegacyAccessAtBoot: async () => { calls.push('convert'); return { converted: 0, left: 0 }; },
         reportLegacyAccessLimits: async () => { calls.push('legacy-access'); return 0; }
       },
       BackupManager: { reportRestoreAtBoot: async () => { calls.push('restore'); } }
     };
     await initializeAddons.call({ getManager: (n: string) => managers[n] });
-    expect(calls).toEqual(['addons', 'audiences', 'legacy-access', 'restore']);
+    expect(calls).toEqual(['addons', 'audiences', 'convert', 'legacy-access', 'restore']);
   });
 
   test('a scan that throws does not stop start-up', async () => {
@@ -33,6 +34,7 @@ describe('WikiEngine runs the leftover access: scan after seeding (#2269)', () =
       AddonsManager: { initialize: async () => undefined },
       PageManager: {
         reportUnmatchableAddonAudiences: async () => undefined,
+        convertLegacyAccessAtBoot: async () => ({ converted: 0, left: 0 }),
         reportLegacyAccessLimits: async () => { throw new Error('index unreadable'); }
       },
       BackupManager: { reportRestoreAtBoot: async () => { calls.push('restore'); } }
@@ -44,17 +46,21 @@ describe('WikiEngine runs the leftover access: scan after seeding (#2269)', () =
   test('the scan still runs when no AddonsManager is registered', async () => {
     const calls: string[] = [];
     const managers: Record<string, unknown> = {
-      PageManager: { reportLegacyAccessLimits: async () => { calls.push('legacy-access'); return 0; } },
+      PageManager: {
+        convertLegacyAccessAtBoot: async () => ({ converted: 0, left: 0 }),
+        reportLegacyAccessLimits: async () => { calls.push('legacy-access'); return 0; }
+      },
       BackupManager: { reportRestoreAtBoot: async () => undefined }
     };
     await initializeAddons.call({ getManager: (n: string) => managers[n] });
     expect(calls).toEqual(['legacy-access']);
   });
 
-  test('on a real start, required pages are seeded before the scan, and the scan runs once', async () => {
+  test('on a real start, required pages are seeded, then old limits converted, then the scan runs once', async () => {
     const PageManager = (await import('../managers/PageManager')).default;
     const order: string[] = [];
     const seed = vi.spyOn(PageManager.prototype, 'seedRequiredPages').mockImplementation(async () => { order.push('seed'); });
+    const convert = vi.spyOn(PageManager.prototype, 'convertLegacyAccessAtBoot').mockImplementation(async () => { order.push('convert'); return { converted: 0, left: 0 }; });
     const scan = vi.spyOn(PageManager.prototype, 'reportLegacyAccessLimits').mockImplementation(async () => { order.push('scan'); return 0; });
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'engine-2269-'));
     const engine = new WikiEngine();
@@ -62,10 +68,11 @@ describe('WikiEngine runs the leftover access: scan after seeding (#2269)', () =
       await engine.initialize({ name: 'Test Wiki', pagesDirectory: path.join(dir, 'pages') });
       expect(order).not.toContain('scan');
       await engine.initializeAddons();
-      expect(order).toEqual(['seed', 'scan']);
+      expect(order).toEqual(['seed', 'convert', 'scan']);
     } finally {
       await engine.shutdown();
       seed.mockRestore();
+      convert.mockRestore();
       scan.mockRestore();
       await fs.remove(dir);
     }

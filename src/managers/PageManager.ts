@@ -1,4 +1,5 @@
 import path from 'path';
+import { subjectMayDo } from '../utils/subjectMayDo.js';
 import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 import { jobContextForOwner } from '../context/JobContext.js';
 import type IdentityManager from './IdentityManager.js';
@@ -10,6 +11,7 @@ import { shippedPageState, keptInputs, pageSourceHash, REQUIRED_SOURCE_HASH_KEY,
 import { workingParts } from '../utils/pluginCalls.js';
 import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import { limitsLeftByUpgrade, type AccessLimits } from '../utils/legacyPageAccess.js';
+import { adminsAreRoleAdmin, backUpBeforeRewrite, exactReplacement, withReplacement, type Replacement } from '../utils/upgradeLeftovers.js';
 import BaseManager, { BackupData, type ManagerStats, type ManagerStatus } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -4281,6 +4283,11 @@ class PageManager extends BaseManager implements CatalogSource {
    * reads every manager's list.
    */
   getAttentionItems(): ManagerStatus[] {
+    return [...this.convertedAccessItems(), ...this.leftoverAccessItems()];
+  }
+
+  /** The leftover limits start-up could not convert (#2269). */
+  private leftoverAccessItems(): ManagerStatus[] {
     const total = this.legacyAccessPages.size;
     if (total === 0) return [];
     const one = total === 1;
@@ -4296,6 +4303,104 @@ class PageManager extends BaseManager implements CatalogSource {
     const hidden = total - named.length;
     if (hidden > 0) details.push(`${hidden} private ${hidden === 1 ? 'page' : 'pages'} (not named here), each limited who could use ${hidden === 1 ? 'it' : 'them'}: ask each page's owner to open it and set its Audience or Author Lock to limit it again.`);
     return [{ state: 'degraded', kind: 'attention', reason, details }];
+  }
+
+  /** Pages whose `access:` the start-up conversion replaced (#2466), for the needs-attention entry. */
+  private readonly legacyAccessConverted: Array<{ title: string; replacement: Replacement }> = [];
+
+  /** The conversion's notice (#2466): what it changed, in plain words, with a count and the page names. */
+  private convertedAccessItems(): ManagerStatus[] {
+    const all = this.legacyAccessConverted;
+    if (all.length === 0) return [];
+    const one = all.length === 1;
+    const named = [...all].sort((a, b) => a.title.localeCompare(b.title));
+    const list = (names: string[]): string => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0]);
+    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title, replacement }) => (replacement.kind === 'author-lock'
+      ? `${title}: now has an Author Lock, so only its author and administrators can change it`
+      : `${title}: now has an Audience of ${list(replacement.audience ?? [])}`));
+    const more = named.length - details.length;
+    if (more > 0) details.push(`and ${more} more ${more === 1 ? 'page' : 'pages'}`);
+    return [{
+      state: 'degraded',
+      kind: 'attention',
+      reason: `The update moved the old access limit on ${all.length} ${one ? 'page to its' : 'pages to their'} Audience or Author Lock, so the same people are limited as before. Nothing else on ${one ? 'it' : 'them'} changed.`,
+      details
+    }];
+  }
+
+  /** Whether the account a page's `author` names holds `admin-system`, asked of the policies. False when it cannot be told. */
+  private async authorHoldsAdmin(author: string): Promise<boolean> {
+    try {
+      const ctx = systemContext(this.engine, 'tell whether a page author is an administrator (#2466)');
+      const username = await this.engine.getManager<IdentityManager>('IdentityManager')?.usernameOf(ctx, author);
+      if (!username) return false;
+      const user = await this.engine.getManager<{ getUser(name: string): Promise<{ roles?: string[] } | undefined> }>('UserManager')?.getUser(username);
+      if (!user || !Array.isArray(user.roles)) return false;
+      // Asked of the policies, as a request by that account would be.
+      return await subjectMayDo(this.engine, { username, roles: user.roles, isAuthenticated: true }, 'admin-system');
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * At start-up, once required pages are seeded (#2466): move a page's old
+   * `access:` limit to its Audience or Author Lock, but only where that limits
+   * exactly the people the old limit did ({@link exactReplacement}). Any other
+   * page is left as it is and stays in the needs-attention list. Each page is
+   * saved through the door with its last-modified and editor kept, after a copy
+   * of its file as it was goes into `upgrade-backups`; with no copy the page
+   * is left alone. A converted page has no `access:`, so a second start finds
+   * nothing to do. Never throws. A private page is left for its owner.
+   *
+   * @returns How many pages were converted, and how many are left with a limit
+   */
+  async convertLegacyAccessAtBoot(): Promise<{ converted: number; left: number }> {
+    this.legacyAccessConverted.length = 0;
+    let converted = 0;
+    let left = 0;
+    try {
+      const provider = this.provider;
+      const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+      if (!provider || !configManager) return { converted, left };
+      const policies = this.engine.getManager<{ policies?(): unknown }>('PolicyDecisionPoint')?.policies?.() ?? [];
+      const site = { adminsAreRoleAdmin: adminsAreRoleAdmin(policies), authorHoldsAdmin: (author: string) => this.authorHoldsAdmin(author) };
+      const record = await this.loadSeededRecord();
+      const defaultCategory = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager')?.getDefaultSystemCategory?.();
+      const ctx = systemContext(this.engine, 'move old access limits to an Audience or Author Lock (#2466)');
+      const backups = path.join(configManager.getInstanceDataFolder(), 'upgrade-backups');
+      for (const info of await provider.getAllPageInfo()) {
+        if (info.metadata?.access === undefined || parsePrivatePageName(info.title)) continue;
+        if (!limitsLeftByUpgrade(info.metadata, Boolean(info.uuid) && record.hasUuid(info.uuid), defaultCategory)) continue;
+        // A private page is its owner's: the write door does not let start-up change it, so it stays listed for its owner.
+        const priv = (info.metadata as { private?: unknown }).private;
+        if (priv === true || priv === 'true') { left++; continue; }
+        try {
+          const replacement = await exactReplacement(info.metadata, site);
+          if (!replacement) { left++; continue; }
+          const text = await fse.readFile(info.filePath, 'utf8');
+          const page = await this.getPage(info.title, ctx);
+          // The page is read again so the replacement is judged on what is stored now.
+          const fresh = page ? await exactReplacement(page.metadata, site) : null;
+          if (!page || !fresh) { left++; continue; }
+          backUpBeforeRewrite(backups, `${info.uuid || 'page'}.md`, text);
+          await this.savePage(info.title, page.content ?? '', withReplacement({ ...page.metadata }, fresh), ctx, {
+            preserveLastModified: true,
+            preserveEditor: true
+          });
+          this.legacyAccessConverted.push({ title: info.title, replacement: fresh });
+          converted++;
+          logger.info(`[PageManager] Moved the old access limit on '${info.title}' to its ${fresh.kind === 'author-lock' ? 'Author Lock' : 'Audience'}; the file as it was is saved in the upgrade backups`);
+        } catch (err) {
+          left++;
+          // One page must not stop the rest; it stays listed and is tried again at the next start. A page with an error is not named: it may be private.
+          logger.warn(`[PageManager] The old access limit on a page could not be moved, so it is left as it is: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    } catch (err) {
+      logger.warn(`[PageManager] Old access limits were not converted: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return { converted, left };
   }
 
   /**

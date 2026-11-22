@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- __#2466__ — at start, the update removes the old `priority` from your own access rules (each logged, the file copied first to the `upgrade-backups` folder of the data folder) and converts a page's old `access:` limit to its Audience or Author Lock only where that limits exactly the same people. Pages with no exact match are left as they were and stay in Admin → needs attention. Nothing for you to do; running again changes nothing.
+
 ### Planned
 
 - Future enhancements
