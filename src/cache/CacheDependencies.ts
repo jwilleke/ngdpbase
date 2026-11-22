@@ -22,6 +22,8 @@ export const USER_DATA_TOPIC = 'UserManager';
 
 /** Attachments: files, their metadata and which pages mention them. AttachmentManager bumps it after every write. */
 export const ATTACHMENT_DATA_TOPIC = 'AttachmentManager';
+/** Page footnotes: each page's footnote file. FootnoteManager bumps it after every write to one (#2454). */
+export const FOOTNOTE_DATA_TOPIC = 'FootnoteManager';
 /** The media library index. MediaManager bumps it after every scan, rebuild or metadata change. */
 export const MEDIA_DATA_TOPIC = 'MediaManager';
 
