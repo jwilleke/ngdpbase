@@ -416,3 +416,65 @@ describe('FootnotesPlugin', () => {
     });
   });
 });
+
+// #2454 S1 — the design's link rules: only http and https addresses become links.
+describe('execute() — link rules (#2454 S1)', () => {
+  const render = async (footnotes: unknown[], extra: Record<string, unknown> = {}) => {
+    const fm = makeFootnoteManager(footnotes);
+    return FootnotesPlugin.execute({
+      engine: makeEngine({ FootnoteManager: fm }),
+      pageName: 'TestPage',
+      pageMetadata: { uuid: 'abc-123' },
+      userContext: { isAuthenticated: false },
+      ...extra
+    }, {});
+  };
+  const note = (url: string) => ({ id: '1', display: 'A source', url, note: '', createdBy: 'alice' });
+
+  test.each(['http://example.com/a', 'https://example.com/a?b=1'])('%s renders as a link that opens in a new tab', async (url) => {
+    const result = await render([note(url)]);
+    expect(result).toContain(`<a href="${url.replace('&', '&amp;')}" target="_blank" rel="noopener noreferrer">A source</a>`);
+  });
+
+  test.each(['javascript:alert(1)', 'data:text/html,x', 'file:///etc/hosts', 'ftp://example.com/x', 'not a link'])(
+    'a stored %s shows its text with no link',
+    async (url) => {
+      const result = await render([note(url)]);
+      expect(result).toContain('A source');
+      expect(result).not.toMatch(/<a href="(javascript|data|file|ftp|not)/);
+      expect(result).not.toContain('target="_blank"');
+    }
+  );
+
+  test('a note with no link and a note with a link that is not allowed both show their text', async () => {
+    const result = await render([
+      { id: '1', display: 'Page note', url: '', note: '', createdBy: 'alice' },
+      { id: '2', display: '', url: 'javascript:1', note: '', createdBy: 'alice' }
+    ]);
+    expect(result).toContain('Page note');
+    expect(result).toContain('javascript:1');
+    expect(result).not.toContain('href="javascript');
+  });
+
+  test('the Edit button still carries the stored value, so an editor can correct it', async () => {
+    const result = await render([note('javascript:1')], { userContext: { isAuthenticated: true, username: 'alice', roles: ['editor'] } });
+    expect(result).toContain('data-url="javascript:1"');
+    expect(result).not.toContain('href="javascript');
+  });
+
+  test('the render declares the footnote topic before it reads', async () => {
+    const order: string[] = [];
+    const fm = makeFootnoteManager([]);
+    fm.getFootnotes.mockImplementation(async () => { order.push('read'); return []; });
+    const dependsOn = vi.fn((topic: string) => { order.push(`dependsOn:${topic}`); });
+    await FootnotesPlugin.execute({
+      engine: makeEngine({ FootnoteManager: fm }),
+      pageName: 'TestPage',
+      pageMetadata: { uuid: 'abc-123' },
+      userContext: { isAuthenticated: false },
+      dependsOn
+    }, {});
+    expect(dependsOn).toHaveBeenCalledWith('FootnoteManager');
+    expect(order).toEqual(['dependsOn:FootnoteManager', 'read']);
+  });
+});
