@@ -1,7 +1,7 @@
 ---
 name: FootnotesPlugin
 description: Renders footnote definitions from sidecar storage (FootnoteManager) with a CRUD UI for authorised users
-dateModified: '2026-10-16'
+dateModified: '2026-11-22'
 category: plugins
 code: src/plugins/FootnotesPlugin.ts
 relatedModules:
@@ -31,6 +31,12 @@ Renders the footnote definitions for the current page from sidecar storage. Fall
 | Parameter | Default | Description |
 |---|---|---|
 | `noheader` | `false` | Suppress the "Footnotes" heading |
+
+## Links
+
+A footnote's link becomes a link (`href`, opening in a new tab) only when it is an http or https address (`safeSourceUrl`, [#2454](https://github.com/jwilleke/ngdpbase/issues/2454)). Any other stored value, such as a `javascript:`, `data:` or `file:` address or text that is not an address, shows as plain text with no link, so a value saved before the rule, imported or restored never becomes one. The Edit button still carries the stored value, so an editor can correct it, and saving it again is refused unless it is http or https. This covers a page's own footnotes; the legacy body fallback below keeps its own rules.
+
+The render declares `FOOTNOTE_DATA_TOPIC` (`context.dependsOn`) before it reads, so a cached page shows an edited footnote on its next view with no restart.
 
 ## Legacy Body Parsing
 
