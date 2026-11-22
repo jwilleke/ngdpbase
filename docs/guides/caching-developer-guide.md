@@ -1,7 +1,7 @@
 ---
 name: Caching developer guide
 description: One page cache, keyed by the viewer and their roles, that follows every input it renders through data versions
-dateModified: 2026-10-23
+dateModified: 2026-11-22
 category: guides
 relatedModules: [CacheManager, MarkupParser, PluginManager, PageManager]
 ---
@@ -24,7 +24,8 @@ A cached value is never "fine to be slightly stale". It is keyed by every input 
 
 - Name the topic after the manager, and declare it once in `src/cache/CacheDependencies.ts` when core code refers to it.
 - Route every write through one private helper that writes, then bumps the topic: see `UserManager.writeAccounts`, `AttachmentManager.writeAttachments` and `MediaManager.writeMedia`. A write that skips the helper leaves pages stale.
-- Data that belongs to one page (its comments, its footnotes) bumps the page topic instead: after the write, call `invalidateHandlerCache(pageUuid)` (`BaseManager`), which goes through `PageManager.invalidatePageCache`. See `CommentManager` and `FootnoteManager`.
+- Data that belongs to one page (its comments) bumps the page topic instead: after the write, call `invalidateHandlerCache(pageUuid)` (`BaseManager`), which goes through `PageManager.invalidatePageCache`. See `CommentManager`.
+- Footnotes do both ([#2454](https://github.com/jwilleke/ngdpbase/issues/2454)): `FootnoteManager` calls `invalidateHandlerCache(pageUuid)` and bumps its own `FOOTNOTE_DATA_TOPIC` after every write to a page's footnote file, and `FootnotesPlugin` calls `context.dependsOn(FOOTNOTE_DATA_TOPIC)` before it reads.
 - Nothing else is needed: a plugin that fetches the manager already depends on it.
 
 ## How to add a plugin

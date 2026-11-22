@@ -1,7 +1,7 @@
 ---
 name: FootnoteManager
 description: Sidecar storage + CRUD for page footnotes (migrated out of page body in #553/#557)
-dateModified: '2026-10-26'
+dateModified: '2026-11-22'
 category: managers
 code: src/managers/FootnoteManager.ts
 ---
@@ -41,6 +41,18 @@ Every call names the page as `{ name, uuid }` and carries the caller's context. 
 - `deleteFootnote(page, id, ctx)` — remove
 - `movePageFootnotes(uuid, fromName, toName, ctx)` — follow the page to its new place
 - `isCreator(footnote, ctx)` — whether the caller added it; the plugin's Delete button and the delete route ask this
+
+## Links: http and https only ([#2454](https://github.com/jwilleke/ngdpbase/issues/2454))
+
+A footnote's link is a link only when it is an http or https address. `safeSourceUrl` and `tidyUrl` are in `src/utils/footnoteLinks.ts`.
+
+- `addFootnote` and `updateFootnote` refuse a link that is not http or https with a `FootnoteLinkError`: "A footnote's link must start with http:// or https://. Check the address and try again." The add and edit routes answer it with 400 and that text. A footnote with no link at all (a note) is still saved.
+- `importFootnote` and `transferFromContent` do not check the link they are given. The render does: `FootnotesPlugin` puts a stored value into `href` only when `safeSourceUrl` passes, and shows other values as text, so an old or imported value never becomes a link.
+- `tidyUrl(url)` gives the key two links share when they are "the same link": `http` and `https` are equal, the host is lower case without a leading `www.`, a trailing slash on the path is dropped, and `utm_*`, `fbclid` and `gclid` parameters are dropped. Other parameters keep their order, and a fragment stays. It returns `null` for a value that is not an http or https link. Nothing calls it yet; the shared sources that use it come in a later slice of #2454.
+
+## The cache
+
+After every write to a page's footnote file (add, update, delete, import, transfer, and a move into or out of a vault) the manager bumps `FOOTNOTE_DATA_TOPIC` (`'FootnoteManager'`, in `src/cache/CacheDependencies.ts`), so a cached page that shows footnotes re-renders on its next view. `FootnotesPlugin` declares that topic before it reads. A failed bump is logged by the cache and never fails the write.
 
 ## Who added a footnote
 
