@@ -12927,18 +12927,6 @@ ${panes}
         version: configManager.getProperty('ngdpbase.version', '1.0.0')
       };
 
-      // Mock recent activity (in a real implementation, this would come from logs)
-      const recentActivity = [
-        {
-          timestamp: new Date().toLocaleString(),
-          description: 'User logged in: ' + (currentUser?.username ?? 'Anonymous')
-        },
-        {
-          timestamp: new Date(Date.now() - 60000).toLocaleString(),
-          description: 'System started'
-        }
-      ];
-
       // Get system notifications
       let notifications: unknown[] = [];
       let totalNotificationCount = 0;
@@ -13114,7 +13102,6 @@ ${panes}
         userCount: users.length,
         roleCount: roles.length,
         stats: stats,
-        recentActivity: recentActivity,
         requiredPages: requiredPages,
         requiredPagesSyncNeeded,
         notifications: notifications,
