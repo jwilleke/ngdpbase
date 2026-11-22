@@ -137,6 +137,41 @@ describe('PageManager converts old access: limits that have an exact replacement
     expect(saved).toEqual([]);
   });
 
+  test('R6: the page is read again, compared and saved while holding the page write lock', async () => {
+    await add('Board Notes', { access: { edit: ['admin'] }, author: ADMIN_ID });
+    const m = manager();
+    const order: string[] = [];
+    const provider = m.provider as { getPage: ReturnType<typeof vi.fn>; savePage: ReturnType<typeof vi.fn> };
+    const realGet = provider.getPage.getMockImplementation() as (n: string) => Promise<Record<string, unknown> | null>;
+    const realSave = provider.savePage.getMockImplementation() as (...a: unknown[]) => Promise<unknown>;
+    let first = true;
+    provider.getPage.mockImplementation(async (n: string) => {
+      if (first) {
+        first = false;
+        // Another save of the same page arrives while the conversion is reading it.
+        void (m as unknown as { pageWrite(key: string, task: () => Promise<void>): Promise<void> }).pageWrite('u1', async () => { order.push('other save'); });
+      }
+      return realGet(n);
+    });
+    provider.savePage.mockImplementation(async (...a: unknown[]) => {
+      order.push('conversion save');
+      return realSave(...a);
+    });
+    expect((await start(m)).converted).toBe(1);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(order).toEqual(['conversion save', 'other save']);
+  });
+
+  test('R6: a page whose save fails leaves no copy of its file behind', async () => {
+    await add('Broken', { access: { edit: ['admin'] }, author: ADMIN_ID });
+    const m = manager();
+    const provider = m.provider as { savePage: ReturnType<typeof vi.fn> };
+    provider.savePage.mockImplementation(async () => { throw new Error('disk full'); });
+    expect(await start(m)).toEqual({ converted: 0, left: 1 });
+    expect(metaOf('Broken').access).toEqual({ edit: ['admin'] });
+    expect(backups()).toEqual([]);
+  });
+
   test('R3: a page with no exact replacement is not written and stays in the banner', async () => {
     await add('Read Limit', { access: { view: ['editor'] } });
     await add('Different Lists', { access: { view: ['admin', 'editor'], edit: ['admin'] } });

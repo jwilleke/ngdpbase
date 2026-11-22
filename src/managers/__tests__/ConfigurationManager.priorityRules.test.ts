@@ -108,6 +108,27 @@ describe('ConfigurationManager: removes the old priority from policy rules (#246
     expect(fs.readdirSync(path.dirname(customFile())).filter((f) => f !== path.basename(customFile()))).toEqual([]);
   });
 
+  test('R6: the file beside it is created exclusively and flushed to disk before it replaces the config', async () => {
+    const calls: string[] = [];
+    const realOpen = fs.openSync;
+    const openSpy = vi.spyOn(fs, 'openSync').mockImplementation(((file: fs.PathLike, flags: fs.OpenMode, ...rest: unknown[]) => {
+      if (String(file).includes('app-custom-config.json') && String(file).endsWith('.tmp')) calls.push(`open:${String(flags)}`);
+      return (realOpen)(file, flags, ...rest);
+    }));
+    const realSync = fs.fsyncSync;
+    const syncSpy = vi.spyOn(fs, 'fsyncSync').mockImplementation(((fd: number) => { calls.push('fsync'); return realSync(fd); }));
+    const realRename = fs.renameSync;
+    const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation(((a: fs.PathLike, b: fs.PathLike) => { calls.push('rename'); return realRename(a, b); }));
+    try {
+      await boot({ [POLICIES]: rules() });
+    } finally {
+      openSpy.mockRestore();
+      syncSpy.mockRestore();
+      renameSpy.mockRestore();
+    }
+    expect(calls).toEqual(['open:wx', 'fsync', 'rename']);
+  });
+
   test('R4: a long list of rules is named up to 50 and then counted', async () => {
     const many = Array.from({ length: 60 }, (_, i) => ({ id: `rule-${i}`, effect: 'deny', priority: i }));
     const cm = await boot({ [POLICIES]: many });
