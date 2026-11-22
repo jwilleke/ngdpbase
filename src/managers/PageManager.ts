@@ -4327,7 +4327,7 @@ class PageManager extends BaseManager implements CatalogSource {
     return [{
       state: 'degraded',
       kind: 'attention',
-      reason: `The update moved the old access limit on ${all.length} ${one ? 'page to its' : 'pages to their'} Author Lock, so the same people are limited as before. Nothing else on ${one ? 'it' : 'them'} changed.`,
+      reason: `The update moved the old access limit on ${all.length} ${one ? 'page to its' : 'pages to their'} Author Lock. The old ${one ? 'limit' : 'limits'} had stopped applying, so this is a change: only ${one ? 'its author' : 'their authors'} and administrators can change ${one ? 'it' : 'them'} now. Nothing else on ${one ? 'it' : 'them'} changed.`,
       details
     }];
   }
@@ -4379,19 +4379,21 @@ class PageManager extends BaseManager implements CatalogSource {
         // A private page is its owner's: the write door does not let start-up change it, so it stays listed for its owner.
         const priv = (info.metadata as { private?: unknown }).private;
         if (priv === true || priv === 'true') { left++; continue; }
+        // The page write lock is keyed on the uuid, as a save of the page keys it; with none, the lock would not exclude a save.
+        if (!info.uuid) { left++; continue; }
         try {
           const replacement = await exactReplacement(info.metadata, site);
           if (!replacement) { left++; continue; }
           // Read, compared, copied and saved as one step, so a save made meanwhile is never written over.
-          const fresh = await this.pageWrite(info.uuid || info.title, async () => {
+          const fresh = await this.pageWrite(info.uuid, async () => {
             const text = await fse.readFile(info.filePath, 'utf8');
             const page = await this.getPage(info.title, ctx);
             // The page is read again so the replacement is judged on what is stored now, and it must be the page whose file is copied.
             const now = page ? await exactReplacement(page.metadata, site) : null;
-            if (!page || !now || (info.uuid && page.uuid !== info.uuid)) return null;
+            if (!page || !now || page.uuid !== info.uuid) return null;
             // The file is unchanged since it was copied, so the copy is what the save overwrites.
             if (await fse.readFile(info.filePath, 'utf8') !== text) return null;
-            const copy = backUpBeforeRewrite(backups, `${info.uuid || 'page'}.md`, text);
+            const copy = backUpBeforeRewrite(backups, `${info.uuid}.md`, text);
             try {
               await this.savePage(info.title, page.content ?? '', withReplacement({ ...page.metadata }, now), ctx, {
                 preserveLastModified: true,
@@ -4399,8 +4401,10 @@ class PageManager extends BaseManager implements CatalogSource {
                 writeLockHeld: true
               });
             } catch (err) {
-              // The page is as it was, so the copy made a moment ago is not kept: a page that fails every start would add one every time.
-              fse.removeSync(copy);
+              // The copy is dropped only while the file is still as it was: a page that fails every start would add one each time, but once the file was rewritten the copy is the only original.
+              const unchanged = await fse.readFile(info.filePath, 'utf8').then((now) => now === text, () => false);
+              if (unchanged) fse.removeSync(copy);
+              else logger.warn(`[PageManager] A page was rewritten before its save failed; the file as it was is kept at ${clipText(copy)}`);
               throw err;
             }
             return now;
