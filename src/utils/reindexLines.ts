@@ -33,9 +33,10 @@ export function automaticReindexLabel(scanIntervalMs: number): string {
  */
 export function latestReindex(rescan: JobLastRun | null, rebuild: JobLastRun | null): ReindexLine | null {
   if (!rescan && !rebuild) return null;
-  const a = rescan?.lastRun ?? null;
-  const b = rebuild?.lastRun ?? null;
-  const rebuildLater = Boolean(b) && (!a || b!.completedAt > a.completedAt);
-  const source = (rebuildLater ? rebuild : rescan) ?? (rebuild);
-  return { ...source, lastRun: rebuildLater ? b : a, via: rebuildLater ? 'rebuild' : null };
+  const rescanRun = rescan?.lastRun ?? null;
+  const rebuildRun = rebuild?.lastRun ?? null;
+  const rebuildLater = rebuildRun !== null && (rescanRun === null || rebuildRun.completedAt > rescanRun.completedAt);
+  const source = (rebuildLater ? rebuild : rescan) ?? rebuild ?? rescan;
+  if (!source) return null;
+  return { ...source, lastRun: rebuildLater ? rebuildRun : rescanRun, via: rebuildLater ? 'rebuild' : null };
 }
