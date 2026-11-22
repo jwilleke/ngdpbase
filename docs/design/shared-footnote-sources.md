@@ -170,6 +170,7 @@ Both methods refuse a `sourceId` whose record is missing, with "That source was 
 
 - `http` and `https` are equal (the key stores `https`).
 - The host is lower case, a leading `www.` is dropped, and a trailing slash on the path is dropped.
+- A port written in the address stays in the key, so `https://example.com:443/x` and `https://example.com/x` are two keys. A `user:password@` part is left out, so a credential never reaches a key.
 - Query parameters named `utm_*`, plus `fbclid` and `gclid`, are dropped. Other parameters stay, and the rest keep their order.
 - A fragment (`#section`) stays in the key, so `page#a` and `page#b` are two sources.
 - Anything else is left alone. A link that does not parse is not tidied and never matches another.
