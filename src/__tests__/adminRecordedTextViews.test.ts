@@ -197,7 +197,7 @@ const job = (run: Record<string, unknown>): Responder => (url) => url.endsWith('
 
 describe('Admin → Dashboard', () => {
   const dashboard = (respond?: Responder) => runPage('admin-dashboard.ejs', {
-    can: () => true, catalogSources: [], stats: {}, capabilities: { media: true }, addonsSummary: {}, currentUser: {}, recentActivity: [], notifications: undefined, lastRuns: {}, requiredPages: [], maintenanceMode: false
+    can: () => true, catalogSources: [], stats: {}, capabilities: { media: true }, addonsSummary: {}, currentUser: {}, notifications: undefined, lastRuns: {}, requiredPages: [], maintenanceMode: false
   }, respond);
 
   test('a message is shown as text', () => {

@@ -703,35 +703,6 @@
 
     </div>
 
-    <!-- Row 4: Recent Activity -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card mb-4">
-                <div class="card-body py-2">
-                    <details>
-                        <summary class="card-summary">
-                            <i class="fas fa-history"></i>
-                            <strong>Recent Activity</strong>
-                            <span class="badge bg-secondary ms-auto"><%= recentActivity ? recentActivity.length : 0 %></span>
-                        </summary>
-                        <div class="mt-3">
-                            <% if (recentActivity && recentActivity.length > 0) { %>
-                                <% recentActivity.slice(0, 5).forEach(activity => { %>
-                                    <div class="mb-2">
-                                        <small class="text-muted"><%= activity.timestamp %></small><br>
-                                        <%= activity.description %>
-                                    </div>
-                                <% }); %>
-                            <% } else { %>
-                                <p class="text-muted">No recent activity to display.</p>
-                            <% } %>
-                        </div>
-                    </details>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <%# #1034: withheld from read-only accounts. Session records carry usernames, IP addresses and last-access times — the same privacy reason /admin/users is withheld from the demo role (#1029). The API behind it enforces the same `user-read` permission, so this is presentation, not the control. %>
     <% if (can('user-read')) { %>
     <!-- Row 4b: Session Manager (#776) — collapsible per-session list -->
