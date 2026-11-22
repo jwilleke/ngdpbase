@@ -181,7 +181,9 @@ describe('PageManager converts old access: limits that have an exact replacement
       await fs.writeFile(info.filePath, '---\ntitle: Broken\nuuid: u1\nauthor-lock: true\n---\nbody text\n');
       throw new Error('indexing failed after the write');
     });
-    expect(await start(m)).toEqual({ converted: 0, left: 1 });
+    // The file now holds the Author Lock, so the page counts as converted and the banner names it.
+    expect(await start(m)).toEqual({ converted: 1, left: 0 });
+    expect(bannerText(m)).toContain('Broken');
     expect(backups()).toHaveLength(1);
     expect(await fs.readFile(path.join(backupDir(), backups()[0]), 'utf8')).toBe(original);
   });
