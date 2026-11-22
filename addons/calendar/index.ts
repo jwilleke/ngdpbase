@@ -43,7 +43,7 @@ import type { AddonHost } from '../../dist/src/utils/addonHost.js';
 import type IdentityManager from '../../dist/src/managers/IdentityManager.js';
 import CalendarDataManager from './managers/CalendarDataManager.js';
 import CalendarPlugin from './plugins/CalendarPlugin.js';
-import { calendarGate, currentCalendarConfig } from './managers/calendarVisibility.js';
+import { calendarGate, currentCalendarConfig, entryOf } from './managers/calendarVisibility.js';
 import apiRoutes from './routes/api.js';
 import reservationRoutes from './routes/reservations.js';
 import adminRoutes from './routes/admin.js';
@@ -123,7 +123,25 @@ const calendarAddon = {
     const formsAddon = engine.getManager<typeof FormsAddon>('FormsAddon');
     if (formsAddon && dataManager) {
       const dm = dataManager;
-      formsAddon.registerHandler('clubhouse-reservation', async (submission) => {
+      formsAddon.registerHandler('clubhouse-reservation', async (submission, context) => {
+        // The calendar's visibility, enabled and workflow settings apply here as they do to
+        // POST /api/calendar/reservations, before the conflict check. A calendar the submitter
+        // may not see, a disabled one and one the configuration does not name all get the same
+        // refusal, whether the slot is booked or free.
+        const current = currentCalendarConfig(engine, config);
+        const holds = async (permission: string): Promise<boolean> => {
+          // The reviewer's context when a reviewer carries the submission out; otherwise the submitter's request.
+          if (context.decider) {
+            const pdp = engine.getManager<{ permits(subject: unknown, action: string): Promise<boolean> }>('PolicyDecisionPoint');
+            return pdp ? pdp.permits(context.decider, permission) : false;
+          }
+          return context.req ? host.ApiContext.from(context.req as never, engine).hasPermission(permission) : false;
+        };
+        const mayUse = await calendarGate(holds, current)('clubhouse');
+        if (!mayUse || entryOf(current, 'clubhouse')?.['workflow'] !== 'reservation') {
+          return { ok: false, error: 'This calendar does not accept reservations.' };
+        }
+
         const data = submission.data as Record<string, string>;
         const person = submission.onBehalfOf?.name
           ? submission.onBehalfOf

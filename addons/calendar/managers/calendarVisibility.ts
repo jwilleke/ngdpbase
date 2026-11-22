@@ -22,10 +22,11 @@ export type CalendarGate = (calendarId: string) => Promise<boolean>;
 export function entryOf(config: Record<string, unknown>, calendarId: string): Record<string, unknown> | undefined {
   const calendars = config['calendars'];
   // Own names only: `__proto__` or `constructor` is a calendar the configuration does not name.
-  const entry = calendars && typeof calendars === 'object' && Object.hasOwn(calendars, calendarId)
+  // A list is not a map of calendars, and a list is not an entry: both read as unnamed.
+  const entry = calendars && typeof calendars === 'object' && !Array.isArray(calendars) && Object.hasOwn(calendars, calendarId)
     ? (calendars as Record<string, unknown>)[calendarId]
     : undefined;
-  return entry && typeof entry === 'object' ? entry as Record<string, unknown> : undefined;
+  return entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : undefined;
 }
 
 /**

@@ -176,10 +176,13 @@ export default function reservationRoutes(
         return;
       }
       const msg = err instanceof Error ? err.message : String(err);
-      const status = msg.includes('not found') ? 404
-        : msg.includes('Forbidden') ? 403
-          : 400;
-      res.status(status).json({ error: msg });
+      // A caller who may not cancel it gets the answer for a reservation that is not there,
+      // so the reply does not say which ids exist.
+      if (msg.includes('not found') || msg.includes('Forbidden')) {
+        res.status(404).json({ error: 'Reservation not found' });
+        return;
+      }
+      res.status(400).json({ error: msg });
     }
   });
 

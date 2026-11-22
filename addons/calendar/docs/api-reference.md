@@ -176,7 +176,7 @@ __Auth__: authenticated
 
 __Response__ `204 No Content`
 
-__Errors__: `401`, `403`, `404`.
+__Errors__: `401`, `403` (not allowed to reserve at all), `404`. A caller who is neither the requester nor a manager gets `404` for a reservation that exists and for one that does not, with the same body.
 
 ---
 
