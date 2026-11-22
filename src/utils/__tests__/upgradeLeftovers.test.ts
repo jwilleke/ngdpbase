@@ -77,10 +77,9 @@ describe('exactReplacement (R2, R3)', () => {
     expect(await exactReplacement({ access: { edit: ['admin'] }, author: 'urn:uuid:1' }, site({ authorHoldsAdmin: async () => false }))).toBeNull();
   });
 
-  test('view and edit naming the same people, admin among them, is an Audience of those people', async () => {
-    const r = await exactReplacement({ access: { view: ['admin', 'editor'], edit: ['editor', 'admin'] } }, site());
-    expect(r?.kind).toBe('audience');
-    expect([...(r?.audience ?? [])].sort()).toEqual(['admin', 'editor']);
+  test('view and edit naming the same people is not converted: an Audience lets a listed person view past the site\'s access rules', async () => {
+    expect(await exactReplacement({ access: { view: ['admin', 'editor'], edit: ['editor', 'admin'] } }, site())).toBeNull();
+    expect(await exactReplacement({ access: { view: ['admin'], edit: ['admin'] } }, site())).toBeNull();
   });
 
   test.each([
@@ -126,6 +125,14 @@ describe('backUpBeforeRewrite (R6)', () => {
     if (process.platform !== 'win32') expect(fs.statSync(first).mode & 0o077).toBe(0);
     expect(() => backUpBeforeRewrite(path.join(dir, 'b'), 'Board Notes.md', 'other', when)).toThrow();
     expect(fs.readFileSync(first, 'utf8')).toBe('old text');
+  });
+
+  test('an existing folder with wider permissions is made owner-only', () => {
+    if (process.platform === 'win32') return;
+    fs.mkdirSync(path.join(dir, 'b'), { mode: 0o755 });
+    fs.chmodSync(path.join(dir, 'b'), 0o755);
+    backUpBeforeRewrite(path.join(dir, 'b'), 'x.md', 'x');
+    expect(fs.statSync(path.join(dir, 'b')).mode & 0o077).toBe(0);
   });
 
   test('a name with path characters stays inside the folder', () => {

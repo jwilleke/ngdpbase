@@ -1,6 +1,7 @@
 /**
- * #2466: at start, a page's old `access:` becomes its Audience or Author Lock
- * only when that lets in exactly the people the old limit did. Every other page
+ * #2466: at start, a page's old `access:` becomes its Author Lock only when
+ * that limits exactly the people the old limit did (an Audience would let a
+ * listed person view past the site's access rules, so it is never made). Every other page
  * is left as it is and stays in the needs-attention list. Each rewrite is
  * preceded by a copy of the file, and a second start changes nothing.
  */
@@ -92,16 +93,48 @@ describe('PageManager converts old access: limits that have an exact replacement
   const metaOf = (title: string): Meta => pages.filter((p) => p.title === title)[0].metadata;
   const bannerText = (m: TestManager): string => m.getAttentionItems().flatMap((i) => [i.reason, ...(i.details ?? [])]).join('\n');
 
-  test('R2: edit limited to admin becomes an Author Lock; the same people for view and edit become an Audience', async () => {
+  test('R2: edit limited to admin becomes an Author Lock, saved with its date and editor kept', async () => {
     await add('Board Notes', { access: { edit: ['admin'] }, author: ADMIN_ID });
-    await add('Staff Pages', { access: { view: ['admin', 'editor'], edit: ['editor', 'admin'] } });
     const m = manager();
     const result = await start(m);
-    expect(result.converted).toBe(2);
+    expect(result.converted).toBe(1);
     expect(metaOf('Board Notes').access).toBeUndefined();
     expect(metaOf('Board Notes')['author-lock']).toBe(true);
-    expect(metaOf('Staff Pages').access).toBeUndefined();
-    expect([...(metaOf('Staff Pages').audience as string[])].sort()).toEqual(['admin', 'editor']);
+    const provider = m.provider as { savePage: { mock: { calls: unknown[][] } } };
+    expect(provider.savePage.mock.calls[0][4]).toMatchObject({ preserveLastModified: true, preserveEditor: true });
+  });
+
+  test('R3: view and edit naming the same people stay as they are: an Audience would let them view past the access rules', async () => {
+    await add('Staff Pages', { access: { view: ['admin', 'editor'], edit: ['editor', 'admin'] } });
+    const m = manager();
+    expect(await start(m)).toEqual({ converted: 0, left: 1 });
+    expect(saved).toEqual([]);
+    expect(metaOf('Staff Pages').access).toBeDefined();
+    expect(bannerText(m)).toContain('Staff Pages');
+  });
+
+  test('R6: a page that is not the one backed up is left alone', async () => {
+    await add('Board Notes', { access: { edit: ['admin'] }, author: ADMIN_ID });
+    const m = manager();
+    const provider = m.provider as { getPage: ReturnType<typeof vi.fn> };
+    const real = provider.getPage.getMockImplementation() as (n: string) => Promise<Record<string, unknown> | null>;
+    provider.getPage.mockImplementation(async (n: string) => ({ ...(await real(n)), uuid: 'someone-else' }));
+    expect(await start(m)).toEqual({ converted: 0, left: 1 });
+    expect(saved).toEqual([]);
+    expect(backups()).toEqual([]);
+  });
+
+  test('R6: a file that changed between the copy and the save is left alone', async () => {
+    const info = await add('Board Notes', { access: { edit: ['admin'] }, author: ADMIN_ID });
+    const m = manager();
+    const provider = m.provider as { getPage: ReturnType<typeof vi.fn> };
+    const real = provider.getPage.getMockImplementation() as (n: string) => Promise<Record<string, unknown> | null>;
+    provider.getPage.mockImplementation(async (n: string) => {
+      await fs.appendFile(info.filePath, 'someone edited this\n');
+      return real(n);
+    });
+    expect(await start(m)).toEqual({ converted: 0, left: 1 });
+    expect(saved).toEqual([]);
   });
 
   test('R3: a page with no exact replacement is not written and stays in the banner', async () => {
@@ -181,22 +214,29 @@ describe('PageManager converts old access: limits that have an exact replacement
 
   test('R4: the banner says what changed in plain words, with a count and page names, and what was left', async () => {
     await add('Board Notes', { access: { edit: ['admin'] }, author: ADMIN_ID });
-    await add('Staff Pages', { access: { view: ['admin', 'editor'], edit: ['admin', 'editor'] } });
+    await add('Team Plan', { access: { edit: ['admin'] } });
     await add('Read Limit', { access: { view: ['editor'] } });
     const m = manager();
     await start(m);
     const [changed, left] = m.getAttentionItems();
     expect(changed.state).toBe('degraded');
     expect(changed.kind).toBe('attention');
-    expect(changed.reason).toMatch(/^The update moved the old access limit on 2 pages to their Audience or Author Lock/);
+    expect(changed.reason).toMatch(/^The update moved the old access limit on 2 pages to their Author Lock/);
     expect(changed.details).toEqual([
       'Board Notes: now has an Author Lock, so only its author and administrators can change it',
-      'Staff Pages: now has an Audience of admin and editor'
+      'Team Plan: now has an Author Lock, so only its author and administrators can change it'
     ]);
     expect(left.reason).toMatch(/^1 page has /);
     expect(left.details?.[0]).toContain('Read Limit');
     const text = bannerText(m);
     expect(text).not.toMatch(/#\d|docs\/|github|\.md\b|\blog\b|frontmatter|access:|urn:uuid/i);
+  });
+
+  test('R4: one converted page reads in the singular', async () => {
+    await add('Board Notes', { access: { edit: ['admin'] }, author: ADMIN_ID });
+    const m = manager();
+    await start(m);
+    expect(m.getAttentionItems()[0].reason).toMatch(/^The update moved the old access limit on 1 page to its Author Lock\. Nothing else on it changed\.$/);
   });
 
   test('a private page is left for its owner: not written, counted in the banner without its title', async () => {

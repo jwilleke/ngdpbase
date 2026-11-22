@@ -93,6 +93,29 @@ describe('ConfigurationManager: removes the old priority from policy rules (#246
     expect(allLogs()).toMatch(/priority/);
   });
 
+  test('R6: a write that fails leaves the file as it was, makes no copy and no stray file', async () => {
+    const before = `${JSON.stringify({ [POLICIES]: rules() }, null, 2)}\n`;
+    const real = fs.renameSync;
+    const spy = vi.spyOn(fs, 'renameSync').mockImplementation(() => { throw new Error('read-only file system'); });
+    try {
+      await boot({ [POLICIES]: rules() });
+    } finally {
+      spy.mockRestore();
+      expect(fs.renameSync).toBe(real);
+    }
+    expect(fs.readFileSync(customFile(), 'utf8')).toBe(before);
+    expect(backups()).toEqual([]);
+    expect(fs.readdirSync(path.dirname(customFile())).filter((f) => f !== path.basename(customFile()))).toEqual([]);
+  });
+
+  test('R4: a long list of rules is named up to 50 and then counted', async () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({ id: `rule-${i}`, effect: 'deny', priority: i }));
+    const cm = await boot({ [POLICIES]: many });
+    const [item] = cm.getAttentionItems();
+    expect(item.details).toHaveLength(51);
+    expect(item.details?.[50]).toBe('and 10 more rules');
+  });
+
   test('R5: a second start changes nothing and makes no copy', async () => {
     await boot({ [POLICIES]: rules() });
     const after = fs.readFileSync(customFile(), 'utf8');
