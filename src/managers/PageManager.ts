@@ -4403,9 +4403,12 @@ class PageManager extends BaseManager implements CatalogSource {
             } catch (err) {
               // The copy is dropped only while the file is still as it was: a page that fails every start would add one each time, but once the file was rewritten the copy is the only original.
               const unchanged = await fse.readFile(info.filePath, 'utf8').then((now) => now === text, () => false);
-              if (unchanged) fse.removeSync(copy);
-              else logger.warn(`[PageManager] A page was rewritten before its save failed; the file as it was is kept at ${clipText(copy)}`);
-              throw err;
+              if (unchanged) {
+                fse.removeSync(copy);
+                throw err;
+              }
+              // The file now holds the Author Lock, so the page is converted; the copy is kept, and the error is logged.
+              logger.warn(`[PageManager] A page was rewritten, but its save then reported an error (${clipText(err)}); the file as it was is kept at ${clipText(copy)}`);
             }
             return now;
           });
