@@ -169,6 +169,8 @@ class MediaManager extends BaseManager implements CatalogSource {
       id: 'media.folder-scan',
       displayName: 'Media: rescan folders',
       everyMs: scanInterval,
+      // #2467: the last scan is still on the dashboard after a restart.
+      keepLastRun: true,
       run: async () => {
         const result = await this.scanFolders();
         return `Scanned ${result.scanned}, added ${result.added}, updated ${result.updated}`;

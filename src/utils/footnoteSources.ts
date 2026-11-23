@@ -1,0 +1,119 @@
+/**
+ * The shared footnote source records from docs/design/shared-footnote-sources.md
+ * (#2454, "The records"): one JSON file per source, `{folder}/{id}.json`.
+ *
+ * This is the file store only. It decides nothing about who may see or change
+ * a source: `FootnoteManager` owns it, and the reader filter and the edit
+ * checks sit above it.
+ */
+
+import fs from 'fs-extra';
+import path from 'path';
+import { randomUUID } from 'crypto';
+import { FootnoteLinkError, safeSourceUrl, tidyUrl } from './footnoteLinks.js';
+
+export type SourceStatus = 'good' | 'needs-checking' | 'stale';
+
+export interface SourceRecord {
+  /** A random UUID, stable for life: never made from the link or from anything a request sends. */
+  id: string;
+  /** The name shown to readers. */
+  title: string;
+  /** The address as an editor entered it: http or https only. */
+  url: string;
+  /** The tidy form of `url` (R2), used to find the source again. Never shown. */
+  urlKey: string;
+  status: SourceStatus;
+  /** When `status` last changed. */
+  statusSince: string;
+  /** Why the weekly check set `needs-checking`; empty otherwise. */
+  flagReason: string;
+  /** When the weekly check last looked, with the answer it got; empty if it never ran. */
+  lastChecked: string;
+  /** Who declared it stale, as an identity `@id`; empty otherwise. */
+  staleBy: string;
+  /** Who made it: their identity `@id`, or the name given when there is no account. */
+  createdBy: string;
+  createdAt: string;
+}
+
+/** A source was asked for by an id that has no record: it was deleted, or never existed. */
+export class SourceMissingError extends Error {
+  constructor() {
+    super('That source was deleted a moment ago. Search again, or add the link as a new source.');
+    this.name = 'SourceMissingError';
+  }
+}
+
+/** A footnote on a vault page was pointed at a source: sources are shared across the site, vault pages never use them (R6). */
+export class SourceOnPrivatePageError extends Error {
+  constructor() {
+    super('Sources are shared across the site, so they can\'t be used on private pages. Add the link as a note on this page instead.');
+    this.name = 'SourceOnPrivatePageError';
+  }
+}
+
+const SOURCE_FILE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/i;
+const SOURCE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export class SourceStore {
+  private readonly now: () => Date;
+
+  constructor(private readonly dir: string, opts: { now?: () => Date } = {}) {
+    this.now = opts.now ?? (() => new Date());
+  }
+
+  /** Makes a new source. A link that is not http or https is refused ({@link FootnoteLinkError}), and so is a title with nothing in it. */
+  async create(data: { title: string; url: string; createdBy: string }): Promise<SourceRecord> {
+    const url = safeSourceUrl(data.url);
+    const urlKey = tidyUrl(data.url);
+    if (!url || !urlKey) throw new FootnoteLinkError();
+    const title = data.title.trim();
+    if (!title) throw new Error('A source needs a title.');
+    const at = this.now().toISOString();
+    const record: SourceRecord = {
+      id: randomUUID(),
+      title,
+      url,
+      urlKey,
+      status: 'good',
+      statusSince: at,
+      flagReason: '',
+      lastChecked: '',
+      staleBy: '',
+      createdBy: data.createdBy,
+      createdAt: at
+    };
+    await fs.ensureDir(this.dir);
+    await fs.writeFile(path.join(this.dir, `${record.id}.json`), JSON.stringify(record, null, 2), { flag: 'wx' });
+    return record;
+  }
+
+  /** The source with this id, or null: no such id, a value that is not an id (so never a path), or a file that is not readable. */
+  async get(id: string): Promise<SourceRecord | null> {
+    if (typeof id !== 'string' || !SOURCE_ID.test(id)) return null;
+    try {
+      const record = JSON.parse(await fs.readFile(path.join(this.dir, `${id.toLowerCase()}.json`), 'utf8')) as SourceRecord;
+      return record && typeof record === 'object' && record.id === id.toLowerCase() ? record : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Every source with this tidy key, oldest first (by `createdAt`, then id). Not
+   * filtered for any reader: whoever shows these to a person applies the
+   * reader filter first (R4).
+   */
+  async findByKey(urlKey: string): Promise<SourceRecord[]> {
+    if (!urlKey || !await fs.pathExists(this.dir)) return [];
+    const found: SourceRecord[] = [];
+    for (const name of await fs.readdir(this.dir)) {
+      const match = SOURCE_FILE.exec(name);
+      if (!match) continue;
+      const record = await this.get(match[1]);
+      if (record?.urlKey === urlKey) found.push(record);
+    }
+    return found.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  }
+}

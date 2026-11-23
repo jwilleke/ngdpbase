@@ -420,7 +420,8 @@ SLOW_STORAGE/                               (default: ./data — can be NAS/SMB)
 ├── pages/                                  # ngdpbase.page.provider.filesystem.storagedir
 ├── attachments/                            # ngdpbase.attachment.provider.basic.storagedir
 ├── comments/                               # ngdpbase.comments.storagedir
-└── footnotes/                              # ngdpbase.footnotes.storagedir
+├── footnotes/                              # ngdpbase.footnotes.storagedir
+└── footnote-sources/                       # ngdpbase.footnotes.sources.storagedir (#2454)
 ```
 
 ### Required Pages
