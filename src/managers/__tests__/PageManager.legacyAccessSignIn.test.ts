@@ -8,11 +8,13 @@
  * sign-in.
  */
 vi.unmock('../PageManager');
+vi.unmock('../IdentityManager');
 
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import PageManager, { PageAudienceRefusedError } from '../PageManager';
+import IdentityManager from '../IdentityManager';
 import logger from '../../utils/logger';
 import { ALLOWING_PDP, ALLOWING_PIP, withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
@@ -257,6 +259,27 @@ describe('PageManager moves a private page\'s old access: limit when its owner s
   const doneFile = (): string => path.join(folder, 'upgrade-signin-done.json');
   const doneUsers = (): string[] => (JSON.parse(fs.readFileSync(doneFile(), 'utf8')) as { users: string[] }).users;
 
+  /**
+   * An identity store that answers through the real `IdentityManager.usernameOf`:
+   * its `getById` throws on the calls numbered in `failOn` (counted from 1 across
+   * the test) and works otherwise; `canAnswer` follows `state.answers`.
+   */
+  function identityStore(failOn: number[] = []): { store: Record<string, unknown>; state: { answers: boolean; calls: number } } {
+    const state = { answers: true, calls: 0 };
+    const names: Record<string, string> = { [ROOT_ID]: 'root', [BOB_ID]: 'bob', [ANN_ID]: 'ann' };
+    const store = {
+      usernameOf: IdentityManager.prototype.usernameOf,
+      canAnswer: () => state.answers,
+      getById: async (_c: unknown, id: string) => {
+        state.calls++;
+        if (failOn.includes(state.calls)) throw new Error('identity store unavailable');
+        return names[id] ? { '@id': id, identifier: names[id] } : null;
+      },
+      storedReferenceOf: async (_c: unknown, n: string) => n
+    };
+    return { store, state };
+  }
+
   describe('a lookup that fails is not a "no" (#2466)', () => {
     test('the user store throws once: the page is not recorded as final, and the next sign-in converts it', async () => {
       await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
@@ -271,6 +294,55 @@ describe('PageManager moves a private page\'s old access: limit when its owner s
       expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 1, left: 0 });
       expect(metaOf('Secret Plans')['author-lock']).toBe(true);
       expect(doneUsers()).toContain('root');
+    });
+
+    test('the identity store fails on the author lookup: the person is not recorded as done, and the next sign-in converts the page', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      const { store } = identityStore([1]);
+      const m = manager({ IdentityManager: store });
+      await m.reportLegacyAccessLimits();
+      await m.convertLegacyAccessOnSignIn(ROOT);
+      expect(fs.existsSync(doneFile())).toBe(false);
+      expect(saved).toEqual([]);
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 1, left: 0 });
+      expect(metaOf('Secret Plans')['author-lock']).toBe(true);
+      expect(doneUsers()).toContain('root');
+    });
+
+    test('the identity store fails inside the administrator check: the page is tried again, not recorded as final', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      const { store } = identityStore([2]);
+      const m = manager({ IdentityManager: store });
+      await m.reportLegacyAccessLimits();
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 0, left: 1 });
+      expect(fs.existsSync(doneFile())).toBe(false);
+      expect(saved).toEqual([]);
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 1, left: 0 });
+      expect(doneUsers()).toContain('root');
+    });
+
+    test('a failing page does not stop the next one: the loop carries on', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      await add('Annes Plans', { access: { edit: ['admin'] }, author: ANN_ID, private: true });
+      const { store } = identityStore([1]);
+      const m = manager({ IdentityManager: store });
+      await m.reportLegacyAccessLimits();
+      await m.convertLegacyAccessOnSignIn(ANN);
+      expect(metaOf('Annes Plans')['author-lock']).toBe(true);
+      expect(fs.existsSync(doneFile())).toBe(false);
+    });
+
+    test('the identity store cannot answer at all: nothing is judged, and the next sign-in converts the page', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      const { store, state } = identityStore();
+      state.answers = false;
+      const m = manager({ IdentityManager: store });
+      await m.reportLegacyAccessLimits();
+      await m.convertLegacyAccessOnSignIn(ROOT);
+      expect(fs.existsSync(doneFile())).toBe(false);
+      expect(saved).toEqual([]);
+      state.answers = true;
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 1, left: 0 });
     });
 
     test('the access rules are not loaded yet: the page is tried again at the next sign-in', async () => {
@@ -317,6 +389,42 @@ describe('PageManager moves a private page\'s old access: limit when its owner s
       await m.convertLegacyAccessOnSignIn(ROOT);
       expect(log()).toMatch(/PageAudienceRefusedError/);
       expect(log()).not.toContain('Secret Plans');
+    });
+
+    describe('a page marked private: \'true\' (a string) is hidden the same way', () => {
+      const asText = { access: { edit: ['admin'] }, author: ROOT_ID, private: 'true' };
+
+      test('converted: the log does not carry the title', async () => {
+        await add('Secret Plans', asText);
+        const m = manager();
+        const log = captureLog();
+        expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 1, left: 0 });
+        expect(log()).toMatch(/Author Lock/);
+        expect(log()).not.toContain('Secret Plans');
+      });
+
+      test('refused for the page\'s audience: the log does not carry the title', async () => {
+        await add('Secret Plans', asText);
+        const m = manager();
+        const log = captureLog();
+        (m.provider as { savePage: ReturnType<typeof vi.fn> }).savePage.mockRejectedValueOnce(new PageAudienceRefusedError('Secret Plans'));
+        expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 0, left: 1 });
+        expect(log()).toMatch(/PageAudienceRefusedError/);
+        expect(log()).not.toContain('Secret Plans');
+      });
+
+      test('rewritten, then the save reports an error: the log does not carry the title', async () => {
+        const info = await add('Secret Plans', asText);
+        const m = manager();
+        const log = captureLog();
+        (m.provider as { savePage: ReturnType<typeof vi.fn> }).savePage.mockImplementationOnce(async () => {
+          await fs.writeFile(info.filePath, '---\ntitle: Secret Plans\nauthor-lock: true\n---\nbody\n');
+          throw new PageAudienceRefusedError('Secret Plans');
+        });
+        await m.convertLegacyAccessOnSignIn(ROOT);
+        expect(log()).toMatch(/rewritten/);
+        expect(log()).not.toContain('Secret Plans');
+      });
     });
 
     test('a failure that reaches the outer catch does not carry the title either', async () => {

@@ -356,6 +356,11 @@ describe('a page\'s name for a log line keeps a private title out (#1461, #2178)
     expect(nameForLog('Secret Diary', { private: true, uuid: UUID })).toBe(`a private page (uuid ${UUID})`);
   });
 
+  test('a page marked private with the string \'true\' is hidden too', () => {
+    expect(nameForLog('Secret Diary', { private: 'true', uuid: UUID })).toBe(`a private page (uuid ${UUID})`);
+    expect(nameForLog('Secret Diary', { private: 'false', uuid: UUID })).toBe(`'Secret Diary' (uuid ${UUID})`);
+  });
+
   test('a private page whose uuid is not known says so, and names no title', () => {
     expect(nameForLog('vaults/jim/default/Secret Diary')).toBe("a page in jim's store 'default' (uuid unknown)");
     expect(nameForLog('Secret Diary', { private: true })).toBe('a private page (uuid unknown)');
