@@ -11,7 +11,7 @@ import { shippedPageState, keptInputs, pageSourceHash, REQUIRED_SOURCE_HASH_KEY,
 import { workingParts } from '../utils/pluginCalls.js';
 import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import { limitsLeftByUpgrade, type AccessLimits } from '../utils/legacyPageAccess.js';
-import { adminsAreRoleAdmin, backUpBeforeRewrite, clipText, exactReplacement, withReplacement, type Replacement } from '../utils/upgradeLeftovers.js';
+import { adminsAreRoleAdmin, backUpBeforeRewrite, clipText, exactReplacement, readSignInDone, withReplacement, writeSignInDone, type Replacement, type SiteFacts } from '../utils/upgradeLeftovers.js';
 import BaseManager, { BackupData, type ManagerStats, type ManagerStatus } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -4308,7 +4308,7 @@ class PageManager extends BaseManager implements CatalogSource {
     const more = named.length - details.length;
     if (more > 0) details.push(`and ${more} more ${more === 1 ? 'page' : 'pages'}`);
     const hidden = total - named.length;
-    if (hidden > 0) details.push(`${hidden} private ${hidden === 1 ? 'page' : 'pages'} (not named here), each limited who could use ${hidden === 1 ? 'it' : 'them'}: ask each page's owner to open it and set its Audience or Author Lock to limit it again.`);
+    if (hidden > 0) details.push(`${hidden} private ${hidden === 1 ? 'page' : 'pages'} (not named here), each limited who could use ${hidden === 1 ? 'it' : 'them'}. When its owner signs in, the update moves the limit to an Author Lock where that limits the same people; for any other, ask the page's owner to open it and set its Audience or Author Lock to limit it again.`);
     return [{ state: 'degraded', kind: 'attention', reason, details }];
   }
 
@@ -4317,6 +4317,24 @@ class PageManager extends BaseManager implements CatalogSource {
 
   /** The conversion's notice (#2466): what it changed, in plain words, with a count and the page names. */
   private convertedAccessItems(): ManagerStatus[] {
+    return [...this.convertedPublicItems(), ...this.convertedPrivateItems()];
+  }
+
+  /** The private pages whose limit was moved when their owners signed in (#2466): counted, never named. */
+  private convertedPrivateItems(): ManagerStatus[] {
+    const count = this.legacyAccessPrivateConverted;
+    if (count === 0) return [];
+    const one = count === 1;
+    return [{
+      state: 'degraded',
+      kind: 'attention',
+      reason: `When their owners signed in, the update moved the old access limit on ${count} private ${one ? 'page to its' : 'pages to their'} Author Lock. The old ${one ? 'limit' : 'limits'} had stopped applying, so this is a change: only ${one ? 'its author' : 'their authors'} and administrators can change ${one ? 'it' : 'them'} now. Nothing else on ${one ? 'it' : 'them'} changed.`,
+      details: []
+    }];
+  }
+
+  /** The pages the start-up conversion changed (#2466). */
+  private convertedPublicItems(): ManagerStatus[] {
     const all = this.legacyAccessConverted;
     if (all.length === 0) return [];
     const one = all.length === 1;
@@ -4348,6 +4366,151 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Move one page's old `access:` to its Author Lock, as `ctx` (#2466): the
+   * system's at start-up, or the signed-in owner's ({@link convertLegacyAccessOnSignIn}).
+   * The page is read, judged, copied to `backups` and saved while holding its
+   * write lock, so a save made meanwhile is never written over; the save goes
+   * through the door, so `ctx`'s own permissions decide it. Throws when the
+   * copy or the save fails, with no copy left while the file is as it was.
+   *
+   * @param info - The page as listed; it must carry a uuid, which the lock is keyed on
+   * @returns The replacement made, `'no-match'` when none is exact (final), or
+   *   `'changed'` when the page is not what was listed any more (try again later)
+   */
+  private async rewriteLegacyAccess(
+    info: { title: string; uuid?: string; filePath: string; metadata?: Partial<PageFrontmatter> | null },
+    site: SiteFacts,
+    ctx: ActorContext,
+    backups: string
+  ): Promise<Replacement | 'no-match' | 'changed'> {
+    const uuid = info.uuid;
+    if (!uuid) return 'no-match';
+    if (!await exactReplacement(info.metadata, site)) return 'no-match';
+    // Read, compared, copied and saved as one step, so a save made meanwhile is never written over.
+    const fresh = await this.pageWrite(uuid, async () => {
+      const text = await fse.readFile(info.filePath, 'utf8');
+      const page = await this.getPage(info.title, ctx);
+      // The page is read again so the replacement is judged on what is stored now, and it must be the page whose file is copied.
+      const now = page ? await exactReplacement(page.metadata, site) : null;
+      if (!page || !now || page.uuid !== uuid) return null;
+      // The file is unchanged since it was copied, so the copy is what the save overwrites.
+      if (await fse.readFile(info.filePath, 'utf8') !== text) return null;
+      const copy = backUpBeforeRewrite(backups, `${uuid}.md`, text);
+      try {
+        await this.savePage(info.title, page.content ?? '', withReplacement({ ...page.metadata }, now), ctx, {
+          preserveLastModified: true,
+          preserveEditor: true,
+          writeLockHeld: true
+        });
+      } catch (err) {
+        // The copy is dropped only while the file is still as it was: a page that fails every start would add one each time, but once the file was rewritten the copy is the only original.
+        const unchanged = await fse.readFile(info.filePath, 'utf8').then((now) => now === text, () => false);
+        if (unchanged) {
+          fse.removeSync(copy);
+          throw err;
+        }
+        // The file now holds the Author Lock, so the page is converted; the copy is kept, and the error is logged.
+        logger.warn(`[PageManager] A page was rewritten, but its save then reported an error (${clipText(err)}); the file as it was is kept at ${clipText(copy)}`);
+      }
+      return now;
+    });
+    return fresh ?? 'changed';
+  }
+
+  /** The site's facts the conversion judges a page by: who the administrators are, and whether a page's author is one. */
+  private legacyAccessSite(): SiteFacts {
+    const policies = this.engine.getManager<{ policies?(): unknown }>('PolicyDecisionPoint')?.policies?.() ?? [];
+    return { adminsAreRoleAdmin: adminsAreRoleAdmin(policies), authorHoldsAdmin: (author: string) => this.authorHoldsAdmin(author) };
+  }
+
+  /** The people the sign-in clean-up has finished with (#2466), read from the data folder on first use. */
+  private signInDone: Set<string> | null = null;
+  /** The people whose clean-up is running now, so two sign-ins at once do not both run it. */
+  private readonly signInRunning = new Set<string>();
+  /** Private pages the sign-in clean-up converted since start, counted and never named. */
+  private legacyAccessPrivateConverted = 0;
+
+  /**
+   * After a person signs in (#2466): move the old `access:` limit on their own
+   * private pages to an Author Lock, by the same exact-match rules as
+   * start-up ({@link exactReplacement}), with a copy first. Start-up never
+   * touches a private page, because the system may not write one; this runs
+   * as `subject`, the person who signed in, so each read and save is decided
+   * by their own permissions, and it looks only at private pages whose author
+   * they are. A page their permissions refuse, or that fails, is left as it is.
+   *
+   * Once per person: when every page was dealt with (converted, or no exact
+   * match, which is final) the person is recorded as done in the data folder
+   * and never scanned again; a page that failed or changed meanwhile leaves
+   * them to be tried at the next sign-in. Never throws. The caller starts it
+   * after the sign-in is complete and does not wait for it.
+   *
+   * @param subject - The person who signed in, as their own permissions see them
+   * @returns How many private pages were converted, and how many are left with a limit
+   */
+  async convertLegacyAccessOnSignIn(subject: ActorContext): Promise<{ converted: number; left: number }> {
+    let converted = 0;
+    let left = 0;
+    const username = subject.username;
+    const pip = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
+    // Only a signed-in person, as themselves: never a job, a token, a share or the system principal.
+    if (!username || isJobContext(subject) || subject.isAuthenticated !== true || pip?.isSystemPrincipal(username) !== false) return { converted, left };
+    if (subject.viaToken || subject.viaShare || subject.viaProxy) return { converted, left };
+    if (this.signInRunning.has(username)) return { converted, left };
+    this.signInRunning.add(username);
+    try {
+      const provider = this.provider;
+      const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+      if (!provider || !configManager) return { converted, left };
+      const dataFolder = configManager.getInstanceDataFolder();
+      this.signInDone ??= readSignInDone(dataFolder);
+      if (this.signInDone.has(username)) return { converted, left };
+      const site = this.legacyAccessSite();
+      const record = await this.loadSeededRecord();
+      const defaultCategory = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager')?.getDefaultSystemCategory?.();
+      const backups = path.join(dataFolder, 'upgrade-backups');
+      let finished = true;
+      for (const info of await provider.getAllPageInfo()) {
+        if (info.metadata?.access === undefined || parsePrivatePageName(info.title)) continue;
+        const priv = (info.metadata as { private?: unknown }).private;
+        if (priv !== true && priv !== 'true') continue;
+        if (!limitsLeftByUpgrade(info.metadata, Boolean(info.uuid) && record.hasUuid(info.uuid), defaultCategory)) continue;
+        // Their own: the page's author is the person who signed in.
+        if (await this.authorUsername(info.metadata.author) !== username) continue;
+        if (!info.uuid) { left++; continue; }
+        try {
+          const fresh = await this.rewriteLegacyAccess(info, site, subject, backups);
+          if (fresh === 'changed') { left++; finished = false; continue; }
+          if (fresh === 'no-match') { left++; continue; }
+          this.legacyAccessPrivateConverted++;
+          this.legacyAccessPages.delete(info.uuid);
+          converted++;
+          logger.info(`[PageManager] Moved the old access limit on ${nameForLog(info.title, info.metadata)} to its Author Lock when its owner signed in; the file as it was is saved in the upgrade backups`);
+        } catch (err) {
+          left++;
+          finished = false;
+          // A private page is never named: its title stays out of the log.
+          logger.warn(`[PageManager] The old access limit on a private page could not be moved, so it is left as it is and tried at the owner's next sign-in: ${clipText(err)}`);
+        }
+      }
+      if (finished) {
+        this.signInDone.add(username);
+        try {
+          writeSignInDone(dataFolder, this.signInDone);
+        } catch (err) {
+          logger.warn(`[PageManager] Could not record that a person's private pages were checked, so they are checked again at the next start: ${clipText(err)}`);
+        }
+      }
+    } catch (err) {
+      logger.warn(`[PageManager] Old access limits on private pages were not converted at sign-in: ${clipText(err)}`);
+    } finally {
+      this.signInRunning.delete(username);
+    }
+    if (converted > 0 || left > 0) logger.info(`[PageManager] Old access limits on a person's private pages at sign-in: ${converted} moved to an Author Lock, ${left} left as they are`);
+    return { converted, left };
+  }
+
+  /**
    * At start-up, once required pages are seeded (#2466): move a page's old
    * `access:` limit to its Author Lock, but only where that limits
    * exactly the people the old limit did ({@link exactReplacement}). Any other
@@ -4355,20 +4518,20 @@ class PageManager extends BaseManager implements CatalogSource {
    * saved through the door with its last-modified and editor kept, after a copy
    * of its file as it was goes into `upgrade-backups`; with no copy the page
    * is left alone. A converted page has no `access:`, so a second start finds
-   * nothing to do. Never throws. A private page is left for its owner.
+   * nothing to do. Never throws. A private page is left for its owner's sign-in ({@link convertLegacyAccessOnSignIn}).
    *
    * @returns How many pages were converted, and how many are left with a limit
    */
   async convertLegacyAccessAtBoot(): Promise<{ converted: number; left: number }> {
     this.legacyAccessConverted.length = 0;
+    this.legacyAccessPrivateConverted = 0;
     let converted = 0;
     let left = 0;
     try {
       const provider = this.provider;
       const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
       if (!provider || !configManager) return { converted, left };
-      const policies = this.engine.getManager<{ policies?(): unknown }>('PolicyDecisionPoint')?.policies?.() ?? [];
-      const site = { adminsAreRoleAdmin: adminsAreRoleAdmin(policies), authorHoldsAdmin: (author: string) => this.authorHoldsAdmin(author) };
+      const site = this.legacyAccessSite();
       const record = await this.loadSeededRecord();
       const defaultCategory = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager')?.getDefaultSystemCategory?.();
       const ctx = systemContext(this.engine, 'move old access limits to an Author Lock (#2466)');
@@ -4382,37 +4545,8 @@ class PageManager extends BaseManager implements CatalogSource {
         // The page write lock is keyed on the uuid, as a save of the page keys it; with none, the lock would not exclude a save.
         if (!info.uuid) { left++; continue; }
         try {
-          const replacement = await exactReplacement(info.metadata, site);
-          if (!replacement) { left++; continue; }
-          // Read, compared, copied and saved as one step, so a save made meanwhile is never written over.
-          const fresh = await this.pageWrite(info.uuid, async () => {
-            const text = await fse.readFile(info.filePath, 'utf8');
-            const page = await this.getPage(info.title, ctx);
-            // The page is read again so the replacement is judged on what is stored now, and it must be the page whose file is copied.
-            const now = page ? await exactReplacement(page.metadata, site) : null;
-            if (!page || !now || page.uuid !== info.uuid) return null;
-            // The file is unchanged since it was copied, so the copy is what the save overwrites.
-            if (await fse.readFile(info.filePath, 'utf8') !== text) return null;
-            const copy = backUpBeforeRewrite(backups, `${info.uuid}.md`, text);
-            try {
-              await this.savePage(info.title, page.content ?? '', withReplacement({ ...page.metadata }, now), ctx, {
-                preserveLastModified: true,
-                preserveEditor: true,
-                writeLockHeld: true
-              });
-            } catch (err) {
-              // The copy is dropped only while the file is still as it was: a page that fails every start would add one each time, but once the file was rewritten the copy is the only original.
-              const unchanged = await fse.readFile(info.filePath, 'utf8').then((now) => now === text, () => false);
-              if (unchanged) {
-                fse.removeSync(copy);
-                throw err;
-              }
-              // The file now holds the Author Lock, so the page is converted; the copy is kept, and the error is logged.
-              logger.warn(`[PageManager] A page was rewritten, but its save then reported an error (${clipText(err)}); the file as it was is kept at ${clipText(copy)}`);
-            }
-            return now;
-          });
-          if (!fresh) { left++; continue; }
+          const fresh = await this.rewriteLegacyAccess(info, site, ctx, backups);
+          if (typeof fresh === 'string') { left++; continue; }
           this.legacyAccessConverted.push({ title: info.title, replacement: fresh });
           converted++;
           logger.info(`[PageManager] Moved the old access limit on '${clipText(info.title)}' to its Author Lock; the file as it was is saved in the upgrade backups`);

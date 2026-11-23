@@ -145,6 +145,42 @@ export function withReplacement<T extends Record<string, unknown>>(metadata: T, 
   return { ...rest, ...replacement.set };
 }
 
+/** The name of the record of who has had their private pages cleaned up at sign-in, in the instance data folder. */
+export const SIGN_IN_DONE_FILE = 'upgrade-signin-done.json';
+
+/**
+ * The people whose private pages the sign-in clean-up has finished with (#2466),
+ * from the record in `folder`. A record that is missing or cannot be read is an
+ * empty one: the clean-up then runs once more for each person, which only
+ * finds nothing left.
+ */
+export function readSignInDone(folder: string): Set<string> {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(path.join(folder, SIGN_IN_DONE_FILE), 'utf8'));
+    const users = isRecord(parsed) ? parsed.users : null;
+    return new Set(Array.isArray(users) ? users.filter((u): u is string => typeof u === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Write the record of who is done (#2466): the whole file to a new one beside
+ * it, then renamed over the old, so a crash leaves one or the other. Throws
+ * when it cannot, and the caller logs it.
+ */
+export function writeSignInDone(folder: string, users: ReadonlySet<string>): void {
+  const file = path.join(folder, SIGN_IN_DONE_FILE);
+  const next = `${file}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(next, `${JSON.stringify({ users: [...users].sort() }, null, 2)}\n`, { flag: 'wx', mode: SECRET_FILE_MODE });
+    fs.renameSync(next, file);
+  } catch (err) {
+    fs.rmSync(next, { force: true });
+    throw err;
+  }
+}
+
 /**
  * Write `text` (a file as it is now) into `folder` before it is rewritten.
  * Owner-only, never overwriting. Throws when it cannot, and the caller then
