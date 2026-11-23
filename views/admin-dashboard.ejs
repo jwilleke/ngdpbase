@@ -266,11 +266,13 @@
                             </a>
                         </span>
                     </div>
-                    <%# #2138: when Reindex and Rebuild last ran, and the automatic folder scan %>
+                    <%# #2138, #2467: when the media was last reindexed (a Rebuild counts), last rebuilt, and when the automatic reindex last ran and runs next %>
+                    <% const reindexNotRun = 'Not run since the server started'; %>
+                    <% const autoReindex = typeof automaticReindex !== 'undefined' && automaticReindex ? automaticReindex : { label: 'Automatic reindex', next: null }; %>
                     <div class="mt-2" data-testid="media-last-runs">
-                        <%- include('_job-last-run', { jobId: 'media.rescan', label: 'Last reindex', entry: lastRuns['media.rescan'] || null }) %>
+                        <%- include('_job-last-run', { jobId: 'media.reindex', label: 'Last reindex', emptyText: reindexNotRun, entry: (typeof mediaReindexLine !== 'undefined' && mediaReindexLine) || null }) %>
                         <%- include('_job-last-run', { jobId: 'media.rebuild', label: 'Last rebuild', entry: lastRuns['media.rebuild'] || null }) %>
-                        <%- include('_job-last-run', { jobId: 'media.folder-scan', label: 'Last automatic folder scan', entry: lastRuns['media.folder-scan'] || null }) %>
+                        <%- include('_job-last-run', { jobId: 'media.folder-scan', label: autoReindex.label, emptyText: reindexNotRun, next: autoReindex.next, entry: lastRuns['media.folder-scan'] || null }) %>
                     </div>
                     <div id="dashboard-media-status" class="mt-2" style="display:none;"></div>
                     <% } else { %>
@@ -1231,7 +1233,7 @@ async function rebuildPages() {
  * #2138: a run this page started has ended — show it on its card's last-run
  * line (views/_job-last-run.ejs) without a reload, in the viewer's local time.
  */
-function updateLastRun(jobId, run) {
+function updateLastRun(jobId, run, via) {
     const line = document.querySelector(`[data-job-last-run="${jobId}"]`);
     if (!line || !run || !run.completedAt) return;
     const time = line.querySelector('time');
@@ -1243,6 +1245,9 @@ function updateLastRun(jobId, run) {
     const status = line.querySelector('[data-part="status"]');
     status.textContent = run.status;
     status.className = run.status === 'failed' ? 'text-danger' : 'text-success';
+    // #2467: the Media card's "Last reindex" says when the run was a Rebuild.
+    const viaPart = line.querySelector('[data-part="via"]');
+    if (viaPart) viaPart.textContent = via === 'rebuild' ? ' (by rebuild)' : '';
     line.querySelector('[data-part="never"]').hidden = true;
     line.querySelector('[data-part="run"]').hidden = false;
     if (window.localizeTimes) window.localizeTimes(line);
@@ -1314,7 +1319,7 @@ async function dashboardMediaRescan() {
         const { runId } = await enqueueRes.json();
         if (!runId) throw new Error('Failed to start rescan job');
         const run = await pollJobStatus(runId);
-        updateLastRun('media.rescan', run);
+        updateLastRun('media.reindex', run);
         status.className = run.status === 'completed' ? 'alert alert-success' : 'alert alert-danger';
         if (run.status === 'completed') setIconText(status, 'fa-check-circle', run.result?.summary || 'Reindex complete');
         else setIconText(status, 'fa-exclamation-triangle', run.result?.error || 'Scan failed');
@@ -1347,6 +1352,7 @@ async function dashboardMediaRebuild() {
         if (!runId) throw new Error('Failed to start rebuild job');
         const run = await pollJobStatus(runId, 1500, 3600000);
         updateLastRun('media.rebuild', run);
+        updateLastRun('media.reindex', run, 'rebuild');
         status.className = run.status === 'completed' ? 'alert alert-success' : 'alert alert-danger';
         if (run.status === 'completed') setIconText(status, 'fa-check-circle', run.result?.summary || 'Rebuild complete');
         else setIconText(status, 'fa-exclamation-triangle', run.result?.error || 'Rebuild failed');
