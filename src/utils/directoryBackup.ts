@@ -183,10 +183,16 @@ export function placePartRecords(entry: BackupData, declared: BackupFolder[], pa
   return { ...entry, data, ...(warnings.length > 0 ? { warnings } : {}), ...(note ? { note } : {}) };
 }
 
-/** A declared part's record in a manager's entry, read the way `placePartRecords` wrote it. */
+/**
+ * A declared part's record in a manager's entry, read the way `placePartRecords` wrote it.
+ * An entry made when the manager declared one part holds that part's record as its
+ * `data`. A manager that has since gained parts keeps its first declared part as that
+ * one, so the older backup still restores it; the parts added later are the ones that
+ * backup lacks (an optional one is left out, as for any backup that predates it).
+ */
 export function partRecordIn(entry: BackupData | undefined, declared: BackupFolder[], part: string): unknown {
   const data = entry?.data;
-  if (declared.length === 1 && isPartRecord(data)) return data;
+  if (isPartRecord(data)) return declared.length === 1 || declared[0]?.part === part ? data : undefined;
   return data && typeof data === 'object' ? (data as Record<string, unknown>)[part] : undefined;
 }
 

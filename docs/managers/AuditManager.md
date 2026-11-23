@@ -498,7 +498,7 @@ audited.
 | `shared-folder-read` | A shared folder's page or file was opened (#2125): who, the folder and what. On by default: every read of a shared folder is recorded (#1775) | continue | yes |
 | `comment-delete` | Comment marked deleted; who removed it and whose it was (#1232) | continue | yes |
 | `vault-repair` | A vault page's leftovers moved into its vault (#1842): its shared-pool files (moved, or copied where other public pages use them) and its footnotes and comments from the public folders. Names the owner, vault and page uuid and the counts, never a title or file name. Run by the vault's owner, or for a vault that isn't sealed by someone holding admin-system | refuse | yes |
-| `footnote-edit` | A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) | continue | yes |
+| `footnote-edit` | A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) — or a shared footnote source was changed: action create (#2454) | continue | yes |
 | `page-link-rewrite` | Inbound links rewritten after a rename | continue | yes |
 | `token-revoke` | Agent token revoked | refuse | yes |
 | `proxy-revoke` | Proxy grant ended: revoked, or the account closed; user is the user represented, actor who ended it (#1762) | refuse | yes |

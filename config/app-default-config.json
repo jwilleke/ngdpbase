@@ -225,6 +225,7 @@
   "ngdpbase.comments.storagedir": "${SLOW_STORAGE}/comments",
   "ngdpbase.footnotes.enabled": true,
   "ngdpbase.footnotes.storagedir": "${SLOW_STORAGE}/footnotes",
+  "ngdpbase.footnotes.sources.storagedir": "${SLOW_STORAGE}/footnote-sources",
   "_comment_share": "Share links (#842): anonymous capability-token access to keyword-scoped content. Keys approved by operator 2026-07-16.",
   "ngdpbase.share.enabled": true,
   "ngdpbase.share.storagedir": "${FAST_STORAGE}/shares",
@@ -2192,7 +2193,7 @@
       }
     },
     "footnote-edit": {
-      "description": "A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233)",
+      "description": "A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) — or a shared footnote source was changed: action create (#2454)",
       "grantable": false,
       "audit": {
         "on-failure": "continue"
