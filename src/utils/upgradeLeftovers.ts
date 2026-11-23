@@ -95,10 +95,31 @@ export function adminsAreRoleAdmin(policies: unknown): boolean {
 
 /** What the conversion needs to know about the site. */
 export interface SiteFacts {
-  /** {@link adminsAreRoleAdmin} of the site's rules. */
-  adminsAreRoleAdmin: boolean;
-  /** Whether the account a page's `author` refers to holds `admin-system`; false when it cannot be told. */
+  /** {@link adminsAreRoleAdmin} of the site's rules; null when the rules could not be read (they are not loaded yet). */
+  adminsAreRoleAdmin: boolean | null;
+  /** Whether the account a page's `author` refers to holds `admin-system`. Throws {@link CouldNotTellError} when it cannot be told, which is not a "no". */
   authorHoldsAdmin(author: string): Promise<boolean>;
+}
+
+/**
+ * A fact the conversion needs could not be looked up (the user store failed,
+ * the access rules are not loaded). It is not an answer of "no", so the page
+ * is tried again later instead of being left as final.
+ */
+export class CouldNotTellError extends Error {
+  constructor(what: string) {
+    super(`could not tell ${what}`);
+    this.name = 'CouldNotTellError';
+  }
+}
+
+/**
+ * An error as a log line may carry it: its class, and its code when it has
+ * one. Never its message, which can hold a page title or a path.
+ */
+export function failureForLog(err: unknown): string {
+  const code = typeof (err as { code?: unknown } | null)?.code === 'string' ? ` (${(err as { code: string }).code})` : '';
+  return `${err instanceof Error ? err.name : typeof err}${code}`;
 }
 
 /** The exact replacement for a page's `access:`. */
@@ -122,7 +143,9 @@ export async function exactReplacement(
   site: SiteFacts
 ): Promise<Replacement | null> {
   const access = metadata?.access;
-  if (!isRecord(access) || !site.adminsAreRoleAdmin) return null;
+  if (!isRecord(access)) return null;
+  if (site.adminsAreRoleAdmin === null) throw new CouldNotTellError('who the administrators are');
+  if (!site.adminsAreRoleAdmin) return null;
   const stated = Object.entries(access).filter(([, list]) => Array.isArray(list) && list.length > 0);
   if (stated.length === 0 || stated.some(([action]) => action !== 'view' && action !== 'edit')) return null;
   const view = Array.isArray(access.view) && access.view.length > 0 ? names(access.view) : null;
@@ -150,17 +173,23 @@ export const SIGN_IN_DONE_FILE = 'upgrade-signin-done.json';
 
 /**
  * The people whose private pages the sign-in clean-up has finished with (#2466),
- * from the record in `folder`. A record that is missing or cannot be read is an
- * empty one: the clean-up then runs once more for each person, which only
- * finds nothing left.
+ * from the record in `folder`. A record that is not there is an empty one.
+ * A record that is there but cannot be read or understood is `null`: the
+ * caller must not write the file, or the other people's entries are lost.
  */
-export function readSignInDone(folder: string): Set<string> {
+export function readSignInDone(folder: string): Set<string> | null {
+  let text: string;
   try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(path.join(folder, SIGN_IN_DONE_FILE), 'utf8'));
+    text = fs.readFileSync(path.join(folder, SIGN_IN_DONE_FILE), 'utf8');
+  } catch (err) {
+    return (err as { code?: unknown }).code === 'ENOENT' ? new Set() : null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(text);
     const users = isRecord(parsed) ? parsed.users : null;
-    return new Set(Array.isArray(users) ? users.filter((u): u is string => typeof u === 'string') : []);
+    return Array.isArray(users) ? new Set(users.filter((u): u is string => typeof u === 'string')) : null;
   } catch {
-    return new Set();
+    return null;
   }
 }
 

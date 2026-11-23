@@ -11,7 +11,12 @@ import {
   adminsAreRoleAdmin,
   backUpBeforeRewrite,
   clipText,
+  CouldNotTellError,
   exactReplacement,
+  failureForLog,
+  readSignInDone,
+  SIGN_IN_DONE_FILE,
+  writeSignInDone,
   stripPolicyPriority,
   withReplacement,
   type SiteFacts
@@ -154,5 +159,48 @@ describe('clipText', () => {
     expect(clipText(new Error('disk full'))).toBe('disk full');
     expect(clipText(new Error('y'.repeat(300))).length).toBe(203);
     expect(clipText(undefined)).toBe('undefined');
+  });
+});
+
+describe('a fact that could not be looked up is not a "no" (#2466)', () => {
+  test('rules that are not loaded: exactReplacement throws CouldNotTellError for a page with a limit, and not for one without', async () => {
+    const site: SiteFacts = { adminsAreRoleAdmin: null, authorHoldsAdmin: async () => true };
+    await expect(exactReplacement({ access: { edit: ['admin'] } }, site)).rejects.toBeInstanceOf(CouldNotTellError);
+    expect(await exactReplacement({}, site)).toBeNull();
+  });
+});
+
+describe('failureForLog', () => {
+  test('is the error class and its code, never its message', () => {
+    expect(failureForLog(Object.assign(new Error("no space for 'Secret Plans'"), { code: 'ENOSPC' }))).toBe('Error (ENOSPC)');
+    expect(failureForLog(new TypeError('Secret Plans'))).toBe('TypeError');
+    expect(failureForLog('Secret Plans')).toBe('string');
+  });
+});
+
+describe('readSignInDone', () => {
+  let folder: string;
+  beforeEach(() => { folder = fs.mkdtempSync(path.join(os.tmpdir(), 'signin-done-2466-')); });
+  afterEach(() => { fs.rmSync(folder, { recursive: true, force: true }); });
+  const put = (text: string): void => fs.writeFileSync(path.join(folder, SIGN_IN_DONE_FILE), text);
+
+  test('a record that is not there is an empty one', () => {
+    expect([...(readSignInDone(folder) ?? ['unreadable'])]).toEqual([]);
+  });
+  test('a record that is there is read, and written back whole', () => {
+    writeSignInDone(folder, new Set(['bob', 'ann']));
+    expect([...(readSignInDone(folder) ?? [])]).toEqual(['ann', 'bob']);
+  });
+  test('a record that is there but cannot be read or understood is null, so it is not written over', () => {
+    put('{"users": ["ann"');
+    expect(readSignInDone(folder)).toBeNull();
+    put('{"users": "ann"}');
+    expect(readSignInDone(folder)).toBeNull();
+    put('[]');
+    expect(readSignInDone(folder)).toBeNull();
+  });
+  test('a path that is a folder cannot be read: null', () => {
+    fs.mkdirSync(path.join(folder, SIGN_IN_DONE_FILE));
+    expect(readSignInDone(folder)).toBeNull();
   });
 });

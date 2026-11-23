@@ -11,7 +11,7 @@ import { shippedPageState, keptInputs, pageSourceHash, REQUIRED_SOURCE_HASH_KEY,
 import { workingParts } from '../utils/pluginCalls.js';
 import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import { limitsLeftByUpgrade, type AccessLimits } from '../utils/legacyPageAccess.js';
-import { adminsAreRoleAdmin, backUpBeforeRewrite, clipText, exactReplacement, readSignInDone, withReplacement, writeSignInDone, type Replacement, type SiteFacts } from '../utils/upgradeLeftovers.js';
+import { adminsAreRoleAdmin, backUpBeforeRewrite, clipText, CouldNotTellError, exactReplacement, failureForLog, readSignInDone, withReplacement, writeSignInDone, type Replacement, type SiteFacts } from '../utils/upgradeLeftovers.js';
 import BaseManager, { BackupData, type ManagerStats, type ManagerStatus } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -4350,18 +4350,26 @@ class PageManager extends BaseManager implements CatalogSource {
     }];
   }
 
-  /** Whether the account a page's `author` names holds `admin-system`, asked of the policies. False when it cannot be told. */
+  /**
+   * Whether the account a page's `author` names holds `admin-system`, asked of
+   * the policies. False only when the answer is no (the author is not a known
+   * account, or does not hold it); throws {@link CouldNotTellError} when a
+   * lookup failed, so the page is tried again rather than left as final.
+   */
   private async authorHoldsAdmin(author: string): Promise<boolean> {
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    const users = this.engine.getManager<{ getUser(name: string): Promise<{ roles?: string[] } | undefined> }>('UserManager');
+    if (!identities || !users) throw new CouldNotTellError('whether a page author is an administrator: the account managers are not ready');
     try {
       const ctx = systemContext(this.engine, 'tell whether a page author is an administrator (#2466)');
-      const username = await this.engine.getManager<IdentityManager>('IdentityManager')?.usernameOf(ctx, author);
+      const username = await identities.usernameOf(ctx, author);
       if (!username) return false;
-      const user = await this.engine.getManager<{ getUser(name: string): Promise<{ roles?: string[] } | undefined> }>('UserManager')?.getUser(username);
+      const user = await users.getUser(username);
       if (!user || !Array.isArray(user.roles)) return false;
       // Asked of the policies, as a request by that account would be.
       return await subjectMayDo(this.engine, { username, roles: user.roles, isAuthenticated: true }, 'admin-system');
-    } catch {
-      return false;
+    } catch (err) {
+      throw new CouldNotTellError(`whether a page author is an administrator (${failureForLog(err)})`);
     }
   }
 
@@ -4375,9 +4383,26 @@ class PageManager extends BaseManager implements CatalogSource {
    *
    * @param info - The page as listed; it must carry a uuid, which the lock is keyed on
    * @returns The replacement made, `'no-match'` when none is exact (final), or
-   *   `'changed'` when the page is not what was listed any more (try again later)
+   *   `'changed'` when the page is not what was listed any more, or a lookup
+   *   needed to judge it failed (try again later)
    */
   private async rewriteLegacyAccess(
+    info: { title: string; uuid?: string; filePath: string; metadata?: Partial<PageFrontmatter> | null },
+    site: SiteFacts,
+    ctx: ActorContext,
+    backups: string
+  ): Promise<Replacement | 'no-match' | 'changed'> {
+    try {
+      return await this.rewriteLegacyAccessJudged(info, site, ctx, backups);
+    } catch (err) {
+      if (!(err instanceof CouldNotTellError)) throw err;
+      // Not a "no": the page is tried again later. The page is not named, it may be private.
+      logger.warn(`[PageManager] An old access limit could not be judged now, so its page is left as it is and tried again later: ${err.message}`);
+      return 'changed';
+    }
+  }
+
+  private async rewriteLegacyAccessJudged(
     info: { title: string; uuid?: string; filePath: string; metadata?: Partial<PageFrontmatter> | null },
     site: SiteFacts,
     ctx: ActorContext,
@@ -4410,7 +4435,7 @@ class PageManager extends BaseManager implements CatalogSource {
           throw err;
         }
         // The file now holds the Author Lock, so the page is converted; the copy is kept, and the error is logged.
-        logger.warn(`[PageManager] A page was rewritten, but its save then reported an error (${clipText(err)}); the file as it was is kept at ${clipText(copy)}`);
+        logger.warn(`[PageManager] A page (${nameForLog(info.title, { ...page.metadata, uuid })}) was rewritten, but its save then reported an error (${failureForLog(err)}); the file as it was is kept at ${clipText(copy)}`);
       }
       return now;
     });
@@ -4419,14 +4444,18 @@ class PageManager extends BaseManager implements CatalogSource {
 
   /** The site's facts the conversion judges a page by: who the administrators are, and whether a page's author is one. */
   private legacyAccessSite(): SiteFacts {
-    const policies = this.engine.getManager<{ policies?(): unknown }>('PolicyDecisionPoint')?.policies?.() ?? [];
-    return { adminsAreRoleAdmin: adminsAreRoleAdmin(policies), authorHoldsAdmin: (author: string) => this.authorHoldsAdmin(author) };
+    const policies = this.engine.getManager<{ policies?(): unknown }>('PolicyDecisionPoint')?.policies?.();
+    // No rules at all means they are not loaded yet, which is not the same as rules that do not make administrators the `admin` role.
+    const loaded = Array.isArray(policies) && policies.length > 0;
+    return { adminsAreRoleAdmin: loaded ? adminsAreRoleAdmin(policies) : null, authorHoldsAdmin: (author: string) => this.authorHoldsAdmin(author) };
   }
 
   /** The people the sign-in clean-up has finished with (#2466), read from the data folder on first use. */
   private signInDone: Set<string> | null = null;
   /** The people whose clean-up is running now, so two sign-ins at once do not both run it. */
   private readonly signInRunning = new Set<string>();
+  /** True when the record of who is done could not be read: it is then never written over. */
+  private signInRecordKept = false;
   /** Private pages the sign-in clean-up converted since start, counted and never named. */
   private legacyAccessPrivateConverted = 0;
 
@@ -4463,7 +4492,13 @@ class PageManager extends BaseManager implements CatalogSource {
       const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
       if (!provider || !configManager) return { converted, left };
       const dataFolder = configManager.getInstanceDataFolder();
-      this.signInDone ??= readSignInDone(dataFolder);
+      if (!this.signInDone) {
+        const read = readSignInDone(dataFolder);
+        // A record that is there but cannot be read is kept as it is: writing it would drop the other people's entries.
+        this.signInRecordKept = read === null;
+        if (read === null) logger.warn('[PageManager] The record of whose private pages were checked at sign-in (upgrade-signin-done.json) cannot be read, so it is left as it is and not updated; each person is checked again at their next start. Fix or remove the file to stop that.');
+        this.signInDone = read ?? new Set();
+      }
       if (this.signInDone.has(username)) return { converted, left };
       const site = this.legacyAccessSite();
       const record = await this.loadSeededRecord();
@@ -4489,20 +4524,20 @@ class PageManager extends BaseManager implements CatalogSource {
         } catch (err) {
           left++;
           finished = false;
-          // A private page is never named: its title stays out of the log.
-          logger.warn(`[PageManager] The old access limit on a private page could not be moved, so it is left as it is and tried at the owner's next sign-in: ${clipText(err)}`);
+          // A private page is never named, and the error's message can carry its title: only its class is logged.
+          logger.warn(`[PageManager] The old access limit on ${nameForLog(info.title, info.metadata)} could not be moved, so it is left as it is and tried at the owner's next sign-in: ${failureForLog(err)}`);
         }
       }
       if (finished) {
         this.signInDone.add(username);
         try {
-          writeSignInDone(dataFolder, this.signInDone);
+          if (!this.signInRecordKept) writeSignInDone(dataFolder, this.signInDone);
         } catch (err) {
-          logger.warn(`[PageManager] Could not record that a person's private pages were checked, so they are checked again at the next start: ${clipText(err)}`);
+          logger.warn(`[PageManager] Could not record that a person's private pages were checked, so they are checked again at the next start: ${failureForLog(err)}`);
         }
       }
     } catch (err) {
-      logger.warn(`[PageManager] Old access limits on private pages were not converted at sign-in: ${clipText(err)}`);
+      logger.warn(`[PageManager] Old access limits on private pages were not converted at sign-in: ${failureForLog(err)}`);
     } finally {
       this.signInRunning.delete(username);
     }
@@ -4553,11 +4588,11 @@ class PageManager extends BaseManager implements CatalogSource {
         } catch (err) {
           left++;
           // One page must not stop the rest; it stays listed and is tried again at the next start. A page with an error is not named: it may be private.
-          logger.warn(`[PageManager] The old access limit on a page could not be moved, so it is left as it is: ${clipText(err)}`);
+          logger.warn(`[PageManager] The old access limit on a page could not be moved, so it is left as it is: ${failureForLog(err)}`);
         }
       }
     } catch (err) {
-      logger.warn(`[PageManager] Old access limits were not converted: ${clipText(err)}`);
+      logger.warn(`[PageManager] Old access limits were not converted: ${failureForLog(err)}`);
     }
     if (converted > 0 || left > 0) logger.info(`[PageManager] Old access limits at start: ${converted} moved to an Author Lock, ${left} left as they are`);
     return { converted, left };
