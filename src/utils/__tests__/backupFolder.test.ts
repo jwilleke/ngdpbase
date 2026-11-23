@@ -67,6 +67,13 @@ describe('ensureBackupFolder', () => {
     expect((caught as Error).message).not.toMatch(/ENOTDIR|ENOENT|EACCES|mkdir|errno/i);
     expect(((caught as Error).cause as NodeJS.ErrnoException).code).toBe('ENOTDIR');
   });
+
+  test('the message calls it the backup folder and names no setting key', () => {
+    const file = path.join(dir, 'a-file');
+    fs.writeFileSync(file, 'x');
+    expect(() => ensureBackupFolder(path.join(file, 'backups'))).toThrow(/Backup folder setting/);
+    expect(() => ensureBackupFolder(path.join(file, 'backups'))).not.toThrow(/director|ngdpbase\./i);
+  });
 });
 
 describe('secretDirIsOwnerOnly', () => {
