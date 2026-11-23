@@ -38,6 +38,8 @@ import type { JobRunSince } from './BackgroundJobManager.js';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, readFile as readFileAsync, writeFile as writeFileAsync } from 'node:fs/promises';
 import type NotificationManager from './NotificationManager.js';
+import { BackupFolderError, ensureBackupFolder } from '../utils/backupFolder.js';
+import { secretDirIsOwnerOnly } from '../utils/secretFileMode.js';
 
 const gzip = promisify(zlib.gzip);
 
@@ -879,8 +881,14 @@ class BackupManager extends BaseManager {
 
     try {
       if (!this.backupDirectory || !this.provider) {
-        throw new Error('Backup directory not initialized');
+        throw new BackupFolderError(
+          'Backups are switched off because the backup folder could not be reached when the site started. '
+          + 'Connect its drive again, or choose another folder under Backup directory, then restart the site.'
+        );
       }
+      // #2492: the folder was checked at start-up and can be gone since (a drive
+      // unplugged, a folder moved). Made again when its volume is there; said in plain words when not.
+      ensureBackupFolder(this.backupDirectory);
 
       // #1563: refused before anything is written, rather than half a backup.
       await this.checkFreeSpace();
@@ -2378,7 +2386,7 @@ class BackupManager extends BaseManager {
   /**
    * Return current auto-backup configuration and last backup info for the admin UI.
    */
-  async getAutoBackupStatus(): Promise<{ config: AutoBackupConfig; lastBackup: Date | null }> {
+  async getAutoBackupStatus(): Promise<{ config: AutoBackupConfig; lastBackup: Date | null; folder: { ownerOnly: boolean | null } }> {
     const backups = await this.listBackups();
     return {
       config: {
@@ -2388,7 +2396,9 @@ class BackupManager extends BaseManager {
         maxBackups: this.maxBackups,
         directory: this.backupDirectory ?? ''
       },
-      lastBackup: backups.length > 0 ? backups[0].created : null
+      lastBackup: backups.length > 0 ? backups[0].created : null,
+      // #2492: whether the folder could be made closed to every other account (a network share may not allow it).
+      folder: { ownerOnly: this.backupDirectory ? secretDirIsOwnerOnly(this.backupDirectory) : null }
     };
   }
 
@@ -2399,6 +2409,18 @@ class BackupManager extends BaseManager {
   async updateAutoBackupConfig(config: Partial<AutoBackupConfig>, ctx: ActorContext): Promise<void> {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) throw new Error('ConfigurationManager not available');
+
+    // #2492: a new folder is made and checked before anything is saved. One the site can't
+    // reach refuses the whole save and leaves the setting, and the folder backups go to, as they were.
+    if (config.directory !== undefined) {
+      try {
+        ensureBackupFolder(config.directory);
+      } catch (err) {
+        if (!(err instanceof BackupFolderError)) throw err;
+        const kept = this.backupDirectory ? `Backups still go to ${this.backupDirectory}.` : 'Backups stay switched off.';
+        throw new BackupFolderError(`${err.message} Nothing was saved. ${kept}`, { cause: err });
+      }
+    }
 
     if (config.enabled !== undefined) {
       await configManager.setProperty('ngdpbase.backup.auto-backup', config.enabled, ctx);

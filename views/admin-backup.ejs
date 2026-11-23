@@ -401,6 +401,44 @@
     <% } %>
 
     <!-- ================================================================ -->
+    <!-- Backup folder (#2492): used by manual and automatic backups       -->
+    <!-- ================================================================ -->
+    <div class="card mb-4" id="backup-folder">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-folder-open"></i> Backup folder</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="/admin/backup/config">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="section" value="folder">
+                <div class="mb-3">
+                    <label for="directory" class="form-label">Backup directory</label>
+                    <input type="text" class="form-control" id="directory"
+                           name="directory" value="<%= status.config.directory %>" required>
+                    <div class="form-text">
+                        Used by manual and automatic backups. The full path of a folder the site can write to.
+                        The site makes and checks the folder when you save. If it can't use the new one, the current one stays.
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
+                    <i class="fas fa-save"></i> Save folder
+                </button>
+            </form>
+            <p class="mt-3 mb-1">
+                The site keeps its own copy of each backup in <code><%= status.config.directory %></code>.
+                Only the site's user can open that folder, by design, because a backup holds sign-in details.
+                The file your browser downloads when you press Create &amp; Download is your copy, to keep somewhere safe.
+            </p>
+            <% if (status.folder && status.folder.ownerOnly === false) { %>
+            <div class="alert alert-warning mt-3 mb-0" id="backup-folder-open">
+                This folder could not be made private to the site: the drive it is on does not allow it.
+                Other accounts that can reach that drive may be able to open the backups.
+            </div>
+            <% } %>
+        </div>
+    </div>
+
+    <!-- ================================================================ -->
     <!-- Auto Backup                                                       -->
     <!-- ================================================================ -->
     <div class="card mb-4">
@@ -420,7 +458,6 @@
                 <tr><th>Time</th><td><%= status.config.time %></td></tr>
                 <tr><th>Days</th><td><%= status.config.days %></td></tr>
                 <tr><th>Max backups kept</th><td><%= status.config.maxBackups %></td></tr>
-                <tr><th>Backup directory</th><td><code style="font-size:0.8em;"><%= status.config.directory %></code></td></tr>
             </table>
 
             <!-- Configure Auto Backup (collapsible) -->
@@ -431,7 +468,7 @@
 
             <div class="collapse mt-3" id="autoBackupConfig">
                 <div class="card card-body border-secondary">
-                    <form method="POST" action="/admin/backup/config">
+                    <form method="POST" action="/admin/backup/config" id="auto-backup-form">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
                         <div class="mb-3">
@@ -492,13 +529,6 @@
                                    min="1" max="100" style="max-width:100px;">
                         </div>
 
-                        <div class="mb-3">
-                            <label for="directory" class="form-label">Backup directory</label>
-                            <input type="text" class="form-control" id="directory"
-                                   name="directory" value="<%= status.config.directory %>">
-                            <div class="form-text">Absolute path. Leave unchanged to keep current location.</div>
-                        </div>
-
                         <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
                             <i class="fas fa-save"></i> Save Configuration
                         </button>
@@ -520,7 +550,7 @@ document.querySelectorAll('input.restore-confirm').forEach(function (input) {
     update();
 });
 // When "Custom" radio is selected, build the autoBackupDays value from checked day checkboxes on submit
-document.querySelector('form[action="/admin/backup/config"]').addEventListener('submit', function(e) {
+document.getElementById('auto-backup-form').addEventListener('submit', function(e) {
     const customRadio = document.getElementById('days_custom');
     if (customRadio && customRadio.checked) {
         const checked = Array.from(document.querySelectorAll('.day-checkbox:checked')).map(cb => cb.value);

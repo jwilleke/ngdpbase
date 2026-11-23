@@ -16,6 +16,7 @@ import WikiRoutes, { signupRateLimiter } from '../WikiRoutes';
 import { UserCreateError } from '../../utils/userCreateError';
 import { readDoor } from './__fixtures__/pageReadDoor';
 import { PageWriteRefusedError } from '../../managers/PageManager';
+import { BackupFolderError } from '../../utils/backupFolder';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -997,6 +998,21 @@ describe('WikiRoutes — coverage batch 7', () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain('error=');
       expect(decodeURIComponent(res.headers.location)).not.toMatch(RAW);
+    });
+
+    test('a folder the site can reach is said as the backup code worded it, in both routes', async () => {
+      const plain = "The backup folder can't be reached by the site: /Volumes/jims/data/backups (the Backup directory setting). Nothing was saved.";
+      mockBackupManager.createBackup.mockRejectedValue(new BackupFolderError(plain));
+      const created = await request(app).post('/admin/backup/create').set('x-csrf-token', 'test-csrf-token');
+      expect(created.text).toBe(plain);
+      mockBackupManager.updateAutoBackupConfig.mockRejectedValue(new BackupFolderError(plain));
+      const saved = await request(app).post('/admin/backup/config').set('x-csrf-token', 'test-csrf-token').send({ section: 'folder', directory: '/Volumes/jims/data/backups' });
+      expect(decodeURIComponent(saved.headers.location)).toBe(`/admin/backup?error=${plain}`);
+    });
+
+    test('the folder form saves only the folder', async () => {
+      await request(app).post('/admin/backup/config').set('x-csrf-token', 'test-csrf-token').send({ section: 'folder', directory: '/app/data/backups' });
+      expect(mockBackupManager.updateAutoBackupConfig).toHaveBeenCalledWith({ directory: '/app/data/backups' }, expect.anything());
     });
   });
 
