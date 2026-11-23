@@ -199,6 +199,7 @@ import type AuthManager from '../managers/AuthManager.js';
 import type { AuthenticateResult, AuthAttempt, ReauthMode } from '../managers/AuthManager.js';
 import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import { JobActionError, type JobLastRun } from '../managers/BackgroundJobManager.js';
+import { automaticReindexLabel, latestReindex, type ReindexLine } from '../utils/reindexLines.js';
 import type BackupManager from '../managers/BackupManager.js';
 import { formatBytes, type BackupHealth } from '../managers/BackupManager.js';
 import type CacheManager from '../managers/CacheManager.js';
@@ -13081,11 +13082,21 @@ ${panes}
 
       // #2138: when each Reindex and Rebuild last ran, under the Page and Media Management buttons.
       const jobLastRuns: Record<string, JobLastRun | null> = {};
+      let mediaReindexLine: ReindexLine | null = null;
+      let automaticReindex: { label: string; next: string | null } = { label: automaticReindexLabel(3600000), next: null };
       try {
         const jobManager = this.engine.getManager('BackgroundJobManager');
         for (const jobId of ['pages.reindex', 'pages.rebuild', 'media.rescan', 'media.rebuild', 'media.folder-scan']) {
           jobLastRuns[jobId] = await jobManager.lastFinishedRun(jobId);
         }
+        // #2467: a Rebuild also reindexes, so the Media card's "Last reindex" shows the later of the two.
+        mediaReindexLine = latestReindex(jobLastRuns['media.rescan'], jobLastRuns['media.rebuild']);
+        const scanInterval = Number(this.engine.getManager('ConfigurationManager').getProperty('ngdpbase.media.scaninterval', 3600000));
+        const autoView = await jobManager.scheduledJobView('media.folder-scan');
+        automaticReindex = {
+          label: automaticReindexLabel(scanInterval),
+          next: scanInterval > 0 && autoView?.enabled ? autoView.nextSlot : null
+        };
       } catch (jobErr) {
         logger.warn('[adminDashboard] Last job runs could not be read:', jobErr);
       }
@@ -13142,6 +13153,8 @@ ${panes}
         backupHealth,
         formatBytes,
         jobLastRuns,
+        mediaReindexLine,
+        automaticReindex,
         // #1842: what the startup checks found outside its vault, each with
         // a "Move into vault" action where this admin may (unsealed vaults).
         vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : [],

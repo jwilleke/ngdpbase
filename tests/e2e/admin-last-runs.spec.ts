@@ -19,9 +19,10 @@ test.describe('#2138 — last Reindex and Rebuild runs on the dashboard', () => 
 
     // The Media card is there only when media is enabled; then it has its three lines.
     if (await page.locator('[data-testid=media-last-runs]').count()) {
-      await expect(page.locator('[data-job-last-run="media.rescan"]')).toContainText('Last reindex:');
+      await expect(page.locator('[data-job-last-run="media.reindex"]')).toContainText(/Last reindex:\s+(Not run since the server started|\d{4}-)/);
       await expect(page.locator('[data-job-last-run="media.rebuild"]')).toContainText('Last rebuild:');
-      await expect(page.locator('[data-job-last-run="media.folder-scan"]')).toContainText(/Last automatic folder scan:\s+(not run since the server started|\S)/);
+      // #2467: named for what it does, and shows when it runs next.
+      await expect(page.locator('[data-job-last-run="media.folder-scan"]')).toContainText(/Automatic reindex \((every .+|off)\):\s+(Not run since the server started|\d{4}-)/);
     }
 
     page.on('dialog', (dialog) => { void dialog.accept(); });
