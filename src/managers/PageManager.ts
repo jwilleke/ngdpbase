@@ -2301,12 +2301,16 @@ class PageManager extends BaseManager implements CatalogSource {
     return isJobContext(ctx) && !ctx.viaToken && !ctx.viaShare && !ctx.viaProxy && pip?.isSystemPrincipal(ctx.username) === true;
   }
 
-  /** The username a page's stored author names (#2097), or null. */
-  private async authorUsername(author: unknown): Promise<string | null> {
+  /**
+   * The username a page's stored author names (#2097), or null. With
+   * `strict`, a lookup the identity store could not answer throws instead of
+   * giving null, so a caller can tell "not anyone's" from "could not look" (#2466).
+   */
+  private async authorUsername(author: unknown, strict = false): Promise<string | null> {
     if (typeof author !== 'string' || !author) return null;
     const identities = this.engine.getManager<IdentityManager>('IdentityManager');
     if (typeof identities?.usernameOf !== 'function') return author;
-    return identities.usernameOf(systemContext(this.engine, 'the vault a page made private goes to: its author username (#1815, #2097)'), author);
+    return identities.usernameOf(systemContext(this.engine, 'the vault a page made private goes to: its author username (#1815, #2097)'), author, { strict });
   }
 
   /**
@@ -4362,7 +4366,7 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!identities || !users) throw new CouldNotTellError('whether a page author is an administrator: the account managers are not ready');
     try {
       const ctx = systemContext(this.engine, 'tell whether a page author is an administrator (#2466)');
-      const username = await identities.usernameOf(ctx, author);
+      const username = await identities.usernameOf(ctx, author, { strict: true });
       if (!username) return false;
       const user = await users.getUser(username);
       if (!user || !Array.isArray(user.roles)) return false;
@@ -4500,6 +4504,9 @@ class PageManager extends BaseManager implements CatalogSource {
         this.signInDone = read ?? new Set();
       }
       if (this.signInDone.has(username)) return { converted, left };
+      // An identity store that cannot answer cannot say whose pages are whose: try again at the next sign-in.
+      const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+      if (typeof identities?.canAnswer === 'function' && !identities.canAnswer()) return { converted, left };
       const site = this.legacyAccessSite();
       const record = await this.loadSeededRecord();
       const defaultCategory = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager')?.getDefaultSystemCategory?.();
@@ -4511,7 +4518,16 @@ class PageManager extends BaseManager implements CatalogSource {
         if (priv !== true && priv !== 'true') continue;
         if (!limitsLeftByUpgrade(info.metadata, Boolean(info.uuid) && record.hasUuid(info.uuid), defaultCategory)) continue;
         // Their own: the page's author is the person who signed in.
-        if (await this.authorUsername(info.metadata.author) !== username) continue;
+        let authorName: string | null;
+        try {
+          authorName = await this.authorUsername(info.metadata.author, true);
+        } catch (err) {
+          // Could not look: not "someone else's page". Tried again at their next sign-in; the next page is still looked at.
+          finished = false;
+          logger.warn(`[PageManager] Could not tell whose a private page is at sign-in, so it is tried again at the next sign-in: ${failureForLog(err)}`);
+          continue;
+        }
+        if (authorName !== username) continue;
         if (!info.uuid) { left++; continue; }
         try {
           const fresh = await this.rewriteLegacyAccess(info, site, subject, backups);

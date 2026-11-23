@@ -70,7 +70,8 @@ describe('PageManager moves a private page\'s old access: limit when its owner s
   function manager(over: Record<string, unknown> = {}): TestManager {
     const config = { getInstanceDataFolder: () => folder, getProperty: (_k: string, d: unknown) => d };
     const provider = {
-      getAllPageInfo: vi.fn(async () => pages),
+      // A listing is a snapshot: a save made while the pass runs does not change the entries it already holds.
+      getAllPageInfo: vi.fn(async () => pages.map((p) => ({ ...p }))),
       getPage: vi.fn(async (name: string) => {
         const p = pages.find((i) => i.title === name);
         return p ? { name, title: name, uuid: p.uuid, metadata: { ...p.metadata }, content: 'body text' } : null;
