@@ -156,6 +156,7 @@ const mockBackupManager = {
   getBackupHealth: vi.fn().mockResolvedValue(null), // #1563
   listBackups: vi.fn(),
   updateAutoBackupConfig: vi.fn(),
+  createBackup: vi.fn(),
   // #1723
   listStoredBackups: vi.fn(),
   isRestoreRunning: vi.fn(),
@@ -970,6 +971,32 @@ describe('WikiRoutes — coverage batch 7', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ autoBackup: 'on' });
       expect(res.status).toBe(403);
+    });
+  });
+
+  // ── #2492: an admin never sees a raw Node error from backups ────────────────
+
+  describe('no Node error text reaches the browser from the backup routes (#2492)', () => {
+    const RAW = /ENOENT|EACCES|EPERM|ENOTDIR|scandir|mkdir|no such file or directory|permission denied/i;
+    const rawError = () => Object.assign(new Error("ENOENT: no such file or directory, scandir '/Volumes/jims/data/backups'"), { code: 'ENOENT' });
+
+    test('Create and Download: a backup that fails answers in plain words', async () => {
+      mockBackupManager.createBackup.mockRejectedValue(rawError());
+      const res = await request(app).post('/admin/backup/create').set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(500);
+      expect(res.text).not.toMatch(RAW);
+      expect(res.text).not.toBe('');
+    });
+
+    test('Save Configuration: a save that fails sends the admin back with a plain message', async () => {
+      mockBackupManager.updateAutoBackupConfig.mockRejectedValue(rawError());
+      const res = await request(app)
+        .post('/admin/backup/config')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ autoBackup: 'on', directory: '/Volumes/jims/data/backups' });
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain('error=');
+      expect(decodeURIComponent(res.headers.location)).not.toMatch(RAW);
     });
   });
 

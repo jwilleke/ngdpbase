@@ -320,3 +320,32 @@ describe('#1976 Admin → Backup, the .env key set', () => {
   });
 });
 
+
+describe('#2492 Admin → Backup, the backup folder is its own setting', () => {
+  const card = (doc: Document) => doc.querySelector('#backup-folder');
+
+  test('the folder field is outside the automatic-backup form, labelled for manual and automatic backups', async () => {
+    const doc = await render();
+    const field = doc.querySelector('input[name="directory"]')!;
+    expect(field).not.toBeNull();
+    expect(doc.querySelector('#autoBackupConfig')!.contains(field)).toBe(false);
+    expect(card(doc)!.contains(field)).toBe(true);
+    expect(text(card(doc))).toContain('Used by manual and automatic backups');
+  });
+
+  test('says where the site\'s own copy is, that only the site\'s user can open it, and that the download is the admin\'s copy', async () => {
+    const doc = await render({ status: { config: { enabled: false, time: '02:00', days: 'daily', maxBackups: 10, directory: '/app/data/backups' }, lastBackup: null, folder: { ownerOnly: true } } });
+    const words = text(card(doc));
+    expect(words).toContain('/app/data/backups');
+    expect(words).toMatch(/only the site's user can open/i);
+    expect(words).toMatch(/by design/i);
+    expect(words).toMatch(/download/i);
+    expect(words).not.toMatch(/#\d+|see the log/i);
+    expect(doc.querySelector('#backup-folder-open')).toBeNull();
+  });
+
+  test('says so when the folder could not be made owner-only', async () => {
+    const doc = await render({ status: { config: { enabled: false, time: '02:00', days: 'daily', maxBackups: 10, directory: '/b' }, lastBackup: null, folder: { ownerOnly: false } } });
+    expect(text(doc.querySelector('#backup-folder-open'))).toMatch(/could not be made private to the site/i);
+  });
+});
