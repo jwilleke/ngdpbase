@@ -212,6 +212,25 @@ describe('ConfigurationManager', () => {
 
       expect(result).toBe('/absolute/path/to/data');
     });
+
+    // #2492: a value typed on the Backup page is resolved exactly as the same value is at start-up.
+    test.each([
+      ['./data/backups', 'backups'],
+      ['data/backups', 'backups'],
+      ['${SLOW_STORAGE}/backups', 'backups'],
+      ['./data', '']
+    ])('resolveConfiguredPath(%s) is under the instance data folder, as getResolvedDataPath says', (typed, below) => {
+      const base = configManager.getInstanceDataFolder();
+      const expected = below ? path.join(base, below) : base;
+      expect(configManager.resolveConfiguredPath(typed)).toBe(expected);
+      configManager.getProperty = () => typed;
+      expect(configManager.getResolvedDataPath('any.key', '/unused')).toBe(expected);
+    });
+
+    test('resolveConfiguredPath leaves an absolute or other relative path as typed', () => {
+      expect(configManager.resolveConfiguredPath('/mnt/backups')).toBe('/mnt/backups');
+      expect(configManager.resolveConfiguredPath('./required-pages')).toBe('./required-pages');
+    });
   });
 
   describe('custom config loading from instance data folder', () => {

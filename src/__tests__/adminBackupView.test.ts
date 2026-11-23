@@ -323,29 +323,60 @@ describe('#1976 Admin → Backup, the .env key set', () => {
 
 describe('#2492 Admin → Backup, the backup folder is its own setting', () => {
   const card = (doc: Document) => doc.querySelector('#backup-folder');
+  const status = (folder: Record<string, unknown>, directory = '/app/data/backups') => ({ config: { enabled: false, time: '02:00', days: 'daily', maxBackups: 10, directory }, lastBackup: null, folder });
 
-  test('the folder field is outside the automatic-backup form, labelled for manual and automatic backups', async () => {
+  test('the folder field is outside the automatic-backup form, and the page calls it the Backup folder everywhere', async () => {
     const doc = await render();
     const field = doc.querySelector('input[name="directory"]')!;
     expect(field).not.toBeNull();
     expect(doc.querySelector('#autoBackupConfig')!.contains(field)).toBe(false);
     expect(card(doc)!.contains(field)).toBe(true);
-    expect(text(card(doc))).toContain('Used by manual and automatic backups');
+    expect(text(doc.querySelector('label[for="directory"]'))).toBe('Backup folder');
+    expect(text(doc.body)).not.toMatch(/backup director/i);
   });
 
-  test('says where the site\'s own copy is, that only the site\'s user can open it, and that the download is the admin\'s copy', async () => {
-    const doc = await render({ status: { config: { enabled: false, time: '02:00', days: 'daily', maxBackups: 10, directory: '/app/data/backups' }, lastBackup: null, folder: { ownerOnly: true } } });
-    const words = text(card(doc));
+  test('the card shows one sentence under the button; the rest is behind "Who can open this folder"', async () => {
+    const doc = await render({ status: status({ ownerOnly: true, account: 'wiki' }) });
+    const below = card(doc)!.querySelector('.backup-folder-copy')!;
+    expect(text(below)).toBe('The site keeps its own copy of each backup in this folder.');
+    const more = card(doc)!.querySelector('details')!;
+    expect(text(more.querySelector('summary'))).toBe('Who can open this folder');
+    expect(more.hasAttribute('open')).toBe(false);
+    const words = text(more);
     expect(words).toContain('/app/data/backups');
-    expect(words).toMatch(/only the site's user can open/i);
-    expect(words).toMatch(/by design/i);
     expect(words).toMatch(/download/i);
     expect(words).not.toMatch(/#\d+|see the log/i);
     expect(doc.querySelector('#backup-folder-open')).toBeNull();
   });
 
-  test('says so when the folder could not be made owner-only', async () => {
-    const doc = await render({ status: { config: { enabled: false, time: '02:00', days: 'daily', maxBackups: 10, directory: '/b' }, lastBackup: null, folder: { ownerOnly: false } } });
-    expect(text(doc.querySelector('#backup-folder-open'))).toMatch(/could not be made private to the site/i);
+  test('names the account that runs the wiki, and says why only it can open the folder', async () => {
+    const doc = await render({ status: status({ ownerOnly: true, account: 'wiki' }) });
+    const words = text(card(doc)!.querySelector('details'));
+    expect(words).toContain('Only the account running this wiki (wiki) can open that folder, because a backup contains sign-in details.');
+    expect(words).not.toMatch(/site's user|by design/i);
+  });
+
+  test('without an account name it still says it', async () => {
+    const doc = await render({ status: status({ ownerOnly: true }) });
+    expect(text(card(doc)!.querySelector('details'))).toContain('Only the account running this wiki can open that folder, because a backup contains sign-in details.');
+  });
+
+  test('the help text is short', async () => {
+    const doc = await render();
+    expect(text(card(doc)!.querySelector('.form-text'))).toBe("The folder manual and automatic backups are saved in. It is created and checked when you save; if it can't be used, the current one stays.");
+  });
+
+  test('says so, outside the closed details, when the folder could not be made owner-only', async () => {
+    const doc = await render({ status: status({ ownerOnly: false }, '/b') });
+    const warning = doc.querySelector('#backup-folder-open')!;
+    expect(text(warning)).toMatch(/could not be made private to the site/i);
+    expect(card(doc)!.querySelector('details')!.contains(warning)).toBe(false);
+  });
+
+  test('a refused save and a failed Create & Download show their messages in plain words', async () => {
+    const message = "The backup folder can't be reached by the site: /Volumes/jims/backups. The drive it is on is not connected to the computer the site runs on. Choose a folder the site can open and write to, such as one inside its data folder. Nothing was saved. Backups still go to /app/data/backups.";
+    const doc = await render({ error: message });
+    expect(text(doc.querySelector('.alert-danger'))).toContain(message);
+    expect(text(doc.querySelector('.alert-danger'))).not.toMatch(/ENOENT|errno/);
   });
 });

@@ -1010,6 +1010,42 @@ describe('WikiRoutes — coverage batch 7', () => {
       expect(decodeURIComponent(saved.headers.location)).toBe(`/admin/backup?error=${plain}`);
     });
 
+    test('Create and Download: the failure message is sent as text, so a folder path is never read as markup', async () => {
+      const path = '/mnt/<img src=x onerror=alert(1)>/backups';
+      mockBackupManager.createBackup.mockRejectedValue(new BackupFolderError(`The backup folder can't be reached by the site: ${path}.`));
+      const res = await request(app).post('/admin/backup/create').set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(500);
+      expect(res.headers['content-type']).toMatch(/^text\/plain/);
+      expect(res.text).toContain(path);
+    });
+
+    test('Restore: a Node error from the restore is said in plain words, a refusal the manager wrote is kept', async () => {
+      mockBackupManager.startRestore.mockRejectedValue(rawError());
+      const raw = await request(app).post('/admin/backup/restore').set('x-csrf-token', 'test-csrf-token').send({ backup: 'b.json.gz', confirm: 'ngdpbase' });
+      expect(decodeURIComponent(raw.headers.location)).toMatch(/error=\S/);
+      expect(decodeURIComponent(raw.headers.location)).not.toMatch(RAW);
+      expect(decodeURIComponent(raw.headers.location)).not.toContain('/Volumes/jims');
+    });
+
+    test('Cancel restore: a Node error is said in plain words', async () => {
+      mockBackupManager.cancelStagedRestore.mockRejectedValue(rawError());
+      const res = await request(app).post('/admin/backup/restore/cancel').set('x-csrf-token', 'test-csrf-token').send({});
+      expect(decodeURIComponent(res.headers.location)).toMatch(/error=\S/);
+      expect(decodeURIComponent(res.headers.location)).not.toMatch(RAW);
+      expect(decodeURIComponent(res.headers.location)).not.toContain('/Volumes/jims');
+    });
+
+    test('the folder form says the folder is in use when backups are on, and that a restart is needed when they are not', async () => {
+      mockBackupManager.updateAutoBackupConfig.mockResolvedValue({ backupsLive: true });
+      const on = await request(app).post('/admin/backup/config').set('x-csrf-token', 'test-csrf-token').send({ section: 'folder', directory: '/app/data/backups' });
+      expect(decodeURIComponent(on.headers.location)).toBe('/admin/backup?success=Backup folder saved. Backups now go to it.');
+      mockBackupManager.updateAutoBackupConfig.mockResolvedValue({ backupsLive: false });
+      const off = await request(app).post('/admin/backup/config').set('x-csrf-token', 'test-csrf-token').send({ section: 'folder', directory: '/app/data/backups' });
+      const said = decodeURIComponent(off.headers.location);
+      expect(said).toMatch(/Backup folder saved\. Backups are switched off until the site is restarted/);
+      expect(said).not.toMatch(/Backups now go to it/);
+    });
+
     test('the folder form saves only the folder', async () => {
       await request(app).post('/admin/backup/config').set('x-csrf-token', 'test-csrf-token').send({ section: 'folder', directory: '/app/data/backups' });
       expect(mockBackupManager.updateAutoBackupConfig).toHaveBeenCalledWith({ directory: '/app/data/backups' }, expect.anything());
