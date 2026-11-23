@@ -1834,7 +1834,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
 There is no `hasRole` / `requireRole`, and no `requireAuthenticated`: a role name, or being signed in, skips the policy evaluator, deny policies and the agent-token ceiling ([security-developer-guide.md](security-developer-guide.md)). Declare the permission and grant it as in [Permissions](#permissions), then ask for it. The journal and calendar addons are worked examples:
 
 - the journal declares `journal-read`, `journal-write` and `journal-export`, in one `journal-access` policy;
-- calendar declares `calendar-manage` (admin) and `calendar-reserve` (every role that can sign in).
+- calendar declares `calendar-manage` (admin), `calendar-read` (every signed-in account, asked for a calendar whose `visibility` is `authenticated`) and `calendar-reserve` (every role that can sign in).
 
 ---
 

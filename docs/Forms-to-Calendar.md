@@ -19,7 +19,7 @@ Data flow for the clubhouse reservation system: a wiki form submission that beco
 | FormsDataManager | `addons/forms/managers/FormsDataManager.ts` | Loads definitions, stores submissions |
 | Calendar handler | `addons/calendar/index.ts` `register()` | Registered at startup, conflict-checks and creates event |
 | CalendarDataManager | `addons/calendar/managers/CalendarDataManager.ts` | Event store, conflict detection |
-| Calendar config | `data/config/app-custom-config.json` | `clubhouse` calendar: `workflow: reservation` |
+| Calendar config | `data/config/app-custom-config.json` | `clubhouse` calendar: `workflow: reservation`, and the `visibility` its members should have (a calendar the configuration does not name is read as private) |
 
 ---
 
