@@ -252,6 +252,23 @@ describe('a form POST carries on after a fresh sign-in (#2154)', () => {
     expect(done.redirect).toHaveBeenCalledWith('/profile?success=Renamed');
   });
 
+  test('#2485: the prompt for a kept POST says whether it holds anything typed (Revoke holds nothing)', async () => {
+    const env = routes(true);
+    const promptFor = async (body: Record<string, unknown>) => {
+      const s = session();
+      const asked = res();
+      await env.r.renameOwnCredential(formPost(s, 'sid-1', body), asked);
+      const next = new URL(String(asked.redirect.mock.calls[0]?.[0]), 'http://x').searchParams.get('next') ?? '';
+      env.authManager.stepUpNeeded.mockReturnValue(false); // the prompt itself is profile-manage, which never steps up
+      const out = res();
+      await env.r.reauthPage(req(s, { method: 'GET', sessionID: 'sid-1', originalUrl: '/auth/reauth', query: { next } }), out);
+      env.authManager.stepUpNeeded.mockReturnValue(true);
+      return out.render.mock.calls[0][1] as { typed?: boolean };
+    };
+    expect((await promptFor({ _csrf: 't-old' })).typed).toBe(false);
+    expect((await promptFor({ _csrf: 't-old', label: 'Phone' })).typed).toBe(true);
+  });
+
   test('a second replay is refused', async () => {
     const { r, s, next } = await staleRenameThenPasskey();
     await r.reauthContinue(continueTo(s, 'sid-1', next), res());
