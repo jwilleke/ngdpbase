@@ -10,6 +10,7 @@
  * Node error behind it goes to the log.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import { checkConfiguredPath } from './PathPreflight.js';
 import { ensureSecretDir } from './secretFileMode.js';
 import logger from './logger.js';
@@ -20,6 +21,33 @@ export class BackupFolderError extends Error {
     super(message, options);
     this.name = 'BackupFolderError';
   }
+}
+
+/** The name of the account that runs the site, for the Backup page; null when the system can't say. */
+export function runningAccount(): string | null {
+  try {
+    return os.userInfo().username || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether an error came from the system or a library (a code such as ENOENT, a failed call), not from this code's own words. */
+export function isSystemError(err: unknown): boolean {
+  if (!(err instanceof Error)) return true;
+  const e = err as NodeJS.ErrnoException;
+  return typeof e.code === 'string' || e.errno !== undefined || typeof e.syscall === 'string'
+    || err instanceof SyntaxError || err instanceof TypeError || err instanceof RangeError;
+}
+
+/**
+ * What an admin reads when a backup route fails: the message of a `BackupFolderError`, or of an
+ * error this code threw in its own words, as it is; for any error from the system, `fallback`.
+ * The full error is the caller's to log.
+ */
+export function adminMessage(err: unknown, fallback: string): string {
+  if (err instanceof BackupFolderError) return err.message;
+  return isSystemError(err) ? fallback : (err as Error).message;
 }
 
 /** The mount point that holds `target`, from the text of /proc/self/mountinfo: the longest one that is a parent of it. */

@@ -38,7 +38,7 @@ import type { JobRunSince } from './BackgroundJobManager.js';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, readFile as readFileAsync, writeFile as writeFileAsync } from 'node:fs/promises';
 import type NotificationManager from './NotificationManager.js';
-import { BackupFolderError, ensureBackupFolder } from '../utils/backupFolder.js';
+import { BackupFolderError, ensureBackupFolder, isSystemError, runningAccount } from '../utils/backupFolder.js';
 import { secretDirIsOwnerOnly } from '../utils/secretFileMode.js';
 
 const gzip = promisify(zlib.gzip);
@@ -526,19 +526,22 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`;
 }
 
-/** Why a backup could not be written, in words an admin can act on: the system's error codes named (#1563). */
+/**
+ * Why a backup could not be written, in words an admin can act on: the system's error codes named (#1563).
+ * The Backup page and the admin notice show this, so none of the system's own text is in it (#2492); the
+ * full error is in the log, where the backup failed.
+ */
 export function describeBackupError(err: unknown): string {
   const e = err as NodeJS.ErrnoException;
-  const message = e?.message ?? String(err);
   switch (e?.code) {
-  case 'ENOSPC': return `the backup destination is out of space (${message})`;
-  case 'EDQUOT': return `the backup destination is over its quota (${message})`;
+  case 'ENOSPC': return 'the backup destination is out of space';
+  case 'EDQUOT': return 'the backup destination is over its quota';
   case 'EACCES':
-  case 'EPERM': return `permission denied writing to the backup destination (${message})`;
-  case 'EROFS': return `the backup destination is read-only (${message})`;
-  case 'ENOENT': return `the backup destination is not there (${message})`;
-  case 'EIO': return `the backup destination reported a write error (${message})`;
-  default: return message;
+  case 'EPERM': return 'permission denied writing to the backup destination';
+  case 'EROFS': return 'the backup destination is read-only';
+  case 'ENOENT': return 'the backup destination is not there';
+  case 'EIO': return 'the backup destination reported a write error';
+  default: return isSystemError(err) ? 'the backup could not be written' : (e?.message ?? String(err));
   }
 }
 
@@ -2386,7 +2389,7 @@ class BackupManager extends BaseManager {
   /**
    * Return current auto-backup configuration and last backup info for the admin UI.
    */
-  async getAutoBackupStatus(): Promise<{ config: AutoBackupConfig; lastBackup: Date | null; folder: { ownerOnly: boolean | null } }> {
+  async getAutoBackupStatus(): Promise<{ config: AutoBackupConfig; lastBackup: Date | null; folder: { ownerOnly: boolean | null; account: string | null } }> {
     const backups = await this.listBackups();
     return {
       config: {
@@ -2398,7 +2401,7 @@ class BackupManager extends BaseManager {
       },
       lastBackup: backups.length > 0 ? backups[0].created : null,
       // #2492: whether the folder could be made closed to every other account (a network share may not allow it).
-      folder: { ownerOnly: this.backupDirectory ? secretDirIsOwnerOnly(this.backupDirectory) : null }
+      folder: { ownerOnly: this.backupDirectory ? secretDirIsOwnerOnly(this.backupDirectory) : null, account: runningAccount() }
     };
   }
 
@@ -2406,15 +2409,19 @@ class BackupManager extends BaseManager {
    * Update auto-backup configuration and persist to config store.
    * Restarts the scheduler with the new settings.
    */
-  async updateAutoBackupConfig(config: Partial<AutoBackupConfig>, ctx: ActorContext): Promise<void> {
+  async updateAutoBackupConfig(config: Partial<AutoBackupConfig>, ctx: ActorContext): Promise<{ backupsLive: boolean }> {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) throw new Error('ConfigurationManager not available');
 
+    // #2492: the typed folder means what it means at start-up (`./data/...`, `${SLOW_STORAGE}/...`),
+    // so the one that is checked is the one backups go to after a restart.
+    const folder = config.directory === undefined ? undefined : configManager.resolveConfiguredPath(config.directory);
+
     // #2492: a new folder is made and checked before anything is saved. One the site can't
     // reach refuses the whole save and leaves the setting, and the folder backups go to, as they were.
-    if (config.directory !== undefined) {
+    if (folder !== undefined) {
       try {
-        ensureBackupFolder(config.directory);
+        ensureBackupFolder(folder);
       } catch (err) {
         if (!(err instanceof BackupFolderError)) throw err;
         const kept = this.backupDirectory ? `Backups still go to ${this.backupDirectory}.` : 'Backups stay switched off.';
@@ -2439,16 +2446,19 @@ class BackupManager extends BaseManager {
       this.maxBackups = config.maxBackups;
     }
     if (config.directory !== undefined) {
+      // The setting keeps what was typed, as start-up reads it back; the folder in use is the one it resolves to.
       await configManager.setProperty('ngdpbase.backup.directory', config.directory, ctx);
-      this.backupDirectory = config.directory;
+      this.backupDirectory = folder as string;
       // #170: re-point the storage provider at the new directory.
-      await this.provider?.setBackupDirectory(config.directory);
+      await this.provider?.setBackupDirectory(folder as string);
     }
 
     // The job takes the new settings; a changed rule counts its slots from now (#1720).
     this.scheduleAutoBackup();
 
     logger.info(`✅ Auto-backup config updated: ${this.autoBackupEnabled ? `enabled at ${this.autoBackupTime} (${this.autoBackupDays})` : 'disabled'}`);
+    // #2492: with no provider (backups were switched off at start-up) a saved folder is used after a restart.
+    return { backupsLive: this.provider !== null };
   }
 
   /**

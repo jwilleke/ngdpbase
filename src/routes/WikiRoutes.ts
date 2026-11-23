@@ -48,7 +48,7 @@ import {
   withoutKeptMarks
 } from '../utils/addonPageSync.js';
 import { isSourceCheckout } from '../utils/sourceCheckout.js';
-import { BackupFolderError } from '../utils/backupFolder.js';
+import { adminMessage, BackupFolderError } from '../utils/backupFolder.js';
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
@@ -14078,8 +14078,11 @@ ${panes}
       // #2492: the backup folder is its own form, and saves on its own.
       if (body.section === 'folder') {
         if (!directory) return res.redirect('/admin/backup?error=' + encodeURIComponent('Enter the folder to keep backups in.'));
-        await backupManager.updateAutoBackupConfig({ directory }, currentUser);
-        return res.redirect('/admin/backup?success=' + encodeURIComponent('Backup folder saved. Backups now go to it.'));
+        const { backupsLive } = await backupManager.updateAutoBackupConfig({ directory }, currentUser);
+        // With backups switched off since start-up nothing uses the folder yet: say so, not that backups go to it.
+        return res.redirect('/admin/backup?success=' + encodeURIComponent(backupsLive
+          ? 'Backup folder saved. Backups now go to it.'
+          : 'Backup folder saved. Backups are switched off until the site is restarted; then they go to it.'));
       }
 
       await backupManager.updateAutoBackupConfig({
@@ -14094,7 +14097,7 @@ ${panes}
     } catch (err: unknown) {
       logger.error('Error saving backup config:', err);
       // #2492: the admin reads a plain message; the full error is in the log above.
-      const message = err instanceof BackupFolderError ? err.message : 'The backup settings could not be saved. Check them and try again.';
+      const message = adminMessage(err, 'The backup settings could not be saved. Check them and try again.');
       return res.redirect('/admin/backup?error=' + encodeURIComponent(message));
     }
   }
@@ -14145,7 +14148,8 @@ ${panes}
     } catch (err: unknown) {
       logger.error('Error creating backup:', err);
       // #2492: the admin reads a plain message; the full error is in the log above.
-      res.status(500).send(err instanceof BackupFolderError
+      // Sent as text: the message holds the admin's folder path, which is never read as markup.
+      res.status(500).type('text/plain').send(err instanceof BackupFolderError
         ? err.message
         : 'The backup could not be made. Try again. If it keeps failing, the backup status on the Backup page says what is wrong.');
     }
@@ -14219,7 +14223,7 @@ ${panes}
       return res.redirect('/admin/backup?success=' + encodeURIComponent(`Restore started: a fresh backup is being taken, then ${what}. You will be notified when it is ready. Restart the site to apply it.`));
     } catch (err: unknown) {
       logger.error('Error starting restore:', err);
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(adminMessage(err, 'The restore could not be started. Try again.')));
     }
   }
 
@@ -14240,7 +14244,7 @@ ${panes}
       return res.redirect('/admin/backup?success=' + encodeURIComponent(`Staged restore from ${cancelled.source} cancelled; ${unchanged}.`));
     } catch (err: unknown) {
       logger.error('Error cancelling staged restore:', err);
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(adminMessage(err, 'The staged restore could not be cancelled. Try again.')));
     }
   }
 

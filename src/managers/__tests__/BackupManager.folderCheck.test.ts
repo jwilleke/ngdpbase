@@ -24,7 +24,8 @@ describe('the backup folder is checked, and a fault is said in plain words (#249
   const realResolver = {
     getProperty: (k: string, d: unknown) => (k in props ? props[k] : d),
     getInstanceDataFolder: () => path.join(dir, 'fast'),
-    resolveDataPath: ConfigurationManager.prototype.resolveDataPath
+    resolveDataPath: ConfigurationManager.prototype.resolveDataPath,
+    resolveConfiguredPath: (value: string): string => (ConfigurationManager.prototype as unknown as { resolveConfiguredPath(v: string): string }).resolveConfiguredPath.call(realResolver, value)
   };
 
   async function start(): Promise<BackupManager> {
@@ -208,7 +209,8 @@ describe('the backup folder is checked, and a fault is said in plain words (#249
     ])('%s is named in plain words with no Node text', (code, plain) => {
       const said = describeBackupError(node(code, `${code}: no such file or directory, scandir '/Volumes/jims/backups'`));
       expect(said).toMatch(plain);
-      expect(said).not.toMatch(RAW_NODE_ERROR);
+      // The system's own text: its code, its call and its path.
+      expect(said).not.toMatch(/E[A-Z]{3,6}\b|scandir|no such file/);
       expect(said).not.toContain('/Volumes/jims');
     });
 

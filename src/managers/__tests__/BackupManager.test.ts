@@ -35,6 +35,7 @@ const mockConfigManager = {
     return defaultValue;
   }),
   getResolvedDataPath: vi.fn((_key: string, _default: string) => tmpDir),
+  resolveConfiguredPath: vi.fn((value: string) => value),
   setProperty: vi.fn().mockResolvedValue(undefined)
 };
 

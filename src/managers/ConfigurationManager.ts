@@ -1456,8 +1456,20 @@ class ConfigurationManager extends BaseManager {
    * );
    */
   getResolvedDataPath(key: string, defaultValue: string): string {
-    const value = this.getProperty(key, defaultValue) as string;
+    return this.resolveConfiguredPath(this.getProperty(key, defaultValue) as string);
+  }
 
+  /**
+   * Resolve a path value as the site reads it from configuration.
+   *
+   * `getResolvedDataPath` is this applied to a stored setting; a value that is
+   * checked before it is saved (the backup folder, #2492) goes through the same
+   * function, so the folder checked is the folder start-up uses.
+   *
+   * @param {string} value - The path as typed or stored
+   * @returns {string} Resolved path, or the value as it is when it is not a data path
+   */
+  resolveConfiguredPath(value: string): string {
     // If the value still contains an unresolved ${VAR} placeholder (env var not set),
     // extract the path suffix and resolve it under instanceDataFolder to avoid
     // creating literal '${VAR}/...' directories in the cwd.
