@@ -12,14 +12,15 @@ vi.unmock('../PageManager');
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
-import PageManager from '../PageManager';
+import PageManager, { PageAudienceRefusedError } from '../PageManager';
+import logger from '../../utils/logger';
 import { ALLOWING_PDP, ALLOWING_PIP, withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 type Meta = Record<string, unknown>;
 interface Info { title: string; uuid: string; filePath: string; metadata: Meta }
 type Item = { state: string; kind?: string; reason?: string; details?: string[] };
 interface Result { converted: number; left: number }
-interface Subject { username: string; roles: string[]; isAuthenticated: boolean }
+interface Subject { username: string; roles: string[]; isAuthenticated: boolean; [key: string]: unknown }
 interface TestManager {
   provider: unknown;
   convertLegacyAccessAtBoot(): Promise<Result>;
@@ -31,8 +32,10 @@ interface TestManager {
 const ADMIN_RULE = { id: 'admin-full-access', effect: 'allow', subjects: [{ type: 'role', value: 'admin' }], actions: ['admin-system'] };
 const ROOT_ID = 'urn:uuid:11111111-1111-4111-8111-111111111111';
 const BOB_ID = 'urn:uuid:22222222-2222-4222-8222-222222222222';
+const ANN_ID = 'urn:uuid:33333333-3333-4333-8333-333333333333';
 const ROOT: Subject = { username: 'root', roles: ['admin'], isAuthenticated: true };
 const BOB: Subject = { username: 'bob', roles: ['editor'], isAuthenticated: true };
+const ANN: Subject = { username: 'ann', roles: ['admin'], isAuthenticated: true };
 
 describe('PageManager moves a private page\'s old access: limit when its owner signs in (#2466)', () => {
   let folder: string;
@@ -62,7 +65,7 @@ describe('PageManager moves a private page\'s old access: limit when its owner s
     return info;
   }
 
-  function manager(): TestManager {
+  function manager(over: Record<string, unknown> = {}): TestManager {
     const config = { getInstanceDataFolder: () => folder, getProperty: (_k: string, d: unknown) => d };
     const provider = {
       getAllPageInfo: vi.fn(async () => pages),
@@ -82,8 +85,9 @@ describe('PageManager moves a private page\'s old access: limit when its owner s
       ConfigurationManager: config,
       PolicyInformationPoint: pip,
       PolicyDecisionPoint: { ...ALLOWING_PDP, policies: () => [ADMIN_RULE], permits: async (s: { roles?: string[] }, action: string) => action !== 'admin-system' || (s.roles ?? []).includes('admin') },
-      IdentityManager: { usernameOf: async (_c: unknown, s: string) => (s === ROOT_ID ? 'root' : s === BOB_ID ? 'bob' : s), storedReferenceOf: async (_c: unknown, n: string) => n },
-      UserManager: { getUser: async (u: string) => (u === 'root' ? { username: 'root', roles: ['admin'] } : u === 'bob' ? { username: 'bob', roles: ['editor'] } : undefined) }
+      IdentityManager: { usernameOf: async (_c: unknown, s: string) => (s === ROOT_ID ? 'root' : s === BOB_ID ? 'bob' : s === ANN_ID ? 'ann' : s), storedReferenceOf: async (_c: unknown, n: string) => n },
+      UserManager: { getUser: async (u: string) => (u === 'root' ? { username: 'root', roles: ['admin'] } : u === 'ann' ? { username: 'ann', roles: ['admin'] } : u === 'bob' ? { username: 'bob', roles: ['editor'] } : undefined) },
+      ...over
     };
     const m = new PageManager({ getManager: vi.fn(withWriteDoorAllowing((name: string) => (stand[name] ?? null))) }) as unknown as TestManager;
     m.provider = provider;
@@ -240,5 +244,206 @@ describe('PageManager moves a private page\'s old access: limit when its owner s
     await m.convertLegacyAccessOnSignIn(ROOT);
     expect(lines.join('\n')).not.toContain('Secret Plans');
     vi.restoreAllMocks();
+  });
+
+  /** Every line the logger is given while a test runs. */
+  function captureLog(): () => string {
+    const lines: string[] = [];
+    for (const level of ['debug', 'info', 'warn', 'error'] as const) {
+      vi.spyOn(logger, level).mockImplementation(((...a: unknown[]) => { lines.push(a.map((x) => (x instanceof Error ? `${x.name}: ${x.message}` : String(x))).join(' ')); return logger; }) as never);
+    }
+    return () => lines.join('\n');
+  }
+  const doneFile = (): string => path.join(folder, 'upgrade-signin-done.json');
+  const doneUsers = (): string[] => (JSON.parse(fs.readFileSync(doneFile(), 'utf8')) as { users: string[] }).users;
+
+  describe('a lookup that fails is not a "no" (#2466)', () => {
+    test('the user store throws once: the page is not recorded as final, and the next sign-in converts it', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      let down = true;
+      const m = manager({
+        UserManager: { getUser: async (u: string) => { if (down) throw new Error('user store unavailable'); return u === 'root' ? { username: 'root', roles: ['admin'] } : undefined; } }
+      });
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 0, left: 1 });
+      expect(fs.existsSync(doneFile())).toBe(false);
+      expect(saved).toEqual([]);
+      down = false;
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 1, left: 0 });
+      expect(metaOf('Secret Plans')['author-lock']).toBe(true);
+      expect(doneUsers()).toContain('root');
+    });
+
+    test('the access rules are not loaded yet: the page is tried again at the next sign-in', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      let rules: unknown[] = [];
+      const m = manager({
+        PolicyDecisionPoint: { ...ALLOWING_PDP, policies: () => rules, permits: async (s: { roles?: string[] }, action: string) => action !== 'admin-system' || (s.roles ?? []).includes('admin') }
+      });
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 0, left: 1 });
+      expect(fs.existsSync(doneFile())).toBe(false);
+      rules = [ADMIN_RULE];
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 1, left: 0 });
+    });
+
+    test('an author who is truly not an administrator is still final', async () => {
+      await add('Bobs Plans', { access: { edit: ['admin'] }, author: BOB_ID, private: true });
+      const m = manager();
+      await m.convertLegacyAccessOnSignIn(BOB);
+      expect(doneUsers()).toContain('bob');
+    });
+  });
+
+  describe('a private page\'s title stays out of the log (#2466)', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    test('a save refused for the page\'s audience: the log names the error class and the page by its uuid', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      const m = manager();
+      const log = captureLog();
+      (m.provider as { savePage: ReturnType<typeof vi.fn> }).savePage.mockRejectedValueOnce(new PageAudienceRefusedError('Secret Plans'));
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 0, left: 1 });
+      expect(log()).toMatch(/PageAudienceRefusedError/);
+      expect(log()).not.toContain('Secret Plans');
+    });
+
+    test('a save that reports an error after the file was rewritten: the log does not carry the title', async () => {
+      const info = await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      const m = manager();
+      const log = captureLog();
+      (m.provider as { savePage: ReturnType<typeof vi.fn> }).savePage.mockImplementationOnce(async () => {
+        await fs.writeFile(info.filePath, '---\ntitle: Secret Plans\nauthor-lock: true\n---\nbody\n');
+        throw new PageAudienceRefusedError('Secret Plans');
+      });
+      await m.convertLegacyAccessOnSignIn(ROOT);
+      expect(log()).toMatch(/PageAudienceRefusedError/);
+      expect(log()).not.toContain('Secret Plans');
+    });
+
+    test('a failure that reaches the outer catch does not carry the title either', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      const m = manager();
+      const log = captureLog();
+      (m.provider as { getAllPageInfo: ReturnType<typeof vi.fn> }).getAllPageInfo.mockRejectedValueOnce(new Error("cannot list 'Secret Plans'"));
+      await m.convertLegacyAccessOnSignIn(ROOT);
+      expect(log()).not.toContain('Secret Plans');
+    });
+
+    test('a page that is converted, left, or refused leaves no title in any line', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      await add('Staff Plans', { access: { edit: ['editor'] }, author: ROOT_ID, private: true });
+      const m = manager();
+      const log = captureLog();
+      await m.convertLegacyAccessOnSignIn(ROOT);
+      expect(log()).not.toMatch(/Secret Plans|Staff Plans/);
+    });
+  });
+
+  describe('who may start the pass (#2466)', () => {
+    const refused = (extra: Record<string, unknown>): Subject => ({ ...ROOT, ...extra });
+    const cases: Array<[string, Subject]> = [
+      ['a token', refused({ viaToken: { kind: 'token', id: 't1' } })],
+      ['a share', refused({ viaShare: { kind: 'share', id: 's1' } })],
+      ['a proxy', refused({ viaProxy: { kind: 'proxy', grantId: 'g1', actor: 'ann', scopes: [] } })],
+      ['a system job', refused({ origin: 'scheduler', requestedAt: '2026-11-23T10:00:00.000Z' })],
+      ['a caller who is not signed in', refused({ isAuthenticated: false })],
+      ['the system principal', { username: 'system', roles: ['admin'], isAuthenticated: true }]
+    ];
+    test.each(cases)('%s is refused: nothing is scanned, saved or copied', async (_name, subject) => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      const m = manager();
+      expect(await m.convertLegacyAccessOnSignIn(subject)).toEqual({ converted: 0, left: 0 });
+      expect(scans(m)).toBe(0);
+      expect(saved).toEqual([]);
+      expect(backups()).toEqual([]);
+      expect(fs.existsSync(doneFile())).toBe(false);
+    });
+  });
+
+  describe('a page that changes while the pass runs (#2466)', () => {
+    test('its file changes after it was listed: nothing is written over it, no copy is kept, and the next sign-in converts it', async () => {
+      const info = await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      const m = manager();
+      const provider = m.provider as { getPage: ReturnType<typeof vi.fn> };
+      const real = provider.getPage.getMockImplementation() as (...a: unknown[]) => Promise<unknown>;
+      provider.getPage.mockImplementationOnce(async (...a: unknown[]) => {
+        await fs.appendFile(info.filePath, 'a line written meanwhile\n');
+        return real(...a);
+      });
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 0, left: 1 });
+      expect(saved).toEqual([]);
+      expect(backups()).toEqual([]);
+      expect(fs.existsSync(doneFile())).toBe(false);
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 1, left: 0 });
+    });
+
+    test('its limit changes so it no longer matches: it is left, and tried again at the next sign-in', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      const m = manager();
+      const provider = m.provider as { getPage: ReturnType<typeof vi.fn> };
+      const real = provider.getPage.getMockImplementation() as (...a: unknown[]) => Promise<{ metadata: Meta }>;
+      provider.getPage.mockImplementationOnce(async (...a: unknown[]) => {
+        const page = await real(...a);
+        return { ...page, metadata: { ...page.metadata, access: { edit: ['admin', 'editor'] } } };
+      });
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 0, left: 1 });
+      expect(saved).toEqual([]);
+      expect(fs.existsSync(doneFile())).toBe(false);
+    });
+
+    test('the page read is not the page listed: it is left alone', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      const m = manager();
+      const provider = m.provider as { getPage: ReturnType<typeof vi.fn> };
+      const real = provider.getPage.getMockImplementation() as (...a: unknown[]) => Promise<Record<string, unknown>>;
+      provider.getPage.mockImplementationOnce(async (...a: unknown[]) => ({ ...(await real(...a)), uuid: 'someone-elses' }));
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 0, left: 1 });
+      expect(saved).toEqual([]);
+      expect(backups()).toEqual([]);
+    });
+  });
+
+  test('two different people sign in together: each converts their own page, and both are recorded', async () => {
+    await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+    await add('Annes Plans', { access: { edit: ['admin'] }, author: ANN_ID, private: true });
+    const m = manager();
+    const [a, b] = await Promise.all([m.convertLegacyAccessOnSignIn(ROOT), m.convertLegacyAccessOnSignIn(ANN)]);
+    expect(a).toEqual({ converted: 1, left: 0 });
+    expect(b).toEqual({ converted: 1, left: 0 });
+    expect(saved.map((s) => (s.as as { username: string }).username).sort()).toEqual(['ann', 'root']);
+    expect(backups()).toHaveLength(2);
+    expect(doneUsers()).toEqual(['ann', 'root']);
+    expect(fs.readdirSync(folder).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+  });
+
+  describe('the record of who is done (#2466)', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    test('a record that cannot be read is logged and kept as it is: other people are not dropped from it', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      const damaged = '{"users": ["ann", "bob"';
+      await fs.writeFile(doneFile(), damaged);
+      const m = manager();
+      const log = captureLog();
+      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 1, left: 0 });
+      expect(fs.readFileSync(doneFile(), 'utf8')).toBe(damaged);
+      expect(log()).toMatch(/upgrade-signin-done\.json|record of who/i);
+    });
+
+    test('a readable record keeps the other people when one more is added', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      await fs.writeFile(doneFile(), JSON.stringify({ users: ['ann'] }));
+      const m = manager();
+      await m.convertLegacyAccessOnSignIn(ROOT);
+      expect(doneUsers()).toEqual(['ann', 'root']);
+    });
+
+    test('a missing record is not a failure: it is made, with no warning about it', async () => {
+      await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
+      const m = manager();
+      const log = captureLog();
+      await m.convertLegacyAccessOnSignIn(ROOT);
+      expect(doneUsers()).toEqual(['root']);
+      expect(log()).not.toMatch(/upgrade-signin-done|record of who/i);
+    });
   });
 });
