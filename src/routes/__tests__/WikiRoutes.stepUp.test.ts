@@ -41,6 +41,7 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
     // #2193: a script's request names its own prompt.
     cancelStepUpPrompt(...a: Parameters<AuthManager['cancelStepUpPrompt']>) { return AuthManager.prototype.cancelStepUpPrompt.apply(this as never, a); },
     stepUpPromptState(...a: Parameters<AuthManager['stepUpPromptState']>) { return AuthManager.prototype.stepUpPromptState.apply(this as never, a); },
+    stepUpReplayHasFields(...a: Parameters<AuthManager['stepUpReplayHasFields']>) { return AuthManager.prototype.stepUpReplayHasFields.apply(this as never, a); },
     takeStepUpReplay(...a: Parameters<AuthManager['takeStepUpReplay']>) { return AuthManager.prototype.takeStepUpReplay.apply(this as never, a); }
   };
   const oidc = { revokeGrant: vi.fn().mockResolvedValue(true) };

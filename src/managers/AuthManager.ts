@@ -3375,6 +3375,12 @@ class AuthManager extends BaseManager {
     return id;
   }
 
+  /** Whether the kept form POST `next` names holds anything typed (#2485): Revoke's holds only its CSRF token. */
+  stepUpReplayHasFields(req: Request, next: string): boolean {
+    const kept = this.stepUpReplays.get(stepUpReplayId(next) ?? '');
+    return Boolean(kept && kept.sessionId === req.sessionID && kept.username === req.session?.username && kept.fields.length > 0);
+  }
+
   /** A session ended (#2176): the form POSTs it kept go with it (`endSession`). */
   dropStepUpReplays(sessionId: string): void {
     for (const [id, kept] of this.stepUpReplays) if (kept.sessionId === sessionId) this.stepUpReplays.delete(id);
