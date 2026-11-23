@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { BackupFolderError, ensureBackupFolder, mountPointOf } from '../backupFolder';
+import { adminMessage, BackupFolderError, ensureBackupFolder, isSystemError, mountPointOf } from '../backupFolder';
 import { secretDirIsOwnerOnly } from '../secretFileMode';
 
 const MOUNTINFO = [
@@ -50,7 +50,7 @@ describe('ensureBackupFolder', () => {
       ensureBackupFolder(`${volume}/data/backups`);
     } catch (err) {
       expect((err as Error).message).toMatch(/can't be reached by the site: \/Volumes\/ngdpbase-2492-not-mounted\/data\/backups/);
-      expect((err as Error).message).toContain('the Backup folder setting');
+      expect((err as Error).message).not.toMatch(/setting/i);
     }
   });
 
@@ -71,8 +71,8 @@ describe('ensureBackupFolder', () => {
   test('the message calls it the backup folder and names no setting key', () => {
     const file = path.join(dir, 'a-file');
     fs.writeFileSync(file, 'x');
-    expect(() => ensureBackupFolder(path.join(file, 'backups'))).toThrow(/Backup folder setting/);
-    expect(() => ensureBackupFolder(path.join(file, 'backups'))).not.toThrow(/director|ngdpbase\./i);
+    expect(() => ensureBackupFolder(path.join(file, 'backups'))).toThrow(/The backup folder can't be reached by the site: \S+\. /);
+    expect(() => ensureBackupFolder(path.join(file, 'backups'))).not.toThrow(/setting|director|ngdpbase\./i);
   });
 });
 
@@ -88,5 +88,37 @@ describe('secretDirIsOwnerOnly', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('a system error wrapped in another error is still a system error', () => {
+  const enoent = Object.assign(new Error("ENOENT: no such file or directory, open '/data/site-restore.json'"), { code: 'ENOENT' });
+  const wrapped = new Error("A site restore record is there but can't be read (ENOENT: no such file or directory, open '/data/site-restore.json')", { cause: enoent });
+
+  test('isSystemError walks the cause chain', () => {
+    expect(isSystemError(wrapped)).toBe(true);
+    expect(isSystemError(new Error('outer', { cause: new Error('middle', { cause: enoent }) }))).toBe(true);
+  });
+
+  test('a plain error with a plain cause, or none, is not a system error', () => {
+    expect(isSystemError(new Error('the backup key is not set'))).toBe(false);
+    expect(isSystemError(new Error('outer', { cause: new Error('inner words') }))).toBe(false);
+  });
+
+  test('a cause that loops back on itself ends the walk', () => {
+    const a = new Error('a');
+    const b = new Error('b', { cause: a });
+    (a as { cause?: unknown }).cause = b;
+    expect(isSystemError(a)).toBe(false);
+  });
+
+  test('adminMessage gives the fallback for a wrapped system error, and the path stays out of it', () => {
+    const said = adminMessage(wrapped, 'FALLBACK');
+    expect(said).toBe('FALLBACK');
+  });
+
+  test('adminMessage keeps a BackupFolderError and an error in the code\'s own words', () => {
+    expect(adminMessage(new BackupFolderError('plain words', { cause: enoent }), 'FALLBACK')).toBe('plain words');
+    expect(adminMessage(new Error('the backup key is not set'), 'FALLBACK')).toBe('the backup key is not set');
   });
 });

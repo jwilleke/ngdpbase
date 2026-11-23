@@ -227,6 +227,27 @@ describe('ConfigurationManager', () => {
       expect(configManager.getResolvedDataPath('any.key', '/unused')).toBe(expected);
     });
 
+    describe('resolveTypedPath reads the environment first, as getProperty does (#2492)', () => {
+      afterEach(() => { delete process.env.SLOW_STORAGE; });
+
+      test.each([
+        ['${SLOW_STORAGE}/backups', '/mnt/slow/backups'],
+        ['${SLOW_STORAGE}', '/mnt/slow'],
+        ['/mnt/other/backups', '/mnt/other/backups']
+      ])('%s, with SLOW_STORAGE set, is the folder getResolvedDataPath gives for the stored value', (typed, expected) => {
+        process.env.SLOW_STORAGE = '/mnt/slow';
+        configManager.mergedConfig = { ...(configManager.mergedConfig || {}), 'ngdpbase.test.folder': typed };
+        expect(configManager.resolveTypedPath(typed, 'ngdpbase.test.folder')).toBe(expected);
+        expect(configManager.getResolvedDataPath('ngdpbase.test.folder', '/unused')).toBe(expected);
+      });
+
+      test('with the variable unset it is under the instance data folder, as before', () => {
+        delete process.env.SLOW_STORAGE;
+        expect(configManager.resolveTypedPath('${SLOW_STORAGE}/backups', 'ngdpbase.test.folder'))
+          .toBe(path.join(configManager.getInstanceDataFolder(), 'backups'));
+      });
+    });
+
     test('resolveConfiguredPath leaves an absolute or other relative path as typed', () => {
       expect(configManager.resolveConfiguredPath('/mnt/backups')).toBe('/mnt/backups');
       expect(configManager.resolveConfiguredPath('./required-pages')).toBe('./required-pages');

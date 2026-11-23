@@ -331,39 +331,51 @@ describe('#2492 Admin → Backup, the backup folder is its own setting', () => {
     expect(field).not.toBeNull();
     expect(doc.querySelector('#autoBackupConfig')!.contains(field)).toBe(false);
     expect(card(doc)!.contains(field)).toBe(true);
-    expect(text(doc.querySelector('label[for="directory"]'))).toBe('Backup folder');
+    expect(text(doc.querySelector('#backup-folder .card-header'))).toBe('Backup folder');
     expect(text(doc.body)).not.toMatch(/backup director/i);
   });
 
-  test('the card shows one sentence under the button; the rest is behind "Who can open this folder"', async () => {
+  test('the heading and the field do not both say "Backup folder": the field has a label for screen readers only', async () => {
+    const doc = await render();
+    const label = doc.querySelector('label[for="directory"]')!;
+    expect(label.classList.contains('visually-hidden')).toBe(true);
+    const shown = Array.from(card(doc)!.querySelectorAll('.card-header, label:not(.visually-hidden)')).map((el) => text(el));
+    expect(shown.filter((t) => /^Backup folder$/.test(t))).toHaveLength(1);
+  });
+
+  test('the card says it once: the hint, and nothing repeating it under the button', async () => {
     const doc = await render({ status: status({ ownerOnly: true, account: 'wiki' }) });
-    const below = card(doc)!.querySelector('.backup-folder-copy')!;
-    expect(text(below)).toBe('The site keeps its own copy of each backup in this folder.');
+    expect(card(doc)!.querySelector('.backup-folder-copy')).toBeNull();
+    expect(text(card(doc))).not.toMatch(/keeps its own copy/i);
     const more = card(doc)!.querySelector('details')!;
     expect(text(more.querySelector('summary'))).toBe('Who can open this folder');
     expect(more.hasAttribute('open')).toBe(false);
-    const words = text(more);
-    expect(words).toContain('/app/data/backups');
-    expect(words).toMatch(/download/i);
-    expect(words).not.toMatch(/#\d+|see the log/i);
+    expect(text(more)).toMatch(/download/i);
+    expect(text(more)).not.toMatch(/#\d+|see the log/i);
     expect(doc.querySelector('#backup-folder-open')).toBeNull();
   });
 
-  test('names the account that runs the wiki, and says why only it can open the folder', async () => {
+  test('the opened details start with the point and do not repeat the path shown in the field', async () => {
     const doc = await render({ status: status({ ownerOnly: true, account: 'wiki' }) });
-    const words = text(card(doc)!.querySelector('details'));
-    expect(words).toContain('Only the account running this wiki (wiki) can open that folder, because a backup contains sign-in details.');
-    expect(words).not.toMatch(/site's user|by design/i);
+    const words = text(card(doc)!.querySelector('details p'));
+    expect(words.startsWith('Only the account that runs this wiki (wiki) can open this folder, because a backup contains sign-in details.')).toBe(true);
+    expect(words).not.toContain('/app/data/backups');
   });
 
   test('without an account name it still says it', async () => {
     const doc = await render({ status: status({ ownerOnly: true }) });
-    expect(text(card(doc)!.querySelector('details'))).toContain('Only the account running this wiki can open that folder, because a backup contains sign-in details.');
+    expect(text(card(doc)!.querySelector('details p'))).toContain('Only the account that runs this wiki can open this folder, because a backup contains sign-in details.');
+  });
+
+  test('the button is "Save Folder", in the same case as the page\'s other buttons', async () => {
+    const doc = await render();
+    expect(text(card(doc)!.querySelector('button[type="submit"]'))).toBe('Save Folder');
+    expect(text(doc.querySelector('#auto-backup-form button[type="submit"]'))).toBe('Save Configuration');
   });
 
   test('the help text is short', async () => {
     const doc = await render();
-    expect(text(card(doc)!.querySelector('.form-text'))).toBe("The folder manual and automatic backups are saved in. It is created and checked when you save; if it can't be used, the current one stays.");
+    expect(text(card(doc)!.querySelector('.form-text'))).toBe("Where manual and automatic backups are saved. It is checked when you save; if it can't be used, the current one stays.");
   });
 
   test('says so, outside the closed details, when the folder could not be made owner-only', async () => {
@@ -371,6 +383,14 @@ describe('#2492 Admin → Backup, the backup folder is its own setting', () => {
     const warning = doc.querySelector('#backup-folder-open')!;
     expect(text(warning)).toMatch(/could not be made private to the site/i);
     expect(card(doc)!.querySelector('details')!.contains(warning)).toBe(false);
+  });
+
+  test('a failed Create & Download says what stays as it was, in the red alert, and escapes a path as text', async () => {
+    const message = "The backup folder can't be reached by the site: /mnt/<img src=x onerror=alert(1)>/b. No backup was made. Your earlier backups and the backup folder are unchanged.";
+    const doc = await render({ error: message });
+    const alert = doc.querySelector('.alert-danger')!;
+    expect(text(alert)).toContain('No backup was made. Your earlier backups and the backup folder are unchanged.');
+    expect(alert.querySelector('img')).toBeNull();
   });
 
   test('a refused save and a failed Create & Download show their messages in plain words', async () => {

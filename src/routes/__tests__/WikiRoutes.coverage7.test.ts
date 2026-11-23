@@ -981,12 +981,17 @@ describe('WikiRoutes — coverage batch 7', () => {
     const RAW = /ENOENT|EACCES|EPERM|ENOTDIR|scandir|mkdir|no such file or directory|permission denied/i;
     const rawError = () => Object.assign(new Error("ENOENT: no such file or directory, scandir '/Volumes/jims/data/backups'"), { code: 'ENOENT' });
 
-    test('Create and Download: a backup that fails answers in plain words', async () => {
+    test('Create and Download: a backup that fails sends the admin back to the Backup page with a plain message', async () => {
       mockBackupManager.createBackup.mockRejectedValue(rawError());
       const res = await request(app).post('/admin/backup/create').set('x-csrf-token', 'test-csrf-token');
-      expect(res.status).toBe(500);
-      expect(res.text).not.toMatch(RAW);
-      expect(res.text).not.toBe('');
+      expect(res.status).toBe(302);
+      const said = decodeURIComponent(res.headers.location);
+      expect(said).toMatch(/^\/admin\/backup\?error=\S/);
+      expect(said).not.toMatch(RAW);
+      expect(said).not.toContain('/Volumes/jims');
+      // What stays as it was.
+      expect(said).toMatch(/No backup was made/);
+      expect(said).toMatch(/earlier backups and the backup folder are unchanged/);
     });
 
     test('Save Configuration: a save that fails sends the admin back with a plain message', async () => {
@@ -1001,22 +1006,23 @@ describe('WikiRoutes — coverage batch 7', () => {
     });
 
     test('a folder the site can reach is said as the backup code worded it, in both routes', async () => {
-      const plain = "The backup folder can't be reached by the site: /Volumes/jims/data/backups (the Backup folder setting). Nothing was saved.";
+      const plain = "The backup folder can't be reached by the site: /Volumes/jims/data/backups. Nothing was saved.";
       mockBackupManager.createBackup.mockRejectedValue(new BackupFolderError(plain));
       const created = await request(app).post('/admin/backup/create').set('x-csrf-token', 'test-csrf-token');
-      expect(created.text).toBe(plain);
+      expect(created.status).toBe(302);
+      expect(decodeURIComponent(created.headers.location)).toBe(`/admin/backup?error=${plain} No backup was made. Your earlier backups and the backup folder are unchanged.`);
       mockBackupManager.updateAutoBackupConfig.mockRejectedValue(new BackupFolderError(plain));
       const saved = await request(app).post('/admin/backup/config').set('x-csrf-token', 'test-csrf-token').send({ section: 'folder', directory: '/Volumes/jims/data/backups' });
       expect(decodeURIComponent(saved.headers.location)).toBe(`/admin/backup?error=${plain}`);
     });
 
-    test('Create and Download: the failure message is sent as text, so a folder path is never read as markup', async () => {
+    test('Create and Download: the message travels in the address, so the page escapes it and a folder path is never read as markup', async () => {
       const path = '/mnt/<img src=x onerror=alert(1)>/backups';
       mockBackupManager.createBackup.mockRejectedValue(new BackupFolderError(`The backup folder can't be reached by the site: ${path}.`));
       const res = await request(app).post('/admin/backup/create').set('x-csrf-token', 'test-csrf-token');
-      expect(res.status).toBe(500);
-      expect(res.headers['content-type']).toMatch(/^text\/plain/);
-      expect(res.text).toContain(path);
+      expect(res.status).toBe(302);
+      expect(res.headers.location).not.toContain('<');
+      expect(decodeURIComponent(res.headers.location)).toContain(path);
     });
 
     test('Restore: a Node error from the restore is said in plain words, a refusal the manager wrote is kept', async () => {

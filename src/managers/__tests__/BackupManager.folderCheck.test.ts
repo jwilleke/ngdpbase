@@ -21,11 +21,21 @@ describe('the backup folder is checked, and a fault is said in plain words (#249
 
   const backups = () => path.join(dir, 'backups');
 
+  type Resolver = {
+    resolveEnvRef(v: unknown, key: string): unknown;
+    resolveConfiguredPath(v: string): string;
+    resolveTypedPath(v: string, key: string): string;
+  };
+  const proto = ConfigurationManager.prototype as unknown as Resolver;
+  // The real resolver on this test's own instance data folder. getProperty reads the way the real one does:
+  // the stored text goes through the environment step (`${VAR}`, `$VAR`) before anything else.
   const realResolver = {
-    getProperty: (k: string, d: unknown) => (k in props ? props[k] : d),
+    getProperty: (k: string, d: unknown) => realResolver.resolveEnvRef(k in props ? props[k] : d, k),
     getInstanceDataFolder: () => path.join(dir, 'fast'),
     resolveDataPath: ConfigurationManager.prototype.resolveDataPath,
-    resolveConfiguredPath: (value: string): string => (ConfigurationManager.prototype as unknown as { resolveConfiguredPath(v: string): string }).resolveConfiguredPath.call(realResolver, value)
+    resolveEnvRef: proto.resolveEnvRef,
+    resolveConfiguredPath: (value: string): string => proto.resolveConfiguredPath.call(realResolver, value),
+    resolveTypedPath: (value: string, key: string): string => proto.resolveTypedPath.call(realResolver, value, key)
   };
 
   async function start(): Promise<BackupManager> {
@@ -37,7 +47,8 @@ describe('the backup folder is checked, and a fault is said in plain words (#249
           if (k === 'ngdpbase.backup.directory') return ConfigurationManager.prototype.getResolvedDataPath.call(realResolver, k, d) as string;
           return path.join(dir, 'fast', path.basename(d));
         },
-        resolveConfiguredPath: (value: string) => (ConfigurationManager.prototype as unknown as { resolveConfiguredPath(v: string): string }).resolveConfiguredPath.call(realResolver, value),
+        resolveConfiguredPath: (value: string) => realResolver.resolveConfiguredPath(value),
+        resolveTypedPath: (value: string, key: string) => realResolver.resolveTypedPath(value, key),
         getInstanceDataFolder: () => path.join(dir, 'fast'),
         setProperty: async (k: string, v: unknown) => { props[k] = v; }
       },
@@ -175,6 +186,45 @@ describe('the backup folder is checked, and a fault is said in plain words (#249
       expect(message).toContain(path.join(dir, 'fast', 'blocked', 'backups'));
       expect(props['ngdpbase.backup.directory']).toBe(backups());
     });
+
+    describe('an environment variable in the typed folder is read as start-up reads it', () => {
+      let saved: string | undefined;
+      beforeEach(() => { saved = process.env.SLOW_STORAGE; });
+      afterEach(() => {
+        if (saved === undefined) delete process.env.SLOW_STORAGE; else process.env.SLOW_STORAGE = saved;
+      });
+
+      test('the shipped default ${SLOW_STORAGE}/backups, with SLOW_STORAGE set, is checked in the folder start-up uses', async () => {
+        const slow = path.join(dir, 'slow');
+        process.env.SLOW_STORAGE = slow;
+        const typed = '${SLOW_STORAGE}/backups';
+        const bm = await start();
+
+        await bm.updateAutoBackupConfig({ directory: typed }, CTX);
+
+        // The folder that was made and checked is the one under SLOW_STORAGE, not one under the data folder.
+        expect(fs.statSync(path.join(slow, 'backups')).isDirectory()).toBe(true);
+        expect(fs.existsSync(path.join(dir, 'fast', 'backups'))).toBe(false);
+        expect(props['ngdpbase.backup.directory']).toBe(typed);
+        // After a restart the stored text resolves to that same folder, and backups land in it.
+        const restarted = await start();
+        expect((await restarted.getAutoBackupStatus()).config.directory).toBe(path.join(slow, 'backups'));
+        expect((await bm.getAutoBackupStatus()).config.directory).toBe(path.join(slow, 'backups'));
+        await expect(bm.createBackup(CTX)).resolves.toContain(path.join(slow, 'backups'));
+      });
+
+      test('a refused ${SLOW_STORAGE} folder names the folder the variable points to', async () => {
+        const blocker = path.join(dir, 'a-file');
+        fs.writeFileSync(blocker, 'x');
+        process.env.SLOW_STORAGE = blocker;
+        const bm = await start();
+
+        const message = await messageOf(() => bm.updateAutoBackupConfig({ directory: '${SLOW_STORAGE}/backups' }, CTX));
+
+        expect(message).toContain(path.join(blocker, 'backups'));
+        expect(props['ngdpbase.backup.directory']).toBe(backups());
+      });
+    });
   });
 
   describe('whether the saved folder is in use now', () => {
@@ -216,6 +266,13 @@ describe('the backup folder is checked, and a fault is said in plain words (#249
 
     test('an error the code threw itself is said as it was written', () => {
       expect(describeBackupError(new Error('the backup key is not set'))).toBe('the backup key is not set');
+    });
+
+    test('a system error wrapped in a plain Error is still said in plain words, whatever the wrapper text holds', () => {
+      const wrapped = new Error("the backup record is there but can't be read (ENOENT: no such file or directory, open '/Volumes/jims/data/record.json')", { cause: node('ENOENT', 'ENOENT: no such file or directory') });
+      const said = describeBackupError(wrapped);
+      expect(said).not.toMatch(/ENOENT|no such file/);
+      expect(said).not.toContain('/Volumes/jims');
     });
   });
 });
