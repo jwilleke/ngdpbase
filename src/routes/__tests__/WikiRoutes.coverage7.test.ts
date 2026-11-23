@@ -1001,7 +1001,7 @@ describe('WikiRoutes — coverage batch 7', () => {
     });
 
     test('a folder the site can reach is said as the backup code worded it, in both routes', async () => {
-      const plain = "The backup folder can't be reached by the site: /Volumes/jims/data/backups (the Backup directory setting). Nothing was saved.";
+      const plain = "The backup folder can't be reached by the site: /Volumes/jims/data/backups (the Backup folder setting). Nothing was saved.";
       mockBackupManager.createBackup.mockRejectedValue(new BackupFolderError(plain));
       const created = await request(app).post('/admin/backup/create').set('x-csrf-token', 'test-csrf-token');
       expect(created.text).toBe(plain);

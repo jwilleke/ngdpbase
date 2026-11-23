@@ -50,7 +50,7 @@ describe('ensureBackupFolder', () => {
       ensureBackupFolder(`${volume}/data/backups`);
     } catch (err) {
       expect((err as Error).message).toMatch(/can't be reached by the site: \/Volumes\/ngdpbase-2492-not-mounted\/data\/backups/);
-      expect((err as Error).message).toContain('ngdpbase.backup.directory');
+      expect((err as Error).message).toContain('the Backup folder setting');
     }
   });
 

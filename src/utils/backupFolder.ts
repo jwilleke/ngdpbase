@@ -75,7 +75,7 @@ function insideNoMountedVolume(dir: string): boolean | null {
 }
 
 function unreachable(dir: string, why: string): string {
-  return `The backup folder can't be reached by the site: ${dir} (the Backup directory setting, ngdpbase.backup.directory). ${why} `
+  return `The backup folder can't be reached by the site: ${dir} (the Backup folder setting). ${why} `
     + 'Choose a folder the site can open and write to, such as one inside its data folder.';
 }
 
