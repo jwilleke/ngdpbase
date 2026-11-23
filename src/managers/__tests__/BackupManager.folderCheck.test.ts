@@ -164,15 +164,22 @@ describe('the backup folder is checked, and a fault is said in plain words (#249
       expect((await restarted.getAutoBackupStatus()).config.directory).toBe(resolved);
     });
 
-    test('${SLOW_STORAGE}/... never makes a folder called ${SLOW_STORAGE}', async () => {
-      const bm = await start();
-      const typed = '${SLOW_STORAGE}/ngdpbase-2492-slow';
-      strayInCwd.push(path.resolve('${SLOW_STORAGE}'));
+    test('${SLOW_STORAGE}/... with SLOW_STORAGE unset never makes a folder called ${SLOW_STORAGE}', async () => {
+      // The test setup sets SLOW_STORAGE; this case is the one where it is not.
+      const saved = process.env.SLOW_STORAGE;
+      delete process.env.SLOW_STORAGE;
+      try {
+        const bm = await start();
+        const typed = '${SLOW_STORAGE}/ngdpbase-2492-slow';
+        strayInCwd.push(path.resolve('${SLOW_STORAGE}'));
 
-      await bm.updateAutoBackupConfig({ directory: typed }, CTX);
+        await bm.updateAutoBackupConfig({ directory: typed }, CTX);
 
-      expect(fs.statSync(path.join(dir, 'fast', 'ngdpbase-2492-slow')).isDirectory()).toBe(true);
-      expect(fs.existsSync(path.resolve('${SLOW_STORAGE}'))).toBe(false);
+        expect(fs.statSync(path.join(dir, 'fast', 'ngdpbase-2492-slow')).isDirectory()).toBe(true);
+        expect(fs.existsSync(path.resolve('${SLOW_STORAGE}'))).toBe(false);
+      } finally {
+        if (saved !== undefined) process.env.SLOW_STORAGE = saved;
+      }
     });
 
     test('a refused relative folder is checked where start-up would put it, and the message names that folder', async () => {

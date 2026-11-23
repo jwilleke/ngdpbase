@@ -2413,9 +2413,9 @@ class BackupManager extends BaseManager {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) throw new Error('ConfigurationManager not available');
 
-    // #2492: the typed folder means what it means at start-up (`./data/...`, `${SLOW_STORAGE}/...`),
-    // so the one that is checked is the one backups go to after a restart.
-    const folder = config.directory === undefined ? undefined : configManager.resolveConfiguredPath(config.directory);
+    // #2492: the typed folder means what it means at start-up (`./data/...`, and `${SLOW_STORAGE}/...`
+    // read from the environment), so the one that is checked is the one backups go to after a restart.
+    const folder = config.directory === undefined ? undefined : configManager.resolveTypedPath(config.directory, 'ngdpbase.backup.directory');
 
     // #2492: a new folder is made and checked before anything is saved. One the site can't
     // reach refuses the whole save and leaves the setting, and the folder backups go to, as they were.

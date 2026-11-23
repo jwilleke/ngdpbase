@@ -412,18 +412,17 @@
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <input type="hidden" name="section" value="folder">
                 <div class="mb-3">
-                    <label for="directory" class="form-label">Backup folder</label>
+                    <label for="directory" class="form-label visually-hidden">Backup folder</label>
                     <input type="text" class="form-control" id="directory"
                            name="directory" value="<%= status.config.directory %>" required>
                     <div class="form-text">
-                        The folder manual and automatic backups are saved in. It is created and checked when you save; if it can't be used, the current one stays.
+                        Where manual and automatic backups are saved. It is checked when you save; if it can't be used, the current one stays.
                     </div>
                 </div>
                 <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
-                    <i class="fas fa-save"></i> Save folder
+                    <i class="fas fa-save"></i> Save Folder
                 </button>
             </form>
-            <p class="backup-folder-copy mt-3 mb-1">The site keeps its own copy of each backup in this folder.</p>
             <% if (status.folder && status.folder.ownerOnly === false) { %>
             <div class="alert alert-warning mt-3 mb-2" id="backup-folder-open">
                 This folder could not be made private to the site: the drive it is on does not allow it.
@@ -433,8 +432,7 @@
             <details class="mt-2">
                 <summary>Who can open this folder</summary>
                 <p class="mt-2 mb-1">
-                    The site keeps its copy in <code><%= status.config.directory %></code>.
-                    Only the account running this wiki<%= status.folder && status.folder.account ? ' (' + status.folder.account + ')' : '' %> can open that folder, because a backup contains sign-in details.
+                    Only the account that runs this wiki<%= status.folder && status.folder.account ? ' (' + status.folder.account + ')' : '' %> can open this folder, because a backup contains sign-in details.
                     The file your browser downloads when you press Create &amp; Download is your copy, to keep somewhere safe.
                 </p>
             </details>

@@ -158,6 +158,7 @@ const mockBackupManager = {
   listBackups: vi.fn(),
   updateAutoBackupConfig: vi.fn(),
   createBackup: vi.fn(),
+  backupArchive: vi.fn(), // #2492
   // #1723
   listStoredBackups: vi.fn(),
   isRestoreRunning: vi.fn(),
@@ -1014,6 +1015,16 @@ describe('WikiRoutes — coverage batch 7', () => {
       mockBackupManager.updateAutoBackupConfig.mockRejectedValue(new BackupFolderError(plain));
       const saved = await request(app).post('/admin/backup/config').set('x-csrf-token', 'test-csrf-token').send({ section: 'folder', directory: '/Volumes/jims/data/backups' });
       expect(decodeURIComponent(saved.headers.location)).toBe(`/admin/backup?error=${plain}`);
+    });
+
+    test('Create and Download: a backup that is made but cannot be sent says it was made, not that none was', async () => {
+      mockBackupManager.createBackup.mockResolvedValue('/b/2026-11-23T00-00-00-000Z-ngdpbase-backup.json.gz');
+      mockBackupManager.backupArchive.mockRejectedValue(Object.assign(new Error("ENOENT: no such file, open '/Volumes/jims/x'"), { code: 'ENOENT' }));
+      const res = await request(app).post('/admin/backup/create').set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(302);
+      const said = decodeURIComponent(res.headers.location);
+      expect(said).toMatch(/The backup was made and kept in the backup folder, but the download could not be started/);
+      expect(said).not.toMatch(/No backup was made|ENOENT|\/Volumes\/jims/);
     });
 
     test('Create and Download: the message travels in the address, so the page escapes it and a folder path is never read as markup', async () => {

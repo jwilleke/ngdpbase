@@ -48,7 +48,7 @@ import {
   withoutKeptMarks
 } from '../utils/addonPageSync.js';
 import { isSourceCheckout } from '../utils/sourceCheckout.js';
-import { adminMessage, BackupFolderError } from '../utils/backupFolder.js';
+import { adminMessage } from '../utils/backupFolder.js';
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
@@ -14106,6 +14106,7 @@ ${panes}
    * POST /admin/backup/create — Create backup and download
    */
   async adminBackup(req: Request, res: Response) {
+    let backupMade = false;
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
@@ -14140,6 +14141,7 @@ ${panes}
 
       // Create backup
       const backupPath = await backupManager.createBackup(currentUser);
+      backupMade = true;
       logger.debug(`✅ Backup created: ${backupPath}`);
 
       // #1723 D2: the download is the document and its database files, one streamed .tar.
@@ -14147,11 +14149,13 @@ ${panes}
 
     } catch (err: unknown) {
       logger.error('Error creating backup:', err);
-      // #2492: the admin reads a plain message; the full error is in the log above.
-      // Sent as text: the message holds the admin's folder path, which is never read as markup.
-      res.status(500).type('text/plain').send(err instanceof BackupFolderError
-        ? err.message
-        : 'The backup could not be made. Try again. If it keeps failing, the backup status on the Backup page says what is wrong.');
+      // #2492: the admin reads a plain message on the Backup page, in the red alert; the full error is in the log above.
+      // The message travels in the address and the page escapes it, so a folder path is never read as markup.
+      if (res.headersSent) return res.end();
+      const said = backupMade
+        ? 'The backup was made and kept in the backup folder, but the download could not be started. Download it from the list of backups on this page.'
+        : `${adminMessage(err, 'The backup could not be made. Try again. If it keeps failing, the backup status on this page says what is wrong.')} No backup was made. Your earlier backups and the backup folder are unchanged.`;
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(said));
     }
   }
 

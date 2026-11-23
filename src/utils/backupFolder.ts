@@ -32,12 +32,21 @@ export function runningAccount(): string | null {
   }
 }
 
-/** Whether an error came from the system or a library (a code such as ENOENT, a failed call), not from this code's own words. */
+/**
+ * Whether an error came from the system or a library (a code such as ENOENT, a failed call), not from this code's own words.
+ * An error that wraps one (its `cause` is, or holds, a system error) counts: its message carries the system's text.
+ */
 export function isSystemError(err: unknown): boolean {
   if (!(err instanceof Error)) return true;
-  const e = err as NodeJS.ErrnoException;
-  return typeof e.code === 'string' || e.errno !== undefined || typeof e.syscall === 'string'
-    || err instanceof SyntaxError || err instanceof TypeError || err instanceof RangeError;
+  const seen = new Set<unknown>();
+  for (let link: unknown = err; link !== undefined && !seen.has(link); link = (link).cause) {
+    seen.add(link);
+    if (!(link instanceof Error)) return true;
+    const e = link as NodeJS.ErrnoException;
+    if (typeof e.code === 'string' || e.errno !== undefined || typeof e.syscall === 'string'
+      || link instanceof SyntaxError || link instanceof TypeError || link instanceof RangeError) return true;
+  }
+  return false;
 }
 
 /**
@@ -75,7 +84,7 @@ function insideNoMountedVolume(dir: string): boolean | null {
 }
 
 function unreachable(dir: string, why: string): string {
-  return `The backup folder can't be reached by the site: ${dir} (the Backup folder setting). ${why} `
+  return `The backup folder can't be reached by the site: ${dir}. ${why} `
     + 'Choose a folder the site can open and write to, such as one inside its data folder.';
 }
 
