@@ -181,6 +181,21 @@ function validateEmail(email: string): boolean {
 - Provide meaningful error messages
 - Log errors appropriately
 
+### Errors a route sends to the browser
+
+A route never puts an error's own text in its response: not `getErrorMessage(err)`, not `err.message`, not a stack. `ENOENT: no such file or directory, open '/data/...'` tells a home user nothing and shows them paths. The route chooses one plain sentence that says what failed and what to do, and `plainRouteError(req, err, message)` in `src/utils/plainRouteError.ts` logs the full error against the route and returns that sentence:
+
+```ts
+} catch (err) {
+  return res.status(500).json({ success: false, error: plainRouteError(req, err, 'The page could not be deleted. Try again in a moment.') });
+}
+```
+
+- Keep the route's status code and response shape (JSON, redirect or error page); only the text changes.
+- Write the message for a home user: no error codes, issue numbers, file paths or "see the log".
+- An error you throw on purpose, whose message was written for the person reading it (such as `UserCreateError`), may be shown as it is. Everything else goes through `plainRouteError`.
+- Test it by forcing a failure that carries `ENOENT` text and a stack: the response must hold neither, and the log must hold both. `src/routes/__tests__/WikiRoutes.plainErrors.test.ts` is the pattern.
+
 ## Testing
 
 - Write tests for all public functions
