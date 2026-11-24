@@ -391,6 +391,16 @@ describe('#1431 ApiContext#enforceDeny() turns a deny decision into the refusal'
     expect(engine.audit[0]).toMatchObject({ eventType: 'reauth-prompt', resource: 'ledger-adjust' });
   });
 
+  test('#2360: an add-on\'s plain form post gets the page prompt (no script prompt id); a script\'s request keeps its own', async () => {
+    const engine = engineWith();
+    const form = Object.assign(reqFor(tess), { headers: { accept: 'text/html,application/xhtml+xml' } });
+    const formErr = await ApiContext.from(form, engine).enforceDeny('ledger-adjust', deny('step-up')).catch((e: unknown) => e) as ApiError;
+    expect(formErr.reauth).toBe('/auth/reauth?next=%2Fview%2FBooks');
+    const script = Object.assign(reqFor(tess), { headers: { accept: 'application/json', 'x-requested-with': 'XMLHttpRequest' } });
+    const scriptErr = await ApiContext.from(script, engine).enforceDeny('ledger-adjust', deny('step-up')).catch((e: unknown) => e) as ApiError;
+    expect(scriptErr.reauth).toMatch(/&prompt=[0-9a-f]{32}$/);
+  });
+
   test.each(['token_scope_deny', 'share_action_deny', 'proxy_scope_deny'])('a delegated-credential ceiling deny (%s) is a plain 403, never a reauth', async (reason) => {
     const engine = engineWith();
     const ctx = ApiContext.from(reqFor({ ...tess, viaToken: { id: 't1' } }), engine);
