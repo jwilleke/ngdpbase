@@ -1125,6 +1125,18 @@ export interface AuthenticateResult {
   knownDevice?: boolean;
 }
 
+/**
+ * A passkey can not be added, for a reason the person can act on (#2494):
+ * passkeys are off on this site, or the account may not sign in with one.
+ * `message` is written for the person, so a route may show it as it is.
+ */
+export class PasskeyRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PasskeyRefused';
+  }
+}
+
 class AuthManager extends BaseManager {
   private providers: Map<string, AuthProvider>;
   private factorEntries: FactorEntry[];

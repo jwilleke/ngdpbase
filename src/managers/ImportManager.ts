@@ -288,6 +288,29 @@ function withoutFinalStop(text: string): string {
   return said.endsWith('.') ? said.slice(0, -1) : said;
 }
 
+/** Why a web address could not be imported (#2494). */
+export type UrlImportRefusal =
+  /** The text is not a web address. */
+  | 'invalid-address'
+  /** A web address, but not http or https. */
+  | 'not-web-address'
+  /** The site answered 404 or 403: the page is not there, or not open to us. */
+  | 'not-found'
+  /** The address answered with something that is not a web page, such as an image. */
+  | 'not-a-page';
+
+/**
+ * An import from a web address that failed for a reason the person can act
+ * on (#2494). A route answers each `reason` with its own plain sentence; any
+ * other failure of the import is not this class and gets the general one.
+ */
+export class UrlImportRefused extends Error {
+  constructor(readonly reason: UrlImportRefusal, message: string) {
+    super(message);
+    this.name = 'UrlImportRefused';
+  }
+}
+
 /**
  * An import refused at upload, before anything was queued (#2034): keeping
  * the original of `file` in the receiver's encrypted store was refused or
