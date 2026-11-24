@@ -3,6 +3,7 @@ import { subjectMayDo } from '../utils/subjectMayDo.js';
 import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 import { jobContextForOwner } from '../context/JobContext.js';
 import type IdentityManager from './IdentityManager.js';
+import type RoleManager from './RoleManager.js';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
@@ -426,6 +427,14 @@ export type VaultRepairResult =
 
 /** Pages named in the needs-attention list of leftover `access:` limits before the rest are only counted (#2269). */
 const LEGACY_ACCESS_LIST_MAX = 50;
+
+/**
+ * A page as the upgrade clean-up's log lines name it: by uuid when it is
+ * private, with no owner and no store, which are a person's own (#2509).
+ */
+function upgradeNameForLog(title: string, metadata: { private?: unknown; uuid?: unknown } | null | undefined): string {
+  return vaultOwnerOf(title) !== null ? nameForLog('', { private: true, uuid: metadata?.uuid }) : nameForLog(title, metadata);
+}
 
 /** The owner of a page in a person's vault, `vaults/{owner}/{store}/{title}`; null for any other page (#2509). */
 function vaultOwnerOf(title: string): string | null {
@@ -4382,12 +4391,30 @@ class PageManager extends BaseManager implements CatalogSource {
       if (!username) return false;
       // The system's own account is not a page author who holds a permission.
       if (this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint')?.isSystemPrincipal(username) === true) return false;
+      // The role store answering "none" is a "no"; the role store failing is not (#2509). The
+      // permission check below swallows a failed role lookup as no roles, so the lookup is made
+      // strictly here first. A failure in the instant between the two still reads as no, which
+      // never adds a lock.
+      await this.engine.getManager<RoleManager>('RoleManager')?.resolveUserRoles(ctx, username, { strict: true });
       // Asked of the policies as a request by that account would be, with its roles
       // resolved now from the role store: a user record carries no `roles` field (#2509).
       // An unknown or inactive account resolves to a visitor, who does not hold it.
       return await subjectMayDo(this.engine, jobContextForOwner(username, 'tell whether a page author is an administrator (#2509)'), 'admin-system');
     } catch (err) {
       throw new CouldNotTellError(`whether a page author is an administrator (${failureForLog(err)})`);
+    }
+  }
+
+  /**
+   * Whether the account a page's `author` refers to is `username` (#2509). False
+   * when the author is anyone else or nobody known; throws {@link CouldNotTellError}
+   * when the identity store could not answer, so the page is tried again.
+   */
+  private async authorIs(author: string, username: string): Promise<boolean> {
+    try {
+      return (await this.authorUsername(author, true)) === username;
+    } catch (err) {
+      throw new CouldNotTellError(`whose a vault page is (${failureForLog(err)})`);
     }
   }
 
@@ -4428,13 +4455,15 @@ class PageManager extends BaseManager implements CatalogSource {
   ): Promise<Replacement | 'no-match' | 'changed'> {
     const uuid = info.uuid;
     if (!uuid) return 'no-match';
-    if (!await exactReplacement(info.metadata, site)) return 'no-match';
+    // A page in a vault is the vault owner's by its path: the owner must be its author (#2509).
+    const vaultOwner = vaultOwnerOf(info.title);
+    if (!await exactReplacement(info.metadata, site, vaultOwner)) return 'no-match';
     // Read, compared, copied and saved as one step, so a save made meanwhile is never written over.
     const fresh = await this.pageWrite(uuid, async () => {
       const text = await fse.readFile(info.filePath, 'utf8');
       const page = await this.getPage(info.title, ctx);
       // The page is read again so the replacement is judged on what is stored now, and it must be the page whose file is copied.
-      const now = page ? await exactReplacement(page.metadata, site) : null;
+      const now = page ? await exactReplacement(page.metadata, site, vaultOwner) : null;
       if (!page || !now || page.uuid !== uuid) return null;
       // The file is unchanged since it was copied, so the copy is what the save overwrites.
       if (await fse.readFile(info.filePath, 'utf8') !== text) return null;
@@ -4453,7 +4482,7 @@ class PageManager extends BaseManager implements CatalogSource {
           throw err;
         }
         // The file now holds the Author Lock, so the page is converted; the copy is kept, and the error is logged.
-        logger.warn(`[PageManager] A page (${nameForLog(info.title, { ...page.metadata, uuid })}) was rewritten, but its save then reported an error (${failureForLog(err)}); the file as it was is kept at ${clipText(copy)}`);
+        logger.warn(`[PageManager] A page (${upgradeNameForLog(info.title, { ...page.metadata, uuid })}) was rewritten, but its save then reported an error (${failureForLog(err)}); the file as it was is kept at ${clipText(copy)}`);
       }
       return now;
     });
@@ -4465,7 +4494,7 @@ class PageManager extends BaseManager implements CatalogSource {
     const policies = this.engine.getManager<{ policies?(): unknown }>('PolicyDecisionPoint')?.policies?.();
     // No rules at all means they are not loaded yet, which is not the same as rules that do not make administrators the `admin` role.
     const loaded = Array.isArray(policies) && policies.length > 0;
-    return { adminsAreRoleAdmin: loaded ? adminsAreRoleAdmin(policies) : null, authorHoldsAdmin: (author: string) => this.authorHoldsAdmin(author) };
+    return { adminsAreRoleAdmin: loaded ? adminsAreRoleAdmin(policies) : null, authorHoldsAdmin: (author: string) => this.authorHoldsAdmin(author), authorIs: (author: string, username: string) => this.authorIs(author, username) };
   }
 
   /** The people the sign-in clean-up has finished with (#2466), read from the data folder on first use. */
@@ -4557,12 +4586,12 @@ class PageManager extends BaseManager implements CatalogSource {
           this.legacyAccessPrivateConverted++;
           this.legacyAccessPages.delete(info.uuid);
           converted++;
-          logger.info(`[PageManager] Moved the old access limit on ${nameForLog(info.title, info.metadata)} to its Author Lock when its owner signed in; the file as it was is saved in the upgrade backups`);
+          logger.info(`[PageManager] Moved the old access limit on ${upgradeNameForLog(info.title, info.metadata)} to its Author Lock when its owner signed in; the file as it was is saved in the upgrade backups`);
         } catch (err) {
           left++;
           finished = false;
           // A private page is never named, and the error's message can carry its title: only its class is logged.
-          logger.warn(`[PageManager] The old access limit on ${nameForLog(info.title, info.metadata)} could not be moved, so it is left as it is and tried at the owner's next sign-in: ${failureForLog(err)}`);
+          logger.warn(`[PageManager] The old access limit on ${upgradeNameForLog(info.title, info.metadata)} could not be moved, so it is left as it is and tried at the owner's next sign-in: ${failureForLog(err)}`);
         }
       }
       if (finished) {

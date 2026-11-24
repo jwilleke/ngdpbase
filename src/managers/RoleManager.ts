@@ -289,14 +289,16 @@ class RoleManager extends BaseManager {
    *
    * Returns `[]` when IdentityManager is unavailable, there is no account by
    * that username, no record lists them, or the lookup throws. An account
-   * missing its identity record gets it here (#2037).
+   * missing its identity record gets it here (#2037). With `strict`, a lookup
+   * that throws is thrown (not answered as `[]`), so a caller can tell "holds
+   * no roles" from "could not look" (#2509).
    *
    * `ctx` is who is asking (#2018), decided by IdentityManager's door: a user
    * about themselves under `profile-manage`, about anyone else under
    * `identity-read`; core's own work passes the system context. A refusal is
    * thrown as `ContactRefusedError`, never answered as "no roles".
    */
-  async resolveUserRoles(ctx: ActorContext, username: string): Promise<string[]> {
+  async resolveUserRoles(ctx: ActorContext, username: string, options: { strict?: boolean } = {}): Promise<string[]> {
     const identityManager = this.engine.getManager<IdentityManager>('IdentityManager');
     if (!identityManager) return [];
 
@@ -307,7 +309,7 @@ class RoleManager extends BaseManager {
       const roles = await this.listByMember(person['@id']);
       return roles.map((r) => r.namedPosition);
     } catch (error) {
-      if (error instanceof ContactRefusedError) throw error;
+      if (error instanceof ContactRefusedError || options.strict === true) throw error;
       logger.warn(
         `[RoleManager.resolveUserRoles] lookup failed for ${username}: ` +
         (error instanceof Error ? error.message : String(error))

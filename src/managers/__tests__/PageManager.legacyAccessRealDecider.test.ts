@@ -167,17 +167,16 @@ describe('the upgrade clean-up asks the real permission check about a page autho
       expect(saved[0]['author-lock']).toBe(true);
     });
 
-    test('a vault page by its owner, an administrator: the same, and the log does not name the page', async () => {
-      const vault = formatPrivatePageName('root', 'notes', 'Secret Plans');
-      await add(vault, { access: { edit: ['admin'] }, author: ID.root });
+    test('a vault page by its owner does not need the role store: its owner is its author, not an administrator', async () => {
+      const vault = formatPrivatePageName('bob', 'notes', 'Bobs Plans');
+      await add(vault, { access: { edit: ['admin'] }, author: ID.bob });
       const m = await manager();
       const lines: string[] = [];
       for (const level of ['info', 'warn'] as const) vi.spyOn(logger, level).mockImplementation(((...a: unknown[]) => { lines.push(a.map(String).join(' ')); return logger; }) as never);
       roleStoreDown = true;
-      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 0, left: 1 });
-      roleStoreDown = false;
-      expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 1, left: 0 });
-      expect(lines.join('\n')).not.toContain('Secret Plans');
+      expect(await m.convertLegacyAccessOnSignIn({ username: 'bob', roles: ['editor'], isAuthenticated: true })).toEqual({ converted: 1, left: 0 });
+      expect(saved[0]['author-lock']).toBe(true);
+      expect(lines.join('\n')).not.toContain('Bobs Plans');
     });
   });
 });
