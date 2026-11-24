@@ -351,7 +351,7 @@ export function nameForLog(pageName: string, metadata?: { private?: unknown; uui
   const byUuid = `(uuid ${uuid ?? 'unknown'})`;
   const vault = parsePrivatePageName(pageName);
   if (vault) return `a page in ${vault.owner}'s store '${vault.store}' ${byUuid}`;
-  if (metadata?.private === true) return `a private page ${byUuid}`;
+  if (metadata?.private === true || metadata?.private === 'true') return `a private page ${byUuid}`;
   return uuid ? `'${pageName}' ${byUuid}` : `'${pageName}'`;
 }
 

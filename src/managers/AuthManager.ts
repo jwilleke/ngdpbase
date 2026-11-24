@@ -3504,6 +3504,7 @@ class AuthManager extends BaseManager {
     } catch (err) {
       logger.warn(`[AuthManager] could not count the sign-in for ${username}:`, err);
     }
+    this.startPrivatePageCleanup(req, username);
     let next: string | undefined;
     if (pending && pending.expiresAt > Date.now()) {
       req.session.pendingConnection = { ...pending, ...(how.returnTo !== undefined ? { returnTo: safeRedirect(how.returnTo) } : {}) };
@@ -3522,6 +3523,40 @@ class AuthManager extends BaseManager {
       return { next: `${CONSENT_PATH}?returnTo=${encodeURIComponent(next ?? safeRedirect(how.returnTo))}`, ...(auditId ? { auditId } : {}) };
     }
     return { ...(next ? { next } : {}), ...(auditId ? { auditId } : {}) };
+  }
+
+  /**
+   * After a sign-in (#2466): the upgrade clean-up of the person's own private
+   * pages, run as them. It starts on a later turn and is never waited for, so
+   * it cannot slow or stop the sign-in: its failure, in building the person's
+   * permissions or in the clean-up itself, is logged and nothing more. The
+   * subject is the one the person's next request would carry (their roles as
+   * this sign-in holds them, how they signed in, the key handle of their
+   * private stores), so every read and save in it is decided by their own
+   * permissions, never the system's.
+   */
+  private startPrivatePageCleanup(req: Request, username: string): void {
+    const pages = this.engine.getManager<{ convertLegacyAccessOnSignIn?(subject: PermissionSubject): Promise<unknown> }>('PageManager');
+    if (typeof pages?.convertLegacyAccessOnSignIn !== 'function') return;
+    // Read now: the session is the request's, and the route goes on to save and answer.
+    const { signIn, privateStoreHandle } = req.session;
+    const ipAddress = req.ip;
+    setImmediate(() => {
+      void (async () => {
+        const pip = this.engine.getManager<{ subjectFor(u: string): Promise<PermissionSubject | null> }>('PolicyInformationPoint');
+        const subject = await pip?.subjectFor(username);
+        if (!subject) return;
+        const reach = await this.aalReachFor(username);
+        const roles = this.rolesAtSignIn(subject.roles, signIn?.aal ?? 1, reach.now).kept;
+        await pages.convertLegacyAccessOnSignIn?.({
+          ...subject,
+          roles,
+          ...(ipAddress ? { ipAddress } : {}),
+          ...(typeof privateStoreHandle === 'string' && privateStoreHandle ? { privateStoreHandle } : {}),
+          ...(signIn ? { signIn } : {})
+        });
+      })().catch((err: unknown) => logger.warn(`[AuthManager] The clean-up of a person's private pages after sign-in did not finish; the sign-in was not affected: ${err instanceof Error ? err.message : String(err)}`));
+    });
   }
 
   /**

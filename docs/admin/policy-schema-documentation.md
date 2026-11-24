@@ -166,7 +166,7 @@ Every policy must conform to the following JSON schema:
 }
 ```
 
-There is no `priority` property. Policies are combined with the XACML `deny-overrides` rule, so order does not matter, and a leftover `priority` in a site's configuration is ignored and reported once at start-up.
+There is no `priority` property. Policies are combined with the XACML `deny-overrides` rule, so order does not matter, and a leftover `priority` in a site's configuration is removed from the site's file at start-up, with a copy of the file kept first, and listed in Admin → needs attention. A `priority` on a shipped or add-on rule is dropped in memory only.
 
 The singular `condition` is one XACML 3.0 function in lowercase, whose value is an array of arguments. Every attribute and value carries a required `datatype`:
 
