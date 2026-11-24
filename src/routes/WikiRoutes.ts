@@ -7123,6 +7123,7 @@ ${panes}
       title: 'Confirm it is you',
       next,
       prompt,
+      typed: authManager?.stepUpReplayHasFields(req, next) ?? true,
       needsPasskey,
       ways,
       hasPasskey: Boolean(ways?.usePasskey),

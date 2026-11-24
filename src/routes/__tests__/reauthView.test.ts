@@ -104,6 +104,14 @@ describe('reauth view banner (#2445)', () => {
     expect(html('/profile')).toMatch(/data-reauth-kept[^>]*hidden/);
   });
 
+  test('#2485: a redone request that holds nothing typed (Revoke) does not promise to keep it; one that holds entries still does', () => {
+    const keptHidden = /data-reauth-kept[^>]*hidden/;
+    const out = (typed: boolean) => ejs.render(TEMPLATE, { next: '/auth/reauth/continue?replay=abc', prompt: '', typed, needsPasskey: false, hasPasskey: true, hasPassword: true, csrfToken: 'tok', cspNonce: 'n' });
+    expect(out(false)).toMatch(keptHidden);
+    expect(out(false)).not.toMatch(/<div[^>]*data-reauth-expired[^>]*hidden/);
+    expect(out(true)).not.toMatch(keptHidden);
+  });
+
   test('is hidden, until a waiting draft shows it, where nothing says an action was tried (the lower-sign-in notice link)', () => {
     expect(html('/admin/configuration')).toMatch(/<div class="alert alert-warning[^"]*"[^>]*data-reauth-expired[^>]*hidden/);
     expect(html('/profile', PROMPT)).not.toMatch(/<div[^>]*data-reauth-expired[^>]*hidden/);
