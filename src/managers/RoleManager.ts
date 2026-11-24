@@ -91,6 +91,9 @@ class RoleManager extends BaseManager {
   /** #2015: one membership change at a time per role record, read included. */
   private readonly membership = new KeyedSerial();
 
+  /** #2432: role names whose file names another organization, already warned about this run. */
+  private readonly warnedForeignRoles = new Set<string>();
+
   // Lazily-resolved MetricsManager reference (#620 hit/miss telemetry).
   // `undefined` = not yet looked up; `null` = looked up, not available.
   private metricsRef: MetricsManagerLike | null | undefined = undefined;
@@ -438,8 +441,8 @@ class RoleManager extends BaseManager {
     }
     // #2432: the role file is named by the role alone, so a file for `roleName` is the record that it was
     // given even when it names another organization `@id` than today's anchor. Creating over it throws.
-    if (await this.getByOrgAndPosition(installOrg['@id'], roleName)) return 0;
-    if ((await this.requireProvider().list()).some((r) => r.namedPosition === roleName)) return 0;
+    // findRecord logs one warning naming both organizations when the file is under another one.
+    if (await this.findRecord(installOrg['@id'], roleName)) return 0;
     let given = 0;
     const missed: string[] = [];
     for (const username of usernames) {
@@ -653,7 +656,7 @@ class RoleManager extends BaseManager {
       }
       const current = member && createIn
         ? await this.getOrCreateRoleRecord(createIn, role.namedPosition)
-        : await this.getByOrgAndPosition(orgId, role.namedPosition);
+        : await this.findRecord(orgId, role.namedPosition);
       if (!current) {
         if (member) throw new Error(`the role record for ${role.namedPosition} does not exist`);
         return false;
@@ -680,6 +683,29 @@ class RoleManager extends BaseManager {
   }
 
   /**
+   * The role record for `namedPosition`: the one under `organizationId`, else the
+   * file for that role name under any other organization `@id` (#2432).
+   *
+   * The roles folder holds one file per role name, so a file for the name is the
+   * role's record even after the anchor organization's `@id` changed between
+   * starts. It is used as it is: its `organization` is not rewritten, and one
+   * warning is logged the first time it is used under another organization.
+   */
+  private async findRecord(organizationId: string, namedPosition: string): Promise<Role | null> {
+    const exact = await this.getByOrgAndPosition(organizationId, namedPosition);
+    if (exact) return exact;
+    const other = (await this.list()).find((r) => r.namedPosition === namedPosition) ?? null;
+    if (other && !this.warnedForeignRoles.has(namedPosition)) {
+      this.warnedForeignRoles.add(namedPosition);
+      logger.warn(
+        `🔑 The role file for '${namedPosition}' names organization ${other.organization?.['@id']}, but this site's organization is ${organizationId}. ` +
+        'The file is used as it is and its organization is not changed (#2432).'
+      );
+    }
+    return other;
+  }
+
+  /**
    * The role record for (installOrg, namedPosition), created when missing.
    *
    * #1429/#1431: the record holds __membership only__. It used to snapshot
@@ -688,7 +714,7 @@ class RoleManager extends BaseManager {
    * permits is the policies, resolved at the moment of each decision.
    */
   private async getOrCreateRoleRecord(installOrg: Organization, namedPosition: string): Promise<Role> {
-    const existing = await this.getByOrgAndPosition(installOrg['@id'], namedPosition);
+    const existing = await this.findRecord(installOrg['@id'], namedPosition);
     if (existing) return existing;
 
     const orgUrl = installOrg.url || installOrg['@id'];
