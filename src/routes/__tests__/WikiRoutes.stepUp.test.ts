@@ -167,6 +167,7 @@ describe('coming back from a fresh sign-in (#2145)', () => {
       (r, sess) => r.renameOwnCredential(req(sess, { body: { label: 'Phone' } }), res()), '/profile');
     expect(out.json).toHaveBeenCalledWith({ ok: true, redirect: '/profile' });
     expect(s.stepUpConfirmed).toBe('/profile');
+    expect(s.stepUpNote).toBeUndefined(); // every other action keeps the generic note
   });
 
   test('a page GET opens the page again, which does the action: no note', async () => {
@@ -660,6 +661,8 @@ describe('a plain form post with a stale sign-in goes to the "confirm it is you"
     await env.r.passkeyReauthVerify(req(s, { sessionID: 'sid-1', body: { response: {}, next: '/admin/configuration' } }), confirmed);
     expect(confirmed.json).toHaveBeenCalledWith({ ok: true, redirect: '/admin/configuration' });
     expect(s.stepUpConfirmed).toBe('/admin/configuration');
+    // Jim, #2360: the note on that page says to press Reset again (a fixed key the header looks up).
+    expect(s.stepUpNote).toBe('press-again');
     expect(env.config.resetToDefaults).not.toHaveBeenCalled();
     // Pressed again, with the sign-in now fresh, it runs, once.
     const done = res();
