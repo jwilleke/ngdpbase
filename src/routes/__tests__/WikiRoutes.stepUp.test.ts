@@ -47,6 +47,9 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
   const oidc = { revokeGrant: vi.fn().mockResolvedValue(true) };
   const folders = { prepareNewRecoveryWords: vi.fn().mockResolvedValue({ token: 'tok', words: ['abandon', 'ability'] }) };
   const backup = { revealInstanceEnv: vi.fn().mockResolvedValue(Buffer.from('X=1\n')), revealBackupKeyFile: vi.fn().mockResolvedValue({ fingerprint: '0123456789abcdef', text: 'X=1\n' }) };
+  // #2360: what the two admin forms would change, so a stale sign-in can be shown to change nothing.
+  const config = { getProperty: (_k: string, d: unknown) => d, resetToDefaults: vi.fn().mockResolvedValue(undefined), setProperty: vi.fn().mockResolvedValue(undefined) };
+  const addons = { canDisable: vi.fn(() => ({ ok: true, blockedBy: [] as string[] })), storeDisableWarnings: vi.fn().mockResolvedValue([]) };
   const managers: Record<string, unknown> = {
     OidcManager: oidc,
     BackupManager: backup,
@@ -62,13 +65,14 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
     },
     AuditManager: { logAuditEvent: (e: Record<string, unknown>) => { audit.push(e); return Promise.resolve('a'); }, logAuthentication: vi.fn().mockResolvedValue('a') },
     UserManager: { hasPassword: vi.fn().mockResolvedValue(true), getUser: vi.fn().mockResolvedValue({ username: 'molly' }) },
-    ConfigurationManager: { getProperty: (_k: string, d: unknown) => d }
+    ConfigurationManager: config,
+    AddonsManager: addons
   };
   const engine = { getManager: vi.fn((n: string) => managers[n] ?? null) };
   authManager.engine = engine;
   const r = new WikiRoutes(engine) as unknown as Record<string, (q: unknown, s: unknown) => Promise<void>> & { getCommonTemplateData: unknown };
   (r as unknown as { getCommonTemplateData: () => Promise<Record<string, unknown>> }).getCommonTemplateData = () => Promise.resolve({ csrfToken: 't' });
-  return { r, authManager, audit, oidc, backup, folders };
+  return { r, authManager, audit, oidc, backup, folders, config, addons };
 }
 
 const req = (s: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
@@ -584,3 +588,78 @@ describe('revoking from My tokens and devices (#1764)', () => {
   });
 });
 
+
+// #2360: a plain form post to a step-up route is sent to the "confirm it is you"
+// step, as a page is; a script's request is still told in JSON.
+describe('a plain form post with a stale sign-in goes to the "confirm it is you" step (#2360)', () => {
+  const browserHeaders = { accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' };
+  const scriptHeaders = { accept: 'application/json', 'x-requested-with': 'XMLHttpRequest' };
+  const from = (page: string) => (h: string) => (h === 'referer' ? `https://wiki.example.com${page}` : 'ua');
+  const resetForm = (headers: Record<string, string>, extra: Record<string, unknown> = {}) =>
+    req(session(), { headers, body: { _csrf: 't' }, originalUrl: '/admin/configuration/reset', get: from('/admin/configuration'), ...extra });
+  const toggleForm = (headers: Record<string, string>, extra: Record<string, unknown> = {}) =>
+    req(session(), { headers, params: { name: 'accounting' }, body: { _csrf: 't', enabled: 'false' }, originalUrl: '/admin/addons/accounting/toggle', get: from('/admin/addons'), ...extra });
+
+  test('Reset configuration: redirected to /auth/reauth, back to the configuration page, and nothing is reset', async () => {
+    const { r, config, audit } = routes(true);
+    const out = res();
+    await r.adminResetConfiguration(resetForm(browserHeaders), out);
+    expect(out.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fadmin%2Fconfiguration');
+    expect(out.json).not.toHaveBeenCalled();
+    expect(config.resetToDefaults).not.toHaveBeenCalled();
+    expect(audit).toContainEqual(expect.objectContaining({ eventType: 'reauth-prompt', resource: 'config-manage' }));
+  });
+
+  test('Enable or disable an add-on: redirected to /auth/reauth, back to the add-ons page, and nothing is changed', async () => {
+    const { r, config } = routes(true);
+    const out = res();
+    await r.adminAddonToggle(toggleForm(browserHeaders), out);
+    expect(out.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fadmin%2Faddons');
+    expect(out.json).not.toHaveBeenCalled();
+    expect(config.setProperty).not.toHaveBeenCalled();
+  });
+
+  test('a script\'s request (Accept: application/json, X-Requested-With) is still told in JSON, with its own prompt', async () => {
+    for (const [name, call] of [
+      ['reset', (r: ReturnType<typeof routes>['r'], o: ReturnType<typeof res>) => r.adminResetConfiguration(resetForm(scriptHeaders), o)],
+      ['toggle', (r: ReturnType<typeof routes>['r'], o: ReturnType<typeof res>) => r.adminAddonToggle(toggleForm(scriptHeaders), o)]
+    ] as const) {
+      const { r } = routes(true);
+      const out = res();
+      await call(r, out);
+      expect(out.redirect, name).not.toHaveBeenCalled();
+      expect(out.status, name).toHaveBeenCalledWith(403);
+      expect(out.json, name).toHaveBeenCalledWith(expect.objectContaining({ reauth: expect.stringMatching(/^\/auth\/reauth\?next=%2Fadmin%2F(configuration|addons)&prompt=[0-9a-f]{32}$/) }));
+    }
+  });
+
+  test('a script\'s form-encoded request that asks for no particular type is not mistaken for a browser form', async () => {
+    const { r } = routes(true);
+    const out = res();
+    await r.adminResetConfiguration(resetForm({ accept: '*/*' }), out);
+    expect(out.redirect).not.toHaveBeenCalled();
+    expect(out.json).toHaveBeenCalledWith(expect.objectContaining({ reauth: expect.stringContaining('&prompt=') }));
+  });
+
+  test('the form post is kept, and the confirmation returns to it: Reset configuration runs once after signing in again', async () => {
+    const passkeyOk = () => Promise.resolve({ success: true, username: 'molly', provider: 'passkey', factors: [] });
+    const env = routes(true, passkeyOk);
+    const s = session();
+    const post = (body: Record<string, unknown>) => resetForm(browserHeaders, { session: s, sessionID: 'sid-1', body, is: (t: string) => (t === 'application/x-www-form-urlencoded' ? t : false) });
+    const asked = res();
+    await env.r.adminResetConfiguration(post({ _csrf: 't-old' }), asked);
+    const next = new URL(String(asked.redirect.mock.calls[0]?.[0]), 'http://x').searchParams.get('next') ?? '';
+    expect(next).toMatch(/^\/auth\/reauth\/continue\?replay=[0-9a-f]{32}$/);
+    expect(env.config.resetToDefaults).not.toHaveBeenCalled();
+    env.authManager.stepUpNeeded.mockReturnValue(false);
+    s.passkeyChallenge = { value: 'c1', purpose: 'reauth', expires: Date.now() + 60_000 };
+    await env.r.passkeyReauthVerify(req(s, { sessionID: 'sid-1', body: { response: {}, next } }), res());
+    const page = res();
+    await env.r.reauthContinue(req(s, { method: 'GET', sessionID: 'sid-1', originalUrl: next, query: { replay: new URL(next, 'http://x').searchParams.get('replay') } }), page);
+    expect(page.render).toHaveBeenCalledWith('reauth-continue', expect.objectContaining({ action: '/admin/configuration/reset', back: '/admin/configuration' }));
+    const done = res();
+    await env.r.adminResetConfiguration(post({ _csrf: 't' }), done);
+    expect(env.config.resetToDefaults).toHaveBeenCalledTimes(1);
+    expect(done.redirect).toHaveBeenCalledWith('/admin/configuration?success=Configuration reset to defaults');
+  });
+});
