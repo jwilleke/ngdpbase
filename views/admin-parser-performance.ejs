@@ -82,7 +82,7 @@
                 <tbody>
                   <% rows.forEach(([label, field], rowIndex) => { %>
                     <tr>
-                      <th scope="row" class="fw-normal"><%= label %></th>
+                      <th scope="row" class="fw-normal text-nowrap"><%= label %></th>
                       <% windows.forEach(([window]) => { %>
                         <% const s = report.rollup[window][measure.key]; %>
                         <% if (!s) { %>
@@ -127,7 +127,7 @@
                 <tbody>
                   <% rows.forEach(([label, field]) => { %>
                     <tr>
-                      <th scope="row" class="fw-normal"><%= label %></th>
+                      <th scope="row" class="fw-normal text-nowrap"><%= label %></th>
                       <% measures.forEach((measure) => { %>
                         <% const s = report.legacy[measure.key]; %>
                         <td class="text-end">
