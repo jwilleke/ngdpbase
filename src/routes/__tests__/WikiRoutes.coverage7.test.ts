@@ -16,6 +16,7 @@ import WikiRoutes, { signupRateLimiter } from '../WikiRoutes';
 import { UserCreateError } from '../../utils/userCreateError';
 import { readDoor } from './__fixtures__/pageReadDoor';
 import { PageWriteRefusedError } from '../../managers/PageManager';
+import { BackupFolderError } from '../../utils/backupFolder';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -156,6 +157,8 @@ const mockBackupManager = {
   getBackupHealth: vi.fn().mockResolvedValue(null), // #1563
   listBackups: vi.fn(),
   updateAutoBackupConfig: vi.fn(),
+  createBackup: vi.fn(),
+  backupArchive: vi.fn(), // #2492
   // #1723
   listStoredBackups: vi.fn(),
   isRestoreRunning: vi.fn(),
@@ -970,6 +973,99 @@ describe('WikiRoutes — coverage batch 7', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ autoBackup: 'on' });
       expect(res.status).toBe(403);
+    });
+  });
+
+  // ── #2492: an admin never sees a raw Node error from backups ────────────────
+
+  describe('no Node error text reaches the browser from the backup routes (#2492)', () => {
+    const RAW = /ENOENT|EACCES|EPERM|ENOTDIR|scandir|mkdir|no such file or directory|permission denied/i;
+    const rawError = () => Object.assign(new Error("ENOENT: no such file or directory, scandir '/Volumes/jims/data/backups'"), { code: 'ENOENT' });
+
+    test('Create and Download: a backup that fails sends the admin back to the Backup page with a plain message', async () => {
+      mockBackupManager.createBackup.mockRejectedValue(rawError());
+      const res = await request(app).post('/admin/backup/create').set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(302);
+      const said = decodeURIComponent(res.headers.location);
+      expect(said).toMatch(/^\/admin\/backup\?error=\S/);
+      expect(said).not.toMatch(RAW);
+      expect(said).not.toContain('/Volumes/jims');
+      // What stays as it was.
+      expect(said).toMatch(/No backup was made/);
+      expect(said).toMatch(/earlier backups and the backup folder are unchanged/);
+    });
+
+    test('Save Configuration: a save that fails sends the admin back with a plain message', async () => {
+      mockBackupManager.updateAutoBackupConfig.mockRejectedValue(rawError());
+      const res = await request(app)
+        .post('/admin/backup/config')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ autoBackup: 'on', directory: '/Volumes/jims/data/backups' });
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain('error=');
+      expect(decodeURIComponent(res.headers.location)).not.toMatch(RAW);
+    });
+
+    test('a folder the site can reach is said as the backup code worded it, in both routes', async () => {
+      const plain = "The backup folder can't be reached by the site: /Volumes/jims/data/backups. Nothing was saved.";
+      mockBackupManager.createBackup.mockRejectedValue(new BackupFolderError(plain));
+      const created = await request(app).post('/admin/backup/create').set('x-csrf-token', 'test-csrf-token');
+      expect(created.status).toBe(302);
+      expect(decodeURIComponent(created.headers.location)).toBe(`/admin/backup?error=${plain} No backup was made. Your earlier backups and the backup folder are unchanged.`);
+      mockBackupManager.updateAutoBackupConfig.mockRejectedValue(new BackupFolderError(plain));
+      const saved = await request(app).post('/admin/backup/config').set('x-csrf-token', 'test-csrf-token').send({ section: 'folder', directory: '/Volumes/jims/data/backups' });
+      expect(decodeURIComponent(saved.headers.location)).toBe(`/admin/backup?error=${plain}`);
+    });
+
+    test('Create and Download: a backup that is made but cannot be sent says it was made, not that none was', async () => {
+      mockBackupManager.createBackup.mockResolvedValue('/b/2026-11-23T00-00-00-000Z-ngdpbase-backup.json.gz');
+      mockBackupManager.backupArchive.mockRejectedValue(Object.assign(new Error("ENOENT: no such file, open '/Volumes/jims/x'"), { code: 'ENOENT' }));
+      const res = await request(app).post('/admin/backup/create').set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(302);
+      const said = decodeURIComponent(res.headers.location);
+      expect(said).toMatch(/The backup was made and kept in the backup folder, but the download could not be started/);
+      expect(said).not.toMatch(/No backup was made|ENOENT|\/Volumes\/jims/);
+    });
+
+    test('Create and Download: the message travels in the address, so the page escapes it and a folder path is never read as markup', async () => {
+      const path = '/mnt/<img src=x onerror=alert(1)>/backups';
+      mockBackupManager.createBackup.mockRejectedValue(new BackupFolderError(`The backup folder can't be reached by the site: ${path}.`));
+      const res = await request(app).post('/admin/backup/create').set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(302);
+      expect(res.headers.location).not.toContain('<');
+      expect(decodeURIComponent(res.headers.location)).toContain(path);
+    });
+
+    test('Restore: a Node error from the restore is said in plain words, a refusal the manager wrote is kept', async () => {
+      mockBackupManager.startRestore.mockRejectedValue(rawError());
+      const raw = await request(app).post('/admin/backup/restore').set('x-csrf-token', 'test-csrf-token').send({ backup: 'b.json.gz', confirm: 'ngdpbase' });
+      expect(decodeURIComponent(raw.headers.location)).toMatch(/error=\S/);
+      expect(decodeURIComponent(raw.headers.location)).not.toMatch(RAW);
+      expect(decodeURIComponent(raw.headers.location)).not.toContain('/Volumes/jims');
+    });
+
+    test('Cancel restore: a Node error is said in plain words', async () => {
+      mockBackupManager.cancelStagedRestore.mockRejectedValue(rawError());
+      const res = await request(app).post('/admin/backup/restore/cancel').set('x-csrf-token', 'test-csrf-token').send({});
+      expect(decodeURIComponent(res.headers.location)).toMatch(/error=\S/);
+      expect(decodeURIComponent(res.headers.location)).not.toMatch(RAW);
+      expect(decodeURIComponent(res.headers.location)).not.toContain('/Volumes/jims');
+    });
+
+    test('the folder form says the folder is in use when backups are on, and that a restart is needed when they are not', async () => {
+      mockBackupManager.updateAutoBackupConfig.mockResolvedValue({ backupsLive: true });
+      const on = await request(app).post('/admin/backup/config').set('x-csrf-token', 'test-csrf-token').send({ section: 'folder', directory: '/app/data/backups' });
+      expect(decodeURIComponent(on.headers.location)).toBe('/admin/backup?success=Backup folder saved. Backups now go to it.');
+      mockBackupManager.updateAutoBackupConfig.mockResolvedValue({ backupsLive: false });
+      const off = await request(app).post('/admin/backup/config').set('x-csrf-token', 'test-csrf-token').send({ section: 'folder', directory: '/app/data/backups' });
+      const said = decodeURIComponent(off.headers.location);
+      expect(said).toMatch(/Backup folder saved\. Backups are switched off until the site is restarted/);
+      expect(said).not.toMatch(/Backups now go to it/);
+    });
+
+    test('the folder form saves only the folder', async () => {
+      await request(app).post('/admin/backup/config').set('x-csrf-token', 'test-csrf-token').send({ section: 'folder', directory: '/app/data/backups' });
+      expect(mockBackupManager.updateAutoBackupConfig).toHaveBeenCalledWith({ directory: '/app/data/backups' }, expect.anything());
     });
   });
 

@@ -68,6 +68,21 @@ export function ensureSecretDir(dir: string): string | null {
   }
 }
 
+/**
+ * Whether a folder holding secrets is closed to every other account. Read from
+ * the folder itself: a share that ignores `chmod` (an SMB share) keeps its own
+ * permissions, and this says so. Null where the platform has no such modes
+ * (Windows) or the folder can't be read.
+ */
+export function secretDirIsOwnerOnly(dir: string): boolean | null {
+  if (ownUid() === null) return null;
+  try {
+    return (fs.statSync(dir).mode & 0o077) === 0;
+  } catch {
+    return null;
+  }
+}
+
 /** After writing a secret file directly (not through writeFileAtomic's mode), make it owner-only. */
 export function chmodSecretFile(file: string): string | null {
   try {
