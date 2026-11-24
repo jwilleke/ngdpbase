@@ -3,7 +3,7 @@
  * takes for each. A script's request keeps the JSON answer; a plain form is answered as a page.
  */
 import type { Request } from 'express';
-import { isPlainFormPost, stepUpModeFor, type ReauthMode } from '../AuthManager';
+import { answeredWithPage, isPlainFormPost, stepUpModeFor, type ReauthMode } from '../AuthManager';
 
 const BROWSER = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
 
@@ -48,6 +48,20 @@ describe('stepUpModeFor (#2360)', () => {
 
   test.each<ReauthMode>(['json', 'page', 'text', 'download'])('a script\'s request asked as %s is answered as asked', (asked) => {
     expect(stepUpModeFor(script, asked)).toBe(asked);
+  });
+
+  // A route that must not run its action until the person presses it again (Reset configuration).
+  test('asked as form: a plain form post stays form (a page that is not kept for a redo), any other request is json', () => {
+    expect(stepUpModeFor(form, 'form')).toBe('form');
+    expect(stepUpModeFor(script, 'form')).toBe('json');
+    expect(stepUpModeFor(request('POST', { accept: '*/*' }), 'form')).toBe('json');
+    expect(stepUpModeFor(request('GET', { accept: BROWSER }), 'form')).toBe('json');
+  });
+
+  test('a form answer is sent to a page, as a page and a download are', () => {
+    expect(answeredWithPage('form')).toBe(true);
+    expect(answeredWithPage('json')).toBe(false);
+    expect(answeredWithPage('text')).toBe(false);
   });
 
   test('a GET asked as json stays json', () => {
