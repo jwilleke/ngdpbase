@@ -2740,7 +2740,7 @@ class ImportManager extends BaseManager {
     try {
       parsedUrl = new URL(url);
     } catch {
-      throw new Error(`Invalid URL: ${url}`);
+      throw new UrlImportRefused('invalid-address', `Invalid URL: ${url}`);
     }
 
     // #1133: an exact allow-list, not startsWith('http') — which accepts
@@ -2748,7 +2748,7 @@ class ImportManager extends BaseManager {
     // schemes. guardedFetch checks this too; keeping it here preserves the
     // specific error an operator sees for a mistyped scheme.
     if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-      throw new Error('Only HTTP and HTTPS URLs are supported');
+      throw new UrlImportRefused('not-web-address', 'Only HTTP and HTTPS URLs are supported');
     }
 
     // Fetch the page
@@ -2771,13 +2771,15 @@ class ImportManager extends BaseManager {
     });
 
     if (response.status < 200 || response.status >= 300) {
-      throw new Error(`Failed to fetch URL: HTTP ${response.status}`);
+      const message = `Failed to fetch URL: HTTP ${response.status}`;
+      // 404 and 403 are the site's answer about this address; any other status is not the person's to fix.
+      throw response.status === 404 || response.status === 403 ? new UrlImportRefused('not-found', message) : new Error(message);
     }
 
     const contentTypeHeader = response.headers['content-type'];
     const contentType = (Array.isArray(contentTypeHeader) ? contentTypeHeader[0] : contentTypeHeader) || '';
     if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
-      throw new Error(`URL did not return HTML content (got ${contentType})`);
+      throw new UrlImportRefused('not-a-page', `URL did not return HTML content (got ${contentType})`);
     }
 
     const html = response.body.toString('utf8');

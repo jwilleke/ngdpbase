@@ -86,7 +86,7 @@ import { UPGRADE_INTRO, UPGRADE_LIST_HEADING, UPGRADE_READ_ONLY, upgradeEmpty, u
 import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
 import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
-import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, INVITATION_PATH, STEP_UP_CONTINUE_PATH, stepUpPromptId, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
+import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, PasskeyRefused, INVITATION_PATH, STEP_UP_CONTINUE_PATH, stepUpPromptId, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
 import { VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
@@ -226,7 +226,7 @@ import type { RecentImport } from '../ice/types.js';
 import { isZip } from '../ice/fileHandling.js';
 import { IceVetRefused } from '../ice/vet.js';
 import type FileManager from '../managers/FileManager.js';
-import { IceExportBusy, IceExportNeedsFreshSignIn, IceExportRefused, ImportUploadRefused } from '../managers/ImportManager.js';
+import { IceExportBusy, IceExportNeedsFreshSignIn, IceExportRefused, ImportUploadRefused, UrlImportRefused, type UrlImportRefusal } from '../managers/ImportManager.js';
 import { IceExportFailed, PAGES_EXPORT_SOURCE } from '../ice/runExport.js';
 import { SEARCH_EXPORT_SOURCE, searchExportParams, searchExportRef } from '../ice/searchExportSource.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
@@ -4923,6 +4923,10 @@ ${panes}
       logger.info(`[WikiRoutes] API delete of '${pageName}' (${uuid}) by ${req.userContext.username}`);
       return res.json({ success: true, pageName, uuid, recoverable: true });
     } catch (error: unknown) {
+      // #2494: the write door's refusal is written for the person; it is not a server failure.
+      if (error instanceof PageWriteRefusedError) {
+        return res.status(403).json({ error: 'Access denied', message: error.message });
+      }
       return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be deleted. Try again in a moment.') });
     }
   }
@@ -5061,6 +5065,13 @@ ${panes}
       logger.info(`[WikiRoutes] API rename '${pageName}' → '${newTitle}' by ${req.userContext.username}`);
       return res.json({ success: true, from: pageName, to: newTitle, linksNotRewritten: referrers.notRewritten });
     } catch (error: unknown) {
+      // #2494: both are written for the person, and trying again cannot fix either.
+      if (error instanceof PageTitleConflictError) {
+        return res.status(409).json({ error: 'Title already in use', message: pageTitleConflictText(error) });
+      }
+      if (error instanceof PageWriteRefusedError) {
+        return res.status(403).json({ error: 'Access denied', message: error.message });
+      }
       return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be renamed. Try again in a moment.') });
     }
   }
@@ -6586,7 +6597,6 @@ ${panes}
         message: 'Attachment deleted successfully'
       });
     } catch (err: unknown) {
-      logger.error('Error deleting attachment:', err);
       if ((getErrorMessage(err) || '').startsWith('Permission denied')) {
         return this.refuse(this.createWikiContext(req), req, res, 'json', 'asset-delete');
       }
@@ -7057,6 +7067,11 @@ ${panes}
       this.keepPasskeyChallenge(req, options.challenge, 'register');
       res.json(options);
     } catch (err) {
+      // #2494: why a passkey can not be added here is written for the person; trying again would not change it.
+      if (err instanceof PasskeyRefused) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
       res.status(400).json({ error: plainRouteError(req, err, 'Adding a passkey could not be started. Try again, or sign in another way.') });
     }
   }
@@ -17599,6 +17614,23 @@ ${panes}
   }
 
   /**
+   * The sentence and status for an import from a web address that failed for a
+   * reason the person can fix (#2494), or null for any other failure, which
+   * gets the general sentence. One sentence per reason, so "check the address"
+   * is never said of an address that was fine.
+   */
+  private urlImportRefusal(err: unknown): { status: number; message: string } | null {
+    if (!(err instanceof UrlImportRefused)) return null;
+    const answers: Record<UrlImportRefusal, { status: number; message: string }> = {
+      'invalid-address': { status: 400, message: 'That is not a web address. Check that you typed or pasted all of it.' },
+      'not-web-address': { status: 400, message: 'Only web addresses that start with http:// or https:// can be imported.' },
+      'not-found': { status: 422, message: 'That page was not found, or the site does not let us read it. Check the address and try again.' },
+      'not-a-page': { status: 422, message: 'That address is not a web page (it may be an image or a file). Use the address of a page.' }
+    };
+    return answers[err.reason];
+  }
+
+  /**
    * Admin URL import preview - fetch URL, convert, return preview JSON
    */
   async adminImportUrlPreview(req: Request, res: Response) {
@@ -17639,6 +17671,8 @@ ${panes}
         content: result.metadata?.['_previewContent'] as string || undefined
       });
     } catch (err: unknown) {
+      const refusal = this.urlImportRefusal(err);
+      if (refusal) return res.status(refusal.status).json({ success: false, error: refusal.message });
       return res.status(500).json({
         success: false,
         error: plainRouteError(req, err, 'The preview of that web address could not be made. Check the address and try again.')
@@ -17697,6 +17731,8 @@ ${panes}
           validationErrors: err.validationErrors
         });
       }
+      const refusal = this.urlImportRefusal(err);
+      if (refusal) return res.status(refusal.status).json({ success: false, error: refusal.message });
       return res.status(500).json({
         success: false,
         error: plainRouteError(req, err, 'The page could not be imported from that web address. Check the address and try again.')
@@ -18566,9 +18602,17 @@ ${panes}
       const organizationManager = this.engine.getManager('OrganizationManager');
       const organizationData = req.body as Record<string, unknown>;
 
+      // #2494: a name is the one thing an organization needs; say so rather than "try again".
+      if (typeof organizationData.name !== 'string' || !organizationData.name.trim()) {
+        const needsName = 'Give the organization a name.';
+        return req.headers.accept?.includes('application/json')
+          ? res.status(400).json({ error: needsName })
+          : res.redirect('/admin/organizations?error=' + encodeURIComponent(needsName));
+      }
+
       // #2041: the manager gives the new organization its `urn:uuid:` id; the
       // form's web address stays the ordinary `url` field.
-      const newOrganization = await organizationManager.create(userContext, { ...organizationData, name: typeof organizationData.name === 'string' ? organizationData.name : '' });
+      const newOrganization = await organizationManager.create(userContext, { ...organizationData, name: organizationData.name });
 
       if (req.headers.accept?.includes('application/json')) {
         return res.json({ success: true, organization: newOrganization });
@@ -20623,8 +20667,6 @@ ${panes}
       });
 
     } catch (error: unknown) {
-      logger.error(`Error getting page versions: ${getErrorMessage(error)}`);
-
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page not found',
@@ -20687,8 +20729,6 @@ ${panes}
       });
 
     } catch (error: unknown) {
-      logger.error(`Error getting page version: ${getErrorMessage(error)}`);
-
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page or version not found',
@@ -20757,8 +20797,6 @@ ${panes}
       });
 
     } catch (error: unknown) {
-      logger.error(`Error comparing page versions: ${getErrorMessage(error)}`);
-
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page or version not found',
@@ -20845,8 +20883,6 @@ ${panes}
       });
 
     } catch (error: unknown) {
-      logger.error(`Error restoring page version: ${getErrorMessage(error)}`);
-
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page or version not found',
