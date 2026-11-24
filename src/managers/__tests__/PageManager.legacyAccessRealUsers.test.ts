@@ -21,6 +21,7 @@ import path from 'path';
 import PageManager from '../PageManager';
 import logger from '../../utils/logger';
 import { formatPrivatePageName, parsePrivatePageName } from '../../utils/privateStorePath';
+import { SealedVaultRefusedError } from '../../utils/privateStoreMeta';
 import { ALLOWING_PDP, withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
 type Meta = Record<string, unknown>;
@@ -54,11 +55,17 @@ describe('the upgrade clean-up with real user records and vault pages (#2509)', 
   let folder: string;
   let pages: Info[];
   let saved: Array<{ name: string; meta: Meta; as: unknown }>;
+  /** What the provider answers when a page is read back: the page, nothing (a sealed vault), or a thrown error. */
+  let readBack: 'page' | 'nothing' | Error;
+  /** Set to make the provider's save fail. */
+  let saveFails: Error | null;
 
   beforeEach(async () => {
     folder = await fs.mkdtemp(path.join(os.tmpdir(), 'pm-legacy-access-2509-'));
     pages = [];
     saved = [];
+    readBack = 'page';
+    saveFails = null;
   });
   afterEach(async () => {
     vi.restoreAllMocks();
@@ -79,16 +86,19 @@ describe('the upgrade clean-up with real user records and vault pages (#2509)', 
     return info;
   }
 
-  function manager(): TestManager {
+  function manager(over: Record<string, unknown> = {}): TestManager {
     const config = { getInstanceDataFolder: () => folder, getProperty: (_k: string, d: unknown) => d };
     const provider = {
       getAllPageInfo: vi.fn(async () => pages.map((p) => ({ ...p }))),
       getPage: vi.fn(async (name: string) => {
+        if (readBack instanceof Error) throw readBack;
+        if (readBack === 'nothing') return null;
         const p = pages.find((i) => i.title === name);
         return p ? { name, title: name, uuid: p.uuid, metadata: { ...p.metadata }, content: 'body text' } : null;
       }),
       getPageMetadata: vi.fn(async (name: string) => pages.find((i) => i.title === name)?.metadata ?? null),
       savePage: vi.fn(async (name: string, _c: string, meta: Meta, as: unknown) => {
+        if (saveFails) throw saveFails;
         saved.push({ name, meta, as });
         const p = pages.find((i) => i.title === name);
         if (p) p.metadata = { ...meta };
@@ -107,7 +117,8 @@ describe('the upgrade clean-up with real user records and vault pages (#2509)', 
         }
       },
       IdentityManager: { usernameOf: async (_c: unknown, s: string) => (s === ROOT_ID ? 'root' : s === BOB_ID ? 'bob' : s), storedReferenceOf: async (_c: unknown, n: string) => n },
-      UserManager: { getUser: async (u: string) => RECORDS[u] }
+      UserManager: { getUser: async (u: string) => RECORDS[u] },
+      ...over
     };
     const m = new PageManager({ getManager: vi.fn(withWriteDoorAllowing((name: string) => (stand[name] ?? null))) }) as unknown as TestManager;
     m.provider = provider;
@@ -236,11 +247,102 @@ describe('the upgrade clean-up with real user records and vault pages (#2509)', 
       expect(log()).not.toContain(VAULT_ROOT);
     });
 
-    test('a vault page by a person who is not an administrator signs in: left, and final for them', async () => {
-      await add(VAULT_BOB, { access: { edit: ['admin'] }, author: BOB_ID });
+    test('a vault page\'s owner and store are not named in the log either, when it is moved or when it fails', async () => {
+      await add(VAULT_ROOT, { access: { edit: ['admin'] }, author: ROOT_ID });
       const m = manager();
-      expect(await m.convertLegacyAccessOnSignIn(BOB)).toEqual({ converted: 0, left: 1 });
-      expect(saved).toEqual([]);
+      const log = captureLog();
+      saveFails = new Error(`refused: ${VAULT_ROOT}`);
+      await m.convertLegacyAccessOnSignIn(ROOT);
+      saveFails = null;
+      await m.convertLegacyAccessOnSignIn(ROOT);
+      expect(metaOf(VAULT_ROOT)['author-lock']).toBe(true);
+      const text = log();
+      // Both lines were written: the failure and the move.
+      expect(text).toMatch(/could not be moved/);
+      expect(text).toMatch(/Moved the old access limit/);
+      expect(text).not.toContain("root's");
+      expect(text).not.toContain("'notes'");
+      expect(text).not.toMatch(/store/i);
+      expect(text).not.toContain('Secret Plans');
+    });
+
+    // M1: a vault page's owner comes from its path, so the page's author must be that owner.
+    describe('the author of a vault page must be its owner (a Lock by someone else would lock the owner out)', () => {
+      test('no author: not converted, counted as left', async () => {
+        await add(VAULT_BOB, { access: { edit: ['admin'] } });
+        const m = manager();
+        expect(await m.convertLegacyAccessOnSignIn(BOB)).toEqual({ converted: 0, left: 1 });
+        expect(saved).toEqual([]);
+        expect(metaOf(VAULT_BOB).access).toEqual({ edit: ['admin'] });
+        expect(backups()).toEqual([]);
+      });
+
+      test('an administrator as author: not converted, counted as left', async () => {
+        await add(VAULT_BOB, { access: { edit: ['admin'] }, author: ROOT_ID });
+        const m = manager();
+        expect(await m.convertLegacyAccessOnSignIn(BOB)).toEqual({ converted: 0, left: 1 });
+        expect(saved).toEqual([]);
+        expect(metaOf(VAULT_BOB)['author-lock']).toBeUndefined();
+      });
+
+      test('the owner as author, who is not an administrator: converted, saved as the owner', async () => {
+        await add(VAULT_BOB, { access: { edit: ['admin'] }, author: BOB_ID });
+        const m = manager();
+        expect(await m.convertLegacyAccessOnSignIn(BOB)).toEqual({ converted: 1, left: 0 });
+        expect(metaOf(VAULT_BOB)['author-lock']).toBe(true);
+        expect(metaOf(VAULT_BOB).access).toBeUndefined();
+        expect(saved[0].as).toMatchObject({ username: 'bob' });
+      });
+
+      test('the author cannot be looked up now: left and tried again at the next sign-in', async () => {
+        await add(VAULT_BOB, { access: { edit: ['admin'] }, author: BOB_ID });
+        let down = true;
+        const m = manager({
+          IdentityManager: {
+            usernameOf: async (_c: unknown, s: string) => { if (down) throw new Error('identity store down'); return s === BOB_ID ? 'bob' : s; },
+            storedReferenceOf: async (_c: unknown, n: string) => n
+          }
+        });
+        expect(await m.convertLegacyAccessOnSignIn(BOB)).toEqual({ converted: 0, left: 1 });
+        expect(saved).toEqual([]);
+        down = false;
+        expect(await m.convertLegacyAccessOnSignIn(BOB)).toEqual({ converted: 1, left: 0 });
+      });
+    });
+
+    // L4: a vault whose files are sealed cannot be read without its key.
+    describe('an encrypted vault at sign-in', () => {
+      const bytesOf = (info: Info): string => fs.readFileSync(info.filePath, 'utf8');
+
+      test('the vault will not give the page back (closed): nothing is copied or written, and the owner is tried again at the next sign-in', async () => {
+        const info = await add(VAULT_ROOT, { access: { edit: ['admin'] }, author: ROOT_ID });
+        const before = bytesOf(info);
+        const m = manager();
+        readBack = 'nothing';
+        expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 0, left: 1 });
+        expect(saved).toEqual([]);
+        expect(backups()).toEqual([]);
+        expect(bytesOf(info)).toBe(before);
+        // Not final: once the vault can be read, the next sign-in converts it.
+        readBack = 'page';
+        expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 1, left: 0 });
+      });
+
+      test('the vault refuses the read with an error: no throw, nothing copied or written, tried again later', async () => {
+        const info = await add(VAULT_ROOT, { access: { edit: ['admin'] }, author: ROOT_ID });
+        const before = bytesOf(info);
+        const m = manager();
+        const log = captureLog();
+        readBack = new SealedVaultRefusedError('root', 'notes', 'unopened');
+        await expect(m.convertLegacyAccessOnSignIn(ROOT)).resolves.toEqual({ converted: 0, left: 1 });
+        expect(saved).toEqual([]);
+        expect(backups()).toEqual([]);
+        expect(bytesOf(info)).toBe(before);
+        expect(log()).not.toContain('Secret Plans');
+        expect(log()).not.toContain('open it at');
+        readBack = 'page';
+        expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 1, left: 0 });
+      });
     });
   });
 });
