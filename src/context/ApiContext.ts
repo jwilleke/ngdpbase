@@ -75,7 +75,7 @@ export class ApiError extends Error {
  * a step-up refusal redirects to the re-authenticate page, a consent refusal
  * to the consent prompt (#2027), a 401 to sign-in (returning here), anything
  * else is the message as text. `download` (a link to a file) is answered as
- * `page`. JSON carries the consent link as `consent`. A route never writes its own refusal:
+ * `page`, and so is `form` (#2360), which a plain form post gets and a script's request does not. JSON carries the consent link as `consent`. A route never writes its own refusal:
  * the step-up `reauth` is easy to drop. #2360: a step-up refusal of a browser's plain form
  * post is a `page` answer even where the route asked for JSON, so the person is sent to the
  * prompt, never shown the JSON; a script's request still gets it.
@@ -86,6 +86,7 @@ export function sendApiError(res: Response, err: ApiError, mode: ReauthMode = 'j
   // Likewise only this site's consent prompt.
   const consent = typeof err.consent === 'string' && (err.consent === CONSENT_PATH || err.consent.startsWith(`${CONSENT_PATH}?`)) ? err.consent : undefined;
   // #2360: a plain form post refused for a stale sign-in is sent to the prompt, as a page is, never shown JSON.
+  // The mode changes only when the error carries a `reauth` link, so a 401 or a plain 403 on a form post keeps its old answer on purpose.
   const answerMode = reauth && res.req ? stepUpModeFor(res.req, mode) : mode;
   if (answeredWithPage(answerMode)) {
     if (reauth) { res.redirect(reauth); return; }

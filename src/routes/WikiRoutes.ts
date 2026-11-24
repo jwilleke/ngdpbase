@@ -14745,7 +14745,8 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
-      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'json'))) return; // #1525, #1635: the prompt, not this handler's refusal
+      // #2360: 'form', not 'json': a plain form is not kept to be redone, so confirming never runs the reset; the person presses Reset again.
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'form'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (
         !currentUser ||
         !(await wikiContext.hasPermission('config-manage'))

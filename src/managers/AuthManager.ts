@@ -909,9 +909,14 @@ export interface SignInRecord extends Assurance {
  * How a refused request wants its answer: a page to redirect, JSON, or plain
  * text (#1745). `download` is a GET that answers with a file: refused like a
  * page, but returned to the page that linked it, since going back to the file
- * itself saves it and leaves the browser on the prompt (#2145).
+ * itself saves it and leaves the browser on the prompt (#2145). `form` (#2360)
+ * is for a route that answers a script in JSON and whose action must not run
+ * until the person presses it again: a plain form post is answered as a page
+ * but is not kept to be redone (#2154), so confirming returns to the page
+ * with the note and the person presses the button once more; a script gets
+ * JSON, as for `json`.
  */
-export type ReauthMode = 'json' | 'page' | 'text' | 'download';
+export type ReauthMode = 'json' | 'page' | 'text' | 'download' | 'form';
 
 /**
  * Whether `req` is a browser's plain form post (#2360): a POST that asks for a
@@ -933,16 +938,19 @@ export function isPlainFormPost(req: Request): boolean {
 /**
  * The mode a step-up answer takes for `req` (#2360): a route that answers a
  * script in JSON answers a plain form post as a page, so the person is sent to
- * the "confirm it is you" step rather than shown raw JSON. Any other mode, and
- * any other request, is as asked for.
+ * the "confirm it is you" step rather than shown raw JSON. A route that asked
+ * for `form` gets the same for a plain form post (a page whose form is not
+ * kept to be redone) and JSON for any other request. Any other mode, and any
+ * other request, is as asked for.
  */
 export function stepUpModeFor(req: Request, mode: ReauthMode): ReauthMode {
+  if (mode === 'form') return isPlainFormPost(req) ? 'form' : 'json';
   return mode === 'json' && isPlainFormPost(req) ? 'page' : mode;
 }
 
 /** Whether a refusal in `mode` is answered by sending the browser to a page: a page, or a file a page links to (#2145). */
 export function answeredWithPage(mode: ReauthMode): boolean {
-  return mode === 'page' || mode === 'download';
+  return mode === 'page' || mode === 'download' || mode === 'form';
 }
 
 /**
@@ -3260,7 +3268,8 @@ class AuthManager extends BaseManager {
     await this.recordReauth(req, AUDIT_EVENT.REAUTH_PROMPT, 'failure', permission, delegated ? 'delegated credential cannot re-authenticate' : 'fresh sign-in asked for');
     if (delegated) return { permission, delegated, error: 'This needs a fresh sign-in by the person; a token cannot give one' };
     const back = reauthReturnTo(req, mode);
-    // #2154: a form POST is kept, and the confirmation returns to redo it.
+    // #2154: a form POST is kept, and the confirmation returns to redo it. Not in `form` mode (#2360):
+    // that route's action is pressed again by the person, so the confirmation returns to its page.
     const replay = req.session ? this.keepStepUpReplay(req, permission, mode, back) : null;
     const next = replay ? `${STEP_UP_CONTINUE_PATH}?replay=${replay}` : back;
     // #2193: a script's request names its own prompt, so the page that sent it
