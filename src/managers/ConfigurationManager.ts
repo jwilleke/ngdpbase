@@ -1546,8 +1546,35 @@ class ConfigurationManager extends BaseManager {
    * );
    */
   getResolvedDataPath(key: string, defaultValue: string): string {
-    const value = this.getProperty(key, defaultValue) as string;
+    return this.resolveConfiguredPath(this.getProperty(key, defaultValue) as string);
+  }
 
+  /**
+   * Resolve a path as typed, the way the site reads the same text once it is
+   * stored: environment references first (`${SLOW_STORAGE}/backups`, as
+   * `getProperty` does), then `resolveConfiguredPath`. A value that is checked
+   * before it is saved (the backup folder, #2492) goes through this, so the
+   * folder checked is the folder `getResolvedDataPath` gives after a restart.
+   *
+   * @param {string} value - The path as typed
+   * @param {string} key - The configuration key it will be saved under; named in the error for an unset `$VAR`
+   * @returns {string} Resolved path
+   * @throws When the whole value is a bare `$VAR` and that variable is unset, as a read of the stored value would
+   */
+  resolveTypedPath(value: string, key: string): string {
+    return this.resolveConfiguredPath(this.resolveEnvRef(value, key) as string);
+  }
+
+  /**
+   * Resolve a path value as the site reads it from configuration.
+   *
+   * `getResolvedDataPath` is this applied to a stored setting; `resolveTypedPath`
+   * adds the environment step for text that has not been stored yet.
+   *
+   * @param {string} value - The path as typed or stored
+   * @returns {string} Resolved path, or the value as it is when it is not a data path
+   */
+  resolveConfiguredPath(value: string): string {
     // If the value still contains an unresolved ${VAR} placeholder (env var not set),
     // extract the path suffix and resolve it under instanceDataFolder to avoid
     // creating literal '${VAR}/...' directories in the cwd.
