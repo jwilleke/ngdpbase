@@ -63,6 +63,14 @@ class RoleMemberRefusal extends Error {
   }
 }
 
+/** #2432: more than one role file has the role's name and none is under the site's organization; the message is the plain reason. */
+class RoleFileAmbiguous extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'RoleFileAmbiguous';
+  }
+}
+
 /** One membership change and its inverse (#2015); each resolves true when it changed the record. */
 interface MemberChange {
   label: string;
@@ -442,7 +450,13 @@ class RoleManager extends BaseManager {
     // #2432: the role file is named by the role alone, so a file for `roleName` is the record that it was
     // given even when it names another organization `@id` than today's anchor. Creating over it throws.
     // findRecord logs one warning naming both organizations when the file is under another one.
-    if (await this.findRecord(installOrg['@id'], roleName)) return 0;
+    try {
+      if (await this.findRecord(installOrg['@id'], roleName)) return 0;
+    } catch (error) {
+      if (!(error instanceof RoleFileAmbiguous)) throw error;
+      await this.reportToAdmins(`Could not give '${roleName}' to existing accounts`, error.message);
+      return 0;
+    }
     let given = 0;
     const missed: string[] = [];
     for (const username of usernames) {
@@ -456,7 +470,7 @@ class RoleManager extends BaseManager {
       given++;
       await recordSystemAction(this.engine, ctx, roleChangeEvent(username, 'assign', roleName));
     }
-    await this.membership.run(this.membershipKey(installOrg['@id'], roleName), () => this.getOrCreateRoleRecord(installOrg, roleName));
+    await this.membership.run(this.membershipKey(roleName), () => this.getOrCreateRoleRecord(installOrg, roleName));
     if (missed.length > 0) {
       await this.reportToAdmins(
         `Could not give '${roleName}' to ${missed.length} existing account(s)`,
@@ -581,7 +595,7 @@ class RoleManager extends BaseManager {
       } catch (error) {
         const notUndone = await this.undoAll(subject, done);
         // #2040: a member refused for having no credentials is a reason an administrator can act on.
-        const reason = error instanceof RoleMemberRefusal ? error.message : undefined;
+        const reason = error instanceof RoleMemberRefusal || error instanceof RoleFileAmbiguous ? error.message : undefined;
         throw await this.roleFailure(subject, [change.label], { reason, cause: reason ? undefined : error, notUndone, notify });
       }
     }
@@ -629,9 +643,14 @@ class RoleManager extends BaseManager {
     }
   }
 
-  /** #2015: the membership queue's key for one role record. */
-  private membershipKey(organizationId: string, namedPosition: string): string {
-    return `${organizationId}\0${namedPosition}`;
+  /**
+   * #2015: the membership queue's key for one role record. The record's file is
+   * named by the role name alone, so the role name is the key: keyed by the
+   * caller's organization too, two changes on one file could hold two queues
+   * and overwrite each other once the organization `@id` changed (#2432).
+   */
+  private membershipKey(namedPosition: string): string {
+    return namedPosition;
   }
 
   /**
@@ -649,7 +668,7 @@ class RoleManager extends BaseManager {
    */
   private setMember(role: RoleRef, personId: string, member: boolean, createIn: Organization | undefined, mustBeUser: string | null): Promise<boolean> {
     const orgId = role.organization['@id'];
-    return this.membership.run(this.membershipKey(orgId, role.namedPosition), async () => {
+    return this.membership.run(this.membershipKey(role.namedPosition), async () => {
       if (member && mustBeUser) {
         const refusal = await this.notAUserReason(mustBeUser);
         if (refusal) throw new RoleMemberRefusal(refusal);
@@ -690,11 +709,20 @@ class RoleManager extends BaseManager {
    * role's record even after the anchor organization's `@id` changed between
    * starts. It is used as it is: its `organization` is not rewritten, and one
    * warning is logged the first time it is used under another organization.
+   * More than one file for the name, none under `organizationId`, throws
+   * {@link RoleFileAmbiguous}, which a role change reports as a `RoleChangeError`:
+   * the choice is an admin's.
    */
   private async findRecord(organizationId: string, namedPosition: string): Promise<Role | null> {
     const exact = await this.getByOrgAndPosition(organizationId, namedPosition);
     if (exact) return exact;
-    const other = (await this.list()).find((r) => r.namedPosition === namedPosition) ?? null;
+    const named = (await this.list()).filter((r) => r.namedPosition === namedPosition);
+    if (named.length > 1) {
+      // Only a hand-placed file makes this: nothing says which one is meant, so an admin decides.
+      const files = named.map((r) => `${r['@id']} (${r.organization?.['@id']})`).join(', ');
+      throw new RoleFileAmbiguous(`more than one role file is named '${namedPosition}' and none is under this site's organization ${organizationId}: ${files}. Keep one`);
+    }
+    const other = named[0] ?? null;
     if (other && !this.warnedForeignRoles.has(namedPosition)) {
       this.warnedForeignRoles.add(namedPosition);
       logger.warn(

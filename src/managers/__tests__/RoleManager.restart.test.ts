@@ -16,6 +16,8 @@ import fs from 'fs-extra';
 import RoleManager from '../RoleManager';
 import { resetBootActions } from '../../context/bootActions';
 import { jobContextFromSystem } from '../../context/JobContext';
+import { RoleChangeError } from '../../utils/roleChangeError';
+import logger from '../../utils/logger';
 
 const personId = (u: string) => `urn:person:${u}`;
 
@@ -27,6 +29,7 @@ describe('RoleManager start-up with vault-owner already on disk (#2432)', () => 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'role-restart-'));
     resetBootActions();
+    notifyAdmins.mockClear();
   });
 
   afterEach(async () => {
@@ -35,6 +38,8 @@ describe('RoleManager start-up with vault-owner already on disk (#2432)', () => 
   });
 
   /** A fresh RoleManager over the same roles folder, as a restart makes one. */
+  const notifyAdmins = vi.fn(() => Promise.resolve('n'));
+
   async function boot(org: { '@id': string; url: string }): Promise<RoleManager> {
     const managers: Record<string, unknown> = {
       ConfigurationManager: { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: () => rolesDir() },
@@ -44,7 +49,7 @@ describe('RoleManager start-up with vault-owner already on disk (#2432)', () => 
         getByIdentifier: (_ctx: unknown, u: string) => Promise.resolve({ '@id': personId(u) })
       },
       OrganizationManager: { getInstallOrg: () => Promise.resolve(org) },
-      NotificationManager: { notifyAdmins: () => Promise.resolve('n') }
+      NotificationManager: { notifyAdmins }
     };
     const manager = new RoleManager({ getManager: (n: string) => managers[n] ?? null });
     await manager.initialize();
@@ -98,5 +103,53 @@ describe('RoleManager start-up with vault-owner already on disk (#2432)', () => 
     const members = (await fs.readJson(roleFile())).member.map((m: { '@id': string }) => m['@id']);
     expect(members).not.toContain(personId('alice'));
     expect(members).toContain(personId('bob'));
+  });
+  test('the first use under another organization logs one warning naming the role and both organizations', async () => {
+    await grant(await boot({ '@id': 'urn:uuid:org-one', url: 'https://example.com/' }), ['alice']);
+    const second = await boot({ '@id': 'urn:uuid:org-two', url: 'https://example.com/' });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      await second.applyRoleDiff('bob', [], ['vault-owner']);
+      await second.applyRoleDiff('carol', [], ['vault-owner']);
+
+      const calls = warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('#2432'));
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toContain("'vault-owner'");
+      expect(calls[0]).toContain('urn:uuid:org-one');
+      expect(calls[0]).toContain('urn:uuid:org-two');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  describe('two files for one role name, none under the site’s organization', () => {
+    beforeEach(async () => {
+      await grant(await boot({ '@id': 'urn:uuid:org-one', url: 'https://example.com/' }), ['alice']);
+      // hand-placed: the same role name under organizations B and C, none under the site's organization
+      const original = await fs.readJson(roleFile());
+      await fs.remove(roleFile());
+      for (const [file, org] of [['vault-owner-b.json', 'urn:uuid:org-b'], ['vault-owner-c.json', 'urn:uuid:org-c']] as const) {
+        await fs.writeJson(path.join(rolesDir(), file), { ...original, '@id': `https://example.com/roles/${file}#role`, organization: { '@id': org } });
+      }
+    });
+
+    test('a role change is refused with a RoleChangeError naming the files, and no file is written', async () => {
+      const second = await boot({ '@id': 'urn:uuid:org-two', url: 'https://example.com/' });
+      const before = await Promise.all(['vault-owner-b.json', 'vault-owner-c.json'].map((f) => fs.readFile(path.join(rolesDir(), f), 'utf8')));
+
+      const failure = await second.applyRoleDiff('bob', [], ['vault-owner']).catch((e: unknown) => e);
+      expect(failure).toBeInstanceOf(RoleChangeError);
+      expect((failure as RoleChangeError).message).toContain('vault-owner-b.json');
+      expect((failure as RoleChangeError).message).toContain('vault-owner-c.json');
+
+      const after = await Promise.all(['vault-owner-b.json', 'vault-owner-c.json'].map((f) => fs.readFile(path.join(rolesDir(), f), 'utf8')));
+      expect(after).toEqual(before);
+    });
+
+    test('the start-up grant does not throw: it tells the admins and goes on', async () => {
+      const second = await boot({ '@id': 'urn:uuid:org-two', url: 'https://example.com/' });
+      await expect(grant(second, ['alice', 'bob'])).resolves.toBe(0);
+      expect(notifyAdmins).toHaveBeenCalledTimes(1);
+    });
   });
 });

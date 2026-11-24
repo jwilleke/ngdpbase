@@ -26,12 +26,13 @@ Who holds a role is read about a named account, so every read takes the caller's
 | `assignRole(username, roleName, ctx)` / `removeRole(…)` | one role, for an existing account and a declared role; recorded as `user-edit` |
 | `applyRoleDiff(username, oldRoles, newRoles)` | what `UserManager` calls when an account is created or edited; the account write records the audit event |
 | `removeAllMemberships(username)` | a deleted account's identity record leaves every role |
-| `grantToEveryAccountOnce(roleName, usernames, ctx)` | a role every account must hold, given at boot to the accounts that predate it — once: the role's record not existing is the record that it was never given, so a later removal stands,; each grant recorded as `user-edit` under the system context ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)) |
+| `grantToEveryAccountOnce(roleName, usernames, ctx)` | a role every account must hold, given at boot to the accounts that predate it — once: the role's record not existing is the record that it was never given, so a later removal stands. Each grant is recorded as `user-edit` under the system context ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)) |
 
 The roles folder holds one file per role name, such as `vault-owner.json`. That file is the role's record, whatever organization `@id` it names ([#2432](https://github.com/jwilleke/ngdpbase/issues/2432)).
 
 - If the anchor organization's `@id` changes between starts, the old file is still the record. A restart does not try to create it again, and does not fail.
 - Later role changes use that file: `applyRoleDiff`, `assignRole`, `removeRole`, and the grant for a new account.
+- A role name found in more than one file, none under the anchor organization, is an error: a role change is refused with a `RoleChangeError` naming the files, and the start-up grant tells the admins and goes on. Keep one file.
 - The file's `organization` is never rewritten. RoleManager logs one warning per role and run, naming the role and both organization ids.
 - An account created before `vault-owner` existed, and not listed in the file, does not get the role automatically after the file exists. Add it with `assignRole`.
 
