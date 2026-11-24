@@ -40,7 +40,8 @@ describe('RoleManager start-up with vault-owner already on disk (#2432)', () => 
       ConfigurationManager: { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: () => rolesDir() },
       IdentityManager: {
         getById: (_ctx: unknown, id: string) => Promise.resolve({ '@id': id, identifier: id.split(':').pop() }),
-        getByUserIdentifier: (_ctx: unknown, u: string) => Promise.resolve({ '@id': personId(u) })
+        getByUserIdentifier: (_ctx: unknown, u: string) => Promise.resolve({ '@id': personId(u) }),
+        getByIdentifier: (_ctx: unknown, u: string) => Promise.resolve({ '@id': personId(u) })
       },
       OrganizationManager: { getInstallOrg: () => Promise.resolve(org) },
       NotificationManager: { notifyAdmins: () => Promise.resolve('n') }
@@ -86,5 +87,16 @@ describe('RoleManager start-up with vault-owner already on disk (#2432)', () => 
     await expect(second.applyRoleDiff('bob', ['vault-owner'], [])).resolves.toBeUndefined();
     const after = await fs.readJson(roleFile());
     expect(after.member.map((m: { '@id': string }) => m['@id']).sort()).toEqual([personId('alice'), personId('carol')]);
+  });
+  test('a deleted account and a role change for another account at the same time, after the @id changed, both stand', async () => {
+    await grant(await boot({ '@id': 'urn:uuid:org-one', url: 'https://example.com/' }), ['alice']);
+    const second = await boot({ '@id': 'urn:uuid:org-two', url: 'https://example.com/' });
+
+    // removeAllMemberships names the file's own organization; applyRoleDiff names the anchor. One file, one queue.
+    await Promise.all([second.removeAllMemberships('alice'), second.applyRoleDiff('bob', [], ['vault-owner'])]);
+
+    const members = (await fs.readJson(roleFile())).member.map((m: { '@id': string }) => m['@id']);
+    expect(members).not.toContain(personId('alice'));
+    expect(members).toContain(personId('bob'));
   });
 });
