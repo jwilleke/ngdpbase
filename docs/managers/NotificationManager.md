@@ -61,6 +61,8 @@ At start-up the manager converts the stored file once: each `targetUsers` and `d
 
 When `ngdpbase.notifications.escalation.enabled` is on, a notification at one of `ngdpbase.notifications.escalation.levels` is emailed to every active holder of `admin-system` with an address, the people `notifyAdmins` targets, asked of `PolicyDecisionPoint.usersHolding('admin-system')`. It never looks at role names; the old `ngdpbase.notifications.escalation.recipient-role` setting is gone and ignored if set ([#2196](https://github.com/jwilleke/ngdpbase/issues/2196)).
 
+MarkupParser no longer sends a notification when a page building limit is crossed ([#2468](https://github.com/jwilleke/ngdpbase/issues/2468)). It writes one log line when a limit is crossed and one when it is back, and keeps every check; see [MarkupParser API](../api/MarkupParser-API.md#page-building-check-and-history-2468). Notifications titled "MarkupParser Performance Alert: ..." that an earlier version saved stay until they are dismissed or cleared.
+
 ## Notification Types
 
 | Type | Description |
