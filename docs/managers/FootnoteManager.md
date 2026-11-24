@@ -28,6 +28,7 @@ interface PageFootnote {
   note: string;
   createdBy: string;
   createdAt: string;
+  sourceId?: string; // the shared source it points at, when it has one (#2454)
 }
 ```
 
@@ -35,9 +36,10 @@ interface PageFootnote {
 
 Every call names the page as `{ name, uuid }` and carries the caller's context. Whether the caller may read or edit the page is decided by the route before the call.
 
-- `getFootnotes(page, ctx)` — list footnotes for a page
+- `getFootnotes(page, ctx)` — list footnotes for a page; a footnote with a `sourceId` comes back with its source's title and link (see [Shared sources](#shared-sources-2454))
 - `addFootnote(page, footnote, ctx)` — append
 - `updateFootnote(page, id, patch, ctx)` — edit
+- `createSource({ title, url }, ctx)` and `getSource(id)` — make a shared source, and read one
 - `deleteFootnote(page, id, ctx)` — remove
 - `movePageFootnotes(uuid, fromName, toName, ctx)` — follow the page to its new place
 - `isCreator(footnote, ctx)` — whether the caller added it; the plugin's Delete button and the delete route ask this
@@ -48,7 +50,18 @@ A footnote's link is a link only when it is an http or https address. `safeSourc
 
 - `addFootnote` and `updateFootnote` refuse a link that is not http or https with a `FootnoteLinkError`: "A footnote's link must start with http:// or https://. Check the address and try again." The add and edit routes answer it with 400 and that text. A footnote with no link at all (a note) is still saved.
 - `importFootnote` and `transferFromContent` do not check the link they are given. The render does: `FootnotesPlugin` puts a stored value into `href` only when `safeSourceUrl` passes, and shows other values as text, so an old or imported value never becomes a link.
-- `tidyUrl(url)` gives the key two links share when they are "the same link": `http` and `https` are equal, the host is lower case without a leading `www.`, a trailing slash on the path is dropped, and `utm_*`, `fbclid` and `gclid` parameters are dropped. Other parameters keep their order, and a fragment stays. It returns `null` for a value that is not an http or https link. Nothing calls it yet; the shared sources that use it come in a later slice of #2454.
+- `tidyUrl(url)` gives the key two links share when they are "the same link": `http` and `https` are equal, the host is lower case without a leading `www.`, a port written in the address stays in the key (an explicit default port such as `:443` is not the same key as no port), a `user:password@` part is left out, a trailing slash on the path is dropped, and `utm_*`, `fbclid` and `gclid` parameters are dropped. Other parameters keep their order, and a fragment stays. It returns `null` for a value that is not an http or https link. A new source keeps it as its `urlKey`.
+
+## Shared sources ([#2454](https://github.com/jwilleke/ngdpbase/issues/2454))
+
+A source is one title and one link that many footnotes can point at. Each is a file of its own, `{id}.json`, in `ngdpbase.footnotes.sources.storagedir` (default `${SLOW_STORAGE}/footnote-sources`), written only by this manager through `SourceStore` (`src/utils/footnoteSources.ts`). The id is a random UUID, never made from the link.
+
+- A record holds `id`, `title`, `url` (as entered, http or https only), `urlKey` (its `tidyUrl`), `status` (`good`), `statusSince`, `flagReason`, `lastChecked`, `staleBy`, `createdBy` (an identity `@id`, as for a footnote) and `createdAt`.
+- `createSource` refuses a link that is not http or https with a `FootnoteLinkError`, and a title with nothing in it. It bumps the cache topic once and records `footnote-edit` with action `create`, resource type `footnote-source`, and the source's id only: never its title or link. Who may call it is the caller's to decide; no route does yet.
+- __A footnote may point at a source.__ `addFootnote` and `updateFootnote` take a `sourceId`. The footnote stores the id and a copy of the source's title and link; any title or link sent with the id is ignored. An id with no record is refused: "That source was deleted a moment ago. Search again, or add the link as a new source." `updateFootnote` with `sourceId: null` makes it a page note again, with the title and link given (checked like any link) or, when none are given, the stored copy. With no `sourceId` at all, a sourced footnote keeps its source and only its note changes.
+- __Which copy wins.__ `getFootnotes` shows the source's title and link whenever its record exists; with the record gone, the footnote's stored copy shows and the `sourceId` stays. `FootnotesPlugin` and the list route get this with no change of their own.
+- __Vault pages never use a source__ (R6). `addFootnote` and `updateFootnote` refuse a `sourceId` on a vault page, whether or not the source exists: "Sources are shared across the site, so they can't be used on private pages. Add the link as a note on this page instead." When a page moves into a vault, `movePageFootnotes` rewrites its footnotes as page notes carrying the source's title and link as they are then (the stored copy when the record is gone), through the vault's own I/O, and drops the `sourceId`s. A move out of a vault, or to another public page, leaves them as they are.
+- The add and edit routes do not accept a `sourceId` yet: they come with the screens, after the reader filter that keeps a source's title and link from someone who may not see them.
 
 ## The cache
 
@@ -62,7 +75,7 @@ At start-up the manager converts the public folder once: each footnote whose `cr
 
 ## Backup and restore
 
-Public pages' footnotes are in every backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)): the manager declares its folder (`ngdpbase.footnotes.storagedir`) in `backupFolders()` and writes no backup code ([#1985](https://github.com/jwilleke/ngdpbase/issues/1985)). BackupManager writes it as `<stem>.footnotes.tar` beside the backup document, streamed, the files as they are, and the manager's entry names the archive. A site restore stages it (`restoreIsStaged()` is true for a manager that declares folders): BackupManager extracts the archive to `<folder>.staged` and never writes into the folder; at the next start, in `BaseManager.initialize()` before the manager reads the folder, the staged copy takes its place (the old one kept as `<folder>.pre-restore`) only when every part of the site restore goes in. A vault page's footnotes are in its vault, which PageManager backs up as stored. Details in the [backup and restore guide](../guides/backup-restore-guide.md#the-staged-site-restore-1876-slice-1).
+Public pages' footnotes are in every backup ([#1876](https://github.com/jwilleke/ngdpbase/issues/1876)): the manager declares its folder (`ngdpbase.footnotes.storagedir`) in `backupFolders()` and writes no backup code ([#1985](https://github.com/jwilleke/ngdpbase/issues/1985)). BackupManager writes it as `<stem>.footnotes.tar` beside the backup document, streamed, the files as they are, and the manager's entry names the archive. A site restore stages it (`restoreIsStaged()` is true for a manager that declares folders): BackupManager extracts the archive to `<folder>.staged` and never writes into the folder; at the next start, in `BaseManager.initialize()` before the manager reads the folder, the staged copy takes its place (the old one kept as `<folder>.pre-restore`) only when every part of the site restore goes in. The shared sources are a part of their own, `<stem>.footnote-sources.tar` (`ngdpbase.footnotes.sources.storagedir`), declared `optional`: a backup made before sources existed has none, and restoring it leaves this site's folder as it is and names it as not restored. A manager's first declared part is the one an older single-part backup holds, so those backups still restore (`partRecordIn`). A vault page's footnotes are in its vault, which PageManager backs up as stored. Details in the [backup and restore guide](../guides/backup-restore-guide.md#the-staged-site-restore-1876-slice-1).
 
 ## See Also
 

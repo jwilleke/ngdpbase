@@ -48,6 +48,7 @@ import {
   withoutKeptMarks
 } from '../utils/addonPageSync.js';
 import { isSourceCheckout } from '../utils/sourceCheckout.js';
+import { adminMessage } from '../utils/backupFolder.js';
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
@@ -199,6 +200,7 @@ import type AuthManager from '../managers/AuthManager.js';
 import type { AuthenticateResult, AuthAttempt, ReauthMode } from '../managers/AuthManager.js';
 import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import { JobActionError, type JobLastRun } from '../managers/BackgroundJobManager.js';
+import { automaticReindexLabel, latestReindex, type ReindexLine } from '../utils/reindexLines.js';
 import type BackupManager from '../managers/BackupManager.js';
 import { formatBytes, type BackupHealth } from '../managers/BackupManager.js';
 import type CacheManager from '../managers/CacheManager.js';
@@ -7121,6 +7123,7 @@ ${panes}
       title: 'Confirm it is you',
       next,
       prompt,
+      typed: authManager?.stepUpReplayHasFields(req, next) ?? true,
       needsPasskey,
       ways,
       hasPasskey: Boolean(ways?.usePasskey),
@@ -13081,11 +13084,21 @@ ${panes}
 
       // #2138: when each Reindex and Rebuild last ran, under the Page and Media Management buttons.
       const jobLastRuns: Record<string, JobLastRun | null> = {};
+      let mediaReindexLine: ReindexLine | null = null;
+      let automaticReindex: { label: string; next: string | null } = { label: automaticReindexLabel(3600000), next: null };
       try {
         const jobManager = this.engine.getManager('BackgroundJobManager');
         for (const jobId of ['pages.reindex', 'pages.rebuild', 'media.rescan', 'media.rebuild', 'media.folder-scan']) {
           jobLastRuns[jobId] = await jobManager.lastFinishedRun(jobId);
         }
+        // #2467: a Rebuild also reindexes, so the Media card's "Last reindex" shows the later of the two.
+        mediaReindexLine = latestReindex(jobLastRuns['media.rescan'], jobLastRuns['media.rebuild']);
+        const scanInterval = Number(this.engine.getManager('ConfigurationManager').getProperty('ngdpbase.media.scaninterval', 3600000));
+        const autoView = await jobManager.scheduledJobView('media.folder-scan');
+        automaticReindex = {
+          label: automaticReindexLabel(scanInterval),
+          next: scanInterval > 0 && autoView?.enabled ? autoView.nextSlot : null
+        };
       } catch (jobErr) {
         logger.warn('[adminDashboard] Last job runs could not be read:', jobErr);
       }
@@ -13142,6 +13155,8 @@ ${panes}
         backupHealth,
         formatBytes,
         jobLastRuns,
+        mediaReindexLine,
+        automaticReindex,
         // #1842: what the startup checks found outside its vault, each with
         // a "Move into vault" action where this admin may (unsealed vaults).
         vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : [],
@@ -14059,7 +14074,17 @@ ${panes}
       const time = body.autoBackupTime ?? '02:00';
       const days = body.autoBackupDays ?? 'daily';
       const maxBackups = parseInt(body.maxBackups ?? '10', 10);
-      const directory = body.directory ?? '';
+      const directory = (body.directory ?? '').trim();
+
+      // #2492: the backup folder is its own form, and saves on its own.
+      if (body.section === 'folder') {
+        if (!directory) return res.redirect('/admin/backup?error=' + encodeURIComponent('Enter the folder to keep backups in.'));
+        const { backupsLive } = await backupManager.updateAutoBackupConfig({ directory }, currentUser);
+        // With backups switched off since start-up nothing uses the folder yet: say so, not that backups go to it.
+        return res.redirect('/admin/backup?success=' + encodeURIComponent(backupsLive
+          ? 'Backup folder saved. Backups now go to it.'
+          : 'Backup folder saved. Backups are switched off until the site is restarted; then they go to it.'));
+      }
 
       await backupManager.updateAutoBackupConfig({
         enabled,
@@ -14072,7 +14097,9 @@ ${panes}
       return res.redirect('/admin/backup?success=Auto-backup+configuration+saved');
     } catch (err: unknown) {
       logger.error('Error saving backup config:', err);
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
+      // #2492: the admin reads a plain message; the full error is in the log above.
+      const message = adminMessage(err, 'The backup settings could not be saved. Check them and try again.');
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(message));
     }
   }
 
@@ -14080,6 +14107,7 @@ ${panes}
    * POST /admin/backup/create — Create backup and download
    */
   async adminBackup(req: Request, res: Response) {
+    let backupMade = false;
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
@@ -14114,6 +14142,7 @@ ${panes}
 
       // Create backup
       const backupPath = await backupManager.createBackup(currentUser);
+      backupMade = true;
       logger.debug(`✅ Backup created: ${backupPath}`);
 
       // #1723 D2: the download is the document and its database files, one streamed .tar.
@@ -14121,7 +14150,13 @@ ${panes}
 
     } catch (err: unknown) {
       logger.error('Error creating backup:', err);
-      res.status(500).send('Error creating backup: ' + getErrorMessage(err));
+      // #2492: the admin reads a plain message on the Backup page, in the red alert; the full error is in the log above.
+      // The message travels in the address and the page escapes it, so a folder path is never read as markup.
+      if (res.headersSent) return res.end();
+      const said = backupMade
+        ? 'The backup was made and kept in the backup folder, but the download could not be started. Download it from the list of backups on this page.'
+        : `${adminMessage(err, 'The backup could not be made. Try again. If it keeps failing, the backup status on this page says what is wrong.')} No backup was made. Your earlier backups and the backup folder are unchanged.`;
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(said));
     }
   }
 
@@ -14193,7 +14228,7 @@ ${panes}
       return res.redirect('/admin/backup?success=' + encodeURIComponent(`Restore started: a fresh backup is being taken, then ${what}. You will be notified when it is ready. Restart the site to apply it.`));
     } catch (err: unknown) {
       logger.error('Error starting restore:', err);
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(adminMessage(err, 'The restore could not be started. Try again.')));
     }
   }
 
@@ -14214,7 +14249,7 @@ ${panes}
       return res.redirect('/admin/backup?success=' + encodeURIComponent(`Staged restore from ${cancelled.source} cancelled; ${unchanged}.`));
     } catch (err: unknown) {
       logger.error('Error cancelling staged restore:', err);
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(adminMessage(err, 'The staged restore could not be cancelled. Try again.')));
     }
   }
 

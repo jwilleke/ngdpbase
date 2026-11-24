@@ -22,6 +22,13 @@
     </div>
   <% } %>
 
+  <% if (typeof unsetVisibility !== 'undefined' && unsetVisibility && unsetVisibility.length > 0) { %>
+    <div class="alert alert-warning" role="alert">
+      <i class="fas fa-eye-slash"></i>
+      These calendars have no visibility setting, so only calendar managers can see them: <%= unsetVisibility.join(', ') %>. Set each one to Public, Signed-in or Private.
+    </div>
+  <% } %>
+
   <% if (!calendarSections || calendarSections.length === 0) { %>
     <div class="alert alert-info">
       <i class="fas fa-info-circle"></i>
@@ -40,7 +47,7 @@
               <span class="badge bg-<%= section.workflow === 'reservation' ? 'warning text-dark' : 'primary' %> ms-2">
                 <%= section.workflow %>
               </span>
-              <span class="badge bg-secondary ms-1"><%= section.visibility %></span>
+              <span class="badge bg-secondary ms-1"><%= section.visibility || "not set" %></span>
             </h5>
           </div>
           <div class="d-flex gap-2 align-items-center">

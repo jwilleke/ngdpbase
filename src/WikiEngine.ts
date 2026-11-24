@@ -537,6 +537,7 @@ class WikiEngine extends Engine {
     // #2269: required pages and add-on pages are seeded by now, so the seeded-pages
     // record is complete and the install stamp on a shipped page is not mistaken
     // for a limit someone set. Outside the add-on branch: it needs no add-ons.
+    await this.getManager<PageManager>('PageManager')?.convertLegacyAccessAtBoot();
     await this.getManager<PageManager>('PageManager')?.reportLegacyAccessLimits()
       .catch((err: unknown) => logger.warn('[WikiEngine] Could not check pages for access limits that no longer apply:', err));
     // #1876: every manager, add-ons included, has now applied its part of a

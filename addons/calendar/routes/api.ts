@@ -5,6 +5,8 @@ import type { IcsEvent } from 'ts-ics';
 import type { ApiContext } from '../../../dist/src/context/ApiContext.js';
 import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { CalendarViewer } from '../managers/CalendarDataManager.js';
+import { calendarGate, currentCalendarConfig } from '../managers/calendarVisibility.js';
+import type { CalendarGate } from '../managers/calendarVisibility.js';
 import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
 
 /**
@@ -30,9 +32,21 @@ import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type CalendarDataManager from '../managers/CalendarDataManager.js';
 import type { CalendarEvent } from '../managers/CalendarDataManager.js';
 
+/** The events of the calendars the request may see. */
+async function onlyVisible(events: CalendarEvent[], may: CalendarGate): Promise<CalendarEvent[]> {
+  const kept: CalendarEvent[] = [];
+  for (const e of events) if (await may(e.calendarId)) kept.push(e);
+  return kept;
+}
+
 /**
  * API routes for the calendar add-on.
  * Mounted at /api/calendar in register().
+ *
+ * The read routes (list, search, single event, .ics feed) honour each calendar's
+ * `visibility` setting: public, authenticated or private. A calendar the
+ * configuration does not name is read as private, and one set to
+ * `enabled: false` is left out.
  *
  * Endpoints:
  *   GET    /api/calendar/events                  — list / FullCalendar feed
@@ -43,12 +57,27 @@ import type { CalendarEvent } from '../managers/CalendarDataManager.js';
  *   DELETE /api/calendar/events/:id               — delete event (admin/clubhouse-manager)
  *   GET    /api/calendar/:calendarId/feed.ics     — RFC 5545 .ics feed
  */
-export default function apiRoutes(engine: WikiEngine, _config: Record<string, unknown>, host: AddonHost): Router {
+export default function apiRoutes(engine: WikiEngine, config: Record<string, unknown>, host: AddonHost): Router {
   const { ApiContext, ApiError, sendApiError } = host;
   const router = engine.createRouter();
 
   function mgr(): CalendarDataManager | undefined {
     return engine.getManager<CalendarDataManager>('CalendarDataManager');
+  }
+
+  /**
+   * The gate for this request: the add-on's configuration as it is now, so a
+   * changed `visibility` or `enabled` applies on the next request.
+   */
+  function gateFor(ctx: ApiContext): CalendarGate {
+    return calendarGate(p => ctx.hasPermission(p), currentCalendarConfig(engine, config));
+  }
+
+  /**
+   * What each answer holds depends on who asks, so a shared cache must not keep it.
+   */
+  function privateCache(res: Response): void {
+    res.setHeader('Cache-Control', 'private');
   }
 
   /** Safely extract a scalar string from req.query — discards arrays/objects. */
@@ -76,11 +105,12 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
       const viewer = await viewerOf(ctx, engine, host);
-      const events = m.query({
+      const events = await onlyVisible(m.query({
         start:      qs(req.query['start']),
         end:        qs(req.query['end']),
         calendarId: qs(req.query['calendarId'])
-      });
+      }), gateFor(ctx));
+      privateCache(res);
       res.json(events.map(e => m.toFullCalendar(e, viewer)));
     } catch (err) {
       handleError(err, res);
@@ -94,7 +124,10 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const ctx = ApiContext.from(req, engine);
       const viewer = await viewerOf(ctx, engine, host);
       const q = qs(req.query['q']) ?? '';
-      const results = m ? m.search(q).map(e => m.toFullCalendar(e, viewer)) : [];
+      const results = m
+        ? (await onlyVisible(m.search(q), gateFor(ctx))).map(e => m.toFullCalendar(e, viewer))
+        : [];
+      privateCache(res);
       res.json({ results });
     } catch (err) {
       handleError(err, res);
@@ -124,7 +157,8 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const ctx = ApiContext.from(req, engine);
       const viewer = await viewerOf(ctx, engine, host);
       const event = m.getById(String(req.params['id']));
-      if (!event) { res.status(404).json({ error: 'Event not found' }); return; }
+      privateCache(res);
+      if (!event || !(await gateFor(ctx)(event.calendarId))) { res.status(404).json({ error: 'Event not found' }); return; }
       res.json(m.toFullCalendar(event, viewer));
     } catch (err) {
       handleError(err, res);
@@ -163,13 +197,18 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
   // ── GET /api/calendar/:calendarId/feed.ics ────────────────────────────────
   //
   // RFC 5545 iCalendar feed. Subscribable from Apple Calendar, Google Calendar, etc.
-  // PUBLIC events only — CONFIDENTIAL events are never exported.
+  // PUBLIC events only — CONFIDENTIAL events are never exported. A calendar the
+  // request may not see, under its `visibility`, answers as not found, and so does
+  // one the configuration does not name, with the same answer.
   router.get('/:calendarId/feed.ics', async (req: Request, res: Response) => {
     try {
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
 
+      const ctx = ApiContext.from(req, engine);
       const calendarId = String(req.params['calendarId']);
+      privateCache(res);
+      if (!(await gateFor(ctx)(calendarId))) { res.status(404).json({ error: 'Calendar not found' }); return; }
       const events = m.query({ calendarId })
         .filter(e => e.class !== 'CONFIDENTIAL');
 

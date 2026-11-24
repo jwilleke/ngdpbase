@@ -9,8 +9,8 @@
  *   ngdpbase.addons.calendar.dataPath                       — JSON store root (default: ./data/calendar)
  *   ngdpbase.addons.calendar.clubhouse-manager-email        — email for reservation notifications
  *   ngdpbase.addons.calendar.calendars.<id>.workflow        — reservation | managed
- *   ngdpbase.addons.calendar.calendars.<id>.visibility      — public | authenticated | private
- *   ngdpbase.addons.calendar.calendars.<id>.enabled         — true/false
+ *   ngdpbase.addons.calendar.calendars.<id>.visibility      — public | authenticated | private (honoured by the API, the .ics feed and the marquee text; read live)
+ *   ngdpbase.addons.calendar.calendars.<id>.enabled         — true/false (false: left out of the API, feed and marquee text)
  *
  * API routes (mounted at /api/calendar):
  *   GET    /api/calendar/events                  — FullCalendar event feed (stripPrivate applied)
@@ -43,6 +43,7 @@ import type { AddonHost } from '../../dist/src/utils/addonHost.js';
 import type IdentityManager from '../../dist/src/managers/IdentityManager.js';
 import CalendarDataManager from './managers/CalendarDataManager.js';
 import CalendarPlugin from './plugins/CalendarPlugin.js';
+import { calendarGate, currentCalendarConfig, entryOf } from './managers/calendarVisibility.js';
 import apiRoutes from './routes/api.js';
 import reservationRoutes from './routes/reservations.js';
 import adminRoutes from './routes/admin.js';
@@ -75,6 +76,15 @@ const calendarAddon = {
       engine.getManager<IdentityManager>('IdentityManager'),
       host.systemContext('calendar: convert people from username to identity @id (#2041)')
     );
+    // The marquee text asks the same question the API does, for the viewer MarqueePlugin
+    // passes, over the configuration as it is now.
+    dataManager.setReadGate((viewer) => {
+      const pdp = engine.getManager<{ permits(subject: unknown, action: string): Promise<boolean> }>('PolicyDecisionPoint');
+      return calendarGate(
+        permission => (viewer && pdp ? pdp.permits(viewer, permission) : Promise.resolve(false)),
+        currentCalendarConfig(engine, config)
+      );
+    });
     engine.registerManager('CalendarDataManager', dataManager);
 
     // ── 2. Register markup plugin ────────────────────────────────────────────
@@ -113,7 +123,25 @@ const calendarAddon = {
     const formsAddon = engine.getManager<typeof FormsAddon>('FormsAddon');
     if (formsAddon && dataManager) {
       const dm = dataManager;
-      formsAddon.registerHandler('clubhouse-reservation', async (submission) => {
+      formsAddon.registerHandler('clubhouse-reservation', async (submission, context) => {
+        // The calendar's visibility, enabled and workflow settings apply here as they do to
+        // POST /api/calendar/reservations, before the conflict check. A calendar the submitter
+        // may not see, a disabled one and one the configuration does not name all get the same
+        // refusal, whether the slot is booked or free.
+        const current = currentCalendarConfig(engine, config);
+        const holds = async (permission: string): Promise<boolean> => {
+          // The reviewer's context when a reviewer carries the submission out; otherwise the submitter's request.
+          if (context.decider) {
+            const pdp = engine.getManager<{ permits(subject: unknown, action: string): Promise<boolean> }>('PolicyDecisionPoint');
+            return pdp ? pdp.permits(context.decider, permission) : false;
+          }
+          return context.req ? host.ApiContext.from(context.req as never, engine).hasPermission(permission) : false;
+        };
+        const mayUse = await calendarGate(holds, current)('clubhouse');
+        if (!mayUse || entryOf(current, 'clubhouse')?.['workflow'] !== 'reservation') {
+          return { ok: false, error: 'This calendar does not accept reservations.' };
+        }
+
         const data = submission.data as Record<string, string>;
         const person = submission.onBehalfOf?.name
           ? submission.onBehalfOf
