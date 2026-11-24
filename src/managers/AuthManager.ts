@@ -965,7 +965,12 @@ export interface PendingStepUp {
   replays: boolean;
   /** The kept form POST the confirmation releases (#2154). */
   replay?: string;
+  /** Which note the page says once it is back (#2360): a fixed key the header looks up, never text. */
+  note?: StepUpNote;
 }
+
+/** The notes a confirmation can carry besides the generic one (#2360). `press-again`: "Confirmed, press Reset again". */
+export type StepUpNote = 'press-again';
 
 /**
  * Where a script's own prompt is (#2193): a page that sent a request by
@@ -3281,7 +3286,7 @@ class AuthManager extends BaseManager {
     if (req.session) {
       req.session.pendingStepUp = replay
         ? { permission, next, replays: true, replay }
-        : { permission, next, replays: req.method === 'GET' && mode === 'page' };
+        : { permission, next, replays: req.method === 'GET' && mode === 'page', ...(mode === 'form' ? { note: 'press-again' as const } : {}) };
       // Saved before the answer goes out: the browser follows a redirect on its
       // headers, before express-session's own save at the end lands, and the
       // prompt's request would read (and write back) the session without it.
@@ -3346,7 +3351,10 @@ class AuthManager extends BaseManager {
     const pending = req.session.pendingStepUp;
     delete req.session.pendingStepUp;
     const answered = pending && pending.next === next ? pending : undefined;
-    if (answered && !answered.replays) req.session.stepUpConfirmed = new URL(next, 'http://site.invalid').pathname;
+    if (answered && !answered.replays) {
+      req.session.stepUpConfirmed = new URL(next, 'http://site.invalid').pathname;
+      if (answered.note) req.session.stepUpNote = answered.note;
+    }
     // #2154: the confirmation releases the form POST it was asked for, named by
     // `next` itself (the session's pending prompt may be another tab's), and
     // its time to be redone starts now, however long the prompt was open.
@@ -3377,6 +3385,7 @@ class AuthManager extends BaseManager {
     if (typeof path !== 'string') return false;
     if (req.method !== 'GET' || !(req.get('accept') ?? '').includes('text/html')) return false;
     delete req.session.stepUpConfirmed;
+    delete req.session.stepUpNote;
     return req.path === path;
   }
 

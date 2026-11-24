@@ -46,6 +46,8 @@ declare module 'express-session' {
     pendingStepUp?: PendingStepUp;
     /** The path whose next page view says "Confirmed — you can do it now" after a step-up (#2145). */
     stepUpConfirmed?: string;
+    /** Which note that page says (#2360): a fixed key, so Reset configuration's says to press Reset again. */
+    stepUpNote?: 'press-again';
     /** A script's step-up prompts (#2193), the newest few: each id and whether it was confirmed or cancelled. */
     stepUpPrompts?: StepUpPrompt[];
     /** A sign-in waiting for its second factor: the handle, and where to go after (#1523). No identity yet. */
