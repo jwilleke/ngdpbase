@@ -1,7 +1,7 @@
 ---
 name: NotificationManager
 description: "System and per-user notifications — toast popups, persistent inbox, scheduled expiry"
-dateModified: '2026-10-26'
+dateModified: '2026-11-24'
 category: managers
 code: src/managers/NotificationManager.ts
 ---
@@ -61,7 +61,11 @@ At start-up the manager converts the stored file once: each `targetUsers` and `d
 
 When `ngdpbase.notifications.escalation.enabled` is on, a notification at one of `ngdpbase.notifications.escalation.levels` is emailed to every active holder of `admin-system` with an address, the people `notifyAdmins` targets, asked of `PolicyDecisionPoint.usersHolding('admin-system')`. It never looks at role names; the old `ngdpbase.notifications.escalation.recipient-role` setting is gone and ignored if set ([#2196](https://github.com/jwilleke/ngdpbase/issues/2196)).
 
-MarkupParser no longer sends a notification when a page building limit is crossed ([#2468](https://github.com/jwilleke/ngdpbase/issues/2468)). It writes one log line when a limit is crossed and one when it is back, and keeps every check; see [MarkupParser API](../api/MarkupParser-API.md#page-building-check-and-history-2468). Notifications titled "MarkupParser Performance Alert: ..." that an earlier version saved stay until they are dismissed or cleared.
+MarkupParser no longer sends a notification when a page building limit is crossed ([#2468](https://github.com/jwilleke/ngdpbase/issues/2468)). It writes one log line when a limit is crossed and one when it is back, and keeps every check; see [MarkupParser API](../api/MarkupParser-API.md#page-building-check-and-history-2468). The old "MarkupParser Performance Alert: ..." notifications an earlier version saved are copied to a file of their own at start-up and then removed with `removeByTitlePrefix` (see below).
+
+### `removeByTitlePrefix(prefix)`
+
+Deletes every stored notification, expired or not, whose title starts with `prefix`, saves the file once when anything was deleted, and returns how many it deleted ([#2468](https://github.com/jwilleke/ngdpbase/issues/2468)). It matches only the start of a title, so another notification cannot be caught, and it throws on an empty prefix, so it can never clear everything. No route or screen calls it; the only caller is the parser's one-time import of its old alerts.
 
 ## Notification Types
 

@@ -1,0 +1,155 @@
+<%- include('header', { title: 'Page building speed' }) %>
+
+<%
+  // #2468: numbers as the reader sees them. Milliseconds to one decimal; a 0-to-1 ratio as a percent to one decimal.
+  const ms = (v) => (Math.round(v * 10) / 10).toFixed(1);
+  const pct = (v) => (Math.round(v * 1000) / 10).toFixed(1) + '%';
+  const limitPct = (v) => String(Math.round(v * 1000) / 10);
+  const windows = [
+    ['hour', 'Last hour'],
+    ['day', 'Last 24 hours'],
+    ['week', 'Last 7 days'],
+    ['month', 'Last 30 days']
+  ];
+  const measures = [
+    {
+      key: 'parse',
+      title: 'Page build time',
+      note: 'Time to build a page, in milliseconds (pages not already stored). Limit: ' + report.limits.parseTime + '.',
+      fmt: ms
+    },
+    {
+      key: 'hit',
+      title: 'Pages from stored copies',
+      note: 'Pages served from stored copies, in percent. Lower than ' + limitPct(report.limits.cacheHitRatio) + ' is flagged.',
+      fmt: pct
+    },
+    {
+      key: 'err',
+      title: 'Pages that failed to build',
+      note: 'Pages that failed to build, in percent. Higher than ' + limitPct(report.limits.errorRate) + ' is flagged.',
+      fmt: pct
+    }
+  ];
+  const rows = [
+    ['Typical', 'p50'],
+    ['Slowest 1 in 20', 'p95'],
+    ['Slowest', 'max'],
+    ['Average', 'mean'],
+    ['Checks counted', 'count']
+  ];
+  const hasLegacy = ['parse', 'hit', 'err'].some((k) => report.legacy[k]);
+%>
+
+<div class="container mt-4">
+  <div class="row">
+    <div class="col-12">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="fas fa-gauge-high"></i> Page building speed</h1>
+        <a href="/admin" class="btn btn-secondary">
+          <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+      </div>
+
+      <p>
+        How quickly the site turns page text into what you read. The site checks once a minute while pages are being viewed.
+        Typical is the middle value. Slowest 1 in 20 is the value that 19 of 20 checks stayed under. Slowest is the worst check.
+      </p>
+
+      <% if (!report.recording) { %>
+        <div class="alert alert-warning" role="alert">
+          <i class="fas fa-exclamation-triangle"></i> This site is not keeping these checks.
+        </div>
+      <% } %>
+
+      <% measures.forEach((measure) => { %>
+        <div class="card mb-4" data-testid="parser-performance-<%= measure.key %>">
+          <div class="card-header">
+            <h5 class="mb-0"><%= measure.title %></h5>
+          </div>
+          <div class="card-body">
+            <p class="text-muted"><%= measure.note %></p>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col"></th>
+                    <% windows.forEach(([, label]) => { %>
+                      <th scope="col" class="text-end"><%= label %></th>
+                    <% }); %>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% rows.forEach(([label, field], rowIndex) => { %>
+                    <tr>
+                      <th scope="row" class="fw-normal"><%= label %></th>
+                      <% windows.forEach(([window]) => { %>
+                        <% const s = report.rollup[window][measure.key]; %>
+                        <% if (!s) { %>
+                          <% if (rowIndex === 0) { %>
+                            <td class="text-end text-muted small" rowspan="<%= rows.length %>">No checks recorded in this period yet.</td>
+                          <% } %>
+                        <% } else if (field === 'count') { %>
+                          <td class="text-end"><%= s.count %></td>
+                        <% } else { %>
+                          <td class="text-end"><%= measure.fmt(s[field]) %></td>
+                        <% } %>
+                      <% }); %>
+                    </tr>
+                  <% }); %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      <% }); %>
+
+      <% if (hasLegacy) { %>
+        <div class="card mb-4" data-testid="parser-performance-earlier">
+          <div class="card-header">
+            <h5 class="mb-0">Earlier warnings (over-limit samples only)</h5>
+          </div>
+          <div class="card-body">
+            <p class="text-muted">
+              Before this page existed, the site saved only the minutes when a number went over its limit.
+              These are those minutes. They show how bad the slow minutes were, not how the site did overall.
+            </p>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col"></th>
+                    <% measures.forEach((measure) => { %>
+                      <th scope="col" class="text-end"><%= measure.title %></th>
+                    <% }); %>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% rows.forEach(([label, field]) => { %>
+                    <tr>
+                      <th scope="row" class="fw-normal"><%= label %></th>
+                      <% measures.forEach((measure) => { %>
+                        <% const s = report.legacy[measure.key]; %>
+                        <td class="text-end">
+                          <% if (!s) { %>
+                            <span class="text-muted">&ndash;</span>
+                          <% } else if (field === 'count') { %>
+                            <%= s.count %>
+                          <% } else { %>
+                            <%= measure.fmt(s[field]) %>
+                          <% } %>
+                        </td>
+                      <% }); %>
+                    </tr>
+                  <% }); %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<%- include('footer') %>

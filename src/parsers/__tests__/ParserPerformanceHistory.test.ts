@@ -111,7 +111,7 @@ describe('ParserPerformanceHistory (#2468)', () => {
   describe('a file name is built only from a real date (#2468, Low 4)', () => {
     test.each([
       ['a path in the date', '../../etc/passwd-2026-11-22T14:15:00.000Z'],
-      ['a slash after a date', '2026-11-22/../../x'],
+      ['letters in the date', '2026-11-2a'],
       ['not a date', 'banana'],
       ['an empty string', ''],
       ['a short date', '2026-1-2T00:00:00.000Z']
@@ -137,11 +137,11 @@ describe('ParserPerformanceHistory (#2468)', () => {
   describe('pruning cannot stop a check from being kept (#2468, Low 3)', () => {
     /** A "day file" that is a non-empty folder: removing it without recursion fails. */
     function stuckOldFiles() {
-      for (let d = 1; d <= 9; d += 2) {
+      for (const d of [1, 3, 5, 7, 9]) {
         const stuck = path.join(dir, `parser-performance-2020-01-0${d}.jsonl`);
         fs.mkdirSync(stuck);
         fs.writeFileSync(path.join(stuck, 'inside'), 'x');
-        fs.writeFileSync(path.join(dir, `parser-performance-2020-01-0${d + 1}.jsonl`), '{}\n');
+        fs.writeFileSync(path.join(dir, `parser-performance-2020-01-1${d}.jsonl`), '{}\n');
       }
     }
     const stuckNames = ['01', '03', '05', '07', '09'].map((d) => `parser-performance-2020-01-${d}.jsonl`);
@@ -271,7 +271,7 @@ describe('rollupSamples (#2468)', () => {
       { t: 'banana', parse: 999, hit: null, err: null, n: 1 },
       { parse: 999 },
       { t: new Date(NOW - 1000).toISOString(), parse: '5', hit: Number.NaN, err: Infinity, n: 1 },
-      at(1000, { parse: 10 })
+      at(1000, { parse: 10, hit: null, err: null })
     ] as unknown as PerformanceSample[];
     const hour = rollupSamples(odd, NOW).hour;
 

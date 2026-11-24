@@ -544,6 +544,36 @@ class NotificationManager extends BaseManager {
   }
 
   /**
+   * Delete every stored notification, expired or not, whose title starts with `prefix` (#2468).
+   * A narrow tool for one job: the parser removes the old "MarkupParser Performance Alert: ..."
+   * notifications once their numbers are kept elsewhere. It matches nothing but that start of a
+   * title, so another notification cannot be caught, and it refuses an empty prefix, so it can
+   * never clear everything. It is not reachable from any route or screen.
+   * @param {string} prefix - The start of the titles to delete; must not be empty
+   * @returns {Promise<number>} Number of deleted notifications
+   */
+  async removeByTitlePrefix(prefix: string): Promise<number> {
+    if (typeof prefix !== 'string' || prefix.length === 0) {
+      throw new Error('removeByTitlePrefix needs a non-empty prefix');
+    }
+    let removedCount = 0;
+
+    for (const [id, notification] of this.notifications.entries()) {
+      if (typeof notification.title === 'string' && notification.title.startsWith(prefix)) {
+        this.notifications.delete(id);
+        removedCount++;
+      }
+    }
+
+    if (removedCount > 0) {
+      this.logger.info(`Removed ${removedCount} notifications whose title starts with a fixed prefix`);
+      await this.saveNotifications();
+    }
+
+    return removedCount;
+  }
+
+  /**
    * Get notification statistics
    * @returns {NotificationStats} Statistics object
    */

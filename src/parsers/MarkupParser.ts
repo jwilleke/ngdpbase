@@ -10,7 +10,8 @@ import DOMVariableHandler from './dom/handlers/DOMVariableHandler.js';
 import DOMPluginHandler from './dom/handlers/DOMPluginHandler.js';
 import DOMLinkHandler from './dom/handlers/DOMLinkHandler.js';
 import logger from '../utils/logger.js';
-import { ParserPerformanceHistory } from './ParserPerformanceHistory.js';
+import { ParserPerformanceHistory, rollupSamples, ROLLUP_WINDOWS, type PerformanceReport } from './ParserPerformanceHistory.js';
+import { importLegacyAlerts, legacyStats, readLegacyAlerts, type LegacyAlertSource } from './ParserPerformanceLegacyAlerts.js';
 import JSPWikiPreprocessor from './handlers/JSPWikiPreprocessor.js';
 import PluginSyntaxHandler from './handlers/PluginSyntaxHandler.js';
 import WikiTagHandler from './handlers/WikiTagHandler.js';
@@ -764,6 +765,31 @@ class MarkupParser extends BaseManager {
     const history = new ParserPerformanceHistory(dir);
     await history.open();
     this.performanceMonitor.history = history;
+
+    // #2468: the old "MarkupParser Performance Alert" notifications: keep their numbers, then delete them.
+    const notifications = this.engine.getManager<Partial<LegacyAlertSource>>('NotificationManager');
+    if (typeof notifications?.getAllNotifications === 'function' && typeof notifications.removeByTitlePrefix === 'function') {
+      await importLegacyAlerts(dir, notifications as LegacyAlertSource, Date.now());
+    }
+  }
+
+  /**
+   * What the "Page building speed" admin page shows (#2468): the kept checks summed up for the last
+   * hour, 24 hours, 7 days and 30 days, the numbers of the old over-limit alerts, and the limits the
+   * checks are held to. Read when the page is opened; nothing is stored. With no folder to keep the
+   * checks in, `recording` is false and there is nothing to sum up.
+   */
+  async getPerformanceReport(now: number = Date.now()): Promise<PerformanceReport> {
+    const history = this.performanceMonitor?.history ?? null;
+    const limits = this.config.performance.alertThresholds;
+    const samples = history ? await history.read(now - ROLLUP_WINDOWS.month) : [];
+    const legacy = history ? await readLegacyAlerts(history.dir) : null;
+    return {
+      rollup: rollupSamples(samples, now),
+      legacy: legacyStats(legacy?.samples ?? [], now),
+      limits: { parseTime: limits.parseTime, cacheHitRatio: limits.cacheHitRatio, errorRate: limits.errorRate },
+      recording: history !== null
+    };
   }
 
   /** The configured `ngdpbase.markup.html-policy`, read when it is needed (#1623). */
@@ -3217,7 +3243,7 @@ class MarkupParser extends BaseManager {
       this.trackLimit('LOW_CACHE_HIT_RATIO', hitRatio < limits.cacheHitRatio, now,
         `Cache hit ratio ${pct}% below threshold ${floor}%`,
         `Stored copies are used too little: ${pct}% of pages in the last minute, lowest allowed ${floor}%.`,
-        `Stored copies are back above their limit: ${pct}% of pages in the last minute, lowest allowed ${floor}%.`, 'under');
+        `Stored copies are back above their limit: ${pct}% of pages in the last minute, lowest allowed ${floor}%.`, 'below the lowest allowed');
     }
 
     if (errorRate !== null) {
@@ -3235,7 +3261,7 @@ class MarkupParser extends BaseManager {
    * warning, the return an info line saying how long it lasted. Staying over
    * writes nothing.
    */
-  private trackLimit(type: PerformanceLimit, isOver: boolean, now: number, alertMessage: string, crossingLine: string, recoveryLine: string, word: 'over' | 'under'): void {
+  private trackLimit(type: PerformanceLimit, isOver: boolean, now: number, alertMessage: string, crossingLine: string, recoveryLine: string, was: string): void {
     if (!this.performanceMonitor) {
       return;
     }
@@ -3246,7 +3272,7 @@ class MarkupParser extends BaseManager {
     } else if (!isOver && since !== null) {
       this.performanceMonitor.overSince[type] = null;
       const minutes = Math.max(1, Math.round((now - since) / 60000));
-      logger.info(`${recoveryLine} It was ${word} for ${minutes} minute${minutes === 1 ? '' : 's'}.`);
+      logger.info(`${recoveryLine} It was ${was} for ${minutes} minute${minutes === 1 ? '' : 's'}.`);
     }
   }
 
