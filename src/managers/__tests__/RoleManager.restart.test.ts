@@ -69,4 +69,22 @@ describe('RoleManager start-up with vault-owner already on disk (#2432)', () => 
     await expect(grant(await boot({ '@id': 'urn:uuid:org-two', url: 'https://example.com/' }), ['alice', 'bob'])).resolves.toBe(0);
     expect(await fs.readFile(roleFile(), 'utf8')).toBe(before);
   });
+  test('after the organization @id changes, a later role change still works and the file keeps its organization', async () => {
+    await grant(await boot({ '@id': 'urn:uuid:org-one', url: 'https://example.com/' }), ['alice']);
+    const second = await boot({ '@id': 'urn:uuid:org-two', url: 'https://example.com/' });
+    await grant(second, ['alice']);
+
+    // an existing account edited, and a new account created, after the change
+    await expect(second.applyRoleDiff('bob', [], ['vault-owner'])).resolves.toBeUndefined();
+    await expect(second.applyRoleDiff('carol', [], ['vault-owner'])).resolves.toBeUndefined();
+
+    const file = await fs.readJson(roleFile());
+    expect(file.organization['@id']).toBe('urn:uuid:org-one');
+    expect(file.member.map((m: { '@id': string }) => m['@id']).sort()).toEqual([personId('alice'), personId('bob'), personId('carol')]);
+
+    // and a removal reaches the same record
+    await expect(second.applyRoleDiff('bob', ['vault-owner'], [])).resolves.toBeUndefined();
+    const after = await fs.readJson(roleFile());
+    expect(after.member.map((m: { '@id': string }) => m['@id']).sort()).toEqual([personId('alice'), personId('carol')]);
+  });
 });
