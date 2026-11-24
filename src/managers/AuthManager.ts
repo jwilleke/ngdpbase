@@ -913,6 +913,33 @@ export interface SignInRecord extends Assurance {
  */
 export type ReauthMode = 'json' | 'page' | 'text' | 'download';
 
+/**
+ * Whether `req` is a browser's plain form post (#2360): a POST that asks for a
+ * page (`Accept` names `text/html`, not JSON) and carries no script marker
+ * (`X-Requested-With`). A script's `fetch` is none of these: it names JSON, or
+ * sets the marker, or asks for no particular type. Reads `headers` alone, so a
+ * request without any is not one.
+ */
+export function isPlainFormPost(req: Request): boolean {
+  if (req.method !== 'POST') return false;
+  const header = (name: string): string => {
+    const value = req.headers?.[name];
+    return (Array.isArray(value) ? value.join(',') : value ?? '').toLowerCase();
+  };
+  const accept = header('accept');
+  return accept.includes('text/html') && !accept.includes('json') && !header('x-requested-with');
+}
+
+/**
+ * The mode a step-up answer takes for `req` (#2360): a route that answers a
+ * script in JSON answers a plain form post as a page, so the person is sent to
+ * the "confirm it is you" step rather than shown raw JSON. Any other mode, and
+ * any other request, is as asked for.
+ */
+export function stepUpModeFor(req: Request, mode: ReauthMode): ReauthMode {
+  return mode === 'json' && isPlainFormPost(req) ? 'page' : mode;
+}
+
 /** Whether a refusal in `mode` is answered by sending the browser to a page: a page, or a file a page links to (#2145). */
 export function answeredWithPage(mode: ReauthMode): boolean {
   return mode === 'page' || mode === 'download';
@@ -3225,7 +3252,9 @@ class AuthManager extends BaseManager {
    * fresh enough, with the `reauth-prompt` recorded. A delegated credential is
    * refused outright: it can never give a fresh factor.
    */
-  async askForFreshSignIn(req: Request, userContext: unknown, permission: string, mode: ReauthMode): Promise<FreshSignInAnswer> {
+  async askForFreshSignIn(req: Request, userContext: unknown, permission: string, asked: ReauthMode): Promise<FreshSignInAnswer> {
+    // #2360: a plain form post is answered like a page, whichever way its route asked.
+    const mode = stepUpModeFor(req, asked);
     const user = (userContext ?? {}) as { viaToken?: unknown; viaShare?: unknown };
     const delegated = Boolean(user.viaToken || user.viaShare);
     await this.recordReauth(req, AUDIT_EVENT.REAUTH_PROMPT, 'failure', permission, delegated ? 'delegated credential cannot re-authenticate' : 'fresh sign-in asked for');

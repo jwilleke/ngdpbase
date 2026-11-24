@@ -1591,7 +1591,7 @@ router.get('/', (req, res) => {
 
 Do not read the left menu or `req.session.csrfToken` yourself; a missing key makes the sidebar empty or every POST a CSRF 403.
 
-__Who may act.__ Ask through `ApiContext`, as core's routes do. A refusal comes back as an `ApiError`; send it with `sendApiError`, never with your own `res.status(...)`. It sends the status, the message and, for a step-up, the way to sign in again (only this site's `/auth/reauth?` page), as JSON, as text, or, for a link the user follows in the browser (`'page'`), as a redirect to sign in again or to sign-in:
+__Who may act.__ Ask through `ApiContext`, as core's routes do. A refusal comes back as an `ApiError`; send it with `sendApiError`, never with your own `res.status(...)`. It sends the status, the message and, for a step-up, the way to sign in again (only this site's `/auth/reauth?` page), as JSON, as text, or, for a link the user follows in the browser (`'page'`), as a redirect to sign in again or to sign-in. A browser's plain form post (a POST that asks for `text/html`, not JSON, with no `X-Requested-With`) is sent to sign in again even in the default JSON mode, so a form of yours never shows the JSON; a script's `fetch` should name JSON (`Accept: application/json`) or set `X-Requested-With` to get it ([#2360](https://github.com/jwilleke/ngdpbase/issues/2360)):
 
 ```typescript
 const { ApiContext, ApiError, sendApiError } = host;   // register()'s third argument, handed to the route
@@ -1829,7 +1829,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
 | `ctx.actingUsername()` | The signed-in username a per-user feature acts as; throws `ApiError(401)` if nobody is signed in. Ask it after `requirePermission` |
 | `ctx.engine` | Reference to the engine |
 
-`ApiError` carries a `status` number and, for a step-up refusal, a `reauth` link. Catch it and send it with `sendApiError(res, err, mode)` from `ApiContext.js` — `mode` is `'json'` (default: `{ success: false, error, reauth? }`) `'text'` (the message, then the re-authenticate link) or `'page'` (a link the user followed, such as a download: redirects to the re-authenticate page for a step-up, to sign-in for a 401, else the message). Never write the refusal yourself with `res.status(err.status)`: the `reauth` link is easy to drop.
+`ApiError` carries a `status` number and, for a step-up refusal, a `reauth` link. Catch it and send it with `sendApiError(res, err, mode)` from `ApiContext.js` — `mode` is `'json'` (default: `{ success: false, error, reauth? }`; a step-up refusal of a browser's plain form post is a redirect instead, [#2360](https://github.com/jwilleke/ngdpbase/issues/2360)) `'text'` (the message, then the re-authenticate link) or `'page'` (a link the user followed, such as a download: redirects to the re-authenticate page for a step-up, to sign-in for a 401, else the message). Never write the refusal yourself with `res.status(err.status)`: the `reauth` link is easy to drop.
 
 There is no `hasRole` / `requireRole`, and no `requireAuthenticated`: a role name, or being signed in, skips the policy evaluator, deny policies and the agent-token ceiling ([security-developer-guide.md](security-developer-guide.md)). Declare the permission and grant it as in [Permissions](#permissions), then ask for it. The journal and calendar addons are worked examples:
 
