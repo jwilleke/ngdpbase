@@ -436,7 +436,10 @@ class RoleManager extends BaseManager {
       }
       return 0;
     }
+    // #2432: the role file is named by the role alone, so a file for `roleName` is the record that it was
+    // given even when it names another organization `@id` than today's anchor. Creating over it throws.
     if (await this.getByOrgAndPosition(installOrg['@id'], roleName)) return 0;
+    if ((await this.requireProvider().list()).some((r) => r.namedPosition === roleName)) return 0;
     let given = 0;
     const missed: string[] = [];
     for (const username of usernames) {
