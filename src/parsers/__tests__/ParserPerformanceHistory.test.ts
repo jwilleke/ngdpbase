@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import logger from '../../utils/logger';
-import { ParserPerformanceHistory, type PerformanceSample } from '../ParserPerformanceHistory';
+import { ParserPerformanceHistory, rollupSamples, type PerformanceSample } from '../ParserPerformanceHistory';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -106,5 +106,177 @@ describe('ParserPerformanceHistory (#2468)', () => {
     await expect(store.open()).resolves.toBeUndefined();
     await expect(store.record(sample('2026-11-22T14:15:00.000Z'))).resolves.toBeUndefined();
     expect(logger.warn).toHaveBeenCalled();
+  });
+
+  describe('a file name is built only from a real date (#2468, Low 4)', () => {
+    test.each([
+      ['a path in the date', '../../etc/passwd-2026-11-22T14:15:00.000Z'],
+      ['a slash after a date', '2026-11-22/../../x'],
+      ['not a date', 'banana'],
+      ['an empty string', ''],
+      ['a short date', '2026-1-2T00:00:00.000Z']
+    ])('%s is dropped with a warning and no file is made', async (_label, t) => {
+      const store = new ParserPerformanceHistory(dir);
+      await store.open();
+      await store.record(sample(t));
+
+      expect(fs.readdirSync(dir)).toEqual([]);
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+    });
+
+    test('a good check after a refused one is still kept', async () => {
+      const store = new ParserPerformanceHistory(dir);
+      await store.open();
+      await store.record(sample('../x'));
+      await store.record(sample('2026-11-22T14:15:00.000Z'));
+
+      expect(fs.readdirSync(dir)).toEqual(['parser-performance-2026-11-22.jsonl']);
+    });
+  });
+
+  describe('pruning cannot stop a check from being kept (#2468, Low 3)', () => {
+    /** A "day file" that is a non-empty folder: removing it without recursion fails. */
+    function stuckOldFiles() {
+      for (let d = 1; d <= 9; d += 2) {
+        const stuck = path.join(dir, `parser-performance-2020-01-0${d}.jsonl`);
+        fs.mkdirSync(stuck);
+        fs.writeFileSync(path.join(stuck, 'inside'), 'x');
+        fs.writeFileSync(path.join(dir, `parser-performance-2020-01-0${d + 1}.jsonl`), '{}\n');
+      }
+    }
+    const stuckNames = ['01', '03', '05', '07', '09'].map((d) => `parser-performance-2020-01-${d}.jsonl`);
+
+    test('a failed removal does not stop the append', async () => {
+      let now = Date.parse('2026-11-23T12:00:00.000Z');
+      const store = new ParserPerformanceHistory(dir, () => now);
+      await store.open();
+      stuckOldFiles();
+
+      now += DAY;
+      await store.record(sample(new Date(now).toISOString()));
+
+      const kept = fs.readFileSync(path.join(dir, 'parser-performance-2026-11-24.jsonl'), 'utf8');
+      expect(kept.trimEnd().split('\n')).toHaveLength(1);
+    });
+
+    test('a failed removal does not stop the next files from being removed', async () => {
+      stuckOldFiles();
+      const store = new ParserPerformanceHistory(dir, () => Date.parse('2026-11-23T12:00:00.000Z'));
+      await store.open();
+
+      expect(fs.readdirSync(dir).sort()).toEqual(stuckNames);
+      expect(logger.warn).toHaveBeenCalled();
+    });
+  });
+
+  describe('a crash mid-write loses at most the torn line (#2468)', () => {
+    test('the next check starts on a new line, so it is not joined to the torn fragment', async () => {
+      const file = path.join(dir, 'parser-performance-2026-11-22.jsonl');
+      fs.writeFileSync(file, JSON.stringify(sample('2026-11-22T14:14:00.000Z')) + '\n{"t":"2026-11-22T14:15:00.000Z","pa');
+
+      const store = new ParserPerformanceHistory(dir);
+      await store.open();
+      await store.record(sample('2026-11-22T14:16:00.000Z'));
+      await store.record(sample('2026-11-22T14:17:00.000Z'));
+
+      const read = await store.read();
+      expect(read.map((s) => s.t)).toEqual(['2026-11-22T14:14:00.000Z', '2026-11-22T14:16:00.000Z', '2026-11-22T14:17:00.000Z']);
+    });
+
+    test('a file that ends in a new line gets no blank line', async () => {
+      const store = new ParserPerformanceHistory(dir);
+      await store.open();
+      await store.record(sample('2026-11-22T14:14:00.000Z'));
+      await store.record(sample('2026-11-22T14:15:00.000Z'));
+
+      const text = fs.readFileSync(path.join(dir, 'parser-performance-2026-11-22.jsonl'), 'utf8');
+      expect(text.split('\n')).toHaveLength(3); // two lines and the empty piece after the last newline
+    });
+  });
+
+  describe('read(since) opens only the day files that can matter (#2468)', () => {
+    test('days wholly before the start are not read', async () => {
+      const store = new ParserPerformanceHistory(dir);
+      await store.open();
+      await store.record(sample('2026-11-20T10:00:00.000Z'));
+      await store.record(sample('2026-11-22T10:00:00.000Z'));
+      await store.record(sample('2026-11-23T10:00:00.000Z'));
+
+      const read = await store.read(Date.parse('2026-11-22T00:00:00.000Z'));
+      expect(read.map((s) => s.t)).toEqual(['2026-11-22T10:00:00.000Z', '2026-11-23T10:00:00.000Z']);
+    });
+  });
+});
+
+describe('rollupSamples (#2468)', () => {
+  const NOW = Date.parse('2026-11-23T12:00:00.000Z');
+  const HOUR = 60 * 60 * 1000;
+  const at = (msBefore: number, over: Partial<PerformanceSample> = {}): PerformanceSample =>
+    sample(new Date(NOW - msBefore).toISOString(), over);
+
+  test('p50, p95 (nearest rank), max and plain mean of a known set', () => {
+    const samples = Array.from({ length: 20 }, (_, i) => at((i + 1) * 60 * 1000, { parse: i + 1, hit: null, err: null }));
+    const parse = rollupSamples(samples, NOW).hour.parse;
+
+    expect(parse).toEqual({ count: 20, p50: 10, p95: 19, max: 20, mean: 10.5 });
+  });
+
+  test('nearest rank on an odd count and on a single value', () => {
+    const five = [5, 1, 4, 2, 3].map((v) => at(60 * 1000, { parse: v }));
+    expect(rollupSamples(five, NOW).hour.parse).toMatchObject({ count: 5, p50: 3, p95: 5, max: 5, mean: 3 });
+    expect(rollupSamples([at(1000, { parse: 7 })], NOW).hour.parse).toEqual({ count: 1, p50: 7, p95: 7, max: 7, mean: 7 });
+  });
+
+  test('a null measure is skipped, not counted as zero', () => {
+    const samples = [
+      at(1000, { parse: 100, hit: null, err: null }),
+      at(2000, { parse: null, hit: 0.5, err: 0 }),
+      at(3000, { parse: 200, hit: null, err: null })
+    ];
+    const hour = rollupSamples(samples, NOW).hour;
+
+    expect(hour.parse).toMatchObject({ count: 2, mean: 150, max: 200 });
+    expect(hour.hit).toMatchObject({ count: 1, p50: 0.5 });
+    expect(hour.err).toMatchObject({ count: 1, max: 0, mean: 0 });
+  });
+
+  test('a window with no checks, or only nulls, is null', () => {
+    expect(rollupSamples([], NOW).month).toEqual({ parse: null, hit: null, err: null });
+    const onlyNull = [at(1000, { parse: null, hit: null, err: null })];
+    expect(rollupSamples(onlyNull, NOW).hour).toEqual({ parse: null, hit: null, err: null });
+  });
+
+  test('each window takes the last N hours, the edge included', () => {
+    const samples = [
+      at(HOUR, { parse: 1 }), // exactly 1 h old: in the hour
+      at(HOUR + 1, { parse: 2 }), // a millisecond older: day, not hour
+      at(24 * HOUR, { parse: 3 }),
+      at(24 * HOUR + 1, { parse: 4 }),
+      at(7 * 24 * HOUR, { parse: 5 }),
+      at(7 * 24 * HOUR + 1, { parse: 6 }),
+      at(30 * 24 * HOUR, { parse: 7 }),
+      at(30 * 24 * HOUR + 1, { parse: 8 }) // outside every window
+    ];
+    const r = rollupSamples(samples, NOW);
+
+    expect(r.hour.parse?.count).toBe(1);
+    expect(r.day.parse?.count).toBe(3);
+    expect(r.week.parse?.count).toBe(5);
+    expect(r.month.parse?.count).toBe(7);
+    expect(r.month.parse?.max).toBe(7);
+  });
+
+  test('a line that is not a check is ignored', () => {
+    const odd = [
+      { t: 'banana', parse: 999, hit: null, err: null, n: 1 },
+      { parse: 999 },
+      { t: new Date(NOW - 1000).toISOString(), parse: '5', hit: Number.NaN, err: Infinity, n: 1 },
+      at(1000, { parse: 10 })
+    ] as unknown as PerformanceSample[];
+    const hour = rollupSamples(odd, NOW).hour;
+
+    expect(hour.parse).toMatchObject({ count: 1, max: 10 });
+    expect(hour.hit).toBeNull();
+    expect(hour.err).toBeNull();
   });
 });

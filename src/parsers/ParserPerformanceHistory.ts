@@ -94,3 +94,37 @@ export class ParserPerformanceHistory {
     }
   }
 }
+
+/** The three measures a check takes. */
+export type PerformanceMeasure = 'parse' | 'hit' | 'err';
+
+/** The windows the admin page sums up. */
+export type RollupWindow = 'hour' | 'day' | 'week' | 'month';
+
+/** What a window's checks came to, for one measure. */
+export interface MeasureStats {
+  /** Checks with a value for this measure. */
+  count: number;
+  p50: number;
+  p95: number;
+  max: number;
+  mean: number;
+}
+
+export type Rollup = Record<RollupWindow, Record<PerformanceMeasure, MeasureStats | null>>;
+
+/** NOT BUILT YET (#2468 PR 2, red commit): stub so the tests load and fail on what they assert. */
+export function rollupSamples(_samples: PerformanceSample[], _now: number): Rollup {
+  const empty = { parse: null, hit: null, err: null };
+  return { hour: { ...empty }, day: { ...empty }, week: { ...empty }, month: { ...empty } };
+}
+
+/** What MarkupParser hands the admin page. */
+export interface PerformanceReport {
+  rollup: Rollup;
+  /** The old over-limit minutes, kept apart from the checks. */
+  legacy: Record<PerformanceMeasure, MeasureStats | null>;
+  limits: { parseTime: number; cacheHitRatio: number; errorRate: number };
+  /** False when no folder is configured, so nothing is kept. */
+  recording: boolean;
+}
