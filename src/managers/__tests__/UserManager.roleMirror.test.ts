@@ -101,6 +101,8 @@ function makeRoleManagerStub(seed: MockRole[] = []) {
       const r = store.get(namedPosition);
       return r && r.organization['@id'] === orgId ? r : null;
     }),
+    // #2432: a role is also looked up by its name alone, so storage lists its records.
+    list: vi.fn(async () => Array.from(store.values())),
     listByMember: vi.fn(async (personId: string) => {
       return Array.from(store.values()).filter((r) =>
         (r.member ?? []).some((m) => m['@id'] === personId)
