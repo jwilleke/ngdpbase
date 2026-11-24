@@ -641,25 +641,47 @@ describe('a plain form post with a stale sign-in goes to the "confirm it is you"
     expect(out.json).toHaveBeenCalledWith(expect.objectContaining({ reauth: expect.stringContaining('&prompt=') }));
   });
 
-  test('the form post is kept, and the confirmation returns to it: Reset configuration runs once after signing in again', async () => {
+  // Jim, #2360 (2026-11-24): Reset configuration discards every custom setting with no backup, so
+  // confirming a sign-in never runs it. The person presses Reset again, and the browser's own
+  // "Are you sure?" asks again.
+  test('Reset configuration is not kept for a redo: confirming goes back to Configuration with the note, and nothing is reset until Reset is pressed again', async () => {
     const passkeyOk = () => Promise.resolve({ success: true, username: 'molly', provider: 'passkey', factors: [] });
     const env = routes(true, passkeyOk);
     const s = session();
     const post = (body: Record<string, unknown>) => resetForm(browserHeaders, { session: s, sessionID: 'sid-1', body, is: (t: string) => (t === 'application/x-www-form-urlencoded' ? t : false) });
     const asked = res();
     await env.r.adminResetConfiguration(post({ _csrf: 't-old' }), asked);
+    expect(asked.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fadmin%2Fconfiguration');
+    expect(env.authManager.stepUpReplays.size).toBe(0);
+    expect(env.config.resetToDefaults).not.toHaveBeenCalled();
+    env.authManager.stepUpNeeded.mockReturnValue(false);
+    s.passkeyChallenge = { value: 'c1', purpose: 'reauth', expires: Date.now() + 60_000 };
+    const confirmed = res();
+    await env.r.passkeyReauthVerify(req(s, { sessionID: 'sid-1', body: { response: {}, next: '/admin/configuration' } }), confirmed);
+    expect(confirmed.json).toHaveBeenCalledWith({ ok: true, redirect: '/admin/configuration' });
+    expect(s.stepUpConfirmed).toBe('/admin/configuration');
+    expect(env.config.resetToDefaults).not.toHaveBeenCalled();
+    // Pressed again, with the sign-in now fresh, it runs, once.
+    const done = res();
+    await env.r.adminResetConfiguration(post({ _csrf: 't' }), done);
+    expect(env.config.resetToDefaults).toHaveBeenCalledTimes(1);
+    expect(done.redirect).toHaveBeenCalledWith('/admin/configuration?success=Configuration reset to defaults');
+  });
+
+  test('the add-on switch is still kept and redone once after signing in again: it can be undone', async () => {
+    const passkeyOk = () => Promise.resolve({ success: true, username: 'molly', provider: 'passkey', factors: [] });
+    const env = routes(true, passkeyOk);
+    const s = session();
+    const post = (body: Record<string, unknown>) => toggleForm(browserHeaders, { session: s, sessionID: 'sid-1', body, is: (t: string) => (t === 'application/x-www-form-urlencoded' ? t : false) });
+    const asked = res();
+    await env.r.adminAddonToggle(post({ _csrf: 't-old', enabled: 'false' }), asked);
     const next = new URL(String(asked.redirect.mock.calls[0]?.[0]), 'http://x').searchParams.get('next') ?? '';
     expect(next).toMatch(/^\/auth\/reauth\/continue\?replay=[0-9a-f]{32}$/);
-    expect(env.config.resetToDefaults).not.toHaveBeenCalled();
     env.authManager.stepUpNeeded.mockReturnValue(false);
     s.passkeyChallenge = { value: 'c1', purpose: 'reauth', expires: Date.now() + 60_000 };
     await env.r.passkeyReauthVerify(req(s, { sessionID: 'sid-1', body: { response: {}, next } }), res());
     const page = res();
     await env.r.reauthContinue(req(s, { method: 'GET', sessionID: 'sid-1', originalUrl: next, query: { replay: new URL(next, 'http://x').searchParams.get('replay') } }), page);
-    expect(page.render).toHaveBeenCalledWith('reauth-continue', expect.objectContaining({ action: '/admin/configuration/reset', back: '/admin/configuration' }));
-    const done = res();
-    await env.r.adminResetConfiguration(post({ _csrf: 't' }), done);
-    expect(env.config.resetToDefaults).toHaveBeenCalledTimes(1);
-    expect(done.redirect).toHaveBeenCalledWith('/admin/configuration?success=Configuration reset to defaults');
+    expect(page.render).toHaveBeenCalledWith('reauth-continue', expect.objectContaining({ action: '/admin/addons/accounting/toggle', back: '/admin/addons' }));
   });
 });
