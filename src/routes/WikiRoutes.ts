@@ -65,6 +65,7 @@ import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
 import { normalizePinnedItems, deriveCanonicalUrl } from '../utils/pinnedItems.js';
 import type PluginManager from '../managers/PluginManager.js';
+import type MarkupParser from '../parsers/MarkupParser.js';
 import type { PluginFormatters } from '../managers/PluginManager.js';
 import type { DeclaredAddonDatabase } from '../managers/DatabaseManager.js';
 import type { StoreDeletedEntry, StoreRestoreResult } from '../types/Provider.js';
@@ -17946,6 +17947,46 @@ ${panes}
   }
 
   /**
+   * "Page building speed" (#2468): how fast the parser builds pages, summed up over the last
+   * hour, 24 hours, 7 days and 30 days. Read-only; the same permission check as the other
+   * read-only admin screens (`admin-read` or `admin-system`, `hasAdminViewAccess`).
+   */
+  async adminParserPerformance(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+
+      if (
+        !currentUser ||
+        !(await this.hasAdminViewAccess(wikiContext))
+      ) {
+        return await this.renderError(
+          req,
+          res,
+          403,
+          'Access Denied',
+          'You do not have permission to see how fast pages are built'
+        );
+      }
+
+      const commonData = await this.getCommonTemplateData(req);
+      const markupParser = this.engine.getManager<MarkupParser>('MarkupParser');
+      if (!markupParser) throw new Error('MarkupParser is not available');
+      const report = await markupParser.getPerformanceReport();
+
+      return res.render('admin-parser-performance', {
+        ...commonData,
+        title: 'Page building speed',
+        report,
+        csrfToken: req.session.csrfToken
+      });
+    } catch (err: unknown) {
+      logger.error('Error loading page building speed:', err);
+      return res.status(500).send('Error loading page building speed');
+    }
+  }
+
+  /**
    * Admin logs page
    */
   async adminLogs(req: Request, res: Response) {
@@ -19263,6 +19304,7 @@ ${panes}
     app.post('/admin/settings/theme', (req: Request, res: Response) => this.adminUpdateTheme(req, res));
     app.post('/admin/settings/general', (req: Request, res: Response) => this.adminUpdateGeneralSettings(req, res));
     app.get('/admin/logs', (req: Request, res: Response) => this.adminLogs(req, res));
+    app.get('/admin/parser-performance', (req: Request, res: Response) => this.adminParserPerformance(req, res));
     // #1113: these four handlers and views/admin-audit.ejs existed with no
     // registration at all, so /admin/audit was a 404 and the audit log had no
     // reader in the application.

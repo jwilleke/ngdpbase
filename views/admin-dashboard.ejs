@@ -339,6 +339,7 @@
                     </h5>
                 </div>
                 <div class="card-body">
+                    <%# #2468 — how fast pages are built. The page opens for admin-read as well as admin-system, so the button does too. %>
                     <% if ((typeof can === 'function' && can('admin-system'))) { %>
                     <div class="d-flex flex-wrap gap-2">
                         <span class="d-inline-flex align-items-center gap-1">
@@ -367,6 +368,8 @@
                             </a>
                             <a href="/view/logs" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
                         </span>
+
+                        <%- include('_admin-performance-button') %>
 
                         <%# #1113 — the audit page existed with no route and no link, so the
                             audit log had no reader in the application at all. %>
@@ -427,6 +430,10 @@
                             </ul>
                         </div>
                     <% } %>
+                    <% } else if ((typeof can === 'function' && can('admin-read'))) { %>
+                    <div class="d-flex flex-wrap gap-2">
+                        <%- include('_admin-performance-button') %>
+                    </div>
                     <% } else { %>
                         <p class="text-muted">Admin role required for these tools.</p>
                     <% } %>

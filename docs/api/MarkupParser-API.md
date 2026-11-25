@@ -1,7 +1,7 @@
 # MarkupParser API Documentation
 
 __Version:__ 1.3.2 (Phase 6 Complete)
-__Last Updated:__ 2026-11-23
+__Last Updated:__ 2026-11-24
 __Related Issues:__ #114-#120
 
 ## Overview
@@ -380,12 +380,53 @@ Every check, over its limits or under them, is kept as one JSON line in a file f
 - The folder is operational data that rebuilds itself and is not part of a backup.
 - With no folder to resolve (no ConfigurationManager), the checks run and nothing is kept.
 
-Crossing a limit writes one warning line, and coming back under it one info line that says how long it was over. Staying over writes nothing. Each limit is tracked on its own, and the state starts empty at every start, so a site that is still over its limit writes one crossing line per restart. The parser no longer sends a notification when a limit is crossed; `getPerformanceAlerts()` still lists one entry per crossing.
+Crossing a limit writes one warning line, and coming back under it one info line that says how long it was over. The count of minutes is the time between the two lines, so it includes minutes the check skipped (a minute with no page built, or too few lookups to judge the share served from a stored copy); it is not a count of checks that were over. Staying over writes nothing. Each limit is tracked on its own, and the state starts empty at every start, so a site that is still over its limit writes one crossing line per restart. The parser no longer sends a notification when a limit is crossed; `getPerformanceAlerts()` still lists one entry per crossing.
 
 ```text
 Page building is over its limit: average 119.5 ms for the last 20 pages, limit 100 ms.
 Page building is back under its limit: average 82.1 ms, limit 100 ms. It was over for 37 minutes.
 ```
+
+For the share served from a stored copy, the limit is a lowest allowed, so its recovery line reads "It was below the lowest allowed for 37 minutes." The other two read "It was over for 37 minutes."
+
+A line that does not parse, such as the half-written last line after a crash, is skipped when the files are read. The next check starts on a new line, so it is not joined to the fragment. A check whose time has no usable date is dropped with one warning, so a file name is only ever built from a real date.
+
+#### Sums, `getPerformanceReport()`
+
+`getPerformanceReport(now = Date.now())` reads the kept files and returns what the admin page "Page building speed" shows:
+
+```typescript
+{
+  rollup: Record<'hour' | 'day' | 'week' | 'month', Record<'parse' | 'hit' | 'err', MeasureStats | null>>,
+  checks: Record<'hour' | 'day' | 'week' | 'month', number>,
+  legacy: Record<'parse' | 'hit' | 'err', MeasureStats | null>,
+  limits: { parseTime: number; cacheHitRatio: number; errorRate: number },
+  recording: boolean
+}
+// MeasureStats = { count, p50, p95, max, p5, min, mean }
+```
+
+- The windows are the last hour, 24 hours, 7 days and 30 days up to `now`, the edge included. They are worked out when called; nothing is stored.
+- `p50`, `p95` and `p5` are nearest-rank: the value at rank `ceil(p / 100 × N)` of the N values, smallest first. `max` and `min` are the highest and lowest value; `mean` is the plain average. The admin page shows `p95` and `max` for the "Slowest 1 in 20" and "Slowest" rows, except on the stored-copies share, where a low value is the bad end and it shows `p5` and `min`. A check with no value for a measure is left out of that measure's sums.
+- A measure with no value in a window is `null`.
+- `checks` is how many checks each window holds, whichever numbers a check carried. The page shows it once, in the column headings; a table whose own count differs says so on its own row.
+- `recording` is false when there is no folder to keep checks in, or the folder could not be made when the parser started. In that case the parser does not try to keep checks and leaves the old notifications where they are.
+- Reading 30 days of files is the costly part, so a report is reused for 60 seconds, the interval of the check itself. Many page views in a minute read the files once.
+
+#### The earlier over-limit alerts
+
+Before checks were kept, each minute a number went over its limit saved a notification titled `MarkupParser Performance Alert: ...`. Those are the only record of how bad the slow minutes were, so when the parser starts it copies their numbers to `legacy-alerts.json` in the same folder, and then deletes them with `NotificationManager.removeByTitles`, naming the three whole titles the parser used to write ([NotificationManager](../managers/NotificationManager.md)):
+
+1. No file: read the old notifications, write the file under a temporary name and rename it into place, then delete the notifications. A crash never leaves half a file.
+2. A file without `removedAt`: a crash fell between the write and the delete, so only the delete is tried again. Nothing is imported twice.
+3. A file with `removedAt`: nothing runs.
+4. A file that cannot be read is left as it is and nothing is deleted.
+
+A site with no old alerts still gets the file, so the check is not repeated. A message that is not one of the three shapes the parser wrote is counted in `skipped` and left out of the numbers. A notification whose title is not exactly one of the three is neither counted nor deleted, even if it starts the same way. Percentages become ratios from 0 to 1, as in the per-minute lines; times stay in milliseconds. `legacy` in the report sums the imported samples from the last 30 days. They are over-limit checks only, so they show how bad the slow ones were, not how the site did overall, and the page shows them apart from the checks. The share served from stored copies and the share that failed in them were totals since start-up, not the minute's own, so the page says they are not comparable with its per-minute tables.
+
+#### The admin page
+
+`GET /admin/parser-performance`, "Page building speed" on the admin dashboard next to Logs, shows the sums above. It opens for a caller who passes the `admin-read` permission check (`admin-system` also passes); anyone else gets the same 403 "Access Denied" as Logs. It is read-only: nothing on it changes a setting or removes a file, and the removal of old notifications is not reachable from any route.
 
 ---
 
