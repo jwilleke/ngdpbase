@@ -270,6 +270,15 @@ describe('rollupSamples (#2468)', () => {
     expect(rollupSamples([at(1000, { hit: 0.7 })], NOW).hour.hit).toMatchObject({ min: 0.7, p5: 0.7 });
   });
 
+  test('the low end differs from the high end: two values, and forty values where p5 is above min and p95 below max', () => {
+    expect(rollupSamples([at(1000, { parse: 10 }), at(2000, { parse: 90 })], NOW).hour.parse)
+      .toEqual({ count: 2, p50: 10, p95: 90, max: 90, p5: 10, min: 10, mean: 50 });
+
+    // 1..40: p5 is rank ceil(0.05 * 40) = 2, p95 is rank 38, so neither equals its end.
+    const forty = Array.from({ length: 40 }, (_, i) => at((i + 1) * 60 * 1000, { parse: i + 1 }));
+    expect(rollupSamples(forty, NOW).hour.parse).toEqual({ count: 40, p50: 20, p95: 38, max: 40, p5: 2, min: 1, mean: 20.5 });
+  });
+
   test('nearest rank on an odd count and on a single value', () => {
     const five = [5, 1, 4, 2, 3].map((v) => at(60 * 1000, { parse: v }));
     expect(rollupSamples(five, NOW).hour.parse).toMatchObject({ count: 5, p50: 3, p95: 5, max: 5, mean: 3 });

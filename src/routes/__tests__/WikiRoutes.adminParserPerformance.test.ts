@@ -23,7 +23,11 @@ const report = (over: Partial<PerformanceReport> = {}): PerformanceReport => ({
     month: { parse: null, hit: null, err: null }
   },
   checks: { hour: 58, day: 58, week: 58, month: 58 },
-  legacy: { parse: stats({ count: 7, max: 310 }), hit: null, err: null },
+  legacy: {
+    parse: stats({ count: 7, p50: 160, p95: 310, max: 310, p5: 105, min: 105, mean: 180 }),
+    hit: stats({ count: 4, p50: 0.15, p95: 0.19, max: 0.19, p5: 0.12, min: 0.12, mean: 0.15 }),
+    err: stats({ count: 2, p50: 0.07, p95: 0.08, max: 0.08, p5: 0.06, min: 0.06, mean: 0.07 })
+  },
   limits: { parseTime: 150, cacheHitRatio: 0.2, errorRate: 0.05 },
   recording: true,
   ...over
@@ -223,9 +227,34 @@ describe('what the Page building speed page says (#2468)', () => {
     const doc = await dom(report({ checks: { hour: 58, day: 1210, week: 7840, month: 30120 } }));
     const heads = [...doc.querySelectorAll('[data-testid="parser-performance-parse"] thead th')].map((th) => squash(th.textContent));
 
-    expect(heads).toEqual(['Checks', '1 hour 58 checks', '24 hours 1210 checks', '7 days 7840 checks', '30 days 30120 checks']);
+    expect(heads).toEqual(['Checks', '1 hour 58 checks', '24 hours 1,210 checks', '7 days 7,840 checks', '30 days 30,120 checks']);
     expect(squash(doc.querySelector('[data-testid="parser-performance-parse"]')?.textContent)).not.toContain('Checks counted');
     expect(squash(doc.querySelector('[data-testid="parser-performance-hit"]')?.textContent)).not.toContain('Checks counted');
+  });
+
+  test('large counts have thousands separators, in the column headings, the differing-count row and the earlier warnings', async () => {
+    const doc = await dom(report({
+      checks: { hour: 58, day: 1210, week: 7840, month: 30120 },
+      rollup: {
+        hour: { parse: stats(), hit: stats(), err: stats() },
+        day: { parse: null, hit: null, err: null }, week: { parse: null, hit: null, err: null },
+        month: { parse: stats({ count: 29876 }), hit: stats(), err: stats() }
+      },
+      legacy: { parse: stats({ count: 12345 }), hit: null, err: null }
+    }));
+
+    expect(squash(doc.querySelector('[data-testid="parser-performance-parse"] tbody')?.textContent)).toContain('Checks with this number 58 29,876');
+    expect(squash(doc.querySelector('[data-testid="parser-performance-earlier"] tbody')?.textContent)).toContain('Checks counted 12,345');
+    expect(squash(doc.body.textContent)).not.toMatch(/\b\d{4,}\b(?! ?(ms|%))/);
+  });
+
+  test('"1 in 20" never splits across lines, so "20" is not left alone on a second line', async () => {
+    const doc = await dom(report());
+
+    for (const testid of ['parse', 'hit', 'err', 'earlier']) {
+      const row = [...doc.querySelectorAll(`[data-testid="parser-performance-${testid}"] tbody th`)].find((th) => squash(th.textContent) === 'Slowest 1 in 20');
+      expect(squash(row?.querySelector('.text-nowrap')?.textContent)).toBe('1 in 20');
+    }
   });
 
   test('a table whose count differs from the period total says so on its own row', async () => {

@@ -54,11 +54,12 @@ describe('legacyStats (#2468)', () => {
 
   test('only the last 30 days count, per measure', () => {
     const stats = legacyStats([
-      sample(1, 'parse', 110), sample(2, 'parse', 130), sample(31, 'parse', 9999), sample(3, 'hit', 0.1)
+      sample(1, 'parse', 110), sample(2, 'parse', 130), sample(31, 'parse', 9999),
+      sample(3, 'hit', 0.12), sample(4, 'hit', 0.19)
     ], NOW);
 
     expect(stats.parse).toMatchObject({ count: 2, max: 130, mean: 120 });
-    expect(stats.hit).toMatchObject({ count: 1, max: 0.1 });
+    expect(stats.hit).toMatchObject({ count: 2, min: 0.12, p5: 0.12, p95: 0.19, max: 0.19 });
     expect(stats.err).toBeNull();
   });
 });
