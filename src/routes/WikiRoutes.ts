@@ -30,6 +30,7 @@ import { jobContextFromRequest, jobContextFromRequestWithReason } from '../conte
 import { actorOf, type ActorAttribution, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
+import { carriesCeiling } from '../utils/proxyClaim.js';
 import { mayEnterVaultAtDoor, type VaultDecider } from '../utils/privateStoreAccess.js';
 import { hideDeclaredPaths, keepHiddenValues, NO_SECRETS, secretKeys, valueLevels } from '../utils/sensitiveValues.js';
 import { createPatch, diffLines } from 'diff';
@@ -23257,7 +23258,10 @@ ${description}
   async sharesRevoke(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!(await wikiContext.hasPermission('share-revoke'))) {
+      const subject = wikiContext.userContext;
+      // This step only classifies the refusal; the ownership comparison below
+      // is the gate (slice 3 of #2247).
+      if (!subject?.username) {
         return res.status(403).send('Access denied');
       }
       const shareManager = this.engine.getManager('ShareManager');
@@ -23270,17 +23274,24 @@ ${description}
       if (!record || record.scope.kind === 'vault') {
         return res.status(404).send('Not Found');
       }
-      const username = wikiContext.userContext?.username ?? '';
-      const isMaker = record.createdBy === username;
-      const isManager = !isMaker && (await wikiContext.hasPermission('admin-system'));
+      const isMaker = record.createdBy === subject.username;
+      // Q-D: a person who made the link always revokes it at their own session.
+      // Q-G: a token, proxy or share acting for the maker keeps its ceiling.
+      if (isMaker && !carriesCeiling(subject)) {
+        await shareManager.revoke(record.id, subject);
+        return res.redirect('/shares?revoked=1');
+      }
+      if (isMaker && !(await wikiContext.hasPermission('share-revoke'))) {
+        return res.status(403).send('Access denied');
+      }
+      // Another user's link, until slice 4: share-revoke and admin-system, as
+      // today. #2521: the manager records it as a manager's revoke.
+      const isManager = !isMaker
+        && (await wikiContext.hasPermission('share-revoke'))
+        && (await wikiContext.hasPermission('admin-system'));
       if (!isMaker && !isManager) {
         return res.status(403).send('Access denied');
       }
-
-      // #2521: the request's own subject, forwarded, never a name. Someone
-      // other than the maker who got past the check above is a manager's
-      // revoke, and the manager records it as one (slice 2 of #2247).
-      const subject = wikiContext.userContext;
       if (isManager) {
         await shareManager.revoke(record.id, subject, { asManager: true });
       } else {
