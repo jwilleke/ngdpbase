@@ -23235,7 +23235,7 @@ ${description}
       // #2521: the request's own subject, forwarded, never a name. Someone
       // other than the maker who got past the check above is a manager's
       // revoke, and the manager records it as one (slice 2 of #2247).
-      const subject = wikiContext.userContext as PermissionSubject;
+      const subject = wikiContext.userContext;
       if (isManager) {
         await shareManager.revoke(record.id, subject, { asManager: true });
       } else {

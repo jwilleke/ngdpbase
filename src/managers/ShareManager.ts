@@ -467,7 +467,7 @@ export default class ShareManager extends BaseManager {
    * The flag names nobody: the owner's list shows it as a link that is no
    * longer available, with no administrator name.
    */
-  async revoke(id: string, subject: PermissionSubject, opts?: { asManager?: boolean }): Promise<boolean> {
+  async revoke(id: string, subject: ActorContext, opts?: { asManager?: boolean }): Promise<boolean> {
     if (!this.enabled) return false;
     const record = this.byId.get(id);
     if (!record || record.revokedAt) return false;
