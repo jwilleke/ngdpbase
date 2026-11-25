@@ -69,6 +69,7 @@ import { configFilePaths, deepMergeConfigs, deepMergeObjects, instanceDataFolder
 import { configuredInstallSlugs, installedAddonsDir, resolveAddonSlug, splitAddonsPath } from './addonsPathResolver.js';
 import { lockedAddonDirsSync } from './addonLock.js';
 import { LEGACY_SECRET_KEYS_KEY, SENSITIVE_VALUES_KEY } from './sensitiveValues.js';
+import { clipNames } from './pageWritePolicies.js';
 import { parsePrivatestore } from './privateStorePath.js';
 import { OWNER_DECIDED_FIELDS, SYSTEM_CATEGORY_KEY, systemCategoryValueProblems } from './systemCategoryRules.js';
 import { addonDatabaseKey, addonDatabaseKeySlug, addonDatabaseProblems, type AddonDatabaseDeclaration, type DatabaseEncrypt } from './addonDatabaseRules.js';
@@ -345,15 +346,18 @@ const PERMISSIONS_KEY = 'ngdpbase.permissions.definitions';
 const permissionsOf = (defaults: Record<string, unknown>): string[] => (isPlainObject(defaults[PERMISSIONS_KEY]) ? Object.keys(defaults[PERMISSIONS_KEY]) : []);
 
 /**
- * Which permissions an add-on may mark `"read-only": true`: its own, the names it declares that core and no other
- * enabled add-on declares. A mark tells the open-rules check that granting the permission to everyone is only
- * reading, so a mark on `page-edit`, on `*`, or on another add-on's permission would hide a rule that lets many
- * people change things. Such a mark refuses the add-on, as an entry for another add-on's key does. Only an enabled
- * add-on's entries reach the merge, so only an enabled add-on is checked. The site's own file is not checked.
+ * Which permissions an add-on may mark `"read-only": true`: its own, the names it declares that the site's
+ * permissions (shipped, with the site's own file merged in) and no other add-on declare. A mark tells the
+ * open-rules check that granting the permission to everyone is only reading, so a mark on `page-edit`, on `*`, on a
+ * permission the site defined, or on another add-on's permission would hide a rule that lets many people change
+ * things. Such a mark refuses the add-on, as an entry for another add-on's key does. Another add-on is one with a
+ * different slug. Only an enabled add-on's entries reach the merge, so only an enabled add-on is checked. The
+ * site's own file is not checked. The names come from a file an add-on supplies, so they are clipped and counted
+ * before they go into the reason.
  */
-export function addonReadOnlyLayer(shippedDefinitions: unknown, addons: readonly AddonDefaults[]): AddonSensitiveValuesLayer {
+export function addonReadOnlyLayer(siteDefinitions: unknown, addons: readonly AddonDefaults[]): AddonSensitiveValuesLayer {
   const layer: AddonSensitiveValuesLayer = { refused: new Map(), problems: [] };
-  const core = new Set(isPlainObject(shippedDefinitions) ? Object.keys(shippedDefinitions) : []);
+  const core = new Set(isPlainObject(siteDefinitions) ? Object.keys(siteDefinitions) : []);
   const enabled = addons.filter((a) => a.enabled);
   for (const addon of enabled) {
     const definitions = addon.defaults[PERMISSIONS_KEY];
@@ -361,9 +365,9 @@ export function addonReadOnlyLayer(shippedDefinitions: unknown, addons: readonly
     const foreign = Object.entries(definitions)
       .filter(([, entry]) => isPlainObject(entry) && entry['read-only'] === true)
       .map(([name]) => name)
-      .filter((name) => name === '*' || core.has(name) || enabled.some((other) => other !== addon && permissionsOf(other.defaults).includes(name)));
+      .filter((name) => name === '*' || core.has(name) || enabled.some((other) => other.slug !== addon.slug && permissionsOf(other.defaults).includes(name)));
     if (foreign.length === 0) continue;
-    const reason = `it marks ${foreign.map((n) => `'${n}'`).join(', ')} as read-only, which ${foreign.length === 1 ? 'is' : 'are'} not its own permission${foreign.length === 1 ? '' : 's'}; an add-on marks as read-only only the permissions it declares itself`;
+    const reason = `it marks ${clipNames(foreign, 20, "'")} as read-only, which ${foreign.length === 1 ? 'is' : 'are'} not its own permission${foreign.length === 1 ? '' : 's'}; an add-on marks as read-only only the permissions it declares itself`;
     layer.refused.set(addon.slug, reason);
     layer.problems.push(`${addonProblemSubject(addon.slug, addon.enabled)}: ${reason}; the add-on is not loaded`);
   }
@@ -556,7 +560,7 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
   const sensitiveLayer = addonSensitiveValuesLayer(addons);
   const jobPolicyLayer = addonJobPolicyLayer(addons);
   const resourceTypeLayer = addonResourceTypeLayer(addons);
-  const readOnlyLayer = addonReadOnlyLayer(shipped[PERMISSIONS_KEY], addons);
+  const readOnlyLayer = addonReadOnlyLayer(deepMergeObjects(shipped, custom)[PERMISSIONS_KEY], addons);
   const siteCritical = criticalLayer.siteCritical;
   const refused = new Map(layer.refused);
   for (const [slug, reason] of [...databaseLayer.refused, ...criticalLayer.refused, ...sensitiveLayer.refused, ...jobPolicyLayer.refused, ...resourceTypeLayer.refused, ...readOnlyLayer.refused]) refused.set(slug, refused.has(slug) ? `${refused.get(slug)}; ${reason}` : reason);

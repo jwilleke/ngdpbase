@@ -196,6 +196,15 @@ export function clip(value: unknown): string {
 }
 
 /**
+ * Names from a file an add-on can supply, joined for one message or log line: each goes through {@link clip}, and
+ * past `max` names the rest are counted, so a long list cannot fill the line.
+ */
+export function clipNames(names: readonly string[], max = 20, quote = ''): string {
+  const shown = names.slice(0, max).map((n) => `${quote}${clip(n)}${quote}`);
+  return names.length > max ? `${shown.join(', ')} and ${names.length - max} more` : shown.join(', ');
+}
+
+/**
  * The pairs in the setting `NARROWED_WRITES_KEY` as narrowings, and one plain-words reason for each entry
  * that cannot be read (a role other than the three whose shipped policies held a page write, in lower case;
  * a write that role's shipped policy held). What is skipped does not narrow anything, so the caller says so:

@@ -11,7 +11,7 @@ import micromatch from 'micromatch';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
-import { CHECKED_DENIES_KEY, DENY_CHECKED_ACTION, pageWritePolicyFindings, policyFingerprint } from '../utils/pageWritePolicies.js';
+import { CHECKED_DENIES_KEY, DENY_CHECKED_ACTION, clipNames, pageWritePolicyFindings, policyFingerprint } from '../utils/pageWritePolicies.js';
 import { readOnlyPermissionNames } from '../utils/permissionCatalog.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
@@ -598,7 +598,7 @@ class PolicyEvaluator extends BaseManager {
     environmentAttributesFindings(readDeclaredAsWritten(config, ENVIRONMENT_ATTRIBUTES_KEY)).forEach(add);
     this.scheduleProblems().forEach(add);
     if (log) {
-      if (readOnly.length > 0) logger.info(`[POLICY] Permissions marked read-only, so a rule that gives them to everyone is not listed as letting many people change things: ${readOnly.join(', ')}`);
+      if (readOnly.length > 0) logger.info(`[POLICY] Permissions marked read-only, so a rule that gives them to everyone is not listed as letting many people change things: ${clipNames(readOnly)}`);
       for (const line of [...lines, ...logOnly]) logger.warn(`[POLICY] ${line}`);
       for (const line of checkedLog) logger.info(`[POLICY] ${line}; an administrator marked it as checked`);
     }
