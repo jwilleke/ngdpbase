@@ -262,6 +262,14 @@ describe('rollupSamples (#2468)', () => {
     expect(parse).toEqual({ count: 20, p50: 10, p95: 19, max: 20, mean: 10.5 });
   });
 
+  test('the low end: the lowest value and the 1-in-20 from the bottom (nearest rank)', () => {
+    const samples = Array.from({ length: 20 }, (_, i) => at((i + 1) * 60 * 1000, { parse: null, hit: (i + 1) / 100, err: null }));
+    const hit = rollupSamples(samples, NOW).hour.hit;
+
+    expect(hit).toMatchObject({ count: 20, min: 0.01, p5: 0.01, max: 0.2, p95: 0.19 });
+    expect(rollupSamples([at(1000, { hit: 0.7 })], NOW).hour.hit).toMatchObject({ min: 0.7, p5: 0.7 });
+  });
+
   test('nearest rank on an odd count and on a single value', () => {
     const five = [5, 1, 4, 2, 3].map((v) => at(60 * 1000, { parse: v }));
     expect(rollupSamples(five, NOW).hour.parse).toMatchObject({ count: 5, p50: 3, p95: 5, max: 5, mean: 3 });

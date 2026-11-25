@@ -14,10 +14,10 @@ import type { PerformanceReport, MeasureStats } from '../../parsers/ParserPerfor
 
 const VIEWS = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../views');
 
-const stats = (over: Partial<MeasureStats> = {}): MeasureStats => ({ count: 58, p50: 80, p95: 119.5, max: 240, mean: 85.2, ...over });
+const stats = (over: Partial<MeasureStats> = {}): MeasureStats => ({ count: 58, p50: 80, p95: 119.5, max: 240, p5: 30.5, min: 12, mean: 85.2, ...over });
 const report = (over: Partial<PerformanceReport> = {}): PerformanceReport => ({
   rollup: {
-    hour: { parse: stats(), hit: stats({ p50: 0.5, p95: 0.192, max: 0.9, mean: 0.45 }), err: stats({ p50: 0, p95: 0.065, max: 0.1, mean: 0.01 }) },
+    hour: { parse: stats(), hit: stats({ p50: 0.5, p95: 0.192, max: 0.9, p5: 0.083, min: 0.021, mean: 0.45 }), err: stats({ p50: 0, p95: 0.065, max: 0.1, mean: 0.01 }) },
     day: { parse: null, hit: null, err: null },
     week: { parse: null, hit: null, err: null },
     month: { parse: null, hit: null, err: null }
@@ -179,8 +179,30 @@ describe('what the Page building speed page says (#2468)', () => {
     const text = await page(report());
 
     expect(text).toContain('119.5'); // milliseconds
-    expect(text).toContain('19.2%'); // a ratio shown as percent
+    expect(text).toContain('8.3%'); // a ratio shown as percent
     expect(text).toContain('6.5%');
+  });
+
+  test('on the stored-copies table the two Slowest rows are the lowest values; the other tables keep the highest', async () => {
+    const doc = await dom(report());
+    const row = (key: string, label: string) => {
+      const tr = [...doc.querySelectorAll(`[data-testid="parser-performance-${key}"] tbody tr`)].find((r) => squash(r.querySelector('th')?.textContent) === label);
+      return squash(tr?.querySelector('td')?.textContent);
+    };
+
+    expect(row('hit', 'Slowest 1 in 20')).toBe('8.3%');
+    expect(row('hit', 'Slowest')).toBe('2.1%');
+    expect(row('parse', 'Slowest 1 in 20')).toBe('119.5');
+    expect(row('parse', 'Slowest')).toBe('240.0');
+    expect(row('err', 'Slowest 1 in 20')).toBe('6.5%');
+    expect(row('err', 'Slowest')).toBe('10.0%');
+  });
+
+  test('says the Slowest rows of the stored-copies table are its lowest values', async () => {
+    const doc = await dom(report());
+
+    expect(squash(doc.querySelector('details')?.textContent)).toContain('lowest');
+    expect(squash(doc.querySelector('[data-testid="parser-performance-hit"]')?.textContent)).toContain('Slowest rows show the lowest');
   });
 
   test('says how many checks each period holds once, in its column heading, not in every table', async () => {
