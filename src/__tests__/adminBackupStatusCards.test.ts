@@ -2,9 +2,10 @@
  * #2470 — Admin → Backup is six status cards, in the order an admin works through them:
  * Auto Backup, Manual Backup, Backup key, Shared folders key, Restore whole site,
  * Restore databases only. Each has an icon, a name, a grey note giving the state in
- * words, a badge on the right and a coloured edge: green when done or on, amber when
- * it needs the admin, red when broken. A card that is done or on starts collapsed,
- * one that needs the admin starts open, so a page of collapsed cards means all is well.
+ * words, a badge on the right and a left edge. A card takes one of three states: plain (no
+ * colour, all is well), amber (degraded) or red (failed); there is no green and no grey.
+ * A plain card starts collapsed, an amber or red one starts open, so a page of collapsed
+ * cards means all is well.
  *
  * Renders the real view, header and footer left out.
  */
@@ -95,21 +96,23 @@ describe('#2470 Admin → Backup status cards', () => {
       expect(text(summary.querySelector(':scope > span.text-muted')), id).not.toBe('');
       const badge = summary.querySelector(':scope > .badge.ms-auto');
       expect(text(badge), id).not.toBe('');
-      expect(['ok', 'attention', 'broken', 'idle'], id).toContain(statusOf(doc, id));
+      expect(['plain', 'amber', 'red'], id).toContain(statusOf(doc, id));
       expect(card(doc, id).querySelector(':scope > .card-body > details > div.mt-3'), id).not.toBeNull();
     }
   });
 
-  test('a site where everything is set up and working has every card green and collapsed', async () => {
+  test('a site where everything is set up and working has every card plain (no colour) and collapsed', async () => {
     const doc = await render();
     for (const id of ORDER) {
-      expect(statusOf(doc, id), id).toBe('ok');
+      expect(statusOf(doc, id), id).toBe('plain');
       expect(isOpen(doc, id), id).toBe(false);
-      expect(card(doc, id).classList.contains('status-card-success'), id).toBe(true);
+      expect(card(doc, id).classList.contains('status-card-plain'), id).toBe(true);
+      expect(card(doc, id).querySelector('summary .badge')!.classList.contains('status-badge-plain'), id).toBe(true);
+      // No green and no grey badge: a plain badge takes no background colour class.
+      expect(card(doc, id).querySelector('summary .badge')!.className, id).not.toMatch(/\bbg-/);
       // A coloured left edge only: Bootstrap's border-4 / border-<colour> would frame all four sides.
       expect(card(doc, id).classList.contains('border-4'), id).toBe(false);
       expect(card(doc, id).classList.contains('border-success'), id).toBe(false);
-      expect(card(doc, id).querySelector('summary .badge')!.classList.contains('bg-success'), id).toBe(true);
     }
     expect(text(card(doc, 'auto-backup-card').querySelector('summary > span.text-muted'))).toMatch(/^On, last backup /);
   });
@@ -118,27 +121,27 @@ describe('#2470 Admin → Backup status cards', () => {
     const offConfig = { config: { enabled: false, time: '03:00', days: 'daily', maxBackups: 10, directory: '/b' }, lastBackup: null };
     // Off, but the last good backup is still inside the window: no fault, so amber.
     const off = await render({ status: offConfig, backupHealth: health({ autoBackup: false, nextRun: null }) });
-    expect(statusOf(off, 'auto-backup-card')).toBe('attention');
+    expect(statusOf(off, 'auto-backup-card')).toBe('amber');
     expect(isOpen(off, 'auto-backup-card')).toBe(true);
     expect(text(card(off, 'auto-backup-card').querySelector('summary .badge'))).toBe('Off');
-    expect(card(off, 'auto-backup-card').classList.contains('status-card-warning')).toBe(true);
-    expect(card(off, 'auto-backup-card').querySelector('summary .badge')!.classList.contains('bg-warning')).toBe(true);
+    expect(card(off, 'auto-backup-card').classList.contains('status-card-amber')).toBe(true);
+    expect(card(off, 'auto-backup-card').querySelector('summary .badge')!.classList.contains('status-badge-amber')).toBe(true);
 
     // Off, and the last good backup is older than the window: BackupManager sets the fault, so red.
     const offStale = await render({ status: offConfig, backupHealth: health({ autoBackup: false, nextRun: null, stale: true, fault: 'No good backup since Nov 1 (automatic backups are off). Make one from Admin → Backup' }) });
-    expect(statusOf(offStale, 'auto-backup-card')).toBe('broken');
+    expect(statusOf(offStale, 'auto-backup-card')).toBe('red');
 
     // A new site with no backup at all: lastGood is null and the same fault is set, so red, never amber.
     const never = await render({ backupHealth: health({ lastGood: null, stale: true, fault: 'No good backup since: never — this site has no backup (automatic backups are on, but none has succeeded). Make one from Admin → Backup' }) });
-    expect(statusOf(never, 'auto-backup-card')).toBe('broken');
+    expect(statusOf(never, 'auto-backup-card')).toBe('red');
     expect(isOpen(never, 'auto-backup-card')).toBe(true);
     expect(text(never.querySelector('#auto-backup-card summary .badge'))).not.toBe('No backup yet');
 
     const broken = await render({ backupHealth: health({ fault: 'The last backup failed.' }) });
-    expect(statusOf(broken, 'auto-backup-card')).toBe('broken');
+    expect(statusOf(broken, 'auto-backup-card')).toBe('red');
     expect(isOpen(broken, 'auto-backup-card')).toBe(true);
-    expect(card(broken, 'auto-backup-card').classList.contains('status-card-danger')).toBe(true);
-    expect(card(broken, 'auto-backup-card').querySelector('summary .badge')!.classList.contains('bg-danger')).toBe(true);
+    expect(card(broken, 'auto-backup-card').classList.contains('status-card-red')).toBe(true);
+    expect(card(broken, 'auto-backup-card').querySelector('summary .badge')!.classList.contains('status-badge-red')).toBe(true);
     // The backup-health status stays inside the card.
     expect(card(broken, 'auto-backup-card').querySelector('#backup-health')).not.toBeNull();
   });
@@ -146,10 +149,10 @@ describe('#2470 Admin → Backup status cards', () => {
   test('Manual Backup: collapsed once a backup is stored; with none, collapsed while automatic backups work and open while they do not', async () => {
     expect(isOpen(await render(), 'manual-backup-card')).toBe(false);
     const noneAutoOk = await render({ recentBackups: [] });
-    expect(statusOf(noneAutoOk, 'manual-backup-card')).toBe('ok');
+    expect(statusOf(noneAutoOk, 'manual-backup-card')).toBe('plain');
     expect(isOpen(noneAutoOk, 'manual-backup-card')).toBe(false);
     const noneAutoOff = await render({ recentBackups: [], status: { config: { enabled: false, time: '03:00', days: 'daily', maxBackups: 10, directory: '/b' }, lastBackup: null } });
-    expect(statusOf(noneAutoOff, 'manual-backup-card')).toBe('attention');
+    expect(statusOf(noneAutoOff, 'manual-backup-card')).toBe('amber');
     expect(isOpen(noneAutoOff, 'manual-backup-card')).toBe(true);
   });
 
@@ -157,15 +160,15 @@ describe('#2470 Admin → Backup status cards', () => {
     expect(isOpen(await render(), 'backup-key-card')).toBe(false);
 
     const unsaved = await render({ backupKey: { set: true, fingerprint: 'abcdef0123456789', saved: false } });
-    expect(statusOf(unsaved, 'backup-key-card')).toBe('attention');
+    expect(statusOf(unsaved, 'backup-key-card')).toBe('amber');
     expect(isOpen(unsaved, 'backup-key-card')).toBe(true);
 
     const changed = await render({ envKeys: { ...(allWell().envKeys as object), added: ['NEW_KEY'] } });
-    expect(statusOf(changed, 'backup-key-card')).toBe('attention');
+    expect(statusOf(changed, 'backup-key-card')).toBe('amber');
     expect(isOpen(changed, 'backup-key-card')).toBe(true);
 
     const missing = await render({ backupKey: { set: false, fingerprint: null, saved: false } });
-    expect(statusOf(missing, 'backup-key-card')).toBe('broken');
+    expect(statusOf(missing, 'backup-key-card')).toBe('red');
     expect(isOpen(missing, 'backup-key-card')).toBe(true);
   });
 
@@ -180,7 +183,7 @@ describe('#2470 Admin → Backup status cards', () => {
       const doc = await render(over);
       expect(doc.querySelector('#backup-env-confirm'), name).not.toBeNull();
       expect(card(doc, 'backup-key-card').querySelector('#backup-env-confirm'), name).not.toBeNull();
-      expect(statusOf(doc, 'backup-key-card'), name).toBe('attention');
+      expect(statusOf(doc, 'backup-key-card'), name).toBe('amber');
       expect(isOpen(doc, 'backup-key-card'), name).toBe(true);
     }
     const quiet = await render();
@@ -188,30 +191,31 @@ describe('#2470 Admin → Backup status cards', () => {
     expect(isOpen(quiet, 'backup-key-card')).toBe(false);
   });
 
-  test('Shared folders key: collapsed once set up; open and amber with unconfirmed words or an unsaved .env; red when the keys cannot be used; grey and collapsed when not in use or not available', async () => {
+  test('Shared folders key: collapsed once set up; open and amber with unconfirmed words or an unsaved .env; red when the keys cannot be used; plain and collapsed when not in use or not available', async () => {
     expect(isOpen(await render(), 'shared-folders-key')).toBe(false);
 
     const unused = await render({ sharedFoldersWords: null, sharedFolderNames: [] });
-    expect(statusOf(unused, 'shared-folders-key')).toBe('idle');
+    expect(statusOf(unused, 'shared-folders-key')).toBe('plain');
     expect(isOpen(unused, 'shared-folders-key')).toBe(false);
     expect(text(card(unused, 'shared-folders-key').querySelector('summary .badge'))).toBe('Not in use');
-    expect(card(unused, 'shared-folders-key').querySelector('summary .badge')!.classList.contains('bg-secondary')).toBe(true);
+    expect(card(unused, 'shared-folders-key').querySelector('summary .badge')!.className).not.toMatch(/\bbg-/);
+    expect(text(card(unused, 'shared-folders-key').querySelector('summary > span.text-muted'))).not.toBe('');
 
     const absent = await render({ sharedFoldersWords: null, sharedFolderNames: [], sharedFoldersAbsent: true, sharedFoldersUnavailable: 'Shared folders are not available on this site' });
-    expect(statusOf(absent, 'shared-folders-key')).toBe('idle');
+    expect(statusOf(absent, 'shared-folders-key')).toBe('plain');
     expect(isOpen(absent, 'shared-folders-key')).toBe(false);
     expect(text(card(absent, 'shared-folders-key').querySelector('summary .badge'))).toBe('Not available');
 
     const pending = await render({ sharedFoldersWords: { madeAt: '2026-11-01T10:00:00.000Z', shownTo: 'jim', pending: ['jim'], protectsFolders: false } });
-    expect(statusOf(pending, 'shared-folders-key')).toBe('attention');
+    expect(statusOf(pending, 'shared-folders-key')).toBe('amber');
     expect(isOpen(pending, 'shared-folders-key')).toBe(true);
 
     const unsaved = await render({ sharedFoldersKey: { set: true, fingerprint: 'fedcba9876543210', saved: false } });
-    expect(statusOf(unsaved, 'shared-folders-key')).toBe('attention');
+    expect(statusOf(unsaved, 'shared-folders-key')).toBe('amber');
     expect(isOpen(unsaved, 'shared-folders-key')).toBe(true);
 
     const broken = await render({ sharedFoldersUnavailable: 'The shared-folders key could not be read' });
-    expect(statusOf(broken, 'shared-folders-key')).toBe('broken');
+    expect(statusOf(broken, 'shared-folders-key')).toBe('red');
     expect(isOpen(broken, 'shared-folders-key')).toBe(true);
   });
 
@@ -221,7 +225,7 @@ describe('#2470 Admin → Backup status cards', () => {
     expect(isOpen(quiet, 'restore-card')).toBe(false);
 
     const siteStaged = await render({ stagedSiteRestore: { state: 'staged', backup: '2026-11-20T02:00:00Z', source: 'x.json.gz', stagedAt: '2026-11-21T09:00:05Z', stagedBy: 'jim' } });
-    expect(statusOf(siteStaged, 'site-restore-card')).toBe('attention');
+    expect(statusOf(siteStaged, 'site-restore-card')).toBe('amber');
     expect(isOpen(siteStaged, 'site-restore-card')).toBe(true);
     expect(text(card(siteStaged, 'site-restore-card').querySelector('summary > span.text-muted'))).toMatch(/waits for the restart/);
 
@@ -229,26 +233,47 @@ describe('#2470 Admin → Backup status cards', () => {
     expect(text(card(siteStaged, 'restore-card').querySelector('summary > span.text-muted'))).not.toMatch(/No restore waiting/);
 
     const dbStaged = await render({ stagedRestore: stagedDb });
-    expect(statusOf(dbStaged, 'restore-card')).toBe('attention');
+    expect(statusOf(dbStaged, 'restore-card')).toBe('amber');
     expect(isOpen(dbStaged, 'restore-card')).toBe(true);
 
     const unreadable = await render({ stagedSiteRestoreError: 'bad record' });
-    expect(statusOf(unreadable, 'site-restore-card')).toBe('broken');
+    expect(statusOf(unreadable, 'site-restore-card')).toBe('red');
     expect(isOpen(unreadable, 'site-restore-card')).toBe(true);
 
     const unavailable = await render({ databasesEnabled: false, databaseUnavailable: 'could not be opened' });
-    expect(statusOf(unavailable, 'restore-card')).toBe('broken');
+    expect(statusOf(unavailable, 'restore-card')).toBe('red');
     expect(isOpen(unavailable, 'restore-card')).toBe(true);
-    expect(card(unavailable, 'restore-card').classList.contains('status-card-danger')).toBe(true);
+    expect(card(unavailable, 'restore-card').classList.contains('status-card-red')).toBe(true);
 
     const running = await render({ restoreRunning: true });
     expect(isOpen(running, 'site-restore-card')).toBe(true);
   });
 
+  test('the shared status card takes a state: plain (no colour), amber or red, and nothing else', () => {
+    const CARD = path.join(__dirname, '../../views/_status-card.ejs');
+    const CARD_SUMMARY_DIR = path.join(__dirname, '../../views');
+    const cardOf = (state: string): Element => {
+      const html = ejs.render(fs.readFileSync(CARD, 'utf8'), { part: 'start', id: 'c', icon: 'fa-clock', title: 'T', state, badge: 'B', hint: 'h' }, { filename: path.join(CARD_SUMMARY_DIR, '_status-card.ejs') });
+      return new JSDOM(html).window.document.querySelector('#c')!;
+    };
+    const plain = cardOf('plain');
+    const amber = cardOf('amber');
+    const red = cardOf('red');
+    expect([plain, amber, red].map(c => c.getAttribute('data-status'))).toEqual(['plain', 'amber', 'red']);
+    expect([plain, amber, red].map(c => c.querySelector('details')!.hasAttribute('open'))).toEqual([false, true, true]);
+    expect(plain.className).toMatch(/status-card-plain/);
+    expect(amber.className).toMatch(/status-card-amber/);
+    expect(red.className).toMatch(/status-card-red/);
+    expect(plain.querySelector('.badge')!.className).toMatch(/status-badge-plain/);
+    expect(amber.querySelector('.badge')!.className).toMatch(/status-badge-amber/);
+    expect(red.querySelector('.badge')!.className).toMatch(/status-badge-red/);
+    for (const c of [plain, amber, red]) expect(c.outerHTML).not.toMatch(/success|secondary|bg-/);
+  });
+
   describe('a URL fragment opens the card it names', () => {
     const closed = { sharedFoldersWords: null, sharedFolderNames: [] };
 
-    test('/admin/backup#shared-folders-key opens the grey, collapsed Shared folders key card', () => {
+    test('/admin/backup#shared-folders-key opens the plain, collapsed Shared folders key card', () => {
       expect(isOpen(new JSDOM(renderHtml(closed)).window.document, 'shared-folders-key')).toBe(false);
       const dom = renderAt('#shared-folders-key', closed);
       expect(isOpen(dom.window.document, 'shared-folders-key')).toBe(true);
@@ -277,7 +302,7 @@ describe('#2470 Admin → Backup status cards', () => {
       expect(custom).not.toBeNull();
       custom.checked = true;
       custom.value = 'unchanged';
-      doc.querySelector('form[action="/admin/backup/config"]')!.dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+      doc.getElementById('auto-backup-form')!.dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
       expect(custom.value).toBe('daily');
     });
 
@@ -292,7 +317,11 @@ describe('#2470 Admin → Backup status cards', () => {
   test('the style sheet gives a status card a 4px coloured left edge, a turning chevron and a visible focus ring', () => {
     const css = fs.readFileSync(path.join(__dirname, '../../themes/core.css'), 'utf8');
     expect(css).toMatch(/\.status-card\s*\{[^}]*border-left-width:\s*4px/);
-    for (const tone of ['success', 'warning', 'danger', 'secondary']) expect(css).toMatch(new RegExp(`\\.status-card-${tone}\\s*\\{[^}]*border-left-color`));
+    for (const tone of ['amber', 'red']) expect(css).toMatch(new RegExp(`\\.status-card-${tone}\\s*\\{[^}]*border-left-color`));
+    // A plain card has no colour on its edge and no green or grey states exist.
+    expect(css).toMatch(/\.status-card-plain\s*\{[^}]*border-left-width:\s*1px/);
+    expect(css).not.toMatch(/\.status-card-(success|secondary|warning|danger)\b/);
+    expect(css).toMatch(/\.status-badge-plain\s*\{[^}]*background:\s*transparent/);
     expect(css).toMatch(/details\[open\][^{]*\.card-summary-chevron\s*\{[^}]*rotate\(180deg\)/);
     // Below 576px the grey note drops to its own full-width line under the title, badge and chevron.
     expect(css).toMatch(/@media \(max-width: 575\.98px\)\s*\{[^@]*\.status-card \.card-summary\s*\{[^}]*flex-wrap:\s*wrap/);
