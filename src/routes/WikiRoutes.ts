@@ -23261,7 +23261,7 @@ ${description}
   }
 
   /**
-   * GET /my/shares — the signed-in user's own shared links, both kinds, in one
+   * GET /my/shares: the signed-in user's own shared links, both kinds, in one
    * list (slice 3 of #2247). The page opens for anyone who may make either
    * kind, or who holds share-manage-all. It lists only the kinds the user may
    * make now. It reads no page and holds no token.
