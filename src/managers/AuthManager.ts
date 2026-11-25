@@ -2238,14 +2238,13 @@ class AuthManager extends BaseManager {
     await step('sessions', async () => this.engine.getManager<UserManager>('UserManager')?.deleteUserSessions(username, reason, { ipAddress: ctx.ipAddress }));
     if (mode !== 'delete') return;
 
-    const by = ctx.username ?? 'system';
     // #1764: the same path a person's own Revoke takes, one kind per step so one failing store does not stop the other.
     for (const [what, kind] of [['agent tokens', 'token'], ['app grants', 'app']] as const) {
       await step(what, async () => this.endDelegationsWhere(ctx, username, kind, () => true));
     }
     await step('shares', async () => {
-      const shares = this.engine.getManager<{ list(owner?: string): Array<{ id: string; revokedAt?: string | null }>; revoke(id: string, by: string): Promise<boolean> }>('ShareManager');
-      for (const sh of shares?.list(username) ?? []) if (!sh.revokedAt) await shares?.revoke(sh.id, by);
+      const shares = this.engine.getManager<{ list(owner?: string): Array<{ id: string; revokedAt?: string | null }>; revoke(id: string, by: PermissionSubject): Promise<boolean> }>('ShareManager');
+      for (const sh of shares?.list(username) ?? []) if (!sh.revokedAt) await shares?.revoke(sh.id, ctx);
     });
     await step('proxy grants', async () => {
       if (!this.credentials) return;

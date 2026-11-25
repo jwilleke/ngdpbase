@@ -752,7 +752,7 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
         .send(csrfTestBodyField());
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe('/shares?revoked=1');
-      expect(mockShareManager.revoke).toHaveBeenCalledWith('s1', 'ed');
+      expect(mockShareManager.revoke).toHaveBeenCalledWith('s1', expect.objectContaining({ username: 'ed' }));
     });
 
     test('admin revokes anyone\'s share → 302', async () => {
@@ -762,7 +762,7 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
         .type('form')
         .send(csrfTestBodyField());
       expect(res.status).toBe(302);
-      expect(mockShareManager.revoke).toHaveBeenCalledWith('s1', 'root');
+      expect(mockShareManager.revoke).toHaveBeenCalledWith('s1', expect.objectContaining({ username: 'root' }), { asManager: true });
     });
 
     // #2521 (slice 2 of #2247): the route tells the manager when someone other

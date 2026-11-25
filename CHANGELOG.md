@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- __#2521__ — a new permission, `share-manage-all` ("See and revoke everyone's shared links"), granted to the administrator role by its own policy, `admin-share-manage-all`. It is a separate policy, not an edit to `admin-full-access`, so a site holding a stored copy of `admin-full-access` still receives it. A site with a custom policy for administrators grants it to whoever it chooses; the Roles and Permissions page lists it under the administrator role and no other. It needs no fresh sign-in and does not depend on "admins can enter private areas". Nothing uses it for a screen yet. When an administrator revokes another user's tag link at `POST /shares/:id/revoke`, the `share-revoke` audit record now carries `byManager: true` and the stored link gets a `revokedByManager` flag naming nobody. The `share-revoke` permission is unchanged and stays grantable, because a token or proxy acting for a link's maker still needs it. Nothing for you to do.
+
 ### Fixed
 
 - __#2514__ — the upgrade clean-up of old `access:` limits now reaches pages in a person's vault. The start-up scan and the sign-in pass listed pages with the page provider's list, which leaves the vaults folder out, so a vault page with an old limit such as `edit: [admin]` was never counted in Admin → needs attention, never given an Author Lock, and had no copy made in `upgrade-backups`. The start-up scan now counts every vault page it can read (never named), and the sign-in pass converts the signed-in person's own vault pages, with a copy first. Another person's vault is still never looked at, and a closed (encrypted) vault is not listed until it is open. A person with a vault that could not be opened at sign-in is not marked as done, so the pass runs again at their next sign-in and when they unlock the vault. The copy made first of an encrypted page is its stored bytes, so it stays encrypted and restores the page, and no page name or file path is written to the log. A damaged vault is skipped alone. Nothing for you to do.

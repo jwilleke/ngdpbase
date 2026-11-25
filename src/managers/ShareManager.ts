@@ -455,24 +455,37 @@ export default class ShareManager extends BaseManager {
   /**
    * Revoke a share by management id. Immediate; the record is retained
    * (revokedAt set) for audit. Returns false for unknown or already-revoked.
+   *
+   * Takes the request's own subject, as {@link extend} does, never a username:
+   * under a proxy the username is the person represented, so the audit row is
+   * built with `actorOf` and names both (#2521). Who may revoke is the
+   * caller's decision; this records what happened. `asManager` is the
+   * caller's statement that the revoke is made under the permission to
+   * revoke everyone's links (`share-manage-all`, or `admin-system` until
+   * slice 4 of #2247) and not as the maker. Only then does the audit
+   * record carry `byManager: true` and the stored record `revokedByManager`.
+   * The flag names nobody: the owner's list shows it as a link that is no
+   * longer available, with no administrator name.
    */
-  async revoke(id: string, revokedBy: string): Promise<boolean> {
+  async revoke(id: string, subject: PermissionSubject, opts?: { asManager?: boolean }): Promise<boolean> {
     if (!this.enabled) return false;
     const record = this.byId.get(id);
     if (!record || record.revokedAt) return false;
+    const byManager = opts?.asManager === true;
 
     // #1202: share-revoke is CRITICAL, paired with token-revoke. Recorded and
     // flushed before the share is marked revoked; if the record cannot be
     // written the share stays live and the caller sees the refusal.
     const revokedAt = new Date().toISOString();
-    await this.audit(AUDIT_EVENT.SHARE_REVOKE, { user: revokedBy }, { ...record, revokedAt });
+    await this.audit(AUDIT_EVENT.SHARE_REVOKE, actorOf(subject), { ...record, revokedAt }, byManager ? { byManager: true } : undefined);
 
     record.revokedAt = revokedAt;
+    if (byManager) record.revokedByManager = true;
     this.persist(record);
     // #1388: whatever was locked for the link goes with it.
     if (record.lockedFor) this.dropLockboxes(record.id);
 
-    logger.info(`[ShareManager] Share ${id} revoked by ${revokedBy}`);
+    logger.info(`[ShareManager] Share ${id} revoked by ${subject.username ?? 'unknown'}${byManager ? ' (manager)' : ''}`);
     return true;
   }
 
@@ -891,7 +904,7 @@ export default class ShareManager extends BaseManager {
    * rejection is exactly what made the old `critical` claim a promise the code
    * did not keep.
    */
-  private async audit(eventType: AuditEventName, who: Pick<ActorAttribution, 'user' | 'actor'>, record: ShareRecord): Promise<void> {
+  private async audit(eventType: AuditEventName, who: Pick<ActorAttribution, 'user' | 'actor'>, record: ShareRecord, extra?: { byManager: true }): Promise<void> {
     const sink = this.engine.getManager('AuditManager') as AuditEventSink | null;
     await recordAuditEvent(
       sink,
@@ -912,7 +925,8 @@ export default class ShareManager extends BaseManager {
           resources: [...record.resources],
           expiresAt: record.expiresAt,
           createdBy: record.createdBy,
-          ...(record.revokedAt ? { revokedAt: record.revokedAt } : {})
+          ...(record.revokedAt ? { revokedAt: record.revokedAt } : {}),
+          ...(extra?.byManager ? { byManager: true } : {})
         }
       },
       (err) => logger.warn(`[ShareManager] Audit logging failed for ${eventType} ${record.id}: ${String(err)}`)
