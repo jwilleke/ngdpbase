@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { openStatusCards } from './fixtures/helpers';
 
 /**
  * #1155 — thirteen managers could end up degraded and exactly one said so.
@@ -19,6 +20,7 @@ test.describe('#1155 — degraded subsystems are visible', () => {
     // working is an outage — so a healthy instance is one with a backup.
     test.setTimeout(240_000);
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     const downloadPromise = page.waitForEvent('download', { timeout: 170_000 });
     await page.locator('form[action="/admin/backup/create"] button[type="submit"]').click();
     await downloadPromise;

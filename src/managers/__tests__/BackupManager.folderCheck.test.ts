@@ -115,8 +115,55 @@ describe('the backup folder is checked, and a fault is said in plain words (#249
     expect(message).toContain(unreachable);
     expect(props['ngdpbase.backup.directory']).toBe(old);
     expect((await bm.getAutoBackupStatus()).config.directory).toBe(old);
+    expect((await bm.getAutoBackupStatus()).folder.exists).toBe(true);
     // The old folder still works.
     await expect(bm.createBackup(CTX)).resolves.toContain(old);
+  });
+
+  describe('the folder status the Backup page shows (#2470)', () => {
+    type Inner = { backupDirectory: string | null };
+
+    test('a folder that is there is a folder with no fault', async () => {
+      const bm = await start();
+      const status = (await bm.getAutoBackupStatus()).folder;
+      expect(status.exists).toBe(true);
+      expect(status.fault).toBeNull();
+    });
+
+    test('a folder deleted after start-up is missing', async () => {
+      const bm = await start();
+      fs.rmSync(backups(), { recursive: true, force: true });
+      const status = (await bm.getAutoBackupStatus()).folder;
+      expect(status.exists).toBe(false);
+      expect(status.fault).toBe('missing');
+    });
+
+    test('a path that is a file, not a folder, is not a folder even when only its owner can open it', async () => {
+      const bm = await start();
+      const file = path.join(dir, 'not-a-folder');
+      fs.writeFileSync(file, 'x', { mode: 0o600 });
+      (bm as unknown as Inner).backupDirectory = file;
+      const status = (await bm.getAutoBackupStatus()).folder;
+      expect(status.exists).toBe(false);
+      expect(status.fault).toBe('file');
+    });
+
+    test('no folder set at all is told apart from a folder whose drive was not connected at start-up', async () => {
+      const bm = await start();
+      (bm as unknown as Inner).backupDirectory = '';
+      props['ngdpbase.backup.directory'] = '';
+      let status = (await bm.getAutoBackupStatus()).folder;
+      expect(status.exists).toBe(false);
+      expect(status.fault).toBe('unset');
+
+      // Start-up clears the folder when its drive is not mounted, while the setting still names it.
+      props['ngdpbase.backup.directory'] = backups();
+      status = (await bm.getAutoBackupStatus()).folder;
+      expect(status.exists).toBe(false);
+      expect(status.fault).toBe('unmounted');
+      // The page names the folder the setting still holds.
+      expect(status.named).toBe(backups());
+    });
   });
 
   test('a refused folder saves nothing else from the same form', async () => {

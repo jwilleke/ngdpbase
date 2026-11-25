@@ -331,7 +331,7 @@ describe('#2492 Admin → Backup, the backup folder is its own setting', () => {
     expect(field).not.toBeNull();
     expect(doc.querySelector('#autoBackupConfig')!.contains(field)).toBe(false);
     expect(card(doc)!.contains(field)).toBe(true);
-    expect(text(doc.querySelector('#backup-folder .card-header'))).toBe('Backup folder');
+    expect(text(doc.querySelector('#backup-folder summary h6'))).toBe('Backup folder');
     expect(text(doc.body)).not.toMatch(/backup director/i);
   });
 
@@ -339,7 +339,7 @@ describe('#2492 Admin → Backup, the backup folder is its own setting', () => {
     const doc = await render();
     const label = doc.querySelector('label[for="directory"]')!;
     expect(label.classList.contains('visually-hidden')).toBe(true);
-    const shown = Array.from(card(doc)!.querySelectorAll('.card-header, label:not(.visually-hidden)')).map((el) => text(el));
+    const shown = Array.from(card(doc)!.querySelectorAll('summary h6, label:not(.visually-hidden)')).map((el) => text(el));
     expect(shown.filter((t) => /^Backup folder$/.test(t))).toHaveLength(1);
   });
 
@@ -347,7 +347,7 @@ describe('#2492 Admin → Backup, the backup folder is its own setting', () => {
     const doc = await render({ status: status({ ownerOnly: true, account: 'wiki' }) });
     expect(card(doc)!.querySelector('.backup-folder-copy')).toBeNull();
     expect(text(card(doc))).not.toMatch(/keeps its own copy/i);
-    const more = card(doc)!.querySelector('details')!;
+    const more = card(doc)!.querySelectorAll('details')[1];
     expect(text(more.querySelector('summary'))).toBe('Who can open this folder');
     expect(more.hasAttribute('open')).toBe(false);
     expect(text(more)).toMatch(/download/i);
@@ -357,14 +357,14 @@ describe('#2492 Admin → Backup, the backup folder is its own setting', () => {
 
   test('the opened details start with the point and do not repeat the path shown in the field', async () => {
     const doc = await render({ status: status({ ownerOnly: true, account: 'wiki' }) });
-    const words = text(card(doc)!.querySelector('details p'));
+    const words = text(card(doc)!.querySelectorAll('details')[1].querySelector('p'));
     expect(words.startsWith('Only the account that runs this wiki (wiki) can open this folder, because a backup contains sign-in details.')).toBe(true);
     expect(words).not.toContain('/app/data/backups');
   });
 
   test('without an account name it still says it', async () => {
     const doc = await render({ status: status({ ownerOnly: true }) });
-    expect(text(card(doc)!.querySelector('details p'))).toContain('Only the account that runs this wiki can open this folder, because a backup contains sign-in details.');
+    expect(text(card(doc)!.querySelectorAll('details')[1].querySelector('p'))).toContain('Only the account that runs this wiki can open this folder, because a backup contains sign-in details.');
   });
 
   test('the button is "Save Folder", in the same case as the page\'s other buttons', async () => {
@@ -382,7 +382,7 @@ describe('#2492 Admin → Backup, the backup folder is its own setting', () => {
     const doc = await render({ status: status({ ownerOnly: false }, '/b') });
     const warning = doc.querySelector('#backup-folder-open')!;
     expect(text(warning)).toMatch(/could not be made private to the site/i);
-    expect(card(doc)!.querySelector('details')!.contains(warning)).toBe(false);
+    expect(card(doc)!.querySelectorAll('details')[1].contains(warning)).toBe(false);
   });
 
   test('a failed Create & Download says what stays as it was, in the red alert, and escapes a path as text', async () => {
