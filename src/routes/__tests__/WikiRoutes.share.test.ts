@@ -664,6 +664,31 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
     });
   });
 
+  describe('slice 3: the old private-area POST addresses', () => {
+    test('POST /my/vaults/links is sent on, body and all, with a 307', async () => {
+      mockUserContext = { ...editorUser };
+      const res = await request(app).post('/my/vaults/links').type('form').send({ ...csrfTestBodyField(), vault: 'journal' });
+      expect(res.status).toBe(307);
+      expect(res.headers.location).toBe('/my/shares/vault-links');
+    });
+
+    test('POST /my/vaults/links/:id/extend is sent on with a 307', async () => {
+      mockUserContext = { ...editorUser };
+      const res = await request(app).post('/my/vaults/links/abc/extend').type('form').send({ ...csrfTestBodyField(), hours: '6' });
+      expect(res.status).toBe(307);
+      expect(res.headers.location).toBe('/my/shares/abc/extend');
+    });
+
+    test('the new addresses are served', async () => {
+      mockUserContext = { ...editorUser };
+      for (const url of ['/my/shares/vault-links', '/my/shares/abc/extend']) {
+        const res = await request(app).post(url).type('form').send({ ...csrfTestBodyField() });
+        expect(res.status).not.toBe(404);
+        expect(res.status).not.toBe(307);
+      }
+    });
+  });
+
   // ── management: POST /shares/create ────────────────────────────────────────
 
   describe('POST /shares/create', () => {

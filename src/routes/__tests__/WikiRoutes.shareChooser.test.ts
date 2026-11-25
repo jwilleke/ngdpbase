@@ -75,3 +75,21 @@ describe('the Share... chooser holds the private-area forms (slice 3 of #2247)',
     expect(r.render.mock.calls[0][1]).toMatchObject({ vaults: [], pickVault: null });
   });
 });
+
+describe('the old private-area address, slice 3 of #2247', () => {
+  test('/my/vaults/links?page=P goes to the Share... chooser with the page ticked', async () => {
+    const { routes } = setup(['profile-manage']);
+    const r = res();
+    await routes.myVaultLinksPage(req('/my/vaults/links', { page: 'vaults/molly/journal/Day two' }, MOLLY), r);
+    expect(r.redirect).toHaveBeenCalledWith(302, '/my/shares?share=vault&page=vaults%2Fmolly%2Fjournal%2FDay%20two');
+    expect(r.render).not.toHaveBeenCalled();
+  });
+
+  test('a bare /my/vaults/links still opens the list with the visits', async () => {
+    const { routes } = setup(['profile-manage']);
+    const r = res();
+    await routes.myVaultLinksPage(req('/my/vaults/links', {}, MOLLY), r);
+    expect(r.redirect).not.toHaveBeenCalled();
+    expect(r.render.mock.calls[0][0]).toBe('my-vault-links');
+  });
+});
