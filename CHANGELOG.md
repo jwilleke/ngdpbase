@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- __#2514__ — the upgrade clean-up of old `access:` limits now reaches pages in a person's vault. The start-up scan and the sign-in pass listed pages with the page provider's list, which leaves the vaults folder out, so a vault page with an old limit such as `edit: [admin]` was never counted in Admin → needs attention, never given an Author Lock, and had no copy made in `upgrade-backups`. The start-up scan now counts every vault page it can read (never named), and the sign-in pass converts the signed-in person's own vault pages, with a copy first. Another person's vault is still never looked at, and a closed (encrypted) vault is not listed until it is open. A person with a vault that could not be opened at sign-in is not marked as done, so the pass runs again at their next sign-in and when they unlock the vault. The copy made first of an encrypted page is its stored bytes, so it stays encrypted and restores the page, and no page name or file path is written to the log. A damaged vault is skipped alone. Nothing for you to do.
+
 ### Planned
 
 - Future enhancements

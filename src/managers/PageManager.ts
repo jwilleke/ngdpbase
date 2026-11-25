@@ -4460,13 +4460,14 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!await exactReplacement(info.metadata, site, vaultOwner)) return 'no-match';
     // Read, compared, copied and saved as one step, so a save made meanwhile is never written over.
     const fresh = await this.pageWrite(uuid, async () => {
-      const text = await fse.readFile(info.filePath, 'utf8');
+      // The file's bytes, not its text: a page in an encrypted vault is stored sealed, and its copy is those sealed bytes, which the vault's key opens again. Nothing of the page is written in the clear outside its vault (#2514).
+      const text = await fse.readFile(info.filePath);
       const page = await this.getPage(info.title, ctx);
       // The page is read again so the replacement is judged on what is stored now, and it must be the page whose file is copied.
       const now = page ? await exactReplacement(page.metadata, site, vaultOwner) : null;
       if (!page || !now || page.uuid !== uuid) return null;
       // The file is unchanged since it was copied, so the copy is what the save overwrites.
-      if (await fse.readFile(info.filePath, 'utf8') !== text) return null;
+      if (!(await fse.readFile(info.filePath)).equals(text)) return null;
       const copy = backUpBeforeRewrite(backups, `${uuid}.md`, text);
       try {
         await this.savePage(info.title, page.content ?? '', withReplacement({ ...page.metadata }, now), ctx, {
@@ -4476,7 +4477,7 @@ class PageManager extends BaseManager implements CatalogSource {
         });
       } catch (err) {
         // The copy is dropped only while the file is still as it was: a page that fails every start would add one each time, but once the file was rewritten the copy is the only original.
-        const unchanged = await fse.readFile(info.filePath, 'utf8').then((now) => now === text, () => false);
+        const unchanged = await fse.readFile(info.filePath).then((now) => now.equals(text), () => false);
         if (unchanged) {
           fse.removeSync(copy);
           throw err;
@@ -4487,6 +4488,20 @@ class PageManager extends BaseManager implements CatalogSource {
       return now;
     });
     return fresh ?? 'changed';
+  }
+
+  /**
+   * The pages in people's vaults, listed with what the upgrade clean-up of old
+   * `access:` limits reads (#2514). The provider's page list leaves the vaults
+   * folder out, so a pass that lists with it alone never meets a vault page.
+   * Each is named by its path, as the passes expect, and listed only as `ctx`
+   * may read it: one owner's vaults when `owner` is given, so the owner's own
+   * and no one else's. A vault `ctx` cannot open (a closed encrypted vault, a
+   * damaged index) or a page that cannot be read is left out and counted in
+   * `unreadable`: a count only, never a page's name or path.
+   */
+  private async vaultPageInfos(ctx: ActorContext, owner?: string): Promise<{ pages: Array<{ title: string; uuid: string; filePath: string; metadata: Partial<PageFrontmatter> }>; unreadable: number }> {
+    return await this.provider?.listPrivateStorePageInfo?.(ctx, owner) ?? { pages: [], unreadable: 0 };
   }
 
   /** The site's facts the conversion judges a page by: who the administrators are, and whether a page's author is one. */
@@ -4555,7 +4570,11 @@ class PageManager extends BaseManager implements CatalogSource {
       const defaultCategory = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager')?.getDefaultSystemCategory?.();
       const backups = path.join(dataFolder, 'upgrade-backups');
       let finished = true;
-      for (const info of await provider.getAllPageInfo()) {
+      // The page list leaves the vaults out (#2514): the person's own vaults are listed beside it.
+      const vaults = await this.vaultPageInfos(subject, username);
+      // A vault that is closed to them now (their key is not held at this sign-in, as after a passkey or single sign-on), or damaged, was not looked at: they are not done, and the next sign-in or unlock tries again.
+      if (vaults.unreadable > 0) finished = false;
+      for (const info of [...await provider.getAllPageInfo(), ...vaults.pages]) {
         if (info.metadata?.access === undefined || inSharedFolder(info.title)) continue;
         const vaultOwner = vaultOwnerOf(info.title);
         const priv = (info.metadata as { private?: unknown }).private;
@@ -4682,6 +4701,17 @@ class PageManager extends BaseManager implements CatalogSource {
     this.legacyAccessPages.clear();
     for (const info of await this.provider.getAllPageInfo()) {
       await this.noteLegacyAccess(info.title, info.uuid, info.metadata, Boolean(info.uuid) && record.hasUuid(info.uuid));
+    }
+    // The page list leaves the vaults out (#2514): vault pages with an old limit are counted too, never named.
+    try {
+      const vaults = await this.vaultPageInfos(systemContext(this.engine, 'count old access limits on pages in vaults (#2514)'));
+      for (const info of vaults.pages) {
+        await this.noteLegacyAccess(info.title, info.uuid, info.metadata, record.hasUuid(info.uuid));
+      }
+      // Counts only: a closed vault is expected here, as the system holds no keys.
+      if (vaults.unreadable > 0) logger.info(`[PageManager] ${vaults.unreadable} vault(s) or page(s) in vaults could not be read at start-up, so they were not checked for old access limits (an encrypted vault is read when its owner signs in)`);
+    } catch (err) {
+      logger.warn(`[PageManager] Pages in vaults were not checked for old access limits: ${failureForLog(err)}`);
     }
     if (this.legacyAccessPages.size > 0) {
       logger.warn(`[PageManager] ${this.legacyAccessPages.size} page(s) still carry an 'access' limit that is no longer read; they are listed in Admin → needs attention (#2269)`);
