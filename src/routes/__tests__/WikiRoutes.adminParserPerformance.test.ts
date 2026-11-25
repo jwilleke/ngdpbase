@@ -209,6 +209,34 @@ describe('what the Page building speed page says (#2468)', () => {
     expect(squash(doc.querySelector('[data-testid="parser-performance-hit"]')?.textContent)).toContain('Slowest rows show the lowest');
   });
 
+  test('on the earlier warnings table the stored-copies column also shows the lowest values on the Slowest rows', async () => {
+    const doc = await dom(report({
+      legacy: {
+        parse: stats({ count: 7, p50: 160, p95: 310, max: 330, p5: 105, min: 100, mean: 180 }),
+        hit: stats({ count: 4, p50: 0.15, p95: 0.19, max: 0.195, p5: 0.05, min: 0.03, mean: 0.15 }),
+        err: stats({ count: 2, p50: 0.07, p95: 0.08, max: 0.085, p5: 0.06, min: 0.06, mean: 0.07 })
+      }
+    }));
+    const cell = (label: string, column: number) => {
+      const tr = [...doc.querySelectorAll('[data-testid="parser-performance-earlier"] tbody tr')].find((r) => squash(r.querySelector('th')?.textContent) === label);
+      return squash(tr?.querySelectorAll('td')[column]?.textContent);
+    };
+
+    expect(cell('Slowest 1 in 20', 0)).toBe('310.0');
+    expect(cell('Slowest', 0)).toBe('330.0');
+    expect(cell('Slowest 1 in 20', 1)).toBe('5.0%');
+    expect(cell('Slowest', 1)).toBe('3.0%');
+    expect(cell('Slowest 1 in 20', 2)).toBe('8.0%');
+    expect(cell('Slowest', 2)).toBe('8.5%');
+  });
+
+  test('the earlier warnings note says the Slowest rows of the stored-copies column are its lowest values', async () => {
+    const doc = await dom(report());
+    const note = squash(doc.querySelector('[data-testid="parser-performance-earlier"] .card-body > p')?.textContent);
+
+    expect(note).toContain('For stored copies, the Slowest rows show the lowest values.');
+  });
+
   test('the setting name in the not-saving banner takes the banner text colour, not the pink code colour', async () => {
     const doc = await dom(report({ recording: false }));
     const code = doc.querySelector('.alert-warning code');
