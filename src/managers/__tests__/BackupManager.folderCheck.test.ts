@@ -161,6 +161,8 @@ describe('the backup folder is checked, and a fault is said in plain words (#249
       status = (await bm.getAutoBackupStatus()).folder;
       expect(status.exists).toBe(false);
       expect(status.fault).toBe('unmounted');
+      // The page names the folder the setting still holds.
+      expect(status.named).toBe(backups());
     });
   });
 

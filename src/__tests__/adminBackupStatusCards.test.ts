@@ -379,6 +379,47 @@ describe('#2470 Admin → Backup status cards', () => {
     });
   });
 
+  describe('a red row says the reason once: a short grey note, the full reason only in the box', () => {
+    const redFolder = (fault: string, directory: string, named?: string): Record<string, unknown> => ({
+      status: { config: { ...((allWell().status as { config: object }).config), directory }, lastBackup: null, folder: { ownerOnly: null, exists: false, fault, account: 'wiki', ...(named ? { named } : {}) } }
+    });
+    const rows: Array<[string, string, Record<string, unknown>, string]> = [
+      ['auto-backup-card', 'Auto Backup', { backupHealth: health({ fault: 'No good backup since: never' }) }, '[data-testid="backup-health-fault"]'],
+      ['backup-key-card', 'Backup key', { backupKey: { set: false, fingerprint: null, saved: false } }, '#backup-key-missing'],
+      ['backup-folder', 'Backup folder, missing', redFolder('missing', '/b'), '#backup-folder-problem'],
+      ['backup-folder', 'Backup folder, file', redFolder('file', '/b'), '#backup-folder-problem'],
+      ['backup-folder', 'Backup folder, unset', redFolder('unset', ''), '#backup-folder-problem'],
+      ['backup-folder', 'Backup folder, unmounted', redFolder('unmounted', ''), '#backup-folder-problem']
+    ];
+
+    test.each(rows)('%s (%s): the box does not repeat the grey note', async (id, _label, over, boxSelector) => {
+      const doc = await render(over);
+      expect(statusOf(doc, id)).toBe('red');
+      const note = text(card(doc, id).querySelector('summary > span.text-muted'));
+      const box = text(card(doc, id).querySelector(boxSelector));
+      expect(note).not.toBe('');
+      expect(box).not.toBe('');
+      expect(box.toLowerCase()).not.toContain(note.toLowerCase().replace(/[.:]$/, ''));
+      expect(note.length).toBeLessThan(box.length);
+    });
+
+    test('Auto Backup keeps the full reason in the box', async () => {
+      const doc = await render({ backupHealth: health({ fault: 'No good backup since: never' }) });
+      expect(text(doc.querySelector('[data-testid="backup-health-fault"]'))).toMatch(/Backups are not working\. No good backup since: never/);
+    });
+
+    test('a drive that is not connected names the folder the setting still holds', async () => {
+      const doc = await render(redFolder('unmounted', '', '/Volumes/hd2A/backups'));
+      expect(text(doc.querySelector('#backup-folder-problem'))).toContain('/Volumes/hd2A/backups');
+      expect((doc.querySelector('#directory') as HTMLInputElement).value).toBe('');
+    });
+
+    test('a drive that is not connected, with no setting to name, still gives the reason', async () => {
+      const doc = await render(redFolder('unmounted', ''));
+      expect(text(doc.querySelector('#backup-folder-problem'))).toMatch(/not connected/);
+    });
+  });
+
   test('Restore the whole site with no stored backup says "Nothing to restore", not "Ready"', async () => {
     const doc = await render({ recentBackups: [] });
     expect(statusOf(doc, 'site-restore-card')).toBe('plain');
