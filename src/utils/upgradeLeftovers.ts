@@ -99,6 +99,8 @@ export interface SiteFacts {
   adminsAreRoleAdmin: boolean | null;
   /** Whether the account a page's `author` refers to holds `admin-system`. Throws {@link CouldNotTellError} when it cannot be told, which is not a "no". */
   authorHoldsAdmin(author: string): Promise<boolean>;
+  /** Whether the account a page's `author` refers to is `username`. Throws {@link CouldNotTellError} when it cannot be told. */
+  authorIs(author: string, username: string): Promise<boolean>;
 }
 
 /**
@@ -137,10 +139,17 @@ function names(list: unknown): string[] | null {
 /**
  * The replacement that grants exactly what the page's `access:` did, or null
  * when there is none (see the file's note on what exact means).
+ *
+ * `vaultOwner` is given for a page in someone's vault, whose owner comes from
+ * its path. The Author Lock lets only the page's author and administrators
+ * edit it, so the page converts only when its author is that owner (a missing
+ * author, or another person, would lock the owner out of their own page); the
+ * owner need not be an administrator, because the vault is theirs.
  */
 export async function exactReplacement(
   metadata: { access?: unknown; author?: unknown } | null | undefined,
-  site: SiteFacts
+  site: SiteFacts,
+  vaultOwner?: string | null
 ): Promise<Replacement | null> {
   const access = metadata?.access;
   if (!isRecord(access)) return null;
@@ -155,6 +164,10 @@ export async function exactReplacement(
 
   if (!view && edit && edit.length === 1 && edit[0] === 'admin') {
     const author = metadata?.author;
+    if (vaultOwner) {
+      if (typeof author !== 'string' || author === '' || !(await site.authorIs(author, vaultOwner))) return null;
+      return { kind: 'author-lock', set: { 'author-lock': true } };
+    }
     if (author !== undefined && author !== null && author !== '' && (typeof author !== 'string' || !(await site.authorHoldsAdmin(author)))) return null;
     return { kind: 'author-lock', set: { 'author-lock': true } };
   }

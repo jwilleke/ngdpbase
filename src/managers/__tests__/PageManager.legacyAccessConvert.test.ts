@@ -28,6 +28,8 @@ interface TestManager {
 const ADMIN_RULE = { id: 'admin-full-access', effect: 'allow', subjects: [{ type: 'role', value: 'admin' }], actions: ['admin-system'] };
 const ADMIN_ID = 'urn:uuid:11111111-1111-4111-8111-111111111111';
 const BOB_ID = 'urn:uuid:22222222-2222-4222-8222-222222222222';
+/** Who holds which role, as the role store has it. A user record carries no `roles` field (#2509). */
+const ROLES: Record<string, string[]> = { root: ['admin'], bob: ['editor'] };
 
 describe('PageManager converts old access: limits that have an exact replacement (#2466)', () => {
   let folder: string;
@@ -75,9 +77,9 @@ describe('PageManager converts old access: limits that have an exact replacement
     const stand: Record<string, unknown> = {
       ConfigurationManager: config,
       // admin-system is held by the admin role, as the shipped policy gives it; every other action is allowed.
-      PolicyDecisionPoint: { ...ALLOWING_PDP, policies: () => policies, permits: async (s: { roles?: string[] }, action: string) => action !== 'admin-system' || (s.roles ?? []).includes('admin') },
+      PolicyDecisionPoint: { ...ALLOWING_PDP, policies: () => policies, permits: async (s: { username: string; roles?: string[] }, action: string) => action !== 'admin-system' || (Array.isArray(s.roles) ? s.roles : ROLES[s.username] ?? []).includes('admin') },
       IdentityManager: { usernameOf: async (_c: unknown, s: string) => (s === ADMIN_ID ? 'root' : s === BOB_ID ? 'bob' : s), storedReferenceOf: async (_c: unknown, n: string) => n },
-      UserManager: { getUser: async (u: string) => (u === 'root' ? { username: 'root', roles: ['admin'] } : u === 'bob' ? { username: 'bob', roles: ['editor'] } : undefined) }
+      UserManager: { getUser: async (u: string) => (u in ROLES ? { username: u, isActive: true } : undefined) }
     };
     const m = new PageManager({ getManager: vi.fn(withWriteDoorAllowing((name: string) => (stand[name] ?? null))) }) as unknown as TestManager;
     m.provider = provider;
