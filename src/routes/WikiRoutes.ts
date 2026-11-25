@@ -10001,15 +10001,30 @@ ${panes}
   /** POST /my/vaults/links/:id/revoke — the owner ends one of their links, at once. */
   async myVaultLinksRevoke(req: Request, res: Response) {
     try {
-      const request = await this.vaultLinkRequest(req, res);
-      if (!request) return;
-      const { shareManager } = request;
+      const wikiContext = this.createWikiContext(req);
+      const subject = wikiContext.userContext;
+      // This step only classifies the refusal; the ownership comparison below
+      // is the gate (slice 3 of #2247).
+      if (!subject?.username) {
+        await this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+        return;
+      }
+      const shareManager = this.engine.getManager('ShareManager');
+      if (!shareManager?.isEnabled()) {
+        await this.renderError(req, res, 404, 'Not Found', 'Share links are switched off on this site.');
+        return;
+      }
       const record = shareManager.get(req.params.id);
-      if (!record || record.scope.kind !== 'vault' || record.createdBy !== request.owner.username) {
+      if (!record || record.scope.kind !== 'vault' || record.createdBy !== subject.username) {
         return res.status(404).send('Not Found');
       }
+      // Q-D: the person who made the link always revokes it at their own
+      // session. Q-G: a token, proxy or share acting for them keeps its
+      // profile-manage check. Revoking reads no page and enters no container,
+      // so no private-area check applies either way.
+      if (carriesCeiling(subject) && !(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
       // The request's own subject, forwarded (#2521): the audit row names who clicked.
-      await shareManager.revoke(record.id, request.owner);
+      await shareManager.revoke(record.id, subject);
       return res.redirect('/my/vaults/links?notice=revoked');
     } catch (err: unknown) {
       logger.error('[vault-links] Error revoking a vault link:', err);
