@@ -88,6 +88,7 @@ export const WORDING_FRONTMATTER_KEYS: string[] = [
   'description',
   'user-keywords',
   'userKeywords',
+  'formerTitles',
   'system-keywords',
   'author',
   'editor',
