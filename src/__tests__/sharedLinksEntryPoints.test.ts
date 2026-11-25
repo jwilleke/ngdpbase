@@ -49,3 +49,12 @@ describe('the media tag page', () => {
     expect(doc.querySelector('form[action="/shares/create"]')).toBeNull();
   });
 });
+
+describe('the admin dashboard card (round 3 L2)', () => {
+  test('is named for the Shared links page, not "Share Links"', async () => {
+    const { readFileSync } = await import('fs');
+    const html = readFileSync(path.join(VIEWS, 'admin-dashboard.ejs'), 'utf8');
+    expect(html).toContain('Manage shared links');
+    expect(html).not.toContain('Manage Share Links');
+  });
+});
