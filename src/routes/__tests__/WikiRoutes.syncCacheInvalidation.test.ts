@@ -254,7 +254,7 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
     expect(meta).not.toHaveProperty('user-modified');
     // #1179: the sync acts as the admin who asked for it.
     expect(ctx).toMatchObject({ username: expect.any(String) });
-    expect(options).toEqual({ skipValidation: true });
+    expect(options).toEqual({ skipValidation: true, shippedSeed: true });
   });
 
   test('a page renamed at the source is saved under its live title, as a rename (#1376)', async () => {

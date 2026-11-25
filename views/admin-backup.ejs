@@ -22,15 +22,285 @@
         </div>
     <% } %>
 
+    <%# #2470: the state of each card, worked out in one place. A card is one of
+        plain (no colour, collapsed: all is well, or not used on this site), amber (degraded, open:
+        the admin has something to do) or red (failed, open).
+        Four product rules are set by the STATE_ lines below (Auto Backup off, Manual Backup with no stored
+        backup, Shared folders key with no folders, Shared-folders manager absent); the Manual Backup one
+        takes two lines. Change a line, and the matching case in src/__tests__/adminBackupStatusCards.test.ts. %>
+    <%
+        const STATE_AUTO_OFF = 'amber';                     // Auto Backup is switched off and the last good backup is recent (once it is not, backupHealth.fault makes it red)
+        const STATE_MANUAL_NONE_WHEN_AUTO_OK = 'plain';            // no stored backup, automatic backups working
+        const STATE_MANUAL_NONE_OTHERWISE = 'amber';        // no stored backup, automatic backups not working
+        const STATE_SHARED_FOLDERS_UNUSED = 'plain';             // no recovery words and no shared folder yet
+        const STATE_SHARED_FOLDERS_ABSENT = 'plain';             // the shared-folders manager is not there
+
+        const backupKey = locals.backupKey || { set: false, fingerprint: null, saved: false };
+        const sfKey = locals.sharedFoldersKey || { set: false, fingerprint: null, saved: false };
+        const sfWords = locals.sharedFoldersWords || null;
+        const sfUnavailable = locals.sharedFoldersUnavailable || null;
+        const siteScope = locals.siteRestoreScope || { restored: [], notRestored: [] };
+        const stagedSite = locals.stagedSiteRestore || null;
+        const cardKeys = locals.envKeys || null;
+        const cardHealth = locals.backupHealth || null;
+        const cardStored = recentBackups || [];
+        const cardFolders = locals.sharedFolderNames || [];
+        const iso = function (d) { return new Date(d).toISOString(); };
+
+        const autoCard = (cardHealth && cardHealth.fault) ? { state: 'red', badge: 'Not working', hint: 'Needs attention' }
+            : !status.config.enabled ? { state: STATE_AUTO_OFF, badge: 'Off', hint: 'Off: no backup is made on its own' }
+            : (cardHealth && cardHealth.lastGood) ? { state: 'plain', badge: 'On', hint: 'On, last backup', hintTime: cardHealth.lastGood.at }
+            : { state: 'plain', badge: 'On', hint: 'On' };
+
+        const newestStored = cardStored.reduce(function (n, b) { return !n || new Date(b.created) > new Date(n.created) ? b : n; }, null);
+        const manualCard = newestStored ? { state: 'plain', badge: 'Ready', hint: 'Last backup kept here', hintTime: iso(newestStored.created) }
+            : { state: autoCard.state === 'plain' ? STATE_MANUAL_NONE_WHEN_AUTO_OK : STATE_MANUAL_NONE_OTHERWISE,
+                badge: autoCard.state === 'plain' ? 'Ready' : 'No backup yet',
+                hint: autoCard.state === 'plain' ? 'No backup kept on this server yet, automatic backups are on' : 'No backup kept on this server yet' };
+
+        const cardEnvChanged = Boolean(cardKeys && (cardKeys.added.length > 0 || cardKeys.removed.length > 0));
+        // The "I have saved .env off the server" button sits in the Backup key card, so that card needs the admin whenever the button is shown.
+        const cardEnvConfirm = Boolean(cardKeys && (cardEnvChanged || (backupKey.set && !backupKey.saved && cardKeys.holdsBackupKey) || (sfKey.set && !sfKey.saved && cardKeys.holdsSharedFoldersKey)));
+        const keyCard = !backupKey.set ? { state: 'red', badge: 'No key', hint: 'Not made yet' }
+            : !backupKey.saved ? { state: 'amber', badge: 'Save it', hint: 'Not yet saved off this server' }
+            : cardEnvChanged ? { state: 'amber', badge: 'Save .env', hint: 'The keys in .env changed: save a new copy' }
+            : cardEnvConfirm ? { state: 'amber', badge: 'Save .env', hint: '.env, which holds the keys, is not yet saved off this server' }
+            : { state: 'plain', badge: 'Saved', hint: 'Saved off this server, fingerprint ' + backupKey.fingerprint };
+
+        const sharedCard = locals.sharedFoldersAbsent ? { state: STATE_SHARED_FOLDERS_ABSENT, badge: 'Not available', hint: 'Shared folders are not available on this site' }
+            : sfUnavailable ? { state: 'red', badge: 'Not working', hint: 'The shared-folders keys cannot be used' }
+            : (!sfWords && cardFolders.length === 0) ? { state: STATE_SHARED_FOLDERS_UNUSED, badge: 'Not in use', hint: 'No shared folder has been made yet' }
+            : !sfWords ? { state: 'amber', badge: 'Make words', hint: 'The recovery words are not made yet' }
+            : sfWords.pending.length > 0 ? { state: 'amber', badge: 'Confirm words', hint: 'The recovery words are not confirmed as saved yet' }
+            : (sfKey.set && !sfKey.saved) ? { state: 'amber', badge: 'Save .env', hint: '.env, which holds the key, is not yet saved off this server' }
+            : { state: 'plain', badge: 'Set up', hint: cardFolders.length + (cardFolders.length === 1 ? ' shared folder' : ' shared folders') };
+
+        const siteCard = locals.stagedSiteRestoreError ? { state: 'red', badge: "Can't read", hint: "The record of a staged restore can't be read" }
+            : stagedSite ? { state: 'amber', badge: 'Restart needed', hint: stagedSite.state === 'staged' ? 'A restore is staged and waits for the restart' : 'A restore was not finished being prepared' }
+            : restoreRunning ? { state: 'amber', badge: 'Preparing', hint: 'A restore is being prepared' }
+            : cardStored.length > 0 ? { state: 'plain', badge: 'Ready', hint: 'No restore waiting' }
+            : { state: 'plain', badge: 'Nothing to restore', hint: 'No backup kept on this server yet' };
+
+        const dbCard = locals.databaseUnavailable ? { state: 'red', badge: "Can't open", hint: "The application database can't be opened" }
+            : stagedRestore ? { state: 'amber', badge: 'Restart needed', hint: 'A restore is staged and waits for the restart' }
+            : restoreRunning ? { state: 'amber', badge: 'Preparing', hint: 'A restore is being prepared' }
+            : stagedSite ? { state: 'plain', badge: 'Ready', hint: 'A whole-site restore is waiting for the restart, and it includes the databases' }
+            : { state: 'plain', badge: 'Ready', hint: 'No restore waiting' };
+
+        // The Backup folder is a row like the cards: plain and collapsed with "Folder OK"; amber when the drive
+        // does not let it be made private; red when no folder is set, it is not there, or the path is a file.
+        const folderInfo = status.folder || {};
+        const folderFault = folderInfo.fault || (!status.config.directory ? 'unset' : folderInfo.exists === false ? 'missing' : null);
+        const folderRed = {
+            unset: { hint: 'No folder is set', why: 'Backups have nowhere to go yet.', fix: 'Type a folder in the box above and press Save Folder.' },
+            unmounted: { hint: 'Drive not connected', why: (folderInfo.named ? 'The folder in the setting, ' + folderInfo.named + ', is not available: the drive it is on is not connected.' : 'The folder in the setting is not available: the drive it is on is not connected.'), fix: 'Connect the drive and restart the site, or type another folder in the box above and press Save Folder.' },
+            missing: { hint: 'Folder not found', why: 'This folder isn\'t there, or this site can\'t open it, so backups can\'t be saved.', fix: 'Make the folder on the server, or type another folder in the box above and press Save Folder.' },
+            file: { hint: 'Not a folder', why: 'This path is a file, so backups can\'t be saved.', fix: 'Type the path of a folder in the box above and press Save Folder.' }
+        }[folderFault];
+        const folderCard = folderRed ? { state: 'red', badge: "Can't use", hint: folderRed.hint }
+            : folderInfo.ownerOnly === false ? { state: 'amber', badge: 'Not private', hint: status.config.directory }
+            : { state: 'plain', badge: 'Folder OK', hint: status.config.directory };
+
+        const card = function (part, id, icon, title, c) { return include('_status-card', Object.assign({ part: part, id: id, icon: icon, title: title, helpSlug: 'Backup' }, c || {})); };
+    %>
     <!-- ================================================================ -->
-    <!-- Backup key (#1876): the one thing to save off the server          -->
+    <!-- Backup folder (#2492): a row like the cards below, used by manual and automatic backups -->
     <!-- ================================================================ -->
-    <% const backupKey = locals.backupKey || { set: false, fingerprint: null, saved: false }; %>
-    <div class="card mb-4" id="backup-key-card">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-key"></i> Backup key</h5>
-        </div>
-        <div class="card-body">
+    <%- card('start', 'backup-folder', 'fa-folder-open', 'Backup folder', folderCard) %>
+            <form method="POST" action="/admin/backup/config">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="section" value="folder">
+                <div class="mb-3">
+                    <label for="directory" class="form-label visually-hidden">Backup folder</label>
+                    <input type="text" class="form-control" id="directory"
+                           name="directory" value="<%= status.config.directory %>" required>
+                    <div class="form-text">
+                        Where manual and automatic backups are saved. It is checked when you save; if it can't be used, the current one stays.
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-outline-primary"<%- lockedUnless('config-manage') %>>
+                    <i class="fas fa-save"></i> Save Folder
+                </button>
+            </form>
+            <% if (folderRed) { %>
+            <div class="alert alert-danger mt-3 mb-2" id="backup-folder-problem">
+                <%= folderRed.why %> <%= folderRed.fix %>
+            </div>
+            <% } else if (status.folder && status.folder.ownerOnly === false) { %>
+            <div class="alert alert-warning mt-3 mb-2" id="backup-folder-open">
+                This folder could not be made private to the site: the drive it is on does not allow it.
+                Other accounts that can reach that drive may be able to open the backups.
+            </div>
+            <% } %>
+            <details class="mt-2">
+                <summary>Who can open this folder</summary>
+                <p class="mt-2 mb-1">
+                    Only the account that runs this wiki<%= status.folder && status.folder.account ? ' (' + status.folder.account + ')' : '' %> can open this folder, because a backup contains sign-in details.
+                    The file your browser downloads when you press Create &amp; Download is your copy, to keep somewhere safe.
+                </p>
+            </details>
+    <%- card('end', 'backup-folder') %>
+
+    <!-- ================================================================ -->
+    <!-- Auto Backup, with its backup health (#1563) -->
+    <!-- ================================================================ -->
+    <%- card('start', 'auto-backup-card', 'fa-clock', 'Auto Backup', autoCard) %>
+            <%# #1563: whether backups work — BackupManager's answer. %>
+            <% if (typeof backupHealth !== 'undefined' && backupHealth) { %>
+                <div class="mb-3"><%- include('_backup-health', { health: backupHealth, formatBytes: formatBytes }) %></div>
+            <% } %>
+            <table class="table table-sm mb-3" style="max-width:400px;">
+                <tr><th>Status</th><td><%= status.config.enabled ? 'Enabled' : 'Disabled' %></td></tr>
+                <tr><th>Time</th><td><%= status.config.time %></td></tr>
+                <tr><th>Days</th><td><%= status.config.days %></td></tr>
+                <tr><th>Max backups kept</th><td><%= status.config.maxBackups %></td></tr>
+            </table>
+
+            <!-- Configure Auto Backup (collapsible) -->
+            <button class="btn btn-sm btn-secondary" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#autoBackupConfig" aria-expanded="false">
+                <i class="fas fa-cog"></i> Configure Auto Backup
+            </button>
+
+            <div class="collapse mt-3" id="autoBackupConfig">
+                <div class="card card-body border-secondary">
+                    <form method="POST" action="/admin/backup/config" id="auto-backup-form">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="autoBackupEnabled"
+                                       name="autoBackup" value="true"
+                                       <%= status.config.enabled ? 'checked' : '' %>>
+                                <label class="form-check-label" for="autoBackupEnabled">Enable Auto Backup</label>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="autoBackupTime" class="form-label">Time of day (24-hour HH:MM)</label>
+                            <input type="time" class="form-control" id="autoBackupTime"
+                                   name="autoBackupTime" value="<%= status.config.time %>" style="max-width:140px;">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label d-block">Days</label>
+                            <div class="d-flex flex-wrap gap-2 mb-2">
+                                <% const dayOpts = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; %>
+                                <% const selectedDays = status.config.days; %>
+                                <% dayOpts.forEach(function(d) { %>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input day-checkbox" type="checkbox"
+                                               id="day_<%= d %>" value="<%= d %>"
+                                               <%= (selectedDays !== 'daily' && selectedDays !== 'monthly' && selectedDays.toLowerCase().includes(d.toLowerCase())) ? 'checked' : '' %>>
+                                        <label class="form-check-label" for="day_<%= d %>"><%= d %></label>
+                                    </div>
+                                <% }); %>
+                            </div>
+                            <div class="d-flex gap-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="autoBackupDays"
+                                           id="days_daily" value="daily"
+                                           <%= selectedDays === 'daily' ? 'checked' : '' %>>
+                                    <label class="form-check-label" for="days_daily">Daily</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="autoBackupDays"
+                                           id="days_monthly" value="monthly"
+                                           <%= selectedDays === 'monthly' ? 'checked' : '' %>>
+                                    <label class="form-check-label" for="days_monthly">Monthly (1st of month)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="autoBackupDays"
+                                           id="days_custom" value=""
+                                           <%= (selectedDays !== 'daily' && selectedDays !== 'monthly') ? 'checked' : '' %>>
+                                    <label class="form-check-label" for="days_custom">Custom (use checkboxes above)</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="maxBackups" class="form-label">Max backups to keep</label>
+                            <input type="number" class="form-control" id="maxBackups"
+                                   name="maxBackups" value="<%= status.config.maxBackups %>"
+                                   min="1" max="100" style="max-width:100px;">
+                        </div>
+
+                        <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
+                            <i class="fas fa-save"></i> Save Configuration
+                        </button>
+                    </form>
+                </div>
+            </div>
+    <%- card('end') %>
+
+    <!-- ================================================================ -->
+    <!-- Manual Backup -->
+    <!-- ================================================================ -->
+    <%- card('start', 'manual-backup-card', 'fa-download', 'Manual Backup', manualCard) %>
+            <p>Creates a backup and downloads it to your browser immediately, as one <code>.tar</code> file: the backup document and the files kept beside it (attachments, records, sign-in credentials, the audit log, job state, add-on files and, when the site keeps databases, a copy of each). With the backup key (<code>NGDPBASE_BACKUP_KEY</code>) set, every one of them is encrypted with it; without it nothing is encrypted and the sign-in credentials and databases are left out.</p>
+
+            <h6 class="mt-3">What is included</h6>
+            <ul>
+                <li>Configuration settings</li>
+                <li>User accounts and permissions</li>
+                <li>Access control lists (ACLs)</li>
+                <li>Attachment metadata (filenames, page links, hashes)</li>
+                <li>Search index</li>
+                <li>Page files and their version history</li>
+            </ul>
+
+            <h6 class="mt-3">What is <strong>not</strong> included</h6>
+            <ul class="text-warning-emphasis">
+                <li><strong>Page version history of private stores</strong> — back up <code>$SLOW_STORAGE/pages/vaults/</code> separately</li>
+                <li><strong>Attachment binary files</strong> — back up <code>$SLOW_STORAGE/attachments/</code> separately</li>
+                <li><strong>Media files</strong> — back up your media source folders independently</li>
+            </ul>
+
+            <div class="alert alert-warning mt-3 mb-3" role="alert">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>This is not a complete backup.</strong>
+                See the <a href="/view/Backup" class="alert-link">Backup wiki page</a> for the full recommended backup process.
+            </div>
+
+            <div class="d-flex flex-wrap align-items-center gap-3">
+                <form method="POST" action="/admin/backup/create">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
+                        <i class="fas fa-database"></i> Create &amp; Download Backup
+                    </button>
+                </form>
+                <% if (databasesEnabled) { %>
+                <p class="small text-muted mb-0" id="backup-key-note">
+                    <i class="fas fa-key"></i> The download is encrypted with the backup key (<code>NGDPBASE_BACKUP_KEY</code>), which is <strong>not</strong> in the file. Keep a copy of the key somewhere other than this server: without it nothing in a backup can be restored.
+                </p>
+                <% } %>
+            </div>
+
+            <% if (recentBackups && recentBackups.length > 0) { %>
+            <h6 class="mt-4">Backups stored on the server</h6>
+            <table class="table table-sm table-striped mt-2" id="stored-backups">
+                <thead><tr><th>Backup</th><th>Created</th><th>Size</th><th>Databases</th><th></th></tr></thead>
+                <tbody>
+                <% recentBackups.forEach(function(b) { %>
+                    <tr data-backup="<%= b.filename %>">
+                        <td><code style="font-size:0.8em;"><%= b.filename %></code></td>
+                        <td><%= new Date(b.created).toLocaleString() %></td>
+                        <td><%= Math.max(1, Math.round(b.totalSize / 1024)) %> KB</td>
+                        <td><%= b.databases.length > 0 ? b.databases.join(', ') : '—' %><% if (b.encrypted === false) { %> <span class="badge bg-warning text-dark keyless-backup" title="Taken without the backup key: not encrypted, and without the sign-in credentials">no sign-in credentials</span><% } %></td>
+                        <td class="text-nowrap">
+                            <a class="btn btn-sm btn-outline-primary" href="/admin/backup/download/<%= encodeURIComponent(b.filename) %>"><i class="fas fa-download"></i> Download</a>
+                        </td>
+                    </tr>
+                <% }); %>
+                </tbody>
+            </table>
+            <% } %>
+    <%- card('end') %>
+
+    <!-- ================================================================ -->
+    <!-- Backup key (#1876): the one thing to save off the server -->
+    <!-- ================================================================ -->
+    <%- card('start', 'backup-key-card', 'fa-key', 'Backup key', keyCard) %>
             <% if (!backupKey.set) { %>
             <div class="alert alert-danger mb-0" id="backup-key-missing">
                 This site has <strong>no backup key</strong> (<code>NGDPBASE_BACKUP_KEY</code>). Backups are not encrypted, and they leave out the sign-in credentials (passkeys, authenticator apps), the databases and the <code>.env</code> keys. Restart the site to have one made.
@@ -62,8 +332,7 @@
                 </div>
                 <% } %>
                 <a class="btn btn-outline-danger btn-sm" id="backup-env-download" href="/admin/backup/env"><i class="fas fa-file-download"></i> Download .env</a>
-                <% const _sfKey = locals.sharedFoldersKey || { set: false, fingerprint: null, saved: false }; %>
-                <% if (envKeys && (envChanged || (backupKey.set && !backupKey.saved && envKeys.holdsBackupKey) || (_sfKey.set && !_sfKey.saved && envKeys.holdsSharedFoldersKey))) { %>
+                <% if (cardEnvConfirm) { %>
                 <form method="POST" action="/admin/backup/key/saved" id="backup-env-confirm" class="d-inline">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                     <input type="hidden" name="fingerprint" value="<%= backupKey.fingerprint || '' %>">
@@ -72,20 +341,12 @@
                 </form>
                 <% } %>
             </div>
-        </div>
-    </div>
+    <%- card('end') %>
 
     <!-- ================================================================ -->
-    <!-- Shared folders key and recovery words (#2124, epic #1775)         -->
+    <!-- Shared folders key and recovery words (#2124, epic #1775) -->
     <!-- ================================================================ -->
-    <% const sfKey = locals.sharedFoldersKey || { set: false, fingerprint: null, saved: false }; %>
-    <% const sfWords = locals.sharedFoldersWords || null; %>
-    <% const sfUnavailable = locals.sharedFoldersUnavailable || null; %>
-    <div class="card mb-4" id="shared-folders-key">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-folder"></i> Shared folders key</h5>
-        </div>
-        <div class="card-body">
+    <%- card('start', 'shared-folders-key', 'fa-folder', 'Shared folders key', sharedCard) %>
             <p>Each shared folder is locked with its own key, kept under this site's shared-folders key (<code>NGDPBASE_SHARED_FOLDERS_KEY</code>, in <code>.env</code>) and under the organization's 12 recovery words.</p>
             <% if (sfUnavailable) { %>
             <div class="alert alert-danger" id="shared-folders-unavailable"><%= sfUnavailable %></div>
@@ -147,88 +408,12 @@
             </form>
             <p class="small text-muted mt-1 mb-0">Administrators can read every folder. Who else may read and add to each folder is set on <a href="/admin/shared-folders">Admin → Shared folders</a>.</p>
             <% } %>
-        </div>
-    </div>
+    <%- card('end') %>
 
     <!-- ================================================================ -->
-    <!-- Manual Backup                                                     -->
+    <!-- Restore the whole site (#1945) -->
     <!-- ================================================================ -->
-    <div class="card mb-4">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-download"></i> Manual Backup</h5>
-        </div>
-        <div class="card-body">
-            <p>Creates a backup and downloads it to your browser immediately, as one <code>.tar</code> file: the backup document and the files kept beside it (attachments, records, sign-in credentials, the audit log, job state, add-on files and, when the site keeps databases, a copy of each). With the backup key (<code>NGDPBASE_BACKUP_KEY</code>) set, every one of them is encrypted with it; without it nothing is encrypted and the sign-in credentials and databases are left out.</p>
-
-            <h6 class="mt-3">What is included</h6>
-            <ul>
-                <li>Configuration settings</li>
-                <li>User accounts and roles</li>
-                <li>Access control lists (ACLs)</li>
-                <li>Attachment metadata (filenames, page links, hashes)</li>
-                <li>Search index</li>
-                <li>Page files and their version history</li>
-            </ul>
-
-            <h6 class="mt-3">What is <strong>not</strong> included</h6>
-            <ul class="text-warning-emphasis">
-                <li><strong>Page version history of private stores</strong> — back up <code>$SLOW_STORAGE/pages/vaults/</code> separately</li>
-                <li><strong>Attachment binary files</strong> — back up <code>$SLOW_STORAGE/attachments/</code> separately</li>
-                <li><strong>Media files</strong> — back up your media source folders independently</li>
-            </ul>
-
-            <div class="alert alert-warning mt-3 mb-3" role="alert">
-                <i class="fas fa-exclamation-triangle"></i>
-                <strong>This is not a complete backup.</strong>
-                See the <a href="/view/Backup" class="alert-link">Backup wiki page</a> for the full recommended backup process.
-            </div>
-
-            <div class="d-flex flex-wrap align-items-center gap-3">
-                <form method="POST" action="/admin/backup/create">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
-                        <i class="fas fa-database"></i> Create &amp; Download Backup
-                    </button>
-                </form>
-                <% if (databasesEnabled) { %>
-                <p class="small text-muted mb-0" id="backup-key-note">
-                    <i class="fas fa-key"></i> The download is encrypted with the backup key (<code>NGDPBASE_BACKUP_KEY</code>), which is <strong>not</strong> in the file. Keep a copy of the key somewhere other than this server: without it nothing in a backup can be restored.
-                </p>
-                <% } %>
-            </div>
-
-            <% if (recentBackups && recentBackups.length > 0) { %>
-            <h6 class="mt-4">Backups stored on the server</h6>
-            <table class="table table-sm table-striped mt-2" id="stored-backups">
-                <thead><tr><th>Backup</th><th>Created</th><th>Size</th><th>Databases</th><th></th></tr></thead>
-                <tbody>
-                <% recentBackups.forEach(function(b) { %>
-                    <tr data-backup="<%= b.filename %>">
-                        <td><code style="font-size:0.8em;"><%= b.filename %></code></td>
-                        <td><%= new Date(b.created).toLocaleString() %></td>
-                        <td><%= Math.max(1, Math.round(b.totalSize / 1024)) %> KB</td>
-                        <td><%= b.databases.length > 0 ? b.databases.join(', ') : '—' %><% if (b.encrypted === false) { %> <span class="badge bg-warning text-dark keyless-backup" title="Taken without the backup key: not encrypted, and without the sign-in credentials">no sign-in credentials</span><% } %></td>
-                        <td class="text-nowrap">
-                            <a class="btn btn-sm btn-outline-primary" href="/admin/backup/download/<%= encodeURIComponent(b.filename) %>"><i class="fas fa-download"></i> Download</a>
-                        </td>
-                    </tr>
-                <% }); %>
-                </tbody>
-            </table>
-            <% } %>
-        </div>
-    </div>
-
-    <!-- ================================================================ -->
-    <!-- Restore the whole site (#1945)                                   -->
-    <!-- ================================================================ -->
-    <% const siteScope = locals.siteRestoreScope || { restored: [], notRestored: [] }; %>
-    <% const stagedSite = locals.stagedSiteRestore || null; %>
-    <div class="card mb-4" id="site-restore-card">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-undo"></i> Restore the whole site</h5>
-        </div>
-        <div class="card-body">
+    <%- card('start', 'site-restore-card', 'fa-undo', 'Restore the whole site', siteCard) %>
             <p>Puts the site back as it was in a backup stored on this server.</p>
             <div class="row">
                 <div class="col-md-6">
@@ -317,18 +502,13 @@
                 </button>
             </form>
             <% } %>
-        </div>
-    </div>
+    <%- card('end') %>
 
     <!-- ================================================================ -->
-    <!-- Restore the databases only: the second option (#1723, #1945)    -->
+    <!-- Restore the databases only: the second option (#1723, #1945) -->
     <!-- ================================================================ -->
     <% if (databasesEnabled || locals.databaseUnavailable) { %>
-    <div class="card mb-4" id="restore-card">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-database"></i> Restore the databases only</h5>
-        </div>
-        <div class="card-body">
+    <%- card('start', 'restore-card', 'fa-database', 'Restore the databases only', dbCard) %>
             <p class="fw-bold" id="restore-scope">Restores the databases only. Pages, users and settings are not changed.</p>
             <p>Puts the site's databases back as they were in a backup stored on this server. The whole-site restore above includes them; use this to put back the databases alone.</p>
             <ul>
@@ -396,148 +576,8 @@
             </form>
             <% } %>
             <% } %>
-        </div>
-    </div>
+    <%- card('end') %>
     <% } %>
-
-    <!-- ================================================================ -->
-    <!-- Backup folder (#2492): used by manual and automatic backups       -->
-    <!-- ================================================================ -->
-    <div class="card mb-4" id="backup-folder">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-folder-open"></i> Backup folder</h5>
-        </div>
-        <div class="card-body">
-            <form method="POST" action="/admin/backup/config">
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <input type="hidden" name="section" value="folder">
-                <div class="mb-3">
-                    <label for="directory" class="form-label visually-hidden">Backup folder</label>
-                    <input type="text" class="form-control" id="directory"
-                           name="directory" value="<%= status.config.directory %>" required>
-                    <div class="form-text">
-                        Where manual and automatic backups are saved. It is checked when you save; if it can't be used, the current one stays.
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
-                    <i class="fas fa-save"></i> Save Folder
-                </button>
-            </form>
-            <% if (status.folder && status.folder.ownerOnly === false) { %>
-            <div class="alert alert-warning mt-3 mb-2" id="backup-folder-open">
-                This folder could not be made private to the site: the drive it is on does not allow it.
-                Other accounts that can reach that drive may be able to open the backups.
-            </div>
-            <% } %>
-            <details class="mt-2">
-                <summary>Who can open this folder</summary>
-                <p class="mt-2 mb-1">
-                    Only the account that runs this wiki<%= status.folder && status.folder.account ? ' (' + status.folder.account + ')' : '' %> can open this folder, because a backup contains sign-in details.
-                    The file your browser downloads when you press Create &amp; Download is your copy, to keep somewhere safe.
-                </p>
-            </details>
-        </div>
-    </div>
-
-    <!-- ================================================================ -->
-    <!-- Auto Backup                                                       -->
-    <!-- ================================================================ -->
-    <div class="card mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 class="mb-0"><i class="fas fa-clock"></i> Auto Backup</h5>
-            <span class="badge <%= status.config.enabled ? 'bg-success' : 'bg-secondary' %>">
-                <%= status.config.enabled ? 'Enabled' : 'Disabled' %>
-            </span>
-        </div>
-        <div class="card-body">
-            <%# #1563: whether backups work — BackupManager's answer. %>
-            <% if (typeof backupHealth !== 'undefined' && backupHealth) { %>
-                <div class="mb-3"><%- include('_backup-health', { health: backupHealth, formatBytes: formatBytes }) %></div>
-            <% } %>
-            <table class="table table-sm mb-3" style="max-width:400px;">
-                <tr><th>Status</th><td><%= status.config.enabled ? 'Enabled' : 'Disabled' %></td></tr>
-                <tr><th>Time</th><td><%= status.config.time %></td></tr>
-                <tr><th>Days</th><td><%= status.config.days %></td></tr>
-                <tr><th>Max backups kept</th><td><%= status.config.maxBackups %></td></tr>
-            </table>
-
-            <!-- Configure Auto Backup (collapsible) -->
-            <button class="btn btn-sm btn-secondary" type="button"
-                    data-bs-toggle="collapse" data-bs-target="#autoBackupConfig" aria-expanded="false">
-                <i class="fas fa-cog"></i> Configure Auto Backup
-            </button>
-
-            <div class="collapse mt-3" id="autoBackupConfig">
-                <div class="card card-body border-secondary">
-                    <form method="POST" action="/admin/backup/config" id="auto-backup-form">
-                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-
-                        <div class="mb-3">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="autoBackupEnabled"
-                                       name="autoBackup" value="true"
-                                       <%= status.config.enabled ? 'checked' : '' %>>
-                                <label class="form-check-label" for="autoBackupEnabled">Enable Auto Backup</label>
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="autoBackupTime" class="form-label">Time of day (24-hour HH:MM)</label>
-                            <input type="time" class="form-control" id="autoBackupTime"
-                                   name="autoBackupTime" value="<%= status.config.time %>" style="max-width:140px;">
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label d-block">Days</label>
-                            <div class="d-flex flex-wrap gap-2 mb-2">
-                                <% const dayOpts = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; %>
-                                <% const selectedDays = status.config.days; %>
-                                <% dayOpts.forEach(function(d) { %>
-                                    <div class="form-check form-check-inline">
-                                        <input class="form-check-input day-checkbox" type="checkbox"
-                                               id="day_<%= d %>" value="<%= d %>"
-                                               <%= (selectedDays !== 'daily' && selectedDays !== 'monthly' && selectedDays.toLowerCase().includes(d.toLowerCase())) ? 'checked' : '' %>>
-                                        <label class="form-check-label" for="day_<%= d %>"><%= d %></label>
-                                    </div>
-                                <% }); %>
-                            </div>
-                            <div class="d-flex gap-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="autoBackupDays"
-                                           id="days_daily" value="daily"
-                                           <%= selectedDays === 'daily' ? 'checked' : '' %>>
-                                    <label class="form-check-label" for="days_daily">Daily</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="autoBackupDays"
-                                           id="days_monthly" value="monthly"
-                                           <%= selectedDays === 'monthly' ? 'checked' : '' %>>
-                                    <label class="form-check-label" for="days_monthly">Monthly (1st of month)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="autoBackupDays"
-                                           id="days_custom" value=""
-                                           <%= (selectedDays !== 'daily' && selectedDays !== 'monthly') ? 'checked' : '' %>>
-                                    <label class="form-check-label" for="days_custom">Custom (use checkboxes above)</label>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="maxBackups" class="form-label">Max backups to keep</label>
-                            <input type="number" class="form-control" id="maxBackups"
-                                   name="maxBackups" value="<%= status.config.maxBackups %>"
-                                   min="1" max="100" style="max-width:100px;">
-                        </div>
-
-                        <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
-                            <i class="fas fa-save"></i> Save Configuration
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
 
 </div>
 
@@ -550,6 +590,20 @@ document.querySelectorAll('input.restore-confirm').forEach(function (input) {
     input.addEventListener('input', update);
     update();
 });
+// A link to /admin/backup#<id> (the recovery-words reminder, the redirects after making words or
+// folders) lands on visible content: open the card that holds the element the fragment names.
+function openCardFromHash() {
+    let id = '';
+    try { id = decodeURIComponent(location.hash.slice(1)); } catch (e) { return; } // a malformed fragment changes nothing
+    const el = id ? document.getElementById(id) : null;
+    const details = el && (el.classList.contains('status-card') ? el.querySelector('details') : el.closest('details'));
+    if (details && !details.open) {
+        details.open = true;
+        el.scrollIntoView();
+    }
+}
+openCardFromHash();
+window.addEventListener('hashchange', openCardFromHash);
 // When "Custom" radio is selected, build the autoBackupDays value from checked day checkboxes on submit
 document.getElementById('auto-backup-form').addEventListener('submit', function(e) {
     const customRadio = document.getElementById('days_custom');

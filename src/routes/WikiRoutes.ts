@@ -1278,7 +1278,7 @@ class WikiRoutes {
       userContext: userContext, // used by page-history.ejs and other templates
       shareEnabled,
       csrfToken: req.session?.csrfToken || '', // #663: token for header meta + form _csrf inputs
-      currentUrl: req.originalUrl || req.url || '', // #785: lets header.ejs offer "Add to My Links" for any route, not just wiki pages
+      currentUrl: req.originalUrl || req.url || '', // #785: lets header.ejs offer "Add to pinned pages" for any route, not just wiki pages
       appName: configManager?.getProperty(
         'ngdpbase.application-name',
         'ngdpbase'
@@ -11514,7 +11514,7 @@ ${panes}
   }
 
   /**
-   * GET /my/links — current user's pinned MyLinks pages from preferences (#640).
+   * GET /my/links — current user's pinned pages from preferences (#640).
    */
   async myLinksPage(req: Request, res: Response) {
     try {
@@ -11536,7 +11536,8 @@ ${panes}
       const pagedList = this.pageOfList(items, req, 25, 'List pagination');
       res.render('my-list', {
         ...commonData,
-        title: 'My Links',
+        title: 'Pinned pages',
+        tabTitle: 'Pinned pages',
         icon: 'fa-link',
         items: pagedList.items,
         totalItems: pagedList.totalItems,
@@ -11545,7 +11546,7 @@ ${panes}
         emptyMessage: 'You haven\'t pinned any pages yet. Pin pages from the page menu to add them here.'
       });
     } catch (err) {
-      logger.error('Error rendering My Links list:', err);
+      logger.error('Error rendering Pinned pages list:', err);
       res.status(500).send('Error loading links list');
     }
   }
@@ -12077,10 +12078,10 @@ ${panes}
     }
   }
 
-  // ─── My Links (pinned pages) ───────────────────────────────────────────────
+  // ─── Pinned pages ───────────────────────────────────────────────
 
   /**
-   * POST /api/user/pinned-pages — add an item to My Links.
+   * POST /api/user/pinned-pages — add an item to pinned pages.
    *
    * Accepts either form:
    *   - Legacy wiki-page pin: `{pageName: "Foo", title?: "Foo"}` → URL derived.
@@ -12130,7 +12131,7 @@ ${panes}
   }
 
   /**
-   * DELETE /api/user/pinned-pages/:pageName — remove an item from My Links.
+   * DELETE /api/user/pinned-pages/:pageName — remove an item from pinned pages.
    *
    * For back-compat the path segment is named `:pageName`, but it accepts any
    * URL-decoded identifier: either a legacy pageName OR a URL-encoded canonical
@@ -12166,7 +12167,7 @@ ${panes}
   }
 
   /**
-   * PUT /api/user/pinned-pages/order — reorder My Links.
+   * PUT /api/user/pinned-pages/order — reorder pinned pages.
    *
    * Accepts `order: string[]` where each entry is a URL (preferred) or a
    * legacy pageName. Matching falls back through both fields so old clients
@@ -13807,6 +13808,8 @@ ${panes}
         // the organization's recovery words (never the words) and whether their admin confirmed saving them.
         sharedFoldersKey: backupManager.sharedFoldersKeyInfo(),
         sharedFoldersWords: await sharedFoldersWordsState(this.engine),
+        // #2470: a site with no shared-folders manager shows its card as "Not available", not as broken.
+        sharedFoldersAbsent: !this.engine.getManager<SharedFolderManager>('SharedFolderManager'),
         sharedFoldersUnavailable: ((folders) => (folders ? folders.unavailableReason() : 'Shared folders are not available on this site'))(this.engine.getManager<SharedFolderManager>('SharedFolderManager')),
         // #2125: the folders there are, by name (who may open each is policy's).
         sharedFolderNames: this.engine.getManager<SharedFolderManager>('SharedFolderManager')?.folderNames() ?? [],

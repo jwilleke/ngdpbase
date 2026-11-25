@@ -6,7 +6,7 @@
  */
 
 /**
- * An item pinned to the user's My Links sidebar section. The shape is unified
+ * An item pinned to the user's Pinned pages sidebar section. The shape is unified
  * across wiki pages and arbitrary app-route bookmarks (e.g. /my/journal,
  * /profile, /search?q=foo). `url` is the canonical identifier; `pageName` is
  * carried for wiki pages so the rendering path can still use page-aware
@@ -67,7 +67,7 @@ export interface UserPreferences {
   /** Language/locale */
   locale?: string;
 
-  /** Items pinned to the My Links sidebar section (wiki pages and app-route URLs) */
+  /** Items pinned to the Pinned pages sidebar section (wiki pages and app-route URLs) */
   'nav.pinnedPages'?: PinnedItem[];
 
   /** Additional custom preferences */

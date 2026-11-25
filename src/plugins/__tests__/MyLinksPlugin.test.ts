@@ -97,11 +97,12 @@ describe('MyLinksPlugin', () => {
   });
 
   describe('with pinned pages', () => {
-    test('renders My Links section with one page', () => {
+    test('renders the Pinned pages section with one page', () => {
       const user = authenticatedUser([{ pageName: 'RocketEngines', title: 'Rocket Engines' }]);
       const result = MyLinksPlugin.execute({ userContext: user }, {}) as string;
       expect(result).toContain('my-links-plugin');
-      expect(result).toContain('My Links');
+      expect(result).toContain('Pinned pages');
+      expect(result).not.toContain('My Links');
       expect(result).toContain('Rocket Engines');
       expect(result).toContain('/view/RocketEngines');
     });
@@ -141,6 +142,7 @@ describe('MyLinksPlugin', () => {
       const user = authenticatedUser([{ pageName: 'PageX', title: 'Page X' }]);
       const result = MyLinksPlugin.execute({ userContext: user }, {}) as string;
       expect(result).toContain('my-links-remove');
+      expect(result).toContain('Remove from pinned pages');
       // #785: remove button targets the unified URL-based handler.
       // Legacy {pageName, title} entries normalise to url=/view/<pageName>.
       expect(result).toContain('removePinnedItem');
