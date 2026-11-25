@@ -36,6 +36,13 @@ export const HISTORY_RETENTION_DAYS = 30;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** True for a date that exists: the shape is right and it survives a round trip (not 2026-02-30 or 9999-99-99). */
+function isRealDay(day: string): boolean {
+  if (!DAY.test(day)) return false;
+  const at = new Date(`${day}T00:00:00.000Z`);
+  return !Number.isNaN(at.getTime()) && at.toISOString().slice(0, 10) === day;
+}
 const DAY_FILE = /^parser-performance-(\d{4}-\d{2}-\d{2})\.jsonl$/;
 
 export class ParserPerformanceHistory {
@@ -46,21 +53,26 @@ export class ParserPerformanceHistory {
     private readonly now: () => number = Date.now
   ) {}
 
-  /** Create the folder and remove files past the retention. Never throws. */
-  async open(): Promise<void> {
+  /**
+   * Create the folder and remove files past the retention. Never throws. True when the folder is
+   * there; false when it could not be made (a warning is logged), so nothing can be kept in it.
+   */
+  async open(): Promise<boolean> {
     try {
       await fs.mkdir(this.dir, { recursive: true });
-      await this.prune();
     } catch (err) {
       logger.warn(`Page building history: could not open its folder: ${(err as Error).message}`);
+      return false;
     }
+    await this.prune();
+    return true;
   }
 
   /** Append one line to the file for the sample's day. Never throws. */
   async record(sample: PerformanceSample): Promise<void> {
     if (this.now() - this.lastPrune >= DAY_MS) await this.prune();
     const day = typeof sample.t === 'string' ? sample.t.slice(0, 10) : '';
-    if (!DAY.test(day)) {
+    if (!isRealDay(day)) {
       logger.warn('Page building history: a check with no usable date was dropped.');
       return;
     }
@@ -209,12 +221,26 @@ export function rollupSamples(samples: PerformanceSample[], now: number): Rollup
   return rollup;
 }
 
+/** How many checks each window holds, whichever numbers a check carried. */
+export function countChecks(samples: PerformanceSample[], now: number): Record<RollupWindow, number> {
+  const counts = {} as Record<RollupWindow, number>;
+  for (const [window, length] of Object.entries(ROLLUP_WINDOWS) as Array<[RollupWindow, number]>) {
+    counts[window] = samples.filter((s) => {
+      const at = typeof s?.t === 'string' ? Date.parse(s.t) : NaN;
+      return at >= now - length && at <= now;
+    }).length;
+  }
+  return counts;
+}
+
 /** What MarkupParser hands the admin page. */
 export interface PerformanceReport {
   rollup: Rollup;
+  /** Checks in each window, shown once in the column headings. */
+  checks: Record<RollupWindow, number>;
   /** The old over-limit minutes, kept apart from the checks. */
   legacy: Record<PerformanceMeasure, MeasureStats | null>;
   limits: { parseTime: number; cacheHitRatio: number; errorRate: number };
-  /** False when no folder is configured, so nothing is kept. */
+  /** False when no folder is configured or it could not be made, so nothing is kept. */
   recording: boolean;
 }

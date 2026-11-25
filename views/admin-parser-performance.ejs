@@ -14,20 +14,20 @@
   const measures = [
     {
       key: 'parse',
-      title: 'Page build time',
-      note: 'Time to build a page, in milliseconds (pages not already stored). Limit: ' + report.limits.parseTime + '.',
+      title: 'Page build time (ms)',
+      note: 'Pages not already stored. Limit: ' + report.limits.parseTime + ' ms. Slower is too slow.',
       fmt: ms
     },
     {
       key: 'hit',
-      title: 'Pages from stored copies',
-      note: 'Pages served from stored copies, in percent. Lower than ' + limitPct(report.limits.cacheHitRatio) + ' is flagged.',
+      title: 'Pages from stored copies (%)',
+      note: 'Below ' + limitPct(report.limits.cacheHitRatio) + ' is too low.',
       fmt: pct
     },
     {
       key: 'err',
-      title: 'Pages that failed to build',
-      note: 'Pages that failed to build, in percent. Higher than ' + limitPct(report.limits.errorRate) + ' is flagged.',
+      title: 'Pages that failed to build (%)',
+      note: 'Above ' + limitPct(report.limits.errorRate) + ' is too high.',
       fmt: pct
     }
   ];
@@ -35,9 +35,12 @@
     ['Typical', 'p50'],
     ['Slowest 1 in 20', 'p95'],
     ['Slowest', 'max'],
-    ['Average', 'mean'],
-    ['Checks counted', 'count']
+    ['Average', 'mean']
   ];
+  const hasData = (key) => windows.some(([window]) => report.rollup[window][key]);
+  const anyData = measures.some((measure) => hasData(measure.key));
+  // A table whose count of checks with its number differs from the period's total says so on a row of its own.
+  const countsDiffer = (key) => windows.some(([window]) => report.rollup[window][key] && report.rollup[window][key].count !== report.checks[window]);
   const hasLegacy = ['parse', 'hit', 'err'].some((k) => report.legacy[k]);
 %>
 
@@ -45,23 +48,34 @@
   <div class="row">
     <div class="col-12">
       <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1><i class="fas fa-gauge-high"></i> Page building speed</h1>
+        <h1 class="h2 me-3"><i class="fas fa-gauge-high"></i> Page building speed</h1>
         <a href="/admin" class="btn btn-secondary">
           <i class="fas fa-arrow-left"></i> Back to Dashboard
         </a>
       </div>
 
-      <p>
-        How quickly the site turns page text into what you read. The site checks once a minute while pages are being viewed.
-        Typical is the middle value. Slowest 1 in 20 is the value that 19 of 20 checks stayed under. Slowest is the worst check.
-      </p>
+      <p>How quickly the site turns page text into what you read.</p>
+
+      <details class="mb-4">
+        <summary>What Typical, Slowest 1 in 20 and Slowest mean</summary>
+        <p class="mt-2 mb-0">
+          The site checks once a minute while pages are being viewed.
+          Typical is the middle value. Slowest 1 in 20 is the value that 19 of 20 checks stayed under.
+          Slowest is the worst check.
+        </p>
+      </details>
 
       <% if (!report.recording) { %>
         <div class="alert alert-warning" role="alert">
-          <i class="fas fa-exclamation-triangle"></i> This site is not keeping these checks.
+          <i class="fas fa-exclamation-triangle"></i>
+          Page checks are not being saved because the site has no folder it can write them to.
+          In Admin → Configuration, set <code>ngdpbase.markup.performance.history.dir</code> to a folder the site can write to, then restart.
         </div>
+      <% } else if (!anyData) { %>
+        <p class="text-muted">No checks recorded yet. They appear within a minute of pages being viewed.</p>
       <% } %>
 
+      <% if (report.recording && anyData) { %>
       <% measures.forEach((measure) => { %>
         <div class="card mb-4" data-testid="parser-performance-<%= measure.key %>">
           <div class="card-header">
@@ -69,50 +83,65 @@
           </div>
           <div class="card-body">
             <p class="text-muted"><%= measure.note %></p>
+            <% if (!hasData(measure.key)) { %>
+              <p class="mb-0">No checks recorded yet.</p>
+            <% } else { %>
             <div class="table-responsive">
               <table class="table table-sm align-middle mb-0">
                 <thead>
                   <tr>
                     <th scope="col"></th>
-                    <% windows.forEach(([, label]) => { %>
-                      <th scope="col" class="text-end"><%= label %></th>
+                    <% windows.forEach(([window, label]) => { %>
+                      <th scope="col" class="text-end">
+                        <%= label %>
+                        <span class="d-block fw-normal text-muted small"><%= report.checks[window] %> checks</span>
+                      </th>
                     <% }); %>
                   </tr>
                 </thead>
                 <tbody>
                   <% rows.forEach(([label, field], rowIndex) => { %>
                     <tr>
-                      <th scope="row" class="fw-normal text-nowrap"><%= label %></th>
+                      <th scope="row" class="fw-normal"><%= label %></th>
                       <% windows.forEach(([window]) => { %>
                         <% const s = report.rollup[window][measure.key]; %>
                         <% if (!s) { %>
                           <% if (rowIndex === 0) { %>
-                            <td class="text-end text-muted small" rowspan="<%= rows.length %>">No checks recorded in this period yet.</td>
+                            <td class="text-end text-muted small" rowspan="<%= rows.length %>">No checks in this period.</td>
                           <% } %>
-                        <% } else if (field === 'count') { %>
-                          <td class="text-end"><%= s.count %></td>
                         <% } else { %>
                           <td class="text-end"><%= measure.fmt(s[field]) %></td>
                         <% } %>
                       <% }); %>
                     </tr>
                   <% }); %>
+                  <% if (countsDiffer(measure.key)) { %>
+                    <tr class="text-muted small">
+                      <th scope="row" class="fw-normal">Checks with this number</th>
+                      <% windows.forEach(([window]) => { %>
+                        <% const s = report.rollup[window][measure.key]; %>
+                        <td class="text-end"><%= s ? s.count : '' %></td>
+                      <% }); %>
+                    </tr>
+                  <% } %>
                 </tbody>
               </table>
             </div>
+            <% } %>
           </div>
         </div>
       <% }); %>
+      <% } %>
 
       <% if (hasLegacy) { %>
         <div class="card mb-4" data-testid="parser-performance-earlier">
           <div class="card-header">
-            <h5 class="mb-0">Earlier warnings (over-limit samples only)</h5>
+            <h5 class="mb-0">Earlier warnings (only checks over the limit)</h5>
           </div>
           <div class="card-body">
             <p class="text-muted">
-              Before this page existed, the site saved only the minutes when a number went over its limit.
-              These are those minutes. They show how bad the slow minutes were, not how the site did overall.
+              Saved before this page existed, for checks over the limit only. Not a view of the whole site.
+              The two shares were totals since start-up: do not compare them with the tables above.
             </p>
             <div class="table-responsive">
               <table class="table table-sm align-middle mb-0">
@@ -125,9 +154,9 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <% rows.forEach(([label, field]) => { %>
+                  <% rows.concat([['Checks counted', 'count']]).forEach(([label, field]) => { %>
                     <tr>
-                      <th scope="row" class="fw-normal text-nowrap"><%= label %></th>
+                      <th scope="row" class="fw-normal"><%= label %></th>
                       <% measures.forEach((measure) => { %>
                         <% const s = report.legacy[measure.key]; %>
                         <td class="text-end">

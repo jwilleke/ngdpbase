@@ -46,7 +46,7 @@ export interface LegacyAlertsFile {
 /** What the import needs of NotificationManager. */
 export interface LegacyAlertSource {
   getAllNotifications(includeExpired?: boolean): Array<{ title: string; message: string; createdAt: Date | string }>;
-  removeByTitlePrefix(prefix: string): Promise<number>;
+  removeByTitles(titles: readonly string[]): Promise<number>;
 }
 
 /** The three message shapes the parser used, by the alert type in the title. */
@@ -65,6 +65,9 @@ export function parseLegacyAlert(n: { title: string; message: string; createdAt:
   if (!shape || !match || Number.isNaN(at.getTime())) return null;
   return { t: at.toISOString(), measure: shape.measure, value: Number(match[1]) / shape.scale };
 }
+
+/** The three whole titles the old code wrote, one for each alert type. Only these are imported and deleted. */
+export const LEGACY_TITLES: readonly string[] = Object.keys(SHAPES).map((type) => `${LEGACY_TITLE_PREFIX}${type}`);
 
 type Loaded = { state: 'missing' } | { state: 'unreadable' } | { state: 'ok'; file: LegacyAlertsFile };
 
@@ -122,7 +125,7 @@ export async function importLegacyAlerts(
     } else {
       const samples: LegacySample[] = [];
       for (const n of source.getAllNotifications(true)) {
-        if (typeof n.title !== 'string' || !n.title.startsWith(LEGACY_TITLE_PREFIX)) continue;
+        if (!LEGACY_TITLES.includes(n.title)) continue;
         const sample = parseLegacyAlert(n);
         if (sample) samples.push(sample);
         else skipped++;
@@ -132,7 +135,7 @@ export async function importLegacyAlerts(
       await write(dir, file); // before anything is deleted
     }
 
-    const removed = await source.removeByTitlePrefix(LEGACY_TITLE_PREFIX);
+    const removed = await source.removeByTitles(LEGACY_TITLES);
     await write(dir, { ...file, removedAt: new Date(now).toISOString(), removed });
     logger.info(`Page building history: imported ${imported}, skipped ${skipped}, removed ${removed} earlier warnings.`);
     return { imported, skipped, removed };

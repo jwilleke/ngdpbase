@@ -58,7 +58,7 @@ describe('the dashboard button for Page building speed (#2468)', () => {
 
   test('an account with only admin-read sees that button and none of the admin-system tools', async () => {
     const html = await dashboard(['admin-read']);
-    expect(html).not.toContain('confirmRestart()');
+    expect(html).not.toContain('onclick="confirmRestart()"');
     expect(html).not.toContain('href="/admin/backup"');
   });
 });

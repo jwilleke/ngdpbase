@@ -10,7 +10,7 @@ import DOMVariableHandler from './dom/handlers/DOMVariableHandler.js';
 import DOMPluginHandler from './dom/handlers/DOMPluginHandler.js';
 import DOMLinkHandler from './dom/handlers/DOMLinkHandler.js';
 import logger from '../utils/logger.js';
-import { ParserPerformanceHistory, rollupSamples, ROLLUP_WINDOWS, type PerformanceReport } from './ParserPerformanceHistory.js';
+import { ParserPerformanceHistory, rollupSamples, countChecks, ROLLUP_WINDOWS, type PerformanceReport } from './ParserPerformanceHistory.js';
 import { importLegacyAlerts, legacyStats, readLegacyAlerts, type LegacyAlertSource } from './ParserPerformanceLegacyAlerts.js';
 import JSPWikiPreprocessor from './handlers/JSPWikiPreprocessor.js';
 import PluginSyntaxHandler from './handlers/PluginSyntaxHandler.js';
@@ -272,6 +272,9 @@ export interface PerformanceMonitor {
 }
 
 /** The three limits the once-a-minute check holds the parser to. */
+/** How long a page building report is reused, in milliseconds (#2468). */
+const REPORT_CACHE_MS = 60_000;
+
 export type PerformanceLimit = 'SLOW_PARSING' | 'LOW_CACHE_HIT_RATIO' | 'HIGH_ERROR_RATE';
 
 /** Performance alert */
@@ -373,6 +376,8 @@ class MarkupParser extends BaseManager {
 
   /** Performance monitoring state */
   performanceMonitor: PerformanceMonitor | null;
+  /** The last page building report and when it was made (#2468), reused for a minute. */
+  private performanceReportCache: { at: number; report: Promise<PerformanceReport> } | null = null;
 
   /** Parser performance metrics */
   metrics: ParserMetrics;
@@ -763,12 +768,14 @@ class MarkupParser extends BaseManager {
       return;
     }
     const history = new ParserPerformanceHistory(dir);
-    await history.open();
+    if (!(await history.open())) {
+      return; // no folder to keep checks in: not recording, and the old notifications stay where they are
+    }
     this.performanceMonitor.history = history;
 
     // #2468: the old "MarkupParser Performance Alert" notifications: keep their numbers, then delete them.
     const notifications = this.engine.getManager<Partial<LegacyAlertSource>>('NotificationManager');
-    if (typeof notifications?.getAllNotifications === 'function' && typeof notifications.removeByTitlePrefix === 'function') {
+    if (typeof notifications?.getAllNotifications === 'function' && typeof notifications.removeByTitles === 'function') {
       await importLegacyAlerts(dir, notifications as LegacyAlertSource, Date.now());
     }
   }
@@ -776,16 +783,31 @@ class MarkupParser extends BaseManager {
   /**
    * What the "Page building speed" admin page shows (#2468): the kept checks summed up for the last
    * hour, 24 hours, 7 days and 30 days, the numbers of the old over-limit alerts, and the limits the
-   * checks are held to. Read when the page is opened; nothing is stored. With no folder to keep the
-   * checks in, `recording` is false and there is nothing to sum up.
+   * checks are held to. With no folder to keep the checks in (none set, or it could not be made),
+   * `recording` is false and there is nothing to sum up. Reading 30 days of files is the costly part,
+   * so a report is reused for a minute, which is as often as a check is made.
    */
   async getPerformanceReport(now: number = Date.now()): Promise<PerformanceReport> {
+    const cached = this.performanceReportCache;
+    if (cached && now >= cached.at && now - cached.at < REPORT_CACHE_MS) {
+      return cached.report;
+    }
+    const report = this.buildPerformanceReport(now);
+    this.performanceReportCache = { at: now, report };
+    report.catch(() => {
+      if (this.performanceReportCache?.report === report) this.performanceReportCache = null;
+    });
+    return report;
+  }
+
+  private async buildPerformanceReport(now: number): Promise<PerformanceReport> {
     const history = this.performanceMonitor?.history ?? null;
     const limits = this.config.performance.alertThresholds;
     const samples = history ? await history.read(now - ROLLUP_WINDOWS.month) : [];
     const legacy = history ? await readLegacyAlerts(history.dir) : null;
     return {
       rollup: rollupSamples(samples, now),
+      checks: countChecks(samples, now),
       legacy: legacyStats(legacy?.samples ?? [], now),
       limits: { parseTime: limits.parseTime, cacheHitRatio: limits.cacheHitRatio, errorRate: limits.errorRate },
       recording: history !== null

@@ -398,6 +398,7 @@ A line that does not parse, such as the half-written last line after a crash, is
 ```typescript
 {
   rollup: Record<'hour' | 'day' | 'week' | 'month', Record<'parse' | 'hit' | 'err', MeasureStats | null>>,
+  checks: Record<'hour' | 'day' | 'week' | 'month', number>,
   legacy: Record<'parse' | 'hit' | 'err', MeasureStats | null>,
   limits: { parseTime: number; cacheHitRatio: number; errorRate: number },
   recording: boolean
@@ -408,18 +409,20 @@ A line that does not parse, such as the half-written last line after a crash, is
 - The windows are the last hour, 24 hours, 7 days and 30 days up to `now`, the edge included. They are worked out when called; nothing is stored.
 - `p50` and `p95` are nearest-rank: the value at rank `ceil(p / 100 × N)` of the N values, smallest first. `mean` is the plain average. A check with no value for a measure is left out of that measure's sums.
 - A measure with no value in a window is `null`.
-- `recording` is false when there is no folder to keep checks in.
+- `checks` is how many checks each window holds, whichever numbers a check carried. The page shows it once, in the column headings; a table whose own count differs says so on its own row.
+- `recording` is false when there is no folder to keep checks in, or the folder could not be made when the parser started. In that case the parser does not try to keep checks and leaves the old notifications where they are.
+- Reading 30 days of files is the costly part, so a report is reused for 60 seconds, the interval of the check itself. Many page views in a minute read the files once.
 
 #### The earlier over-limit alerts
 
-Before checks were kept, each minute a number went over its limit saved a notification titled `MarkupParser Performance Alert: ...`. Those are the only record of how bad the slow minutes were, so when the parser starts it copies their numbers to `legacy-alerts.json` in the same folder, and then deletes them with `NotificationManager.removeByTitlePrefix` ([NotificationManager](../managers/NotificationManager.md)):
+Before checks were kept, each minute a number went over its limit saved a notification titled `MarkupParser Performance Alert: ...`. Those are the only record of how bad the slow minutes were, so when the parser starts it copies their numbers to `legacy-alerts.json` in the same folder, and then deletes them with `NotificationManager.removeByTitles`, naming the three whole titles the parser used to write ([NotificationManager](../managers/NotificationManager.md)):
 
 1. No file: read the old notifications, write the file under a temporary name and rename it into place, then delete the notifications. A crash never leaves half a file.
 2. A file without `removedAt`: a crash fell between the write and the delete, so only the delete is tried again. Nothing is imported twice.
 3. A file with `removedAt`: nothing runs.
 4. A file that cannot be read is left as it is and nothing is deleted.
 
-A site with no old alerts still gets the file, so the check is not repeated. A message that is not one of the three shapes the parser wrote is counted in `skipped` and left out of the numbers. Percentages become ratios from 0 to 1, as in the per-minute lines; times stay in milliseconds. `legacy` in the report sums the imported samples from the last 30 days. They are over-limit minutes only, so they show how bad the slow minutes were, not how the site did overall, and the page shows them apart from the checks.
+A site with no old alerts still gets the file, so the check is not repeated. A message that is not one of the three shapes the parser wrote is counted in `skipped` and left out of the numbers. A notification whose title is not exactly one of the three is neither counted nor deleted, even if it starts the same way. Percentages become ratios from 0 to 1, as in the per-minute lines; times stay in milliseconds. `legacy` in the report sums the imported samples from the last 30 days. They are over-limit checks only, so they show how bad the slow ones were, not how the site did overall, and the page shows them apart from the checks. The share served from stored copies and the share that failed in them were totals since start-up, not the minute's own, so the page says they are not comparable with its per-minute tables.
 
 #### The admin page
 

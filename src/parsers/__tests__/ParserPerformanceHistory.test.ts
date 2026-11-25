@@ -121,7 +121,7 @@ describe('ParserPerformanceHistory (#2468)', () => {
     fs.writeFileSync(blocker, 'x');
     const store = new ParserPerformanceHistory(path.join(blocker, 'inside'));
 
-    await expect(store.open()).resolves.toBeUndefined();
+    await expect(store.open()).resolves.toBe(false);
     await expect(store.record(sample('2026-11-22T14:15:00.000Z'))).resolves.toBeUndefined();
     expect(logger.warn).toHaveBeenCalled();
   });

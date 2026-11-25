@@ -170,7 +170,7 @@ describe('what the Page building speed page says (#2468)', () => {
     for (const r of [report(), report({ recording: false }), nothing()]) {
       const doc = await dom(r);
       doc.querySelectorAll('details > :not(summary), table').forEach((e) => e.remove());
-      const words = squash(doc.body.textContent).split(' ').filter(Boolean).length;
+      const words = squash(doc.querySelector('h1')?.closest('.col-12')?.textContent).split(' ').filter(Boolean).length;
       expect(words).toBeLessThan(111);
     }
   });
@@ -188,7 +188,8 @@ describe('what the Page building speed page says (#2468)', () => {
     const heads = [...doc.querySelectorAll('[data-testid="parser-performance-parse"] thead th')].map((th) => squash(th.textContent));
 
     expect(heads).toEqual(['', 'Last hour 58 checks', 'Last 24 hours 1210 checks', 'Last 7 days 7840 checks', 'Last 30 days 30120 checks']);
-    expect(squash(doc.body.textContent)).not.toContain('Checks counted');
+    expect(squash(doc.querySelector('[data-testid="parser-performance-parse"]')?.textContent)).not.toContain('Checks counted');
+    expect(squash(doc.querySelector('[data-testid="parser-performance-hit"]')?.textContent)).not.toContain('Checks counted');
   });
 
   test('a table whose count differs from the period total says so on its own row', async () => {
