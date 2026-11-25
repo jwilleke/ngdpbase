@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - __#2468__ — the parser's once-a-minute page building check is now kept: each check appends one line (time to build a page, share served from stored copies, share that failed, pages built) to a file for the day under the new setting `ngdpbase.markup.performance.history.dir` (default `${FAST_STORAGE}/parser-performance`), and files older than 30 days are removed. The share served from stored copies and the share that failed are now the minute's own, not totals since start-up, so a low-traffic site may see its limit crossed more often than before. Crossing a limit now writes one warning log line and coming back under it one info line; the parser no longer saves a notification each minute it stays over. Notifications an earlier version saved are left as they are. The limits and their defaults are unchanged.
 
+### Fixed
+
+- __#2514__ — the upgrade clean-up of old `access:` limits now reaches pages in a person's vault. The start-up scan and the sign-in pass listed pages with the page provider's list, which leaves the vaults folder out, so a vault page with an old limit such as `edit: [admin]` was never counted in Admin → needs attention, never given an Author Lock, and had no copy made in `upgrade-backups`. The start-up scan now counts every vault page it can read (never named), and the sign-in pass converts the signed-in person's own vault pages, with a copy first. Another person's vault is still never looked at, and a closed (encrypted) vault is not listed until it is open at a sign-in. Nothing for you to do.
+
 ### Planned
 
 - Future enhancements

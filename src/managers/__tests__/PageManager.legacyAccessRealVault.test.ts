@@ -19,7 +19,6 @@ import FileSystemProvider from '../../providers/FileSystemProvider';
 import ValidationManager from '../ValidationManager';
 import { ALLOWING_PDP, withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
-type Meta = Record<string, unknown>;
 interface Subject { username: string; roles: string[]; isAuthenticated: boolean }
 interface TestManager {
   provider: unknown;
@@ -125,7 +124,10 @@ describe('the upgrade clean-up reaches a vault page on disk (#2514)', () => {
     const text = await fs.readFile(pageFile('root', ROOT_PAGE), 'utf8');
     expect(text).not.toMatch(/^access:/m);
     expect(text).toMatch(/author-lock: true/);
-    expect(backups()).toEqual([`${ROOT_PAGE}.md`]);
+    // The copy is the file as it was, with its old limit.
+    expect(backups()).toHaveLength(1);
+    expect(backups()[0]).toMatch(new RegExp(`-${ROOT_PAGE}\\.md$`));
+    expect(await fs.readFile(path.join(backupDir(), backups()[0]), 'utf8')).toMatch(/^access:/m);
     expect(bannerText()).not.toMatch(/\(not named here\)/);
   });
 

@@ -4489,6 +4489,28 @@ class PageManager extends BaseManager implements CatalogSource {
     return fresh ?? 'changed';
   }
 
+  /**
+   * The pages in people's vaults, listed with what the upgrade clean-up of old
+   * `access:` limits reads (#2514). The provider's page list leaves the vaults
+   * folder out, so a pass that lists with it alone never meets a vault page.
+   * Each is named by its path, as the passes expect, and listed only as `ctx`
+   * may read it: one owner's vaults when `owner` is given, so the owner's own
+   * and no one else's; a closed vault contributes nothing. A page that cannot
+   * be read back is left out.
+   */
+  private async vaultPageInfos(ctx: ActorContext, owner?: string): Promise<Array<{ title: string; uuid: string; filePath: string; metadata: Partial<PageFrontmatter> }>> {
+    const provider = this.provider;
+    if (!provider?.listPrivateStorePages) return [];
+    const out: Array<{ title: string; uuid: string; filePath: string; metadata: Partial<PageFrontmatter> }> = [];
+    for (const ref of await provider.listPrivateStorePages(ctx, owner)) {
+      const title = formatPrivatePageName(ref.owner, ref.store, ref.title);
+      const page = await provider.getPage(title, ctx);
+      if (!page?.filePath || !page.metadata) continue;
+      out.push({ title, uuid: page.uuid ?? ref.uuid, filePath: page.filePath, metadata: page.metadata });
+    }
+    return out;
+  }
+
   /** The site's facts the conversion judges a page by: who the administrators are, and whether a page's author is one. */
   private legacyAccessSite(): SiteFacts {
     const policies = this.engine.getManager<{ policies?(): unknown }>('PolicyDecisionPoint')?.policies?.();
@@ -4555,7 +4577,8 @@ class PageManager extends BaseManager implements CatalogSource {
       const defaultCategory = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager')?.getDefaultSystemCategory?.();
       const backups = path.join(dataFolder, 'upgrade-backups');
       let finished = true;
-      for (const info of await provider.getAllPageInfo()) {
+      // The page list leaves the vaults out (#2514): the person's own vaults are listed beside it.
+      for (const info of [...await provider.getAllPageInfo(), ...await this.vaultPageInfos(subject, username)]) {
         if (info.metadata?.access === undefined || inSharedFolder(info.title)) continue;
         const vaultOwner = vaultOwnerOf(info.title);
         const priv = (info.metadata as { private?: unknown }).private;
@@ -4682,6 +4705,14 @@ class PageManager extends BaseManager implements CatalogSource {
     this.legacyAccessPages.clear();
     for (const info of await this.provider.getAllPageInfo()) {
       await this.noteLegacyAccess(info.title, info.uuid, info.metadata, Boolean(info.uuid) && record.hasUuid(info.uuid));
+    }
+    // The page list leaves the vaults out (#2514): vault pages with an old limit are counted too, never named.
+    try {
+      for (const info of await this.vaultPageInfos(systemContext(this.engine, 'count old access limits on pages in vaults (#2514)'))) {
+        await this.noteLegacyAccess(info.title, info.uuid, info.metadata, record.hasUuid(info.uuid));
+      }
+    } catch (err) {
+      logger.warn(`[PageManager] Pages in vaults were not checked for old access limits: ${failureForLog(err)}`);
     }
     if (this.legacyAccessPages.size > 0) {
       logger.warn(`[PageManager] ${this.legacyAccessPages.size} page(s) still carry an 'access' limit that is no longer read; they are listed in Admin → needs attention (#2269)`);
