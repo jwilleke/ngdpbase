@@ -224,18 +224,20 @@ export function writeSignInDone(folder: string, users: ReadonlySet<string>): voi
 }
 
 /**
- * Write `text` (a file as it is now) into `folder` before it is rewritten.
+ * Write `content` (a file as it is now) into `folder` before it is rewritten.
  * Owner-only, never overwriting. Throws when it cannot, and the caller then
- * leaves the original alone.
+ * leaves the original alone. Pass the file's bytes when it may not be text: a
+ * page in an encrypted vault is stored sealed, and its copy must be those same
+ * sealed bytes (#2514).
  *
  * @returns The path of the copy
  */
-export function backUpBeforeRewrite(folder: string, name: string, text: string, now: Date = new Date()): string {
+export function backUpBeforeRewrite(folder: string, name: string, content: string | Buffer, now: Date = new Date()): string {
   fs.mkdirSync(folder, { recursive: true, mode: SECRET_DIR_MODE });
   // A folder that was there already keeps its own mode through mkdir; the copies can hold secrets.
   if (process.platform !== 'win32') fs.chmodSync(folder, SECRET_DIR_MODE);
   const safe = name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 80) || 'file';
   const file = path.join(folder, `${now.toISOString().replace(/[:.]/g, '-')}-${safe}`);
-  fs.writeFileSync(file, text, { flag: 'wx', mode: SECRET_FILE_MODE });
+  fs.writeFileSync(file, content, { flag: 'wx', mode: SECRET_FILE_MODE });
   return file;
 }

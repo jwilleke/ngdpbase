@@ -4460,13 +4460,14 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!await exactReplacement(info.metadata, site, vaultOwner)) return 'no-match';
     // Read, compared, copied and saved as one step, so a save made meanwhile is never written over.
     const fresh = await this.pageWrite(uuid, async () => {
-      const text = await fse.readFile(info.filePath, 'utf8');
+      // The file's bytes, not its text: a page in an encrypted vault is stored sealed, and its copy is those sealed bytes, which the vault's key opens again. Nothing of the page is written in the clear outside its vault (#2514).
+      const text = await fse.readFile(info.filePath);
       const page = await this.getPage(info.title, ctx);
       // The page is read again so the replacement is judged on what is stored now, and it must be the page whose file is copied.
       const now = page ? await exactReplacement(page.metadata, site, vaultOwner) : null;
       if (!page || !now || page.uuid !== uuid) return null;
       // The file is unchanged since it was copied, so the copy is what the save overwrites.
-      if (await fse.readFile(info.filePath, 'utf8') !== text) return null;
+      if (!(await fse.readFile(info.filePath)).equals(text)) return null;
       const copy = backUpBeforeRewrite(backups, `${uuid}.md`, text);
       try {
         await this.savePage(info.title, page.content ?? '', withReplacement({ ...page.metadata }, now), ctx, {
@@ -4476,7 +4477,7 @@ class PageManager extends BaseManager implements CatalogSource {
         });
       } catch (err) {
         // The copy is dropped only while the file is still as it was: a page that fails every start would add one each time, but once the file was rewritten the copy is the only original.
-        const unchanged = await fse.readFile(info.filePath, 'utf8').then((now) => now === text, () => false);
+        const unchanged = await fse.readFile(info.filePath).then((now) => now.equals(text), () => false);
         if (unchanged) {
           fse.removeSync(copy);
           throw err;
