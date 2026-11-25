@@ -331,6 +331,10 @@ In order, it:
 3. Runs `git fetch --tags origin`, then `git pull --ff-only origin master` (no ref) or
    `git checkout <ref>`. A pull that is not a fast-forward is refused; nothing is ever forced.
 4. Runs `npm install`, every time (see `.claude/commands/othersites.md` step 2 for why).
+   Then it puts the committed `package-lock.json` back (`git checkout -- package-lock.json`),
+   because `npm install` rewrites a lockfile that disagrees with `package.json` and the next
+   update would refuse the dirty tree ([#2519](https://github.com/jwilleke/ngdpbase/issues/2519)).
+   CI checks that `npm install --package-lock-only` leaves the lockfile unchanged.
 5. Runs `npm run build`.
 6. Restarts the same way `restart` does: `stop`, then `start` with the env argument, if given.
 7. Waits for `/health/readiness` on `localhost:$PORT` to answer 200, up to
