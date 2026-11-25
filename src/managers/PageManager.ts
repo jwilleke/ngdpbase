@@ -4496,20 +4496,12 @@ class PageManager extends BaseManager implements CatalogSource {
    * folder out, so a pass that lists with it alone never meets a vault page.
    * Each is named by its path, as the passes expect, and listed only as `ctx`
    * may read it: one owner's vaults when `owner` is given, so the owner's own
-   * and no one else's; a closed vault contributes nothing. A page that cannot
-   * be read back is left out.
+   * and no one else's. A vault `ctx` cannot open (a closed encrypted vault, a
+   * damaged index) or a page that cannot be read is left out and counted in
+   * `unreadable`: a count only, never a page's name or path.
    */
-  private async vaultPageInfos(ctx: ActorContext, owner?: string): Promise<Array<{ title: string; uuid: string; filePath: string; metadata: Partial<PageFrontmatter> }>> {
-    const provider = this.provider;
-    if (!provider?.listPrivateStorePages) return [];
-    const out: Array<{ title: string; uuid: string; filePath: string; metadata: Partial<PageFrontmatter> }> = [];
-    for (const ref of await provider.listPrivateStorePages(ctx, owner)) {
-      const title = formatPrivatePageName(ref.owner, ref.store, ref.title);
-      const page = await provider.getPage(title, ctx);
-      if (!page?.filePath || !page.metadata) continue;
-      out.push({ title, uuid: page.uuid ?? ref.uuid, filePath: page.filePath, metadata: page.metadata });
-    }
-    return out;
+  private async vaultPageInfos(ctx: ActorContext, owner?: string): Promise<{ pages: Array<{ title: string; uuid: string; filePath: string; metadata: Partial<PageFrontmatter> }>; unreadable: number }> {
+    return await this.provider?.listPrivateStorePageInfo?.(ctx, owner) ?? { pages: [], unreadable: 0 };
   }
 
   /** The site's facts the conversion judges a page by: who the administrators are, and whether a page's author is one. */
@@ -4579,7 +4571,8 @@ class PageManager extends BaseManager implements CatalogSource {
       const backups = path.join(dataFolder, 'upgrade-backups');
       let finished = true;
       // The page list leaves the vaults out (#2514): the person's own vaults are listed beside it.
-      for (const info of [...await provider.getAllPageInfo(), ...await this.vaultPageInfos(subject, username)]) {
+      const vaults = await this.vaultPageInfos(subject, username);
+      for (const info of [...await provider.getAllPageInfo(), ...vaults.pages]) {
         if (info.metadata?.access === undefined || inSharedFolder(info.title)) continue;
         const vaultOwner = vaultOwnerOf(info.title);
         const priv = (info.metadata as { private?: unknown }).private;
@@ -4709,9 +4702,12 @@ class PageManager extends BaseManager implements CatalogSource {
     }
     // The page list leaves the vaults out (#2514): vault pages with an old limit are counted too, never named.
     try {
-      for (const info of await this.vaultPageInfos(systemContext(this.engine, 'count old access limits on pages in vaults (#2514)'))) {
+      const vaults = await this.vaultPageInfos(systemContext(this.engine, 'count old access limits on pages in vaults (#2514)'));
+      for (const info of vaults.pages) {
         await this.noteLegacyAccess(info.title, info.uuid, info.metadata, record.hasUuid(info.uuid));
       }
+      // Counts only: a closed vault is expected here, as the system holds no keys.
+      if (vaults.unreadable > 0) logger.info(`[PageManager] ${vaults.unreadable} vault(s) or page(s) in vaults could not be read at start-up, so they were not checked for old access limits (an encrypted vault is read when its owner signs in)`);
     } catch (err) {
       logger.warn(`[PageManager] Pages in vaults were not checked for old access limits: ${failureForLog(err)}`);
     }
