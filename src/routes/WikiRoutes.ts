@@ -23260,31 +23260,58 @@ ${description}
     }
   }
 
+  /** What the Shared links page offers this person, and whether it opens for them at all. */
+  private async sharedLinksAccess(
+    wikiContext: WikiContext,
+    subject: NonNullable<WikiContext['userContext']>
+  ): Promise<{ mayTag: boolean; vaults: string[]; mayVault: boolean; mayOpen: boolean }> {
+    const mayTag = await wikiContext.hasPermission('share-create');
+    const vaults = (await wikiContext.hasPermission('profile-manage'))
+      ? await this.engine.getManager('PageManager').listOwnStoreIds(subject)
+      : [];
+    const mayVault = vaults.length > 0;
+    const mayOpen = mayTag || mayVault || (await wikiContext.hasPermission('share-manage-all'));
+    return { mayTag, vaults, mayVault, mayOpen };
+  }
+
+  /**
+   * Where a person lands after revoking a tag link: an administrator on the
+   * full list, anyone who may open the Shared links page there, and everyone
+   * else on the front page, which opens for all.
+   */
+  private async afterTagRevokeUrl(
+    wikiContext: WikiContext,
+    subject: NonNullable<WikiContext['userContext']>
+  ): Promise<string> {
+    if (await wikiContext.hasPermission('admin-system')) return '/shares?revoked=1';
+    return (await this.sharedLinksAccess(wikiContext, subject)).mayOpen ? '/my/shares?revoked=1' : '/';
+  }
+
   /**
    * GET /my/shares: the signed-in user's own shared links, both kinds, in one
    * list (slice 3 of #2247). The page opens for anyone who may make either
    * kind, or who holds share-manage-all. It lists only the kinds the user may
-   * make now. It reads no page and holds no token.
+   * make now. It reads no page. Only this route reads a record's token, to show
+   * the address; `sharedLinkRows` carries none. The page is never cached.
    */
   async mySharesPage(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
       const subject = wikiContext.userContext;
-      if (!subject?.username) {
+      // A signed-out visitor is named Anonymous, so check the sign-in too.
+      if (!subject?.username || !subject.isAuthenticated) {
         await this.refuse(wikiContext, req, res, 'page', 'share-create');
         return;
       }
+      // It shows working addresses, so no cache may keep it.
+      res.setHeader('Cache-Control', 'private, no-store');
       const shareManager = this.engine.getManager('ShareManager');
       if (!shareManager?.isEnabled()) {
         await this.renderError(req, res, 404, 'Not Found', 'Share links are switched off on this site.');
         return;
       }
-      const mayTag = await wikiContext.hasPermission('share-create');
-      const vaults = (await wikiContext.hasPermission('profile-manage'))
-        ? await this.engine.getManager('PageManager').listOwnStoreIds(subject)
-        : [];
-      const mayVault = vaults.length > 0;
-      if (!mayTag && !mayVault && !(await wikiContext.hasPermission('share-manage-all'))) {
+      const { mayTag, vaults, mayVault, mayOpen } = await this.sharedLinksAccess(wikiContext, subject);
+      if (!mayOpen) {
         await this.refuse(wikiContext, req, res, 'page', 'share-create');
         return;
       }
@@ -23409,7 +23436,7 @@ ${description}
       if (isMaker && !carriesCeiling(subject)) {
         await shareManager.revoke(record.id, subject);
         // The full list is the administrator's; everyone else has the Shared links page.
-        return res.redirect((await wikiContext.hasPermission('admin-system')) ? '/shares?revoked=1' : '/my/shares?revoked=1');
+        return res.redirect(await this.afterTagRevokeUrl(wikiContext, subject));
       }
       if (isMaker && !(await wikiContext.hasPermission('share-revoke'))) {
         return res.status(403).send('Access denied');
@@ -23427,7 +23454,7 @@ ${description}
       } else {
         await shareManager.revoke(record.id, subject);
       }
-      return res.redirect(isManager || (await wikiContext.hasPermission('admin-system')) ? '/shares?revoked=1' : '/my/shares?revoked=1');
+      return res.redirect(isManager ? '/shares?revoked=1' : await this.afterTagRevokeUrl(wikiContext, subject));
     } catch (err: unknown) {
       logger.error('[share] Error revoking share:', err);
       return res.status(500).send('Internal server error');

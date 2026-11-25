@@ -93,7 +93,7 @@ The data in a vault is always the user's, so sharing it is the owner's decision 
 
 ### Where links point
 
-`ShareManager.linkBaseUrl` decides the address of every link: the `/shares` list, the `/my/vaults/links` list, and the link to an encrypted vault that the owner's browser builds (the form's `data-base-url`). In order:
+`ShareManager.linkBaseUrl` decides the address of every link: the `/my/shares` page, where each link shows its address and a Copy button, the `/shares` list, the `/my/vaults/links` list, and the link to an encrypted vault that the owner's browser builds (the form's `data-base-url`). In order:
 
 - `ngdpbase.share.public-base-url`, when it is set and valid.
 - `ngdpbase.application.base-url`.
@@ -136,9 +136,9 @@ ingress:
 | The vault rule | `src/utils/privateStoreAccess.ts` |
 | The link as a ceiling | `PolicyDecisionPoint.ceiling`; `PolicyInformationPoint` (page decider and list filter) |
 | Files through a vault link | `AttachmentManager.getVaultShareAttachment` |
-| The recipient's routes, `/shares`, `/my/vaults/links` | `src/routes/WikiRoutes.ts` (`shareResolve`, `shareAlbum`, `sharePage`, `shareAttachment`, `sharesList`, `myVaultLinksPage`) |
+| The recipient's routes, `/my/shares`, `/shares`, `/my/vaults/links` | `src/routes/WikiRoutes.ts` (`shareResolve`, `shareAlbum`, `sharePage`, `shareAttachment`, `mySharesPage`, `sharesList`, `myVaultLinksPage`) |
 | Where links point | `ShareManager.linkBaseUrl`, `ShareManager.publicOriginTlsWarning` (logged at startup by `src/app.ts`) |
-| Views | `views/share-album.ejs`, `views/share-page.ejs`, `views/share-locked.ejs`, `views/shares.ejs`, `views/my-vault-links.ejs` |
+| Views | `views/share-album.ejs`, `views/share-page.ejs`, `views/share-locked.ejs`, `views/shares.ejs`, `views/my-shares.ejs`, `views/my-vault-links.ejs` |
 | The encrypted-vault viewer | `public/share/_assets/share-viewer.js`, served at `/share/_assets/share-viewer.js` |
 
 ## History
