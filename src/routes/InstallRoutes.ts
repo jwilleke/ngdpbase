@@ -1,5 +1,6 @@
 import express, { Router, Request, Response } from 'express';
 import logger from '../utils/logger.js';
+import { plainRouteError } from '../utils/plainRouteError.js';
 import InstallService, { type PartialInstallationState } from '../services/InstallService.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
@@ -219,7 +220,7 @@ class InstallRoutes {
     });
 
     // GET /install/status - Check installation status (API endpoint)
-    this.router.get('/status', async (_req: Request, res: Response): Promise<void> => {
+    this.router.get('/status', async (req: Request, res: Response): Promise<void> => {
       try {
         const partialState: PartialInstallationState = await this.installService.detectPartialInstallation();
         const installRequired: boolean = await this.installService.isInstallRequired();
@@ -229,7 +230,7 @@ class InstallRoutes {
           partialInstallation: partialState
         });
       } catch (error: unknown) {
-        res.status(500).json({ error: getErrorMessage(error) });
+        res.status(500).json({ error: plainRouteError(req, error, 'The install status could not be checked. Try again in a moment.') });
       }
     });
   }

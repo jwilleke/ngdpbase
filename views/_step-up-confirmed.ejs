@@ -1,0 +1,8 @@
+<%# #2145, #2360: the note after "Confirm it is you" for an action that was not redone. The wording is looked up
+    from a fixed key (`stepUpNote`); anything else gets the generic note, and no text from a request is printed. %>
+<% const _stepUpNotes = { 'press-again': 'Confirmed, press Reset again' };
+   const _stepUpNoteText = (typeof stepUpNote === 'string' && Object.prototype.hasOwnProperty.call(_stepUpNotes, stepUpNote)) ? _stepUpNotes[stepUpNote] : 'Confirmed — you can do it now.'; %>
+<div class="alert alert-success d-flex align-items-center gap-2 mt-2" role="status" data-step-up-confirmed>
+    <i class="fas fa-user-check" aria-hidden="true"></i>
+    <span><%= _stepUpNoteText %></span>
+</div>

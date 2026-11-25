@@ -1,7 +1,7 @@
 # MarkupParser API Documentation
 
 __Version:__ 1.3.2 (Phase 6 Complete)
-__Last Updated:__ 2026-10-11
+__Last Updated:__ 2026-11-23
 __Related Issues:__ #114-#120
 
 ## Overview
@@ -347,8 +347,44 @@ __Properties:__
 ```json
 {
   "ngdpbase.markup.performance.monitoring": true,
-  "ngdpbase.markup.performance.alert-thresholds.parse-time": 1000
+  "ngdpbase.markup.performance.alert-thresholds.parse-time": 100,
+  "ngdpbase.markup.performance.alert-thresholds.cache-hit-ratio": 0.2,
+  "ngdpbase.markup.performance.alert-thresholds.error-rate": 0.05,
+  "ngdpbase.markup.performance.alert-thresholds.min-cache-samples": 50,
+  "ngdpbase.markup.performance.history.dir": "${FAST_STORAGE}/parser-performance"
 }
+```
+
+The three limits are set in code, not in `config/app-default-config.json`; the values above are their defaults.
+
+### Page building check and history ([#2468](https://github.com/jwilleke/ngdpbase/issues/2468))
+
+While pages are being viewed, the parser checks itself once a minute. A minute in which no page is built has no check. Each check measures:
+
+- the average time to build a page, over the last 20 pages that were not served from a stored copy (milliseconds; none when there were none);
+- the share of pages served from a stored copy, over the minute (none when nothing was looked up);
+- the share of pages that failed to build, over the minute (none when nothing was built);
+- how many pages were built in the minute.
+
+The share served from a stored copy and the share that failed are the minute's own numbers, taken from the counters since the last check, not totals since start-up. The share served from a stored copy is compared to its limit only when the minute had at least `min-cache-samples` lookups; it is recorded when it had one or more.
+
+Every check, over its limits or under them, is kept as one JSON line in a file for that day, `parser-performance-YYYY-MM-DD.jsonl`, in `ngdpbase.markup.performance.history.dir`:
+
+```json
+{"t":"2026-11-22T14:15:00.000Z","parse":119.5,"hit":0.192,"err":0,"n":20}
+```
+
+- A line is written when the check runs, so a restart loses nothing. It is at most 1,440 lines (about 150 KB) a day.
+- Files whose whole day is more than 30 days old are removed when the parser starts and once a day after that.
+- A failed write logs one warning and drops that line. It never fails a page build.
+- The folder is operational data that rebuilds itself and is not part of a backup.
+- With no folder to resolve (no ConfigurationManager), the checks run and nothing is kept.
+
+Crossing a limit writes one warning line, and coming back under it one info line that says how long it was over. Staying over writes nothing. Each limit is tracked on its own, and the state starts empty at every start, so a site that is still over its limit writes one crossing line per restart. The parser no longer sends a notification when a limit is crossed; `getPerformanceAlerts()` still lists one entry per crossing.
+
+```text
+Page building is over its limit: average 119.5 ms for the last 20 pages, limit 100 ms.
+Page building is back under its limit: average 82.1 ms, limit 100 ms. It was over for 37 minutes.
 ```
 
 ---

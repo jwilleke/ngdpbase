@@ -1,7 +1,9 @@
 import path from 'path';
+import { subjectMayDo } from '../utils/subjectMayDo.js';
 import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 import { jobContextForOwner } from '../context/JobContext.js';
 import type IdentityManager from './IdentityManager.js';
+import type RoleManager from './RoleManager.js';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
@@ -10,6 +12,7 @@ import { shippedPageState, keptInputs, pageSourceHash, REQUIRED_SOURCE_HASH_KEY,
 import { workingParts } from '../utils/pluginCalls.js';
 import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import { limitsLeftByUpgrade, type AccessLimits } from '../utils/legacyPageAccess.js';
+import { adminsAreRoleAdmin, backUpBeforeRewrite, clipText, CouldNotTellError, exactReplacement, failureForLog, readSignInDone, withReplacement, writeSignInDone, type Replacement, type SiteFacts } from '../utils/upgradeLeftovers.js';
 import BaseManager, { BackupData, type ManagerStats, type ManagerStatus } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -139,6 +142,12 @@ export interface PageSaveOptions {
    * Recent Changes.
    */
   preserveLastModified?: boolean;
+  /**
+   * The caller already holds this page's write lock ({@link PageManager.pageWrite}),
+   * so the save does not queue for it again. For a start-up rewrite that reads the
+   * page, compares it and saves it as one step (#2466); an ordinary save never sets it.
+   */
+  writeLockHeld?: boolean;
   /**
    * Keep the page's stored `editor` — who is recorded as having written this
    * version — instead of taking it from the acting context (#1354).
@@ -418,6 +427,26 @@ export type VaultRepairResult =
 
 /** Pages named in the needs-attention list of leftover `access:` limits before the rest are only counted (#2269). */
 const LEGACY_ACCESS_LIST_MAX = 50;
+
+/**
+ * A page as the upgrade clean-up's log lines name it: by uuid when it is
+ * private, with no owner and no store, which are a person's own (#2509).
+ */
+function upgradeNameForLog(title: string, metadata: { private?: unknown; uuid?: unknown } | null | undefined): string {
+  return vaultOwnerOf(title) !== null ? nameForLog('', { private: true, uuid: metadata?.uuid }) : nameForLog(title, metadata);
+}
+
+/** The owner of a page in a person's vault, `vaults/{owner}/{store}/{title}`; null for any other page (#2509). */
+function vaultOwnerOf(title: string): string | null {
+  const named = parsePrivatePageName(title);
+  return named && !isSharedFolderOwner(named.owner) ? named.owner : null;
+}
+
+/** True for a page in a shared folder, `shared/{folder}/{title}`: nobody's vault, and its `access:` was never read (#2269). */
+function inSharedFolder(title: string): boolean {
+  const named = parsePrivatePageName(title);
+  return named !== null && isSharedFolderOwner(named.owner);
+}
 
 /** The site's record of one-time migrations over its public pages (#1506), in the instance data folder. */
 const SITE_MIGRATIONS_FILE = 'site-migrations.json';
@@ -2293,12 +2322,16 @@ class PageManager extends BaseManager implements CatalogSource {
     return isJobContext(ctx) && !ctx.viaToken && !ctx.viaShare && !ctx.viaProxy && pip?.isSystemPrincipal(ctx.username) === true;
   }
 
-  /** The username a page's stored author names (#2097), or null. */
-  private async authorUsername(author: unknown): Promise<string | null> {
+  /**
+   * The username a page's stored author names (#2097), or null. With
+   * `strict`, a lookup the identity store could not answer throws instead of
+   * giving null, so a caller can tell "not anyone's" from "could not look" (#2466).
+   */
+  private async authorUsername(author: unknown, strict = false): Promise<string | null> {
     if (typeof author !== 'string' || !author) return null;
     const identities = this.engine.getManager<IdentityManager>('IdentityManager');
     if (typeof identities?.usernameOf !== 'function') return author;
-    return identities.usernameOf(systemContext(this.engine, 'the vault a page made private goes to: its author username (#1815, #2097)'), author);
+    return identities.usernameOf(systemContext(this.engine, 'the vault a page made private goes to: its author username (#1815, #2097)'), author, { strict });
   }
 
   /**
@@ -2953,9 +2986,10 @@ class PageManager extends BaseManager implements CatalogSource {
     // conversion (which runs while the site serves) never writes over a save.
     const provider = this.provider;
     const writeKey = existingPage?.uuid ?? ((enrichedMetadata as Record<string, unknown>).uuid as string | undefined) ?? pageName;
-    const saved = await this.pageWrite(writeKey, () => (Object.keys(providerOptions).length > 0
+    const writeProvider = (): Promise<{ name: string; uuid: string }> => (Object.keys(providerOptions).length > 0
       ? provider.savePage(pageName, content, enrichedMetadata, ctx, providerOptions)
-      : provider.savePage(pageName, content, enrichedMetadata, ctx)));
+      : provider.savePage(pageName, content, enrichedMetadata, ctx));
+    const saved = await (options.writeLockHeld ? writeProvider() : this.pageWrite(writeKey, writeProvider));
 
     // #1462: the shared indexes follow the save here, and nowhere else.
     const previousName = existingPage ? this.nameOf(options.moveFrom ?? pageName, existingPage) : null;
@@ -4257,19 +4291,19 @@ class PageManager extends BaseManager implements CatalogSource {
   /**
    * Note, or forget, one page's leftover `access:` limit (#2269).
    *
-   * A page in a vault is skipped: its container decided who is there and
-   * `access:` was never read on it. A private page is counted but its title is
-   * not shown, as it is kept out of the log.
+   * A page in a shared folder is skipped: its container decided who is there
+   * and `access:` was never read on it. A private page, one in a person's
+   * vault included (#2509), is counted but its title is not shown, as it is
+   * kept out of the log.
    */
   private async noteLegacyAccess(title: string, uuid: string | undefined, metadata: Partial<PageFrontmatter> | null | undefined, shipped?: boolean): Promise<void> {
     const key = uuid || title;
-    const vault = parsePrivatePageName(title);
     const defaultCategory = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager')?.getDefaultSystemCategory?.();
-    const limits = vault || metadata?.access === undefined ? null
+    const limits = inSharedFolder(title) || metadata?.access === undefined ? null
       : limitsLeftByUpgrade(metadata, shipped ?? (uuid ? await this.isShippedPageCopy(uuid) : false), defaultCategory);
-    // The same test the sitemap uses: a flag written as the string 'true' is private too.
+    // The same test the sitemap uses: a flag written as the string 'true' is private too; a page in a person's vault is always private (#2509).
     const priv = (metadata as { private?: unknown } | null | undefined)?.private;
-    if (limits) this.legacyAccessPages.set(key, { title, limits, hidden: priv === true || priv === 'true' });
+    if (limits) this.legacyAccessPages.set(key, { title, limits, hidden: priv === true || priv === 'true' || vaultOwnerOf(title) !== null });
     else this.legacyAccessPages.delete(key);
   }
 
@@ -4281,6 +4315,11 @@ class PageManager extends BaseManager implements CatalogSource {
    * reads every manager's list.
    */
   getAttentionItems(): ManagerStatus[] {
+    return [...this.convertedAccessItems(), ...this.leftoverAccessItems()];
+  }
+
+  /** The leftover limits start-up could not convert (#2269). */
+  private leftoverAccessItems(): ManagerStatus[] {
     const total = this.legacyAccessPages.size;
     if (total === 0) return [];
     const one = total === 1;
@@ -4290,12 +4329,339 @@ class PageManager extends BaseManager implements CatalogSource {
       : 'Ask whoever runs the server to add an access rule.';
     const reason = `${total} ${one ? 'page has' : 'pages have'} a limit on who can use ${one ? 'it' : 'them'} that the site no longer applies, so ${one ? 'it follows' : 'they follow'} the site's access rules instead. ${open}`;
     const words = (limits: AccessLimits): string => (limits.length > 1 ? `${limits.slice(0, -1).join(', ')} and ${limits[limits.length - 1]}` : limits[0]);
-    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title, limits }) => `${title}: limited who could ${words(limits)} it`);
+    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title, limits }) => `${clipText(title)}: limited who could ${words(limits)} it`);
     const more = named.length - details.length;
     if (more > 0) details.push(`and ${more} more ${more === 1 ? 'page' : 'pages'}`);
     const hidden = total - named.length;
-    if (hidden > 0) details.push(`${hidden} private ${hidden === 1 ? 'page' : 'pages'} (not named here), each limited who could use ${hidden === 1 ? 'it' : 'them'}: ask each page's owner to open it and set its Audience or Author Lock to limit it again.`);
+    if (hidden > 0) details.push(`${hidden} private ${hidden === 1 ? 'page' : 'pages'} (not named here), each limited who could use ${hidden === 1 ? 'it' : 'them'}. When its owner signs in, the update moves the limit to an Author Lock where that limits the same people; for any other, ask the page's owner to open it and set its Audience or Author Lock to limit it again.`);
     return [{ state: 'degraded', kind: 'attention', reason, details }];
+  }
+
+  /** Pages whose `access:` the start-up conversion replaced (#2466), for the needs-attention entry. */
+  private readonly legacyAccessConverted: Array<{ title: string; replacement: Replacement }> = [];
+
+  /** The conversion's notice (#2466): what it changed, in plain words, with a count and the page names. */
+  private convertedAccessItems(): ManagerStatus[] {
+    return [...this.convertedPublicItems(), ...this.convertedPrivateItems()];
+  }
+
+  /** The private pages whose limit was moved when their owners signed in (#2466): counted, never named. */
+  private convertedPrivateItems(): ManagerStatus[] {
+    const count = this.legacyAccessPrivateConverted;
+    if (count === 0) return [];
+    const one = count === 1;
+    return [{
+      state: 'degraded',
+      kind: 'attention',
+      reason: `When their owners signed in, the update moved the old access limit on ${count} private ${one ? 'page to its' : 'pages to their'} Author Lock. The old ${one ? 'limit' : 'limits'} had stopped applying, so this is a change: only ${one ? 'its author' : 'their authors'} and administrators can change ${one ? 'it' : 'them'} now. Nothing else on ${one ? 'it' : 'them'} changed.`,
+      details: []
+    }];
+  }
+
+  /** The pages the start-up conversion changed (#2466). */
+  private convertedPublicItems(): ManagerStatus[] {
+    const all = this.legacyAccessConverted;
+    if (all.length === 0) return [];
+    const one = all.length === 1;
+    const named = [...all].sort((a, b) => a.title.localeCompare(b.title));
+    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title }) => `${clipText(title)}: now has an Author Lock, so only its author and administrators can change it`);
+    const more = named.length - details.length;
+    if (more > 0) details.push(`and ${more} more ${more === 1 ? 'page' : 'pages'}`);
+    return [{
+      state: 'degraded',
+      kind: 'attention',
+      reason: `The update moved the old access limit on ${all.length} ${one ? 'page to its' : 'pages to their'} Author Lock. The old ${one ? 'limit' : 'limits'} had stopped applying, so this is a change: only ${one ? 'its author' : 'their authors'} and administrators can change ${one ? 'it' : 'them'} now. Nothing else on ${one ? 'it' : 'them'} changed.`,
+      details
+    }];
+  }
+
+  /**
+   * Whether the account a page's `author` names holds `admin-system`, asked of
+   * the policies. False only when the answer is no (the author is not a known
+   * account, or does not hold it); throws {@link CouldNotTellError} when a
+   * lookup failed, so the page is tried again rather than left as final.
+   */
+  private async authorHoldsAdmin(author: string): Promise<boolean> {
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    const pdp = this.engine.getManager<{ permits?: unknown }>('PolicyDecisionPoint');
+    if (!identities || typeof pdp?.permits !== 'function') throw new CouldNotTellError('whether a page author is an administrator: the account and access managers are not ready');
+    try {
+      const ctx = systemContext(this.engine, 'tell whether a page author is an administrator (#2466)');
+      const username = await identities.usernameOf(ctx, author, { strict: true });
+      if (!username) return false;
+      // The system's own account is not a page author who holds a permission.
+      if (this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint')?.isSystemPrincipal(username) === true) return false;
+      // The role store answering "none" is a "no"; the role store failing is not (#2509). The
+      // permission check below swallows a failed role lookup as no roles, so the lookup is made
+      // strictly here first. A failure in the instant between the two still reads as no, which
+      // never adds a lock.
+      await this.engine.getManager<RoleManager>('RoleManager')?.resolveUserRoles(ctx, username, { strict: true });
+      // Asked of the policies as a request by that account would be, with its roles
+      // resolved now from the role store: a user record carries no `roles` field (#2509).
+      // An unknown or inactive account resolves to a visitor, who does not hold it.
+      return await subjectMayDo(this.engine, jobContextForOwner(username, 'tell whether a page author is an administrator (#2509)'), 'admin-system');
+    } catch (err) {
+      throw new CouldNotTellError(`whether a page author is an administrator (${failureForLog(err)})`);
+    }
+  }
+
+  /**
+   * Whether the account a page's `author` refers to is `username` (#2509). False
+   * when the author is anyone else or nobody known; throws {@link CouldNotTellError}
+   * when the identity store could not answer, so the page is tried again.
+   */
+  private async authorIs(author: string, username: string): Promise<boolean> {
+    try {
+      return (await this.authorUsername(author, true)) === username;
+    } catch (err) {
+      throw new CouldNotTellError(`whose a vault page is (${failureForLog(err)})`);
+    }
+  }
+
+  /**
+   * Move one page's old `access:` to its Author Lock, as `ctx` (#2466): the
+   * system's at start-up, or the signed-in owner's ({@link convertLegacyAccessOnSignIn}).
+   * The page is read, judged, copied to `backups` and saved while holding its
+   * write lock, so a save made meanwhile is never written over; the save goes
+   * through the door, so `ctx`'s own permissions decide it. Throws when the
+   * copy or the save fails, with no copy left while the file is as it was.
+   *
+   * @param info - The page as listed; it must carry a uuid, which the lock is keyed on
+   * @returns The replacement made, `'no-match'` when none is exact (final), or
+   *   `'changed'` when the page is not what was listed any more, or a lookup
+   *   needed to judge it failed (try again later)
+   */
+  private async rewriteLegacyAccess(
+    info: { title: string; uuid?: string; filePath: string; metadata?: Partial<PageFrontmatter> | null },
+    site: SiteFacts,
+    ctx: ActorContext,
+    backups: string
+  ): Promise<Replacement | 'no-match' | 'changed'> {
+    try {
+      return await this.rewriteLegacyAccessJudged(info, site, ctx, backups);
+    } catch (err) {
+      if (!(err instanceof CouldNotTellError)) throw err;
+      // Not a "no": the page is tried again later. The page is not named, it may be private.
+      logger.warn(`[PageManager] An old access limit could not be judged now, so its page is left as it is and tried again later: ${err.message}`);
+      return 'changed';
+    }
+  }
+
+  private async rewriteLegacyAccessJudged(
+    info: { title: string; uuid?: string; filePath: string; metadata?: Partial<PageFrontmatter> | null },
+    site: SiteFacts,
+    ctx: ActorContext,
+    backups: string
+  ): Promise<Replacement | 'no-match' | 'changed'> {
+    const uuid = info.uuid;
+    if (!uuid) return 'no-match';
+    // A page in a vault is the vault owner's by its path: the owner must be its author (#2509).
+    const vaultOwner = vaultOwnerOf(info.title);
+    if (!await exactReplacement(info.metadata, site, vaultOwner)) return 'no-match';
+    // Read, compared, copied and saved as one step, so a save made meanwhile is never written over.
+    const fresh = await this.pageWrite(uuid, async () => {
+      const text = await fse.readFile(info.filePath, 'utf8');
+      const page = await this.getPage(info.title, ctx);
+      // The page is read again so the replacement is judged on what is stored now, and it must be the page whose file is copied.
+      const now = page ? await exactReplacement(page.metadata, site, vaultOwner) : null;
+      if (!page || !now || page.uuid !== uuid) return null;
+      // The file is unchanged since it was copied, so the copy is what the save overwrites.
+      if (await fse.readFile(info.filePath, 'utf8') !== text) return null;
+      const copy = backUpBeforeRewrite(backups, `${uuid}.md`, text);
+      try {
+        await this.savePage(info.title, page.content ?? '', withReplacement({ ...page.metadata }, now), ctx, {
+          preserveLastModified: true,
+          preserveEditor: true,
+          writeLockHeld: true
+        });
+      } catch (err) {
+        // The copy is dropped only while the file is still as it was: a page that fails every start would add one each time, but once the file was rewritten the copy is the only original.
+        const unchanged = await fse.readFile(info.filePath, 'utf8').then((now) => now === text, () => false);
+        if (unchanged) {
+          fse.removeSync(copy);
+          throw err;
+        }
+        // The file now holds the Author Lock, so the page is converted; the copy is kept, and the error is logged.
+        logger.warn(`[PageManager] A page (${upgradeNameForLog(info.title, { ...page.metadata, uuid })}) was rewritten, but its save then reported an error (${failureForLog(err)}); the file as it was is kept at ${clipText(copy)}`);
+      }
+      return now;
+    });
+    return fresh ?? 'changed';
+  }
+
+  /** The site's facts the conversion judges a page by: who the administrators are, and whether a page's author is one. */
+  private legacyAccessSite(): SiteFacts {
+    const policies = this.engine.getManager<{ policies?(): unknown }>('PolicyDecisionPoint')?.policies?.();
+    // No rules at all means they are not loaded yet, which is not the same as rules that do not make administrators the `admin` role.
+    const loaded = Array.isArray(policies) && policies.length > 0;
+    return { adminsAreRoleAdmin: loaded ? adminsAreRoleAdmin(policies) : null, authorHoldsAdmin: (author: string) => this.authorHoldsAdmin(author), authorIs: (author: string, username: string) => this.authorIs(author, username) };
+  }
+
+  /** The people the sign-in clean-up has finished with (#2466), read from the data folder on first use. */
+  private signInDone: Set<string> | null = null;
+  /** The people whose clean-up is running now, so two sign-ins at once do not both run it. */
+  private readonly signInRunning = new Set<string>();
+  /** True when the record of who is done could not be read: it is then never written over. */
+  private signInRecordKept = false;
+  /** Private pages the sign-in clean-up converted since start, counted and never named. */
+  private legacyAccessPrivateConverted = 0;
+
+  /**
+   * After a person signs in (#2466): move the old `access:` limit on their own
+   * private pages to an Author Lock, by the same exact-match rules as
+   * start-up ({@link exactReplacement}), with a copy first. Start-up never
+   * touches a private page, because the system may not write one; this runs
+   * as `subject`, the person who signed in, so each read and save is decided
+   * by their own permissions, and it looks only at private pages whose author
+   * they are. A page their permissions refuse, or that fails, is left as it is.
+   *
+   * Once per person: when every page was dealt with (converted, or no exact
+   * match, which is final) the person is recorded as done in the data folder
+   * and never scanned again; a page that failed or changed meanwhile leaves
+   * them to be tried at the next sign-in. Never throws. The caller starts it
+   * after the sign-in is complete and does not wait for it.
+   *
+   * @param subject - The person who signed in, as their own permissions see them
+   * @returns How many private pages were converted, and how many are left with a limit
+   */
+  async convertLegacyAccessOnSignIn(subject: ActorContext): Promise<{ converted: number; left: number }> {
+    let converted = 0;
+    let left = 0;
+    const username = subject.username;
+    const pip = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
+    // Only a signed-in person, as themselves: never a job, a token, a share or the system principal.
+    if (!username || isJobContext(subject) || subject.isAuthenticated !== true || pip?.isSystemPrincipal(username) !== false) return { converted, left };
+    if (subject.viaToken || subject.viaShare || subject.viaProxy) return { converted, left };
+    if (this.signInRunning.has(username)) return { converted, left };
+    this.signInRunning.add(username);
+    try {
+      const provider = this.provider;
+      const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+      if (!provider || !configManager) return { converted, left };
+      const dataFolder = configManager.getInstanceDataFolder();
+      if (!this.signInDone) {
+        const read = readSignInDone(dataFolder);
+        // A record that is there but cannot be read is kept as it is: writing it would drop the other people's entries.
+        this.signInRecordKept = read === null;
+        if (read === null) logger.warn('[PageManager] The record of whose private pages were checked at sign-in (upgrade-signin-done.json) cannot be read, so it is left as it is and not updated; each person is checked again at their next start. Fix or remove the file to stop that.');
+        this.signInDone = read ?? new Set();
+      }
+      if (this.signInDone.has(username)) return { converted, left };
+      // An identity store that cannot answer cannot say whose pages are whose: try again at the next sign-in.
+      const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+      if (typeof identities?.canAnswer === 'function' && !identities.canAnswer()) return { converted, left };
+      const site = this.legacyAccessSite();
+      const record = await this.loadSeededRecord();
+      const defaultCategory = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager')?.getDefaultSystemCategory?.();
+      const backups = path.join(dataFolder, 'upgrade-backups');
+      let finished = true;
+      for (const info of await provider.getAllPageInfo()) {
+        if (info.metadata?.access === undefined || inSharedFolder(info.title)) continue;
+        const vaultOwner = vaultOwnerOf(info.title);
+        const priv = (info.metadata as { private?: unknown }).private;
+        // A page in a vault is private by where it is (#2509); any other is private by its flag.
+        if (vaultOwner === null && priv !== true && priv !== 'true') continue;
+        if (!limitsLeftByUpgrade(info.metadata, Boolean(info.uuid) && record.hasUuid(info.uuid), defaultCategory)) continue;
+        if (vaultOwner !== null) {
+          // Their own: the vault is theirs.
+          if (vaultOwner !== username) continue;
+        } else {
+          // Their own: the page's author is the person who signed in.
+          let authorName: string | null;
+          try {
+            authorName = await this.authorUsername(info.metadata.author, true);
+          } catch (err) {
+            // Could not look: not "someone else's page". Tried again at their next sign-in; the next page is still looked at.
+            finished = false;
+            logger.warn(`[PageManager] Could not tell whose a private page is at sign-in, so it is tried again at the next sign-in: ${failureForLog(err)}`);
+            continue;
+          }
+          if (authorName !== username) continue;
+        }
+        if (!info.uuid) { left++; continue; }
+        try {
+          const fresh = await this.rewriteLegacyAccess(info, site, subject, backups);
+          if (fresh === 'changed') { left++; finished = false; continue; }
+          if (fresh === 'no-match') { left++; continue; }
+          this.legacyAccessPrivateConverted++;
+          this.legacyAccessPages.delete(info.uuid);
+          converted++;
+          logger.info(`[PageManager] Moved the old access limit on ${upgradeNameForLog(info.title, info.metadata)} to its Author Lock when its owner signed in; the file as it was is saved in the upgrade backups`);
+        } catch (err) {
+          left++;
+          finished = false;
+          // A private page is never named, and the error's message can carry its title: only its class is logged.
+          logger.warn(`[PageManager] The old access limit on ${upgradeNameForLog(info.title, info.metadata)} could not be moved, so it is left as it is and tried at the owner's next sign-in: ${failureForLog(err)}`);
+        }
+      }
+      if (finished) {
+        this.signInDone.add(username);
+        try {
+          if (!this.signInRecordKept) writeSignInDone(dataFolder, this.signInDone);
+        } catch (err) {
+          logger.warn(`[PageManager] Could not record that a person's private pages were checked, so they are checked again at the next start: ${failureForLog(err)}`);
+        }
+      }
+    } catch (err) {
+      logger.warn(`[PageManager] Old access limits on private pages were not converted at sign-in: ${failureForLog(err)}`);
+    } finally {
+      this.signInRunning.delete(username);
+    }
+    if (converted > 0 || left > 0) logger.info(`[PageManager] Old access limits on a person's private pages at sign-in: ${converted} moved to an Author Lock, ${left} left as they are`);
+    return { converted, left };
+  }
+
+  /**
+   * At start-up, once required pages are seeded (#2466): move a page's old
+   * `access:` limit to its Author Lock, but only where that limits
+   * exactly the people the old limit did ({@link exactReplacement}). Any other
+   * page is left as it is and stays in the needs-attention list. Each page is
+   * saved through the door with its last-modified and editor kept, after a copy
+   * of its file as it was goes into `upgrade-backups`; with no copy the page
+   * is left alone. A converted page has no `access:`, so a second start finds
+   * nothing to do. Never throws. A private page is left for its owner's sign-in ({@link convertLegacyAccessOnSignIn}).
+   *
+   * @returns How many pages were converted, and how many are left with a limit
+   */
+  async convertLegacyAccessAtBoot(): Promise<{ converted: number; left: number }> {
+    this.legacyAccessConverted.length = 0;
+    this.legacyAccessPrivateConverted = 0;
+    let converted = 0;
+    let left = 0;
+    try {
+      const provider = this.provider;
+      const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+      if (!provider || !configManager) return { converted, left };
+      const site = this.legacyAccessSite();
+      const record = await this.loadSeededRecord();
+      const defaultCategory = this.engine.getManager<{ getDefaultSystemCategory?: () => string }>('ValidationManager')?.getDefaultSystemCategory?.();
+      const ctx = systemContext(this.engine, 'move old access limits to an Author Lock (#2466)');
+      const backups = path.join(configManager.getInstanceDataFolder(), 'upgrade-backups');
+      for (const info of await provider.getAllPageInfo()) {
+        if (info.metadata?.access === undefined || inSharedFolder(info.title)) continue;
+        if (!limitsLeftByUpgrade(info.metadata, Boolean(info.uuid) && record.hasUuid(info.uuid), defaultCategory)) continue;
+        // A private page, in a vault or flagged, is its owner's: the write door does not let start-up change it, so it stays listed for its owner.
+        const priv = (info.metadata as { private?: unknown }).private;
+        if (priv === true || priv === 'true' || vaultOwnerOf(info.title) !== null) { left++; continue; }
+        // The page write lock is keyed on the uuid, as a save of the page keys it; with none, the lock would not exclude a save.
+        if (!info.uuid) { left++; continue; }
+        try {
+          const fresh = await this.rewriteLegacyAccess(info, site, ctx, backups);
+          if (typeof fresh === 'string') { left++; continue; }
+          this.legacyAccessConverted.push({ title: info.title, replacement: fresh });
+          converted++;
+          logger.info(`[PageManager] Moved the old access limit on '${clipText(info.title)}' to its Author Lock; the file as it was is saved in the upgrade backups`);
+        } catch (err) {
+          left++;
+          // One page must not stop the rest; it stays listed and is tried again at the next start. A page with an error is not named: it may be private.
+          logger.warn(`[PageManager] The old access limit on a page could not be moved, so it is left as it is: ${failureForLog(err)}`);
+        }
+      }
+    } catch (err) {
+      logger.warn(`[PageManager] Old access limits were not converted: ${failureForLog(err)}`);
+    }
+    if (converted > 0 || left > 0) logger.info(`[PageManager] Old access limits at start: ${converted} moved to an Author Lock, ${left} left as they are`);
+    return { converted, left };
   }
 
   /**

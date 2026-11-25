@@ -110,4 +110,22 @@ describe('where a fresh sign-in returns (#2145)', () => {
     expect(call('takeStepUpNotice', request({ method: 'GET', path: '/view/Welcome', session: other }))).toBe(false);
     expect(other.stepUpConfirmed).toBeUndefined();
   });
+
+  test('a note variant (#2360) goes with the confirmation, and is cleared with it', async () => {
+    const { call } = double();
+    const asked = request({ method: 'POST', session: { username: 'molly' } });
+    // A route that must be pressed again asks in `form` mode; the browser is one's plain form post.
+    (asked as unknown as { headers: Record<string, string> }).headers = { accept: 'text/html' };
+    await call('askForFreshSignIn', asked, {}, 'config-manage', 'form');
+    expect(asked.session.pendingStepUp).toEqual(expect.objectContaining({ note: 'press-again' }));
+    const next = (asked.session.pendingStepUp as { next: string }).next;
+    await call('completeReauth', asked, { success: true, username: 'molly', provider: 'passkey', factors: [] }, 'passkey', next);
+    expect(asked.session.stepUpNote).toBe('press-again');
+    expect(call('takeStepUpNotice', request({ method: 'GET', path: new URL(next, 'http://x').pathname, session: asked.session }))).toBe(true);
+    expect(asked.session.stepUpNote).toBeUndefined();
+
+    const plain: Record<string, unknown> = { stepUpConfirmed: '/admin/backup', stepUpNote: 'press-again' };
+    expect(call('takeStepUpNotice', request({ method: 'GET', path: '/view/Welcome', session: plain }))).toBe(false);
+    expect(plain.stepUpNote).toBeUndefined();
+  });
 });

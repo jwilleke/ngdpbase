@@ -90,6 +90,45 @@
         const card = function (part, id, icon, title, c) { return include('_status-card', Object.assign({ part: part, id: id, icon: icon, title: title, helpSlug: 'Backup' }, c || {})); };
     %>
     <!-- ================================================================ -->
+    <!-- Backup folder (#2492): used by manual and automatic backups       -->
+    <!-- ================================================================ -->
+    <div class="card mb-4" id="backup-folder">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-folder-open"></i> Backup folder</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="/admin/backup/config">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="section" value="folder">
+                <div class="mb-3">
+                    <label for="directory" class="form-label visually-hidden">Backup folder</label>
+                    <input type="text" class="form-control" id="directory"
+                           name="directory" value="<%= status.config.directory %>" required>
+                    <div class="form-text">
+                        Where manual and automatic backups are saved. It is checked when you save; if it can't be used, the current one stays.
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
+                    <i class="fas fa-save"></i> Save Folder
+                </button>
+            </form>
+            <% if (status.folder && status.folder.ownerOnly === false) { %>
+            <div class="alert alert-warning mt-3 mb-2" id="backup-folder-open">
+                This folder could not be made private to the site: the drive it is on does not allow it.
+                Other accounts that can reach that drive may be able to open the backups.
+            </div>
+            <% } %>
+            <details class="mt-2">
+                <summary>Who can open this folder</summary>
+                <p class="mt-2 mb-1">
+                    Only the account that runs this wiki<%= status.folder && status.folder.account ? ' (' + status.folder.account + ')' : '' %> can open this folder, because a backup contains sign-in details.
+                    The file your browser downloads when you press Create &amp; Download is your copy, to keep somewhere safe.
+                </p>
+            </details>
+        </div>
+    </div>
+
+    <!-- ================================================================ -->
     <!-- Auto Backup, with its backup health (#1563) -->
     <!-- ================================================================ -->
     <%- card('start', 'auto-backup-card', 'fa-clock', 'Auto Backup', autoCard) %>
@@ -102,7 +141,6 @@
                 <tr><th>Time</th><td><%= status.config.time %></td></tr>
                 <tr><th>Days</th><td><%= status.config.days %></td></tr>
                 <tr><th>Max backups kept</th><td><%= status.config.maxBackups %></td></tr>
-                <tr><th>Backup directory</th><td><code style="font-size:0.8em;"><%= status.config.directory %></code></td></tr>
             </table>
 
             <!-- Configure Auto Backup (collapsible) -->
@@ -113,7 +151,7 @@
 
             <div class="collapse mt-3" id="autoBackupConfig">
                 <div class="card card-body border-secondary">
-                    <form method="POST" action="/admin/backup/config">
+                    <form method="POST" action="/admin/backup/config" id="auto-backup-form">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
                         <div class="mb-3">
@@ -172,13 +210,6 @@
                             <input type="number" class="form-control" id="maxBackups"
                                    name="maxBackups" value="<%= status.config.maxBackups %>"
                                    min="1" max="100" style="max-width:100px;">
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="directory" class="form-label">Backup directory</label>
-                            <input type="text" class="form-control" id="directory"
-                                   name="directory" value="<%= status.config.directory %>">
-                            <div class="form-text">Absolute path. Leave unchanged to keep current location.</div>
                         </div>
 
                         <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
@@ -561,7 +592,7 @@ function openCardFromHash() {
 }
 openCardFromHash();
 window.addEventListener('hashchange', openCardFromHash);
-document.querySelector('form[action="/admin/backup/config"]').addEventListener('submit', function(e) {
+document.getElementById('auto-backup-form').addEventListener('submit', function(e) {
     const customRadio = document.getElementById('days_custom');
     if (customRadio && customRadio.checked) {
         const checked = Array.from(document.querySelectorAll('.day-checkbox:checked')).map(cb => cb.value);
