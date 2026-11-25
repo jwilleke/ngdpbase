@@ -32,12 +32,12 @@ export function grantablePermissions<T>(definitions: Record<string, T> | null | 
  * The names of the entries marked `"read-only": true`: actions that only let someone see something, so an
  * allow rule that grants one to everyone is not a rule that lets many people change things. An add-on marks
  * its own permission in its `config/default-config.json`, the way it marks `step-up`. `page-read` is read-only
- * without a mark; this adds to it.
+ * without a mark; this adds to it. `*` is never read-only: it stands for every action.
  */
 export function readOnlyPermissionNames(definitions: unknown): string[] {
   if (!definitions || typeof definitions !== 'object' || Array.isArray(definitions)) return [];
   return Object.entries(definitions as Record<string, unknown>)
-    .filter(([, entry]) => !!entry && typeof entry === 'object' && (entry as { 'read-only'?: unknown })['read-only'] === true)
+    .filter(([name, entry]) => name !== '*' && !!entry && typeof entry === 'object' && (entry as { 'read-only'?: unknown })['read-only'] === true)
     .map(([name]) => name);
 }
 
