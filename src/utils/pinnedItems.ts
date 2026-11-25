@@ -1,5 +1,5 @@
 /**
- * pinnedItems — normalisation helpers for the My Links data shape.
+ * pinnedItems — normalisation helpers for the Pinned pages data shape.
  *
  * The on-disk shape evolved from `{pageName, title}` (wiki pages only) to a
  * unified `{url, title, pageName?, pinnedAt?}` so app-route URLs like

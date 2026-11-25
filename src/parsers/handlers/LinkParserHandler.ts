@@ -16,6 +16,8 @@ interface WikiEngine {
  */
 interface PageManager {
   getAllPages(): Promise<string[]>;
+  /** Former titles a link may still be written with (absent on an older manager) */
+  getFormerTitleLinkNames?(): Promise<string[]>;
 }
 
 /**
@@ -142,6 +144,7 @@ class LinkParserHandler extends BaseSyntaxHandler {
         this.matchCamelCase = matchCamelCase;
 
         this.linkParser.setPageNames(pageNames, matchEnglishPlurals, matchCamelCase);
+        await this.loadFormerTitles(pageManager);
         logger.info(`LinkParserHandler loaded ${pageNames.length} page names for link validation (plural matching: ${matchEnglishPlurals ? 'enabled' : 'disabled'}, CamelCase: ${matchCamelCase ? 'enabled' : 'disabled'})`);
 
         // If no pages were loaded during initialization, schedule a retry
@@ -305,6 +308,19 @@ class LinkParserHandler extends BaseSyntaxHandler {
   }
 
   /**
+   * Tell the link parser which former page titles still lead to a page, so a
+   * link written with one is not drawn as a red link. A failure leaves the
+   * previous list in place: the links are then red, as before.
+   */
+  private async loadFormerTitles(pageManager: PageManager): Promise<void> {
+    try {
+      this.linkParser.setFormerTitles(await pageManager.getFormerTitleLinkNames?.() ?? []);
+    } catch (error) {
+      logger.warn(`Failed to load former page titles: ${(error as Error).message}`);
+    }
+  }
+
+  /**
    * Refresh page names cache (called when pages are added/removed)
    */
   async refreshPageNames(): Promise<void> {
@@ -317,6 +333,7 @@ class LinkParserHandler extends BaseSyntaxHandler {
       if (pageManager) {
         const pageNames = await pageManager.getAllPages(); // Returns array of strings
         this.linkParser.setPageNames(pageNames, this.matchEnglishPlurals, this.matchCamelCase);
+        await this.loadFormerTitles(pageManager);
         logger.info(`LinkParserHandler refreshed ${pageNames.length} page names`);
 
         // Debug: log some page names to see what we actually have

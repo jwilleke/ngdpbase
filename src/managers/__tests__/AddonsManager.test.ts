@@ -1097,7 +1097,7 @@ describe('AddonsManager', () => {
       // #1037: seeded content is shipped by the addon, not user input, so it
       // must bypass save-time validation — startup cannot depend on a content
       // rule aimed at page authors.
-      expect(pageManager.savePage).toHaveBeenCalledWith('Home', expect.stringContaining('Page content.'), expect.objectContaining({ uuid, addon: 'seed-addon' }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true, shippedAuthor: 'addon:seed-addon' });
+      expect(pageManager.savePage).toHaveBeenCalledWith('Home', expect.stringContaining('Page content.'), expect.objectContaining({ uuid, addon: 'seed-addon' }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true, shippedSeed: true, shippedAuthor: 'addon:seed-addon' });
     });
 
     test('#2389 slice 3: a seeded page carries the add-on\'s own version as its release label', async () => {
@@ -1222,8 +1222,8 @@ describe('AddonsManager', () => {
       await manager.initialize();
 
       expect(pageManager.savePage).toHaveBeenCalledTimes(2);
-      expect(pageManager.savePage).toHaveBeenCalledWith('Page 1', expect.any(String), expect.objectContaining({ uuid: uuid1 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true, shippedAuthor: 'addon:multi-seed-addon' });
-      expect(pageManager.savePage).toHaveBeenCalledWith('Page 2', expect.any(String), expect.objectContaining({ uuid: uuid2 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true, shippedAuthor: 'addon:multi-seed-addon' });
+      expect(pageManager.savePage).toHaveBeenCalledWith('Page 1', expect.any(String), expect.objectContaining({ uuid: uuid1 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true, shippedSeed: true, shippedAuthor: 'addon:multi-seed-addon' });
+      expect(pageManager.savePage).toHaveBeenCalledWith('Page 2', expect.any(String), expect.objectContaining({ uuid: uuid2 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true, shippedSeed: true, shippedAuthor: 'addon:multi-seed-addon' });
     });
 
     test('sets addon field on seeded pages', async () => {
