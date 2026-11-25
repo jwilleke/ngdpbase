@@ -101,7 +101,8 @@ describe('#1224 share management asks policy — #1638: share-create to list and
   const shareManager = { isEnabled: () => true, list: () => [] };
 
   test('refused by policy: 403, and the permission asked is share-create', async () => {
-    const { routes, asked } = makeRoutes([], { ShareManager: shareManager });
+    // A holder of admin-system sees the list; the all-users view still asks share-create.
+    const { routes, asked } = makeRoutes(['admin-system'], { ShareManager: shareManager });
     const res = createMockRes();
     await routes.sharesList(createMockReq(editor, { get: vi.fn().mockReturnValue('') }), res);
     expect(asked).toContain('share-create');
@@ -109,7 +110,7 @@ describe('#1224 share management asks policy — #1638: share-create to list and
   });
 
   test('granted by policy: the list renders, regardless of role name', async () => {
-    const { routes } = makeRoutes(['share-create'], { ShareManager: shareManager });
+    const { routes } = makeRoutes(['admin-system', 'share-create'], { ShareManager: shareManager });
     const res = createMockRes();
     await routes.sharesList(createMockReq(editor, { get: vi.fn().mockReturnValue('') }), res);
     expect(res.status).not.toHaveBeenCalledWith(403);

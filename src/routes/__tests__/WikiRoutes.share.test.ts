@@ -586,28 +586,23 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
   // ── management: GET /shares ────────────────────────────────────────────────
 
   describe('GET /shares', () => {
-    test('403 for anonymous', async () => {
+    test('anonymous and readers are sent to /my/shares, which makes its own permission check', async () => {
       mockUserContext = null;
-      const res = await request(app).get('/shares');
-      expect(res.status).toBe(403);
-    });
-
-    test('403 for a reader (no admin/editor role)', async () => {
+      const anon = await request(app).get('/shares');
+      expect(anon.status).toBe(302);
+      expect(anon.headers.location).toBe('/my/shares');
       mockUserContext = { ...readerUser };
-      const res = await request(app).get('/shares');
-      expect(res.status).toBe(403);
+      const reader = await request(app).get('/shares');
+      expect(reader.status).toBe(302);
+      expect(reader.headers.location).toBe('/my/shares');
     });
 
-    test('editor sees ONLY their own shares', async () => {
+    test('an editor without admin-system is sent to their own page, not shown a list', async () => {
       mockUserContext = { ...editorUser };
-      shareState.records = [{ id: 's1', token: 'c'.repeat(64), scope: SCOPE, createdBy: 'ed', createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null }];
-      const res = await request(app).get('/shares');
-      expect(res.status).toBe(200);
-      expect(mockShareManager.list).toHaveBeenCalledWith('ed');
-      const body = JSON.parse(res.text) as { view: string; isAdmin: boolean; shares: Array<{ status: string }> };
-      expect(body.view).toBe('shares');
-      expect(body.isAdmin).toBe(false);
-      expect(body.shares[0]?.status).toBe('active');
+      const res = await request(app).get('/shares?created=s1');
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('/my/shares?created=s1');
+      expect(mockShareManager.list).not.toHaveBeenCalled();
     });
 
     test('admin sees ALL shares with computed statuses', async () => {
@@ -641,7 +636,7 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
     });
 
     test('backLink follows a same-host referer', async () => {
-      mockUserContext = { ...editorUser };
+      mockUserContext = { ...adminUser };
       const res = await request(app)
         .get('/shares')
         .set('Host', 'wiki.test')
@@ -651,7 +646,7 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
     });
 
     test('backLink is null for /shares self-referer and cross-host referer', async () => {
-      mockUserContext = { ...editorUser };
+      mockUserContext = { ...adminUser };
       const self = await request(app)
         .get('/shares')
         .set('Host', 'wiki.test')
