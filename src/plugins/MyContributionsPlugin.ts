@@ -9,7 +9,7 @@
  *
  * Authorization model:
  *   - When the target equals the viewing user, render the full six-count card
- *     (Private, Authored, Journal, My Links, Edited, Shared) — matches /profile.
+ *     (Private, Authored, Journal, Pinned pages, Edited, Shared) — matches /profile.
  *   - When the target is a different user, render a reduced three-count card
  *     (Authored, Journal, Edited). Private/Shared/Links are viewer-specific or
  *     potentially sensitive and require viewer roles or that user's prefs.
@@ -223,7 +223,7 @@ function renderCard(f: PluginFormatters, target: string, counts: ContributionCou
         ? [{ href: '/my/captures', icon: 'fa-bookmark', label: 'My Captures', value: counts.captures }]
         : []),
       { href: '/my/journal', icon: 'fa-book',      label: 'Journal Entries',     value: counts.journal },
-      { href: '/my/links',   icon: 'fa-link',      label: 'My Links',            value: counts.links   },
+      { href: '/my/links',   icon: 'fa-link',      label: 'Pinned pages',        value: counts.links   },
       { href: '/my/edits',   icon: 'fa-history',   label: "Pages I've Edited",   value: counts.edits   },
       { href: '/my/shared',  icon: 'fa-share-alt', label: 'Pages Shared With Me', value: counts.shared  }
     ]

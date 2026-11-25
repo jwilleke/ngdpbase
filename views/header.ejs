@@ -425,11 +425,11 @@
                                 <li><hr class="dropdown-divider"></li>
                                 <% if (_isPinned) { %>
                                 <li><a class="dropdown-item" href="#" onclick="removePinnedItem('<%= _escJs(_pinUrl) %>'); return false;">
-                                    <i class="fas fa-bookmark me-2 text-primary"></i> Remove from My Links
+                                    <i class="fas fa-bookmark me-2 text-primary"></i> Remove from Pinned pages
                                 </a></li>
                                 <% } else { %>
                                 <li><a class="dropdown-item" href="#" onclick="addPinnedItem('<%= _escJs(_pinUrl) %>', '<%= _escJs(_pinTitle) %>'<%= _hasPageHere ? ", '" + _escJs(pageName) + "'" : '' %>); return false;">
-                                    <i class="fas fa-bookmark me-2"></i> Add to My Links
+                                    <i class="fas fa-bookmark me-2"></i> Add to Pinned pages
                                 </a></li>
                                 <% } %>
                                 <% } %>
@@ -512,11 +512,11 @@
                 <% if (_authed && _pinUrl) { %>
                     <% if (_isPinned) { %>
                     <a class="nav-link py-2" href="#" onclick="removePinnedItem('<%= _escJs(_pinUrl) %>'); <%- _hideOC %> return false;">
-                        <i class="fas fa-bookmark me-2 text-primary"></i> Remove from My Links
+                        <i class="fas fa-bookmark me-2 text-primary"></i> Remove from Pinned pages
                     </a>
                     <% } else { %>
                     <a class="nav-link py-2" href="#" onclick="addPinnedItem('<%= _escJs(_pinUrl) %>', '<%= _escJs(_pinTitle) %>'<%= _hasPage ? ", '" + _escJs(pageName) + "'" : '' %>); <%- _hideOC %> return false;">
-                        <i class="fas fa-bookmark me-2"></i> Add to My Links
+                        <i class="fas fa-bookmark me-2"></i> Add to Pinned pages
                     </a>
                     <% } %>
                 <% } %>
@@ -581,7 +581,7 @@
                          const _tmplEscJs = function(s) { return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); };
                     %>
                     <div class="my-links-sidebar mt-2">
-                      <h6 class="sidebar-heading text-muted fw-semibold mb-1">My Links</h6>
+                      <h6 class="sidebar-heading text-muted fw-semibold mb-1">Pinned pages</h6>
                       <div style="max-height:200px;overflow-y:auto;">
                         <ul class="list-unstyled mb-0">
                           <% _tmplPinned.forEach(function(p) {
@@ -601,7 +601,7 @@
 
                     <%# #796 — extension slot for addon-defined sidebar
                         widgets rendered below the core sidebar content
-                        (leftMenu + My Links). Empty by default; route
+                        (leftMenu + Pinned pages). Empty by default; route
                         handlers set `extraSidebarWidgets` to a
                         pre-rendered HTML string on pages where the
                         addon claims sidebar real estate (e.g. journal

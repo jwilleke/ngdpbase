@@ -171,11 +171,11 @@ The four current addons and what each contributes:
 
 > "The host engine never knows what addons are installed. Addons register themselves. Adding a new vertical is a new directory and a new JSON form definition — not a fork."
 
-### My Links — a concrete addon-aware feature
+### Pinned pages — a concrete addon-aware feature
 
-Navigate to any page on fairways-base → More menu → __Add to My Links__.
+Navigate to any page on fairways-base → More menu → __Add to Pinned pages__.
 
-> "My Links is per-user and renders directly in the EJS template — not inside a LeftMenu wiki page — so it works regardless of which LeftMenu variant an addon installs. The pinned pages are in `nav.pinnedPages` inside the user preferences JSON and are included in the MarkupParser cache key so the sidebar always reflects the current state."
+> "Pinned pages is per-user and renders directly in the EJS template — not inside a LeftMenu wiki page — so it works regardless of which LeftMenu variant an addon installs. The pinned pages are in `nav.pinnedPages` inside the user preferences JSON and are included in the MarkupParser cache key so the sidebar always reflects the current state."
 
 ---
 

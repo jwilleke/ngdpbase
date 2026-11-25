@@ -110,7 +110,7 @@ test.describe('Mobile Navigation', () => {
       // /search has no pageName, but an authed user with create rights still has useful actions
       // (Create New Page, Upload Attachment, Browse Assets, Recent Changes) — those
       // should be available on app routes too, not buried under the desktop-only More dropdown.
-      // Per #785, Add to My Links is also surfaced on app routes so the operator can pin
+      // Per #785, Add to Pinned pages is also surfaced on app routes so the operator can pin
       // /my/journal, /profile, /search?q=foo, etc.
       await page.goto('/search');
       await page.waitForLoadState('domcontentloaded');
@@ -132,8 +132,8 @@ test.describe('Mobile Navigation', () => {
       await expect(offcanvas.getByRole('link', { name: /Export/i })).toHaveCount(0);
       await expect(offcanvas.locator('a[href="/export"]')).toHaveCount(0);
 
-      // #785: Add to My Links is now URL-keyed, so it appears on app routes too
-      await expect(offcanvas.getByRole('link', { name: /Add to My Links|Remove from My Links/i })).toBeVisible();
+      // #785: Add to Pinned pages is now URL-keyed, so it appears on app routes too
+      await expect(offcanvas.getByRole('link', { name: /Add to Pinned pages|Remove from Pinned pages/i })).toBeVisible();
 
       // Items that DO need pageName remain absent on /search (no page to edit / no page metadata to view)
       await expect(offcanvas.getByRole('link', { name: /^Edit Page$/i })).toHaveCount(0);

@@ -15,11 +15,13 @@ __Issue:__ #537
 
 ## Overview
 
+People see this feature as "Pinned pages"; it was called "My Links". The plugin name `MyLinksPlugin`, the `[{MyLinks}]` invocation, the `/my/links` address and the stored `nav.pinnedPages` preference keep their names, so nothing is migrated and bookmarks still work.
+
 `MyLinksPlugin` reads `nav.pinnedPages` from the authenticated user's preferences and renders a scrollable `<ul>` of bookmark links. Each link includes an inline remove button that calls `removePinnedPage()` (defined in `public/js/my-links.js`).
 
 Anonymous and unauthenticated users receive an empty string — the section disappears entirely.
 
-> __Note:__ As of the header.ejs template-level injection (fix for #420), My Links renders automatically in the sidebar for all instances regardless of which LeftMenu page variant is loaded. The `[{MyLinks}]` plugin invocation still works on any page but is no longer required in LeftMenu.
+> __Note:__ As of the header.ejs template-level injection (fix for #420), the "Pinned pages" section renders automatically in the sidebar for all instances regardless of which LeftMenu page variant is loaded. The `[{MyLinks}]` plugin invocation still works on any page but is no longer required in LeftMenu.
 
 ## Usage
 
@@ -56,7 +58,7 @@ All endpoints require authentication; anonymous requests receive `401`.
 
 - `public/js/my-links.js` — `addPinnedPage(pageName, title)` and `removePinnedPage(pageName)`
 - Loaded via `views/footer.ejs`
-- The "Add to My Links" / "Remove from My Links" entry in the More dropdown is rendered in `views/header.ejs`
+- The "Add to Pinned pages" / "Remove from Pinned pages" entry in the More dropdown is rendered in `views/header.ejs`
 
 ## Cache Key
 

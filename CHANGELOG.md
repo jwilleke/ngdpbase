@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- __#2520__ — "My Links" is now called "Pinned pages" wherever you see it: the sidebar heading, the page menu ("Add to Pinned pages", "Remove from Pinned pages"), the Profile and My Contributions cards, the list page's title, and the messages after you pin or unpin a page. The address `/my/links`, your pinned pages and the `[{MyLinks}]` plugin keep working as before, so nothing needs migrating. The "My Links" help page is retitled "Pinned pages": a site that never edited it shows Update ready under Admin → Required Pages and takes it with Sync; a site that edited its copy is asked, and until its admin chooses, that help page says "My Links" while the screens say "Pinned pages".
+
 ### Fixed
 
 - __#2514__ — the upgrade clean-up of old `access:` limits now reaches pages in a person's vault. The start-up scan and the sign-in pass listed pages with the page provider's list, which leaves the vaults folder out, so a vault page with an old limit such as `edit: [admin]` was never counted in Admin → needs attention, never given an Author Lock, and had no copy made in `upgrade-backups`. The start-up scan now counts every vault page it can read (never named), and the sign-in pass converts the signed-in person's own vault pages, with a copy first. Another person's vault is still never looked at, and a closed (encrypted) vault is not listed until it is open. A person with a vault that could not be opened at sign-in is not marked as done, so the pass runs again at their next sign-in and when they unlock the vault. The copy made first of an encrypted page is its stored bytes, so it stays encrypted and restores the page, and no page name or file path is written to the log. A damaged vault is skipped alone. Nothing for you to do.

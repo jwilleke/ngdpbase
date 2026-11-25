@@ -24,7 +24,7 @@ interface ExtendedPluginContext extends PluginContext {
 
 const MyLinksPlugin: SimplePlugin = {
   name: 'MyLinksPlugin',
-  description: 'Renders the current user\'s pinned My Links sidebar section',
+  description: 'Renders the current user\'s pinned pages sidebar section',
   author: 'ngdpbase',
   version: '1.0.0',
 
@@ -42,7 +42,7 @@ const MyLinksPlugin: SimplePlugin = {
 
     let html = '<div class="my-links-plugin">\n';
     html += '  <div class="my-links-header d-flex align-items-center justify-content-between mb-1">\n';
-    html += '    <span class="text-muted small text-uppercase fw-semibold">My Links</span>\n';
+    html += '    <span class="text-muted small text-uppercase fw-semibold">Pinned pages</span>\n';
     html += '  </div>\n';
     html += '  <div class="my-links-scroll" style="max-height:200px;overflow-y:auto;">\n';
     // #1306: this hand-rolled its whole list for one remove button. The
@@ -56,7 +56,7 @@ const MyLinksPlugin: SimplePlugin = {
         icon: 'fas fa-bookmark me-1 small text-muted',
         trailingHtml:
           '<button class="btn btn-link btn-sm p-0 ms-1 text-muted my-links-remove" '
-          + 'title="Remove from My Links" '
+          + 'title="Remove from Pinned pages" '
           + `onclick="removePinnedItem('${escapeHtml(item.url).replace(/'/g, '&#39;')}'); return false;">`
           + '<i class="fas fa-times small"></i></button>'
       })),

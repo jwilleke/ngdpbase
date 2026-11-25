@@ -116,7 +116,7 @@ Language/locale
 
 Defined in: src/types/User.ts:68
 
-Items pinned to the My Links sidebar section (wiki pages and app-route URLs)
+Items pinned to the Pinned pages sidebar section (wiki pages and app-route URLs)
 
 ***
 

@@ -33,7 +33,7 @@ describe('the desktop More menu', () => {
     expect(await hasMoreMenu({ pageName: 'Main' })).toBe(true);
   });
 
-  test('stays for a signed-in user on a screen that is not a page (Add to My Links)', async () => {
+  test('stays for a signed-in user on a screen that is not a page (Add to Pinned pages)', async () => {
     expect(await hasMoreMenu({ currentUser: SIGNED_IN, currentUrl: '/search' })).toBe(true);
   });
 
