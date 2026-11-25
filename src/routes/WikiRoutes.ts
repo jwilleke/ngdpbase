@@ -31,6 +31,7 @@ import { actorOf, type ActorAttribution, type ActorContext } from '../context/Ac
 import { systemContext } from '../context/bootActions.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { carriesCeiling } from '../utils/proxyClaim.js';
+import { sharedLinkRows, sharedLinkCounts } from '../utils/sharedLinkRows.js';
 import { mayEnterVaultAtDoor, type VaultDecider } from '../utils/privateStoreAccess.js';
 import { hideDeclaredPaths, keepHiddenValues, NO_SECRETS, secretKeys, valueLevels } from '../utils/sensitiveValues.js';
 import { createPatch, diffLines } from 'diff';
@@ -9537,17 +9538,18 @@ ${panes}
         ? await (addonsManager as { getProfileSections: (u: unknown, ctx: ActorContext) => Promise<unknown[]> }).getProfileSections(freshUser, currentUser)
         : [];
 
-      // #842: "Share Links" profile section for users who may create shares.
+      // #842: the "Shared links" profile section. Slice 3 of #2247: its numbers
+      // come from the same row function as the page, so the two agree.
       let myShares: { active: number; total: number } | null = null;
       try {
         const shareManager = this.engine.getManager('ShareManager');
-        if (shareManager?.isEnabled() && (await wikiContext.hasPermission('share-create'))) {
-          const own = shareManager.list(currentUser.username ?? '');
-          const now = Date.now();
-          myShares = {
-            total: own.length,
-            active: own.filter(r => !r.revokedAt && !(r.expiresAt && now > Date.parse(r.expiresAt))).length
-          };
+        if (shareManager?.isEnabled() && currentUser.username) {
+          const mayTag = await wikiContext.hasPermission('share-create');
+          const mayVault = (await wikiContext.hasPermission('profile-manage'))
+            && (await this.engine.getManager('PageManager').listOwnStoreIds(currentUser)).length > 0;
+          if (mayTag || mayVault) {
+            myShares = sharedLinkCounts(shareManager.list(currentUser.username), { tag: mayTag, vault: mayVault }, Date.now());
+          }
         }
       } catch {
         // non-fatal — section just won't show
@@ -19627,6 +19629,8 @@ ${panes}
     app.get('/share/:token/lockbox/files/:key', (req: Request, res: Response) => void this.shareLockbox(req, res, 'files'));
 
     // Share management routes (#854) — admin/editor (epic #842 slice 3)
+    // Slice 3 of #2247: the user's own links, both kinds, in one list.
+    app.get('/my/shares', (req: Request, res: Response) => void this.mySharesPage(req, res));
     app.get('/shares', (req: Request, res: Response) => void this.sharesList(req, res));
     app.post('/shares/create', (req: Request, res: Response) => void this.sharesCreate(req, res));
     app.post('/shares/:id/revoke', (req: Request, res: Response) => void this.sharesRevoke(req, res));
@@ -23154,6 +23158,19 @@ ${description}
   async sharesList(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
+      // Slice 3 of #2247: `keyword` only fills in the create form, so it
+      // redirects for everyone. A bare /shares redirects too, except for a
+      // holder of admin-system, who keeps the list of every user's tag links
+      // until the all-users view replaces it.
+      if (typeof req.query.keyword === 'string' && req.query.keyword) {
+        return res.redirect(302, `/my/shares?share=tag&tag=${encodeURIComponent(req.query.keyword)}`);
+      }
+      if (!(await wikiContext.hasPermission('admin-system'))) {
+        const kept = ['created', 'revoked', 'error']
+          .filter((k) => typeof req.query[k] === 'string')
+          .map((k) => `${k}=${encodeURIComponent(req.query[k] as string)}`);
+        return res.redirect(302, '/my/shares' + (kept.length ? `?${kept.join('&')}` : ''));
+      }
       if (!(await wikiContext.hasPermission('share-create'))) {
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to manage shares.');
       }
@@ -23219,6 +23236,56 @@ ${description}
       });
     } catch (err: unknown) {
       logger.error('[share] Error rendering shares list:', err);
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  /**
+   * GET /my/shares — the signed-in user's own shared links, both kinds, in one
+   * list (slice 3 of #2247). The page opens for anyone who may make either
+   * kind, or who holds share-manage-all. It lists only the kinds the user may
+   * make now. It reads no page and holds no token.
+   */
+  async mySharesPage(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const subject = wikiContext.userContext;
+      if (!subject?.username) {
+        await this.refuse(wikiContext, req, res, 'page', 'share-create');
+        return;
+      }
+      const shareManager = this.engine.getManager('ShareManager');
+      if (!shareManager?.isEnabled()) {
+        await this.renderError(req, res, 404, 'Not Found', 'Share links are switched off on this site.');
+        return;
+      }
+      const mayTag = await wikiContext.hasPermission('share-create');
+      const vaults = (await wikiContext.hasPermission('profile-manage'))
+        ? await this.engine.getManager('PageManager').listOwnStoreIds(subject)
+        : [];
+      const mayVault = vaults.length > 0;
+      if (!mayTag && !mayVault && !(await wikiContext.hasPermission('share-manage-all'))) {
+        await this.refuse(wikiContext, req, res, 'page', 'share-create');
+        return;
+      }
+      const rows = sharedLinkRows(shareManager.list(subject.username), { tag: mayTag, vault: mayVault }, Date.now());
+      const query = (k: string) => (typeof req.query[k] === 'string' ? String(req.query[k]) : '');
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('my-shares', {
+        ...commonData,
+        title: 'Shared links',
+        rows,
+        mayTag,
+        mayVault,
+        shareChoice: query('share'),
+        tagPrefill: query('tag'),
+        pagePrefill: query('page'),
+        createdId: query('created'),
+        revoked: query('revoked') === '1',
+        error: query('error') || null
+      });
+    } catch (err: unknown) {
+      logger.error('[share] Error rendering the shared links page:', err);
       return res.status(500).send('Internal server error');
     }
   }

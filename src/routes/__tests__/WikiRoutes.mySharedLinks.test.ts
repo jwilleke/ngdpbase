@@ -17,7 +17,8 @@ function setup(granted: string[]) {
     isEnabled: vi.fn(() => true),
     list: vi.fn(() => RECORDS),
     get: vi.fn(),
-    revoke: vi.fn()
+    revoke: vi.fn(),
+    linkBaseUrl: vi.fn(() => 'https://wiki.example.com')
   };
   const engine = {
     getManager: vi.fn((name: string) => {
