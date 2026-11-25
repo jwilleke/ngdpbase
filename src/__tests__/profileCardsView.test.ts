@@ -77,7 +77,7 @@ describe('#1541 /profile cards collapse under the /admin header', () => {
     const cards = sectionCards(doc);
     const titles = cards.map(c => text(c.querySelector('summary h6')));
     expect(titles).toEqual(expect.arrayContaining([
-      'Account Information', 'Permissions', 'My Contributions', 'Share Links', 'Your consents',
+      'Account Information', 'Permissions', 'My Contributions', 'Shared links', 'Your consents',
       'Vault pages with data outside their vault', 'Unused files in your vaults', 'Sign-in methods',
       'My tokens and devices', 'Proxy access', 'User Preferences'
     ]));
