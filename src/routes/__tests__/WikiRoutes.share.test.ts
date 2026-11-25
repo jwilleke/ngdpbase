@@ -765,6 +765,42 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       expect(mockShareManager.revoke).toHaveBeenCalledWith('s1', 'root');
     });
 
+    // #2521 (slice 2 of #2247): the route tells the manager when someone other
+    // than the maker ended the link, so the log and the owner's record carry it.
+    test('#2521: an admin-system holder revoking another user\'s tag link is passed as a manager revoke', async () => {
+      mockUserContext = { ...adminUser };
+      const res = await request(app)
+        .post('/shares/s1/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(302);
+      expect(mockShareManager.revoke).toHaveBeenCalledTimes(1);
+      expect(mockShareManager.revoke).toHaveBeenCalledWith('s1', expect.objectContaining({ username: 'root' }), { asManager: true });
+    });
+
+    test('#2521: the maker revoking their own tag link is not a manager revoke, even when they hold admin-system', async () => {
+      shareState.records = [{ id: 's2', token: 'e'.repeat(64), scope: SCOPE, createdBy: 'root', createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null }];
+      mockUserContext = { ...adminUser };
+      const res = await request(app)
+        .post('/shares/s2/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(302);
+      expect(mockShareManager.revoke).toHaveBeenCalledWith('s2', expect.objectContaining({ username: 'root' }));
+      expect(mockShareManager.revoke.mock.calls[0]).toHaveLength(2);
+    });
+
+    test('#2521: a creator revoking their own tag link passes the request\'s own subject, not a name', async () => {
+      mockUserContext = { ...editorUser };
+      await request(app)
+        .post('/shares/s1/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      const [, subject] = mockShareManager.revoke.mock.calls[0] as unknown as [string, { username: string; roles: string[] }];
+      expect(typeof subject).toBe('object');
+      expect(subject).toMatchObject({ username: 'ed', roles: ['editor'] });
+    });
+
     test('403 for an editor who is not the creator', async () => {
       mockUserContext = { ...editorUser, username: 'other-editor' };
       const res = await request(app)
