@@ -357,6 +357,9 @@ export class LinkParser {
   /** Cache of available page names */
   public pageNames: Set<string>;
 
+  /** Former page titles (lower case) that still lead to a renamed page */
+  public formerTitles: Set<string>;
+
   /** Page name matcher for fuzzy matching */
   public pageNameMatcher: PageNameMatcher | null;
 
@@ -408,6 +411,9 @@ export class LinkParser {
     // Cache for page names (set externally)
     this.pageNames = new Set<string>();
 
+    // Former page titles that still lead to a page (lower case)
+    this.formerTitles = new Set<string>();
+
     // Page name matcher for fuzzy matching (plurals, case)
     this.pageNameMatcher = null;
 
@@ -427,6 +433,19 @@ export class LinkParser {
   setPageNames(pageNames: string[], matchEnglishPlurals: boolean = true, matchCamelCase: boolean = false): void {
     this.pageNames = new Set(pageNames || []);
     this.pageNameMatcher = new PageNameMatcher(matchEnglishPlurals, matchCamelCase);
+  }
+
+  /**
+   * Set the former page titles that still lead to a page.
+   *
+   * A link written with one is drawn as a link to an existing page, not a red
+   * link: it goes to /view/ with the title as written, and the view route sends
+   * the reader on to the renamed page. A live page title always wins, because
+   * live titles are matched first.
+   * @param {string[]} titles - Former titles, lower case
+   */
+  setFormerTitles(titles: string[]): void {
+    this.formerTitles = new Set((titles || []).map((t) => t.trim().toLowerCase()));
   }
 
   /**
@@ -669,7 +688,8 @@ export class LinkParser {
       matchedPage = this.pageNames.has(pageName) ? pageName : null;
     }
 
-    const exists = matchedPage !== null;
+    // A live page is matched first. Only a title no live page holds can be a former title.
+    const exists = matchedPage !== null || this.formerTitles.has(pageName.trim().toLowerCase());
     const targetPage = matchedPage || pageName;
 
     const base = exists

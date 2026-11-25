@@ -133,7 +133,7 @@ describe('PageManager.getFormerTitleLinkNames()', () => {
 
   test('leaves out a former title of a private page', async () => {
     const manager = makeLinkManager([
-      { title: 'private/alice/default/Diary', formerTitles: ['Journal'] },
+      { title: 'vaults/alice/default/Diary', formerTitles: ['Journal'] },
       { title: 'Pinned pages', formerTitles: ['My Links'] }
     ]);
     await expect(manager.getFormerTitleLinkNames()).resolves.toEqual(['my links']);

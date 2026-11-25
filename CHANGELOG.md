@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- __#2520__ — "My Links" is now called "Pinned pages" wherever you see it: the sidebar heading, the page menu ("Add to pinned pages", "Remove from pinned pages"), the Profile and My Contributions cards, the list page's title and browser tab, and the messages after you pin or unpin a page. The address `/my/links`, your pinned pages and the `[{MyLinks}]` plugin keep working as before, so nothing needs migrating, and a link or bookmark that still says "My Links" opens the renamed help page. The "My Links" help page is retitled "Pinned pages": a site that never edited it shows Update ready under Admin → Required Pages and takes it with Sync; a site that edited its copy is asked, and until its admin chooses, that help page says "My Links" while the screens say "Pinned pages".
+- __#2520__ — "My Links" is now called "Pinned pages" wherever you see it: the sidebar heading, the page menu ("Add to pinned pages", "Remove from pinned pages"), the Profile and My Contributions cards, the list page's title and browser tab, and the messages after you pin or unpin a page. The address `/my/links`, your pinned pages and the `[{MyLinks}]` plugin keep working as before, so nothing needs migrating, and a link on a page, or a bookmark, that still says "My Links" opens the renamed help page instead of showing a red link to create a new one. The "My Links" help page is retitled "Pinned pages": a site that never edited it shows Update ready under Admin → Required Pages and takes it with Sync; a site that edited its copy is asked, and until its admin chooses, that help page says "My Links" while the screens say "Pinned pages".
 
 ### Fixed
 
