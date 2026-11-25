@@ -10,6 +10,8 @@
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { LiveUpgradeCheck, UpgradeItem } from '../managers/UpgradeCheckManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
+import type ConfigurationManager from '../managers/ConfigurationManager.js';
+import { readOnlyPermissionNames } from '../utils/permissionCatalog.js';
 import { openWriteRules, type OpenWriteRule } from '../utils/pageWritePolicies.js';
 
 /** The access policies row in Admin → Configuration. */
@@ -80,7 +82,8 @@ export function openWriteRulesCheck(engine: WikiEngine): LiveUpgradeCheck {
     id: 'open-write-rules',
     async items(): Promise<UpgradeItem[]> {
       const policies = engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')?.policies() ?? [];
-      return openWriteRules(policies).map((rule) => ({
+      const definitions = engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.permissions.definitions', {});
+      return openWriteRules(policies, readOnlyPermissionNames(definitions)).map((rule) => ({
         text: ruleSentence(rule),
         link: { label: 'Change this rule', href: RULES_URL }
       }));
