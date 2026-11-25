@@ -52,6 +52,7 @@ import { adminMessage } from '../utils/backupFolder.js';
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
+import { plainRouteError } from '../utils/plainRouteError.js';
 import { asLineLength, resolveLineLength, LINE_LENGTH_PREF_KEY, LINE_LENGTH_SITE_KEY, type LineLength } from '../utils/lineLength.js';
 import { PageTitleConflictError, pageTitleConflictLink, pageTitleConflictText, type ConflictingPage } from '../utils/pageTitleConflict.js';
 import { DENY_OVERRIDES_EXPLANATION, RULE_COMBINING_ALGORITHM_KEY, readDeclaredAsWritten, unenforcedConditionsNotice } from '../utils/policyAttributes.js';
@@ -86,7 +87,7 @@ import { UPGRADE_INTRO, UPGRADE_LIST_HEADING, UPGRADE_READ_ONLY, upgradeEmpty, u
 import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
 import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
-import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, INVITATION_PATH, STEP_UP_CONTINUE_PATH, stepUpModeFor, stepUpPromptId, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
+import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, PasskeyRefused, INVITATION_PATH, STEP_UP_CONTINUE_PATH, stepUpModeFor, stepUpPromptId, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
 import { VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
@@ -226,7 +227,7 @@ import type { RecentImport } from '../ice/types.js';
 import { isZip } from '../ice/fileHandling.js';
 import { IceVetRefused } from '../ice/vet.js';
 import type FileManager from '../managers/FileManager.js';
-import { IceExportBusy, IceExportNeedsFreshSignIn, IceExportRefused, ImportUploadRefused } from '../managers/ImportManager.js';
+import { IceExportBusy, IceExportNeedsFreshSignIn, IceExportRefused, ImportUploadRefused, UrlImportRefused, type UrlImportRefusal } from '../managers/ImportManager.js';
 import { IceExportFailed, PAGES_EXPORT_SOURCE } from '../ice/runExport.js';
 import { SEARCH_EXPORT_SOURCE, searchExportParams, searchExportRef } from '../ice/searchExportSource.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
@@ -1820,7 +1821,7 @@ class WikiRoutes {
 
       res.json({ currentVersion, latestVersion, updateAvailable, releaseUrl });
     } catch (err: unknown) {
-      res.status(500).json({ error: 'Failed to check for updates', details: getErrorMessage(err) });
+      res.status(500).json({ error: 'Failed to check for updates', details: plainRouteError(req, err, 'The check for updates could not be completed. Check that this computer can reach the internet, then try again.') });
     }
   }
 
@@ -4926,8 +4927,11 @@ ${panes}
       logger.info(`[WikiRoutes] API delete of '${pageName}' (${uuid}) by ${req.userContext.username}`);
       return res.json({ success: true, pageName, uuid, recoverable: true });
     } catch (error: unknown) {
-      logger.error(`API delete failed: ${getErrorMessage(error)}`);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      // #2494: the write door's refusal is written for the person; it is not a server failure.
+      if (error instanceof PageWriteRefusedError) {
+        return res.status(403).json({ error: 'Access denied', message: error.message });
+      }
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be deleted. Try again in a moment.') });
     }
   }
 
@@ -4975,8 +4979,7 @@ ${panes}
 
       return res.json({ success: true, pageName, changed: true, systemKeywords });
     } catch (error) {
-      logger.error('[apiMarkTestArtifact] failed:', error);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be marked as a test page. Try again in a moment.') });
     }
   }
 
@@ -5003,8 +5006,7 @@ ${panes}
       logger.info(`[WikiRoutes] Test-artifact sweep by ${req.userContext?.username}: ${deleted.length} deleted, ${failed.length} failed`);
       return res.json({ success: failed.length === 0, deleted, failed });
     } catch (error) {
-      logger.error('[apiSweepTestArtifacts] failed:', error);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The test pages could not be cleared. Try again in a moment.') });
     }
   }
 
@@ -5067,8 +5069,14 @@ ${panes}
       logger.info(`[WikiRoutes] API rename '${pageName}' → '${newTitle}' by ${req.userContext.username}`);
       return res.json({ success: true, from: pageName, to: newTitle, linksNotRewritten: referrers.notRewritten });
     } catch (error: unknown) {
-      logger.error(`API rename failed: ${getErrorMessage(error)}`);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      // #2494: both are written for the person, and trying again cannot fix either.
+      if (error instanceof PageTitleConflictError) {
+        return res.status(409).json({ error: 'Title already in use', message: pageTitleConflictText(error) });
+      }
+      if (error instanceof PageWriteRefusedError) {
+        return res.status(403).json({ error: 'Access denied', message: error.message });
+      }
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be renamed. Try again in a moment.') });
     }
   }
 
@@ -6593,13 +6601,12 @@ ${panes}
         message: 'Attachment deleted successfully'
       });
     } catch (err: unknown) {
-      logger.error('Error deleting attachment:', err);
       if ((getErrorMessage(err) || '').startsWith('Permission denied')) {
         return this.refuse(this.createWikiContext(req), req, res, 'json', 'asset-delete');
       }
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error deleting attachment'
+        error: plainRouteError(req, err, 'The attachment could not be deleted. Try again in a moment.')
       });
     }
   }
@@ -7064,7 +7071,12 @@ ${panes}
       this.keepPasskeyChallenge(req, options.challenge, 'register');
       res.json(options);
     } catch (err) {
-      res.status(400).json({ error: (err as Error).message });
+      // #2494: why a passkey can not be added here is written for the person; trying again would not change it.
+      if (err instanceof PasskeyRefused) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      res.status(400).json({ error: plainRouteError(req, err, 'Adding a passkey could not be started. Try again, or sign in another way.') });
     }
   }
 
@@ -7089,7 +7101,7 @@ ${panes}
       }
       res.json({ ok: true, id });
     } catch (err) {
-      res.status(400).json({ error: (err as Error).message });
+      res.status(400).json({ error: plainRouteError(req, err, 'The passkey could not be saved. Try adding it again.') });
     }
   }
 
@@ -8807,8 +8819,7 @@ ${panes}
 
       res.json(info);
     } catch (err: unknown) {
-      logger.error('Error getting user info:', err);
-      res.status(500).json({ error: getErrorMessage(err) });
+      res.status(500).json({ error: plainRouteError(req, err, 'Your account details could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -8844,7 +8855,7 @@ ${panes}
       res.json({ results: payload, total: payload.length });
     } catch (err: unknown) {
       if (err instanceof ApiError) { sendApiError(res, err); return; }
-      res.status(500).json({ error: getErrorMessage(err) });
+      res.status(500).json({ error: plainRouteError(req, err, 'The user search could not be completed. Try again in a moment.') });
     }
   }
 
@@ -11263,7 +11274,7 @@ ${panes}
       if (err instanceof multer.MulterError && (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE')) {
         return res.status(413).json({ success: false, error: `An upload can hold up to ${maxFiles} files. Put more in a zip.` });
       }
-      return res.status(400).json({ success: false, error: `The upload could not be read: ${getErrorMessage(err)}` });
+      return res.status(400).json({ success: false, error: plainRouteError(req, err, 'The upload could not be read. Check that the file is not damaged, then upload it again.') });
     }
 
     const uploaded = (req as Request & { files?: Express.Multer.File[] }).files ?? [];
@@ -15294,10 +15305,9 @@ ${panes}
       const runId = await jobManager.enqueue('pages.reindex', jobContextFromRequest(req.userContext));
       return res.status(202).json({ runId });
     } catch (err: unknown) {
-      logger.error('Error enqueueing reindex job:', err);
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error starting reindex'
+        error: plainRouteError(req, err, 'The reindex could not be started. Try again in a moment.')
       });
     }
   }
@@ -16404,10 +16414,9 @@ ${panes}
         removedOrphans
       });
     } catch (err: unknown) {
-      logger.error('Error syncing required pages:', err);
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error syncing required pages'
+        error: plainRouteError(req, err, 'The required pages could not be synced. Try again in a moment.')
       });
     }
   }
@@ -16593,8 +16602,7 @@ ${panes}
         uuidB: resolved.uuidB
       });
     } catch (err: unknown) {
-      logger.error('Error computing diff (API):', err);
-      return res.status(500).json({ error: getErrorMessage(err) || 'Error computing diff' });
+      return res.status(500).json({ error: plainRouteError(req, err, 'The page comparison could not be completed. Try again in a moment.') });
     }
   }
 
@@ -17456,10 +17464,9 @@ ${panes}
         ...(errorSummary ? { error: errorSummary } : {})
       });
     } catch (err: unknown) {
-      logger.error('Error previewing import:', err);
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error previewing import'
+        error: plainRouteError(req, err, 'The import preview could not be made. Check the folder and format, then try again.')
       });
     }
   }
@@ -17513,10 +17520,9 @@ ${panes}
         durationMs: result.durationMs
       });
     } catch (err: unknown) {
-      logger.error('Error executing import:', err);
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error executing import'
+        error: plainRouteError(req, err, 'The import could not be completed. Check the folder and format, then try again.')
       });
     }
   }
@@ -17613,6 +17619,23 @@ ${panes}
   }
 
   /**
+   * The sentence and status for an import from a web address that failed for a
+   * reason the person can fix (#2494), or null for any other failure, which
+   * gets the general sentence. One sentence per reason, so "check the address"
+   * is never said of an address that was fine.
+   */
+  private urlImportRefusal(err: unknown): { status: number; message: string } | null {
+    if (!(err instanceof UrlImportRefused)) return null;
+    const answers: Record<UrlImportRefusal, { status: number; message: string }> = {
+      'invalid-address': { status: 400, message: 'That is not a web address. Check that you typed or pasted all of it.' },
+      'not-web-address': { status: 400, message: 'Only web addresses that start with http:// or https:// can be imported.' },
+      'not-found': { status: 422, message: 'That page was not found, or the site does not let us read it. Check the address and try again.' },
+      'not-a-page': { status: 422, message: 'That address is not a web page (it may be an image or a file). Use the address of a page.' }
+    };
+    return answers[err.reason];
+  }
+
+  /**
    * Admin URL import preview - fetch URL, convert, return preview JSON
    */
   async adminImportUrlPreview(req: Request, res: Response) {
@@ -17653,10 +17676,11 @@ ${panes}
         content: result.metadata?.['_previewContent'] as string || undefined
       });
     } catch (err: unknown) {
-      logger.error('Error previewing URL import:', err);
+      const refusal = this.urlImportRefusal(err);
+      if (refusal) return res.status(refusal.status).json({ success: false, error: refusal.message });
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error previewing URL import'
+        error: plainRouteError(req, err, 'The preview of that web address could not be made. Check the address and try again.')
       });
     }
   }
@@ -17712,10 +17736,11 @@ ${panes}
           validationErrors: err.validationErrors
         });
       }
-      logger.error('Error executing URL import:', err);
+      const refusal = this.urlImportRefusal(err);
+      if (refusal) return res.status(refusal.status).json({ success: false, error: refusal.message });
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error executing URL import'
+        error: plainRouteError(req, err, 'The page could not be imported from that web address. Check the address and try again.')
       });
     }
   }
@@ -17797,8 +17822,7 @@ ${panes}
         warnings: [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...fn.warnings]
       });
     } catch (err: unknown) {
-      logger.error('Error previewing page conversion:', err);
-      return res.status(500).json({ success: false, error: getErrorMessage(err) || 'Error previewing conversion' });
+      return res.status(500).json({ success: false, error: plainRouteError(req, err, 'The conversion preview could not be made. Try again in a moment.') });
     }
   }
 
@@ -17867,8 +17891,7 @@ ${panes}
         warnings
       });
     } catch (err: unknown) {
-      logger.error('Error executing page conversion:', err);
-      return res.status(500).json({ success: false, error: getErrorMessage(err) || 'Error executing conversion' });
+      return res.status(500).json({ success: false, error: plainRouteError(req, err, 'The page could not be converted. Try again in a moment.') });
     }
   }
 
@@ -18624,9 +18647,17 @@ ${panes}
       const organizationManager = this.engine.getManager('OrganizationManager');
       const organizationData = req.body as Record<string, unknown>;
 
+      // #2494: a name is the one thing an organization needs; say so rather than "try again".
+      if (typeof organizationData.name !== 'string' || !organizationData.name.trim()) {
+        const needsName = 'Give the organization a name.';
+        return req.headers.accept?.includes('application/json')
+          ? res.status(400).json({ error: needsName })
+          : res.redirect('/admin/organizations?error=' + encodeURIComponent(needsName));
+      }
+
       // #2041: the manager gives the new organization its `urn:uuid:` id; the
       // form's web address stays the ordinary `url` field.
-      const newOrganization = await organizationManager.create(userContext, { ...organizationData, name: typeof organizationData.name === 'string' ? organizationData.name : '' });
+      const newOrganization = await organizationManager.create(userContext, { ...organizationData, name: organizationData.name });
 
       if (req.headers.accept?.includes('application/json')) {
         return res.json({ success: true, organization: newOrganization });
@@ -18641,12 +18672,12 @@ ${panes}
         await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
         return;
       }
-      logger.error('Error creating organization:', error);
+      const plain = plainRouteError(req, error, 'The organization could not be created. Try again in a moment.');
       if (req.headers.accept?.includes('application/json')) {
-        return res.status(500).json({ error: getErrorMessage(error) });
+        return res.status(500).json({ error: plain });
       } else {
         return res.redirect(
-          '/admin/organizations?error=' + encodeURIComponent(getErrorMessage(error))
+          '/admin/organizations?error=' + encodeURIComponent(plain)
         );
       }
     }
@@ -18699,12 +18730,12 @@ ${panes}
         await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
         return;
       }
-      logger.error('Error updating organization:', error);
+      const plain = plainRouteError(req, error, 'The organization could not be saved. Try again in a moment.');
       if (req.headers.accept?.includes('application/json')) {
-        return res.status(500).json({ error: getErrorMessage(error) });
+        return res.status(500).json({ error: plain });
       } else {
         return res.redirect(
-          '/admin/organizations?error=' + encodeURIComponent(getErrorMessage(error))
+          '/admin/organizations?error=' + encodeURIComponent(plain)
         );
       }
     }
@@ -18752,12 +18783,12 @@ ${panes}
         await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
         return;
       }
-      logger.error('Error deleting organization:', error);
+      const plain = plainRouteError(req, error, 'The organization could not be deleted. Try again in a moment.');
       if (req.headers.accept?.includes('application/json')) {
-        return res.status(500).json({ error: getErrorMessage(error) });
+        return res.status(500).json({ error: plain });
       } else {
         return res.redirect(
-          '/admin/organizations?error=' + encodeURIComponent(getErrorMessage(error))
+          '/admin/organizations?error=' + encodeURIComponent(plain)
         );
       }
     }
@@ -18793,8 +18824,7 @@ ${panes}
         await this.refuse({ userContext: req.userContext }, req, res, 'json', error.permission);
         return;
       }
-      logger.error('Error getting organization:', error);
-      return res.status(500).json({ error: getErrorMessage(error) });
+      return res.status(500).json({ error: plainRouteError(req, error, 'The organization could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -18849,8 +18879,7 @@ ${panes}
         await this.refuse({ userContext: req.userContext }, req, res, 'json', error.permission);
         return;
       }
-      logger.error('Error getting organization schema:', error);
-      return res.status(500).json({ error: getErrorMessage(error) });
+      return res.status(500).json({ error: plainRouteError(req, error, 'The organization data could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -18886,8 +18915,7 @@ ${panes}
 
       return res.json(schema);
     } catch (error: unknown) {
-      logger.error('Error getting person schema:', error);
-      return res.status(500).json({ error: getErrorMessage(error) });
+      return res.status(500).json({ error: plainRouteError(req, error, 'The person data could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -19359,7 +19387,7 @@ ${panes}
           }
           return res.status(400).json({
             success: false,
-            error: getErrorMessage(err)
+            error: plainRouteError(req, err, 'The file could not be uploaded. Try again in a moment.')
           });
         }
         return void this.uploadAttachment(req, res);
@@ -20455,10 +20483,9 @@ ${panes}
 
       return res.json(formattedMetadata);
     } catch (error: unknown) {
-      logger.error('Error retrieving page metadata:', error);
       return res
         .status(500)
-        .json({ error: 'Internal server error', details: getErrorMessage(error) });
+        .json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page details could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -20640,8 +20667,7 @@ ${panes}
         count: suggestions.length
       });
     } catch (error: unknown) {
-      logger.error('Error getting page suggestions:', error);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The suggestions could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -20687,8 +20713,6 @@ ${panes}
       });
 
     } catch (error: unknown) {
-      logger.error(`Error getting page versions: ${getErrorMessage(error)}`);
-
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page not found',
@@ -20698,7 +20722,7 @@ ${panes}
 
       return res.status(500).json({
         error: 'Internal server error',
-        details: getErrorMessage(error)
+        details: plainRouteError(req, error, 'The version list could not be loaded. Try again in a moment.')
       });
     }
   }
@@ -20751,8 +20775,6 @@ ${panes}
       });
 
     } catch (error: unknown) {
-      logger.error(`Error getting page version: ${getErrorMessage(error)}`);
-
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page or version not found',
@@ -20769,7 +20791,7 @@ ${panes}
 
       return res.status(500).json({
         error: 'Internal server error',
-        details: getErrorMessage(error)
+        details: plainRouteError(req, error, 'The version could not be loaded. Try again in a moment.')
       });
     }
   }
@@ -20821,8 +20843,6 @@ ${panes}
       });
 
     } catch (error: unknown) {
-      logger.error(`Error comparing page versions: ${getErrorMessage(error)}`);
-
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page or version not found',
@@ -20832,7 +20852,7 @@ ${panes}
 
       return res.status(500).json({
         error: 'Internal server error',
-        details: getErrorMessage(error)
+        details: plainRouteError(req, error, 'The versions could not be compared. Try again in a moment.')
       });
     }
   }
@@ -20909,8 +20929,6 @@ ${panes}
       });
 
     } catch (error: unknown) {
-      logger.error(`Error restoring page version: ${getErrorMessage(error)}`);
-
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page or version not found',
@@ -20920,7 +20938,7 @@ ${panes}
 
       return res.status(500).json({
         error: 'Internal server error',
-        details: getErrorMessage(error)
+        details: plainRouteError(req, error, 'The page version could not be restored. Try again in a moment.')
       });
     }
   }
@@ -21061,8 +21079,7 @@ ${panes}
 
       return res.json({ success: true, count: pages.length, pages });
     } catch (error: unknown) {
-      logger.error(`Error listing deleted pages: ${getErrorMessage(error)}`);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The list of deleted pages could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -21105,8 +21122,7 @@ ${panes}
       if (error instanceof PageWriteRefusedError) {
         return res.status(403).json({ success: false, error: 'forbidden', detail: error.message });
       }
-      logger.error(`Error restoring deleted page: ${getErrorMessage(error)}`);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be restored. Try again in a moment.') });
     }
   }
 
@@ -21131,8 +21147,7 @@ ${panes}
       logger.warn(`[WikiRoutes] User ${req.userContext.username} PERMANENTLY purged page ${uuid}`);
       return res.json({ success: true, uuid });
     } catch (error: unknown) {
-      logger.error(`Error purging deleted page: ${getErrorMessage(error)}`);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be permanently deleted. Try again in a moment.') });
     }
   }
 

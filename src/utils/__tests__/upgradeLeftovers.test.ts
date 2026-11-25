@@ -69,7 +69,7 @@ describe('adminsAreRoleAdmin', () => {
 });
 
 describe('exactReplacement (R2, R3)', () => {
-  const site = (over: Partial<SiteFacts> = {}): SiteFacts => ({ adminsAreRoleAdmin: true, authorHoldsAdmin: async () => true, ...over });
+  const site = (over: Partial<SiteFacts> = {}): SiteFacts => ({ adminsAreRoleAdmin: true, authorHoldsAdmin: async () => true, authorIs: async (a: string, u: string) => a === u, ...over });
 
   test('edit limited to admin alone is an Author Lock', async () => {
     const r = await exactReplacement({ access: { edit: ['admin'] }, author: 'urn:uuid:1' }, site());
@@ -82,6 +82,14 @@ describe('exactReplacement (R2, R3)', () => {
 
   test('an Author Lock would let a non-admin author in, so there is none', async () => {
     expect(await exactReplacement({ access: { edit: ['admin'] }, author: 'urn:uuid:1' }, site({ authorHoldsAdmin: async () => false }))).toBeNull();
+  });
+
+  test('a vault page converts only when its author is the vault owner, who need not be an administrator (#2509)', async () => {
+    const s = site({ authorHoldsAdmin: async () => false });
+    expect((await exactReplacement({ access: { edit: ['admin'] }, author: 'bob' }, s, 'bob'))?.kind).toBe('author-lock');
+    expect(await exactReplacement({ access: { edit: ['admin'] }, author: 'root' }, s, 'bob')).toBeNull();
+    expect(await exactReplacement({ access: { edit: ['admin'] } }, s, 'bob')).toBeNull();
+    expect(await exactReplacement({ access: { edit: ['admin'] }, author: '' }, s, 'bob')).toBeNull();
   });
 
   test('view and edit naming the same people is not converted: an Audience lets a listed person view past the site\'s access rules', async () => {
@@ -164,7 +172,7 @@ describe('clipText', () => {
 
 describe('a fact that could not be looked up is not a "no" (#2466)', () => {
   test('rules that are not loaded: exactReplacement throws CouldNotTellError for a page with a limit, and not for one without', async () => {
-    const site: SiteFacts = { adminsAreRoleAdmin: null, authorHoldsAdmin: async () => true };
+    const site: SiteFacts = { adminsAreRoleAdmin: null, authorHoldsAdmin: async () => true, authorIs: async () => true };
     await expect(exactReplacement({ access: { edit: ['admin'] } }, site)).rejects.toBeInstanceOf(CouldNotTellError);
     expect(await exactReplacement({}, site)).toBeNull();
   });
