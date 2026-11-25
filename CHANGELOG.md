@@ -34,8 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - __#2482__ — Admin → Media Management: the automatic scan line is renamed, its last run is kept across a restart, "Last reindex" is the later of the last Reindex and the last Rebuild, and an empty line says "Not run since the server started".
 - __#2508__ — 40 responses in the routes now send a plain sentence instead of the error's own text (`ENOENT: no such file…`); the full error goes to the server log once. Status codes and the shape of the answer are unchanged (part 1 of #2494).
 - __#2486, #2487, #2450__ — dependency updates (`ts-ics` 2.4.9 in the calendar add-on, 19 root minor and patch updates) and the kit sync to v1.15.0.
-
-- __#2468__ — the parser's once-a-minute page building check is now kept: each check appends one line (time to build a page, share served from stored copies, share that failed, pages built) to a file for the day under the new setting `ngdpbase.markup.performance.history.dir` (default `${FAST_STORAGE}/parser-performance`), and files older than 30 days are removed. The share served from stored copies and the share that failed are now the minute's own, not totals since start-up, so a low-traffic site may see its limit crossed more often than before. Crossing a limit now writes one warning log line and coming back under it one info line; the parser no longer saves a notification each minute it stays over. Notifications an earlier version saved are left as they are. The limits and their defaults are unchanged.
+- __#2468 (#2503)__ — the parser's once-a-minute page building check is now kept: each check appends one line (time to build a page, share served from stored copies, share that failed, pages built) to a file for the day under the new setting `ngdpbase.markup.performance.history.dir` (default `${FAST_STORAGE}/parser-performance`), and files older than 30 days are removed. The share served from stored copies and the share that failed are now the minute's own, not totals since start-up, so a low-traffic site may see its limit crossed more often than before. Crossing a limit now writes one warning log line and coming back under it one info line; the parser no longer saves a notification each minute it stays over. Notifications an earlier version saved are left as they are. The limits and their defaults are unchanged.
 - __#2469 (#2476)__ — the admin dashboard no longer shows the Recent Activity panel, which listed two made-up lines.
 
 ### Fixed
@@ -44,10 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - __#2499__ — Revoke's sign-in prompt no longer says what you typed is kept, because the form holds nothing typed.
 - __#2432 (#2506)__ — a restart no longer fails with "Cannot create role 'vault-owner': a file already exists" when the organization id differs from the one the role file was written under; later role changes work too. One warning per role and run names both ids.
 - __#2454 S1 (#2475)__ — an edited footnote shows at once on a cached page, because every footnote write now tells the page cache.
-
-### Planned
-
-- Future enhancements
 
 ## [5.46.0] - 2026-11-21
 
