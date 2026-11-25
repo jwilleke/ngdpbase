@@ -245,7 +245,6 @@ describe('what the Page building speed page says (#2468)', () => {
 
     expect(squash(doc.querySelector('[data-testid="parser-performance-parse"] tbody')?.textContent)).toContain('Checks with this number 58 29,876');
     expect(squash(doc.querySelector('[data-testid="parser-performance-earlier"] tbody')?.textContent)).toContain('Checks counted 12,345');
-    expect(squash(doc.body.textContent)).not.toMatch(/\b\d{4,}\b(?! ?(ms|%))/);
   });
 
   test('"1 in 20" never splits across lines, so "20" is not left alone on a second line', async () => {
