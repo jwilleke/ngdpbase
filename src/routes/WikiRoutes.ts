@@ -9890,6 +9890,10 @@ ${panes}
    */
   async myVaultLinksPage(req: Request, res: Response) {
     try {
+      // Slice 3 of #2247: choosing pages to share lives in the Share... chooser.
+      if (typeof req.query.page === 'string' && req.query.page) {
+        return res.redirect(302, `/my/shares?share=vault&page=${encodeURIComponent(req.query.page)}`);
+      }
       const request = await this.vaultLinkRequest(req, res);
       if (!request) return;
       const { owner, vaults, shareManager } = request;
@@ -19189,8 +19193,11 @@ ${panes}
     app.get('/my/vaults', (req: Request, res: Response) => this.myPrivatePagesPage(req, res));
     // #1388: the owner's links to their vaults.
     app.get('/my/vaults/links', (req: Request, res: Response) => void this.myVaultLinksPage(req, res));
-    app.post('/my/vaults/links', (req: Request, res: Response) => void this.myVaultLinksCreate(req, res));
-    app.post('/my/vaults/links/:id/extend', (req: Request, res: Response) => void this.myVaultLinksExtend(req, res));
+    app.post('/my/shares/vault-links', (req: Request, res: Response) => void this.myVaultLinksCreate(req, res));
+    app.post('/my/shares/:id/extend', (req: Request, res: Response) => void this.myVaultLinksExtend(req, res));
+    // Slice 3 of #2247: the old addresses send the request on, body and all.
+    app.post('/my/vaults/links', (_req: Request, res: Response) => res.redirect(307, '/my/shares/vault-links'));
+    app.post('/my/vaults/links/:id/extend', (req: Request, res: Response) => res.redirect(307, `/my/shares/${encodeURIComponent(req.params.id)}/extend`));
     app.post('/my/vaults/links/:id/revoke', (req: Request, res: Response) => void this.myVaultLinksRevoke(req, res));
     // #1414: the store door — core owns it; an addon links to it.
     // #1448: registered before `/stores/:kind` and under its own prefix, so no

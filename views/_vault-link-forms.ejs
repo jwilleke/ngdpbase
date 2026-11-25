@@ -6,7 +6,7 @@
             <div class="card-body">
                 <h2 class="h6 card-title">Share pages from your <%= pickVault %> vault</h2>
                 <% const pickEncrypted = (vaults.find(function(v) { return v.id === pickVault; }) || {}).encrypted === true; %>
-                <form method="post" action="/my/vaults/links" data-vault-link data-base-url="<%= baseUrl %>">
+                <form method="post" action="/my/shares/vault-links" data-vault-link data-base-url="<%= baseUrl %>">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                     <input type="hidden" name="vault" value="<%= pickVault %>" data-encrypted="<%= pickEncrypted ? 'true' : 'false' %>">
                     <input type="hidden" name="scope" value="pages">
@@ -43,7 +43,7 @@
                 <p class="text-muted small mb-2">A whole-vault link covers every current page in the vault and the files they use, and pages you add while the link works.</p>
                 <details>
                 <summary class="mb-2">Share a whole vault</summary>
-                <form method="post" action="/my/vaults/links" class="row g-2 align-items-end" data-vault-link data-base-url="<%= baseUrl %>">
+                <form method="post" action="/my/shares/vault-links" class="row g-2 align-items-end" data-vault-link data-base-url="<%= baseUrl %>">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                     <input type="hidden" name="scope" value="whole">
                     <div class="col-auto">

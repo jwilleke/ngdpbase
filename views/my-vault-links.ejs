@@ -88,7 +88,7 @@
                             </td>
                             <td class="text-nowrap">
                                 <% if (l.status === 'active') { %>
-                                    <form method="post" action="/my/vaults/links/<%= l.id %>/extend" class="d-inline-flex align-items-center gap-1">
+                                    <form method="post" action="/my/shares/<%= l.id %>/extend" class="d-inline-flex align-items-center gap-1">
                                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                                         <select name="hours" class="form-select form-select-sm" aria-label="Extend by">
                                             <option value="1">1 hour</option>
