@@ -83,3 +83,88 @@ describe('PageManager.resolveFormerTitle()', () => {
     await expect(manager.resolveFormerTitle('Former')).resolves.toBe('Good');
   });
 });
+
+describe('PageManager.getFormerTitleLinkNames()', () => {
+  type Linkable = { title: string; formerTitles?: unknown };
+  function makeLinkManager(pages: Linkable[], hidden: string[] = []) {
+    const byTitle = new Map(pages.map((p) => [p.title, p]));
+    const provider = {
+      getPageMetadata: vi.fn(async (title: string) => byTitle.get(title) ?? null),
+      pageExists: vi.fn((title: string) => byTitle.has(title) && !hidden.includes(title))
+    };
+    const manager = new PageManager({ getManager: vi.fn(() => null) }) as unknown as {
+      provider: unknown;
+      getAllPages: () => Promise<string[]>;
+      getFormerTitleLinkNames: () => Promise<string[]>;
+    };
+    manager.provider = provider;
+    manager.getAllPages = vi.fn(async () => pages.map((p) => p.title));
+    return manager;
+  }
+
+  test('lists a former title, lower case, so a link written with it can be drawn as an existing page', async () => {
+    const manager = makeLinkManager([{ title: 'Pinned pages', formerTitles: ['My Links'] }]);
+    await expect(manager.getFormerTitleLinkNames()).resolves.toEqual(['my links']);
+  });
+
+  test('leaves out a title a live page holds, so a live page always wins', async () => {
+    const manager = makeLinkManager([
+      { title: 'Pinned pages', formerTitles: ['My Links'] },
+      { title: 'My Links' }
+    ]);
+    await expect(manager.getFormerTitleLinkNames()).resolves.toEqual([]);
+  });
+
+  test('leaves out a title two pages both claim', async () => {
+    const manager = makeLinkManager([
+      { title: 'Page One', formerTitles: ['Shared'] },
+      { title: 'Page Two', formerTitles: ['Shared'] }
+    ]);
+    await expect(manager.getFormerTitleLinkNames()).resolves.toEqual([]);
+  });
+
+  test('leaves out a former title of a page a signed-out reader may not see', async () => {
+    const manager = makeLinkManager(
+      [{ title: 'Secret plans', formerTitles: ['Old plans'] }, { title: 'Pinned pages', formerTitles: ['My Links'] }],
+      ['Secret plans']
+    );
+    await expect(manager.getFormerTitleLinkNames()).resolves.toEqual(['my links']);
+  });
+
+  test('leaves out a former title of a private page', async () => {
+    const manager = makeLinkManager([
+      { title: 'vaults/alice/default/Diary', formerTitles: ['Journal'] },
+      { title: 'Pinned pages', formerTitles: ['My Links'] }
+    ]);
+    await expect(manager.getFormerTitleLinkNames()).resolves.toEqual(['my links']);
+  });
+});
+
+describe('a shipped page keeps its former titles when a new site first saves it', () => {
+  type Normalize = (
+    pageName: string,
+    metadata: Record<string, unknown>,
+    existingPage: unknown,
+    actingUser: string,
+    viaToken: unknown,
+    keepEditor?: boolean,
+    shippedAuthor?: string,
+    shippedSeed?: boolean
+  ) => Promise<Record<string, unknown>>;
+
+  function makeNormalizer(): Normalize {
+    const manager = new PageManager({ getManager: vi.fn(() => null) }) as unknown as { normalizeSaveMetadata: Normalize };
+    return manager.normalizeSaveMetadata.bind(manager);
+  }
+  const shipped = { title: 'Pinned pages', formerTitles: ['My Links'] };
+
+  test('the seeded copy of a new page keeps formerTitles', async () => {
+    const out = await makeNormalizer()('Pinned pages', { ...shipped }, null, 'system', undefined, false, undefined, true);
+    expect(out.formerTitles).toEqual(['My Links']);
+  });
+
+  test('an ordinary save of a new page cannot claim a former title', async () => {
+    const out = await makeNormalizer()('Pinned pages', { ...shipped }, null, 'alice', undefined);
+    expect(out.formerTitles).toBeUndefined();
+  });
+});

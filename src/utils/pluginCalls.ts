@@ -88,6 +88,9 @@ export const WORDING_FRONTMATTER_KEYS: string[] = [
   'description',
   'user-keywords',
   'userKeywords',
+  // A rename adds the old title here, so a change to it alone must not ask a
+  // site that kept its own copy of a shipped page to review it.
+  'formerTitles',
   'system-keywords',
   'author',
   'editor',

@@ -1,5 +1,5 @@
 /**
- * My Links — pinned item management.
+ * Pinned pages — pinned item management.
  *
  * Items can be either wiki pages (pageName + title) or app-route URLs
  * (url + title), since #785. The legacy addPinnedPage / removePinnedPage
@@ -20,10 +20,10 @@ async function addPinnedItem(url, title, pageName) {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      showTemporaryMessage(err.error || 'Failed to add to My Links', 'error');
+      showTemporaryMessage(err.error || 'Failed to add to pinned pages', 'error');
       return;
     }
-    showTemporaryMessage('Added to My Links', 'success');
+    showTemporaryMessage('Added to pinned pages', 'success');
     setTimeout(() => location.reload(), 500);
   } catch {
     showTemporaryMessage('Network error', 'error');
@@ -37,10 +37,10 @@ async function removePinnedItem(ident) {
       credentials: 'same-origin'
     });
     if (!res.ok) {
-      showTemporaryMessage('Failed to remove from My Links', 'error');
+      showTemporaryMessage('Failed to remove from pinned pages', 'error');
       return;
     }
-    showTemporaryMessage('Removed from My Links', 'success');
+    showTemporaryMessage('Removed from pinned pages', 'success');
     setTimeout(() => location.reload(), 500);
   } catch {
     showTemporaryMessage('Network error', 'error');

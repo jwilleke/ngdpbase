@@ -186,6 +186,13 @@ export interface PageSaveOptions {
    */
   shippedAuthor?: string;
   /**
+   * The save seeds a shipped page: a new copy keeps the `formerTitles` the page
+   * ships with, so an old link still finds it on a new site. Taken only from
+   * the system principal's job; ignored otherwise, so no other new page can
+   * claim a former title.
+   */
+  shippedSeed?: boolean;
+  /**
    * Request-level detail the manager cannot see, for the audit record (#1121).
    *
    * The event is emitted by the manager either way — a caller that omits this
@@ -1564,7 +1571,7 @@ class PageManager extends BaseManager implements CatalogSource {
     delete metadata['user-modified'];
 
     // #1462: the save indexes the page, as every save does.
-    await this.savePage(saveAs, parsed.content, metadata, ctx, { skipValidation: true, ...(source.author ? { shippedAuthor: source.author } : {}) });
+    await this.savePage(saveAs, parsed.content, metadata, ctx, { skipValidation: true, shippedSeed: true, ...(source.author ? { shippedAuthor: source.author } : {}) });
   }
 
   /**
@@ -1919,16 +1926,21 @@ class PageManager extends BaseManager implements CatalogSource {
    *
    * @private
    */
-  private async buildFormerTitleIndexFromPages(): Promise<Map<string, string | typeof AMBIGUOUS>> {
+  private async buildFormerTitleIndexFromPages(sharedOnly = false): Promise<Map<string, string | typeof AMBIGUOUS>> {
     const sources: Array<{ title: string; formerTitles?: unknown }> = [];
     try {
       const titles = await this.getAllPages();
       for (const title of titles) {
         try {
           const metadata = await this.provider?.getPageMetadata(title, ANONYMOUS_SUBJECT);
+          // `sharedOnly`: a page a signed-out reader may not see, or a private
+          // page, still counts as a live title but offers no former title.
+          const offersFormerTitles = !sharedOnly || this.isSharedIndexable(title);
           sources.push({
             title: (metadata?.title) ?? title,
-            formerTitles: (metadata as Record<string, unknown> | null | undefined)?.formerTitles
+            formerTitles: offersFormerTitles
+              ? (metadata as Record<string, unknown> | null | undefined)?.formerTitles
+              : undefined
           });
         } catch {
           sources.push({ title });
@@ -1939,8 +1951,33 @@ class PageManager extends BaseManager implements CatalogSource {
       return new Map();
     }
     const index = buildFormerTitleIndex(sources);
-    logger.info(`[PageManager] Former-title index built: ${index.size} entries from ${sources.length} pages`);
+    if (!sharedOnly) {
+      logger.info(`[PageManager] Former-title index built: ${index.size} entries from ${sources.length} pages`);
+    }
     return index;
+  }
+
+  /**
+   * The former titles a link may still be written with, lower case (#2520).
+   *
+   * The link renderers draw `[Old Title]` as an existing page when it is in
+   * this list, so it does not show as a red "Create page" link. They send the
+   * reader to /view/Old%20Title, and the view route (which applies the normal
+   * read check) carries on to the renamed page.
+   *
+   * Left out, so a link never resolves to something the reader cannot see or
+   * to the wrong page: a title a live page holds (the live page wins), a title
+   * two pages both claim, and any former title of a private page or of a page
+   * a signed-out reader may not see. The renderers' page lists are shared by
+   * every reader, so these follow the same rule as `isSharedIndexable`.
+   *
+   * Built from the page set each time it is asked, which is when the page
+   * lists are refreshed, so a page that has become restricted drops out.
+   */
+  async getFormerTitleLinkNames(): Promise<string[]> {
+    if (!this.provider) return [];
+    const index = await this.buildFormerTitleIndexFromPages(true);
+    return [...index].filter(([, current]) => current !== AMBIGUOUS).map(([former]) => former);
   }
 
   async getPageMetadata(identifier: string, ctx: ActorContext): Promise<PageFrontmatter | null> {
@@ -2532,7 +2569,8 @@ class PageManager extends BaseManager implements CatalogSource {
     actingUser: string,
     viaToken: { name: string } | undefined,
     keepEditor = false,
-    shippedAuthor?: string
+    shippedAuthor?: string,
+    shippedSeed = false
   ): Promise<Partial<PageFrontmatter>> {
     // author — immutable original creator, set on ALL pages, never changes.
     // Used for both attribution display and private-page ACL ownership (see PolicyInformationPoint).
@@ -2636,8 +2674,13 @@ class PageManager extends BaseManager implements CatalogSource {
     // (#1106 closed the class of bug that would otherwise have eaten it).
     const previousTitle = (existingPage?.metadata as Record<string, unknown> | undefined)?.title as string | undefined
       ?? existingPage?.title;
+    // A shipped page's first save on a new site keeps the formerTitles it ships
+    // with (a new page has none stored). Any other new page cannot claim one.
+    const heldFormerTitles = existingPage
+      ? (existingPage.metadata as Record<string, unknown> | undefined)?.formerTitles
+      : (shippedSeed ? (metadata as Record<string, unknown>).formerTitles : undefined);
     const formerTitles = computeFormerTitles(
-      (existingPage?.metadata as Record<string, unknown> | undefined)?.formerTitles,
+      heldFormerTitles,
       previousTitle,
       // #1456: a private page's name is its path; its title is the last part.
       (rawMetadata.title) ?? parsePrivatePageName(pageName)?.title ?? pageName
@@ -2921,7 +2964,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // exactly as typed, with none of the stamping or normalisation below.
     const enrichedMetadata = options.rawFrontmatter
       ? metadata
-      : await this.normalizeSaveMetadata(pageName, metadata, existingPage, creator, viaToken, options.preserveEditor, this.shippedAuthorFor(ctx, options.shippedAuthor));
+      : await this.normalizeSaveMetadata(pageName, metadata, existingPage, creator, viaToken, options.preserveEditor, this.shippedAuthorFor(ctx, options.shippedAuthor), options.shippedSeed === true && this.isSystemJob(ctx));
 
     // #2255: a page created in a shared folder is `shared`, and nothing else
     // gives a page that category: it is where the page is, not a choice.

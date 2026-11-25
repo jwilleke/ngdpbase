@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
+import { openStatusCards } from './fixtures/helpers';
 
 /**
  * Admin → Backup (#1723, #1945): the download is one .tar per backup, and a
@@ -25,6 +26,7 @@ test.describe('Admin Backup', () => {
 
   const cancelStaged = async (page: Page): Promise<void> => {
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     // Whichever is staged (#1945): the whole site, or the databases only.
     for (const form of ['#cancel-staged-site-restore', '#cancel-staged-restore']) {
       const cancel = page.locator(`${form} button`);
@@ -47,8 +49,23 @@ test.describe('Admin Backup', () => {
     }
   });
 
+  test('the page is the Backup folder row then the status cards in order, each with a status, and a card is open exactly when it needs the admin (#2470)', async ({ page }) => {
+    await page.goto('/admin/backup');
+    const ids = await page.locator('.status-card').evaluateAll((els) => els.map((e) => e.id));
+    expect(ids).toEqual(['backup-folder', 'auto-backup-card', 'manual-backup-card', 'backup-key-card', 'shared-folders-key', 'site-restore-card', ...(ids.includes('restore-card') ? ['restore-card'] : [])]);
+    for (const id of ids) {
+      const card = page.locator(`#${id}`);
+      const state = await card.getAttribute('data-status');
+      expect(['plain', 'amber', 'red']).toContain(state);
+      await expect(card.locator(':scope > .card-body > details > summary .badge')).not.toHaveText('');
+      const open = await card.locator(':scope > .card-body > details').evaluate((d) => (d as HTMLDetailsElement).open);
+      expect(open).toBe(state === 'amber' || state === 'red');
+    }
+  });
+
   test('Create & Download Backup downloads one .tar', async ({ page }) => {
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     const downloadPromise = page.waitForEvent('download', { timeout: 170_000 });
     await page.locator('form[action="/admin/backup/create"] button[type="submit"]').click();
     const download = await downloadPromise;
@@ -58,6 +75,7 @@ test.describe('Admin Backup', () => {
 
   test('each stored backup downloads as a .tar, and a made-up name is not found', async ({ page }) => {
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     const link = page.locator('#stored-backups a:has-text("Download")').first();
     await expect(link).toBeVisible();
     const href = await link.getAttribute('href');
@@ -71,6 +89,7 @@ test.describe('Admin Backup', () => {
 
   test('the backup key card shows its fingerprint, and the key is shown only on its own page, never cached (#1876)', async ({ page }) => {
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     const fingerprint = (await page.locator('#backup-key-card #backup-key-fingerprint').textContent())?.trim() ?? '';
     expect(fingerprint).toMatch(/^[0-9a-f]{16}$/);
     // #2133: where the key is and is not, and what the fingerprint is.
@@ -92,6 +111,7 @@ test.describe('Admin Backup', () => {
 
   test('Download .env sends the site\'s .env as an attachment, never cached, with the warning beside it (#1938)', async ({ page }) => {
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     await expect(page.locator('#backup-key-card #backup-env-warning')).toContainText('This file holds every secret of the site in plain text');
     const downloadPromise = page.waitForEvent('download');
     await page.locator('#backup-key-card #backup-env-download').click();
@@ -116,6 +136,7 @@ test.describe('Admin Backup', () => {
 
   test('the whole-site restore is on every instance, says what it puts back and what it needs, and waits for the site name (#1945)', async ({ page }) => {
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     const card = page.locator('#site-restore-card');
     await expect(card).toBeVisible();
     // It is the main card: before the databases-only one, where that is shown.
@@ -149,6 +170,7 @@ test.describe('Admin Backup', () => {
   test('a whole-site restore is staged, shown with who staged it, and cancelled (#1945)', async ({ page }) => {
     test.skip(process.env.E2E_RESTORE !== '1', 'staging a restore runs only with E2E_RESTORE=1');
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     test.skip((await page.locator('#site-restore-form').count()) === 0, 'no backup is stored on this instance');
     await cancelStaged(page);
     const input = page.locator('#siteRestoreConfirm');
@@ -159,6 +181,7 @@ test.describe('Admin Backup', () => {
     // A fresh backup of the instance is taken first, then every part is staged.
     await expect(async () => {
       await page.goto('/admin/backup');
+      await openStatusCards(page);
       await expect(page.locator('#staged-site-restore')).toBeVisible();
     }).toPass({ timeout: 200_000 });
     await expect(page.locator('#staged-site-restore')).toContainText('A whole-site restore is staged and waits for the restart');
@@ -178,6 +201,7 @@ test.describe('Admin Backup', () => {
 
   test('the restore button waits for the site name', async ({ page }) => {
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     test.skip((await page.locator('#restore-card').count()) === 0, 'this instance keeps no databases');
     test.skip((await page.locator('#restore-form').count()) === 0, 'no backup on this instance holds databases yet');
     await expect(page.locator('#restore-scope')).toHaveText('Restores the databases only. Pages, users and settings are not changed.');
@@ -193,6 +217,7 @@ test.describe('Admin Backup', () => {
   test('a restore is staged, shown with who staged it, and cancelled', async ({ page }) => {
     test.skip(process.env.E2E_RESTORE !== '1', 'staging a restore runs only with E2E_RESTORE=1');
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     test.skip((await page.locator('#restore-form').count()) === 0, 'no backup on this instance holds databases');
     await cancelStaged(page);
     const input = page.locator('#restoreConfirm');
@@ -203,6 +228,7 @@ test.describe('Admin Backup', () => {
     // Staging runs in the background; the page shows it once it is done.
     await expect(async () => {
       await page.goto('/admin/backup');
+      await openStatusCards(page);
       await expect(page.locator('#staged-restore')).toBeVisible();
     }).toPass({ timeout: 60000 });
     await expect(page.locator('#staged-restore')).toContainText('Staged by');

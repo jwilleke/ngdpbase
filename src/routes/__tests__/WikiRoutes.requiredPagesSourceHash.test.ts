@@ -574,3 +574,80 @@ describe('#1871 Sync All Outdated counts only the pages it will sync', () => {
     expect(rows.map((r) => r.bulkOutdated)).toEqual([false, false, false, true, false, false]);
   });
 });
+
+/**
+ * #2520 (slice 1 of #2247): the "My Links" help page is retitled "Pinned pages".
+ * The fixture is the page as v5.46.0 shipped it; the source is the page in this
+ * checkout. A site that never edited its copy sees Update ready and Sync brings
+ * the new title; a site that edited it is asked, and Sync leaves it alone.
+ */
+describe('the "My Links" help page becomes "Pinned pages" (#2520)', () => {
+  const MY_LINKS = '36c9c6ed-986d-4ada-930b-67d7ee55b4c7';
+  const SHIPPED_BEFORE = path.join(VIEWS, '../src/routes/__tests__/__fixtures__/shipped-v5.46.0', `${MY_LINKS}.md`);
+  const SOURCE = path.join(VIEWS, '../required-pages', `${MY_LINKS}.md`);
+
+  let dirs: Awaited<ReturnType<typeof makeDirs>>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    dirs = await makeDirs();
+    await fs.copyFile(SOURCE, path.join(dirs.requiredDir, `${MY_LINKS}.md`));
+  });
+
+  afterEach(async () => {
+    // Scoped to the mkdtemp directory created above — never a project path.
+    await fs.rm(dirs.root, { recursive: true, force: true });
+  });
+
+  /** The v5.46.0 text as a site holds it: as shipped, stamped with the hash of its body. */
+  async function writeLiveCopy(edited: boolean, stamped = true) {
+    const shipped = await fs.readFile(SHIPPED_BEFORE, 'utf8');
+    const body = shipped.slice(shipped.indexOf('\n---\n', 4) + 5);
+    const live = shipped.replace('\n---\n', stamped ? `\n${REQUIRED_SOURCE_HASH_KEY}: ${pageSourceHash(body)}\n---\n` : '\n---\n')
+      .replace(/\n$/, edited ? '\nOur own note about pinning.\n' : '\n');
+    await fs.writeFile(path.join(dirs.pagesDir, `${MY_LINKS}.md`), live, 'utf8');
+  }
+
+  async function row(routes: Awaited<ReturnType<typeof makeRoutes>>['routes']) {
+    const res = createMockRes();
+    await routes.adminRequiredPages(createMockReq(), res);
+    const data = res.render.mock.calls[0][1] as { comparison: Array<{ uuid: string; syncState?: string; userModified: boolean }> };
+    return data.comparison.find((p) => p.uuid === MY_LINKS);
+  }
+
+  test('the shipped page is titled "Pinned pages", keeps its slug, and no longer says "My Links"', async () => {
+    const source = await fs.readFile(SOURCE, 'utf8');
+    expect(source).toMatch(/^title: Pinned pages$/m);
+    expect(source).toMatch(/^slug: my-links$/m);
+    // The old title stays only as a former title, so old links keep working.
+    expect(source.replace(/^formerTitles:\n( {2}- .*\n)+/m, '')).not.toContain('My Links');
+  });
+
+  test('a site that never edited it sees Update ready, and Sync brings the new title', async () => {
+    await writeLiveCopy(false);
+    const { routes, savePage, pageManager } = await makeRoutes(dirs);
+    await reload(pageManager);
+
+    expect(await row(routes)).toMatchObject({ syncState: 'update-ready', userModified: false });
+
+    await routes.adminSyncRequiredPages(createMockReq({ uuids: [MY_LINKS] }), createMockRes());
+    expect(savePage).toHaveBeenCalledTimes(1);
+    expect(savePage.mock.calls[0][2]).toMatchObject({ title: 'Pinned pages', slug: 'my-links' });
+    expect(await fs.readFile(path.join(dirs.pagesDir, `${MY_LINKS}.md`), 'utf8')).toMatch(/^title: Pinned pages$/m);
+  });
+
+  test.each([
+    ['stamped at sync', true, 'both-changed'],
+    ['never stamped', false, 'edited-not-confirmed']
+  ])('a site that edited it (%s) is asked, and Sync leaves its copy alone', async (_label, stamped, state) => {
+    await writeLiveCopy(true, stamped);
+    const { routes, savePage, pageManager } = await makeRoutes(dirs);
+    await reload(pageManager);
+
+    expect(await row(routes)).toMatchObject({ syncState: state, userModified: true });
+
+    await routes.adminSyncRequiredPages(createMockReq({ uuids: [MY_LINKS] }), createMockRes());
+    expect(savePage).not.toHaveBeenCalled();
+    expect(await fs.readFile(path.join(dirs.pagesDir, `${MY_LINKS}.md`), 'utf8')).toContain('Our own note about pinning.');
+  });
+});
