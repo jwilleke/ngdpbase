@@ -152,6 +152,8 @@ export interface BackupFolderStatus {
   exists: boolean;
   fault: BackupFolderFault | null;
   account: string | null;
+  /** For `unmounted`: the folder the setting still names, so the page can say which drive was expected. */
+  named?: string;
 }
 
 export interface AutoBackupConfig {
@@ -2427,7 +2429,7 @@ class BackupManager extends BaseManager {
     if (!dir) {
       // Start-up clears the folder when its drive is not connected, while the setting still names it.
       const named = configManager ? configManager.getProperty('ngdpbase.backup.directory', '') : '';
-      return { ownerOnly: null, exists: false, fault: named ? 'unmounted' : 'unset', account };
+      return { ownerOnly: null, exists: false, fault: named ? 'unmounted' : 'unset', account, ...(named ? { named } : {}) };
     }
     let isFolder: boolean;
     try {

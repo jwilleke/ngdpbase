@@ -323,8 +323,8 @@ describe('#2470 Admin → Backup status cards', () => {
     test('opens red with "Can\'t use" and says in plain words what is wrong and the one step to fix it, for each cause', async () => {
       const causes: Array<[string, string, string, RegExp, string]> = [
         ['missing', '/b', 'Folder not found', /isn't there/, '/b'],
-        ['file', '/b', 'Not a folder', /file, not a folder/, '/b'],
-        ['unset', '', 'No folder is set', /No folder is set/, ''],
+        ['file', '/b', 'Not a folder', /is a file/, '/b'],
+        ['unset', '', 'No folder is set', /nowhere to go/, ''],
         ['unmounted', '', 'Drive not connected', /drive it is on is not connected/, '']
       ];
       for (const [fault, directory, hint, words, field] of causes) {
@@ -363,7 +363,7 @@ describe('#2470 Admin → Backup status cards', () => {
       expect(alertOf(gone)).toMatch(/isn't there/);
       const none = await render(withFolder({ ownerOnly: null, exists: false, account: 'wiki' }, ''));
       expect(statusOf(none, 'backup-folder')).toBe('red');
-      expect(alertOf(none)).toMatch(/No folder is set/);
+      expect(alertOf(none)).toMatch(/nowhere to go/);
     });
 
     test('a plain folder shows no problem box, and the form still posts to /admin/backup/config with Save Folder', async () => {
