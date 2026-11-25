@@ -15,6 +15,14 @@
         <div class="alert alert-danger">Choose a tag to share.</div>
     <% } else if (error === 'ttl') { %>
         <div class="alert alert-danger">Choose how long the link lasts.</div>
+    <% } else if (error === 'vault') { %>
+        <div class="alert alert-danger">Choose one of your vaults.</div>
+    <% } else if (error === 'days') { %>
+        <div class="alert alert-danger">Choose a lifetime within that vault's limit.</div>
+    <% } else if (error === 'pages') { %>
+        <div class="alert alert-danger">Choose at least one page.</div>
+    <% } else if (error === 'hours') { %>
+        <div class="alert alert-danger">A link is extended by 1 to 24 hours at a time.</div>
     <% } %>
 
     <%- include('_vault-link-result') %>

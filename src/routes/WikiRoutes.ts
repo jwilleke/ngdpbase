@@ -9946,7 +9946,7 @@ ${panes}
     // sends the public half of the link's key as JSON and builds the link itself;
     // every other link comes from the plain form.
     const asJson = req.is('application/json') === 'application/json';
-    const fail = (error: string, status = 400) => (asJson ? res.status(status).json({ error }) : res.redirect(`/my/vaults/links?error=${error}`));
+    const fail = (error: string, status = 400) => (asJson ? res.status(status).json({ error }) : res.redirect(`/my/shares?error=${error}`));
     try {
       const request = await this.vaultLinkRequest(req, res);
       if (!request) return;
@@ -9991,7 +9991,7 @@ ${panes}
       if (record.lockedFor) await shareManager.prepareLockboxes(record, owner);
       // The token is the path of the link; the key after `#` never came here.
       if (asJson) return res.json({ id: record.id, token: record.token });
-      return res.redirect(`/my/vaults/links?created=${encodeURIComponent(record.id)}`);
+      return res.redirect(`/my/shares?created=${encodeURIComponent(record.id)}`);
     } catch (err: unknown) {
       logger.error('[vault-links] Error creating a vault link:', err);
       return asJson ? res.status(500).json({ error: 'server' }) : res.status(500).send('Internal server error');
@@ -10009,10 +10009,10 @@ ${panes}
         return res.status(404).send('Not Found');
       }
       const extended = await request.shareManager.extend(record.id, hours, request.owner);
-      return res.redirect(`/my/vaults/links?notice=${extended ? 'extended' : 'not-extended'}`);
+      return res.redirect(`/my/shares?notice=${extended ? 'extended' : 'not-extended'}`);
     } catch (err: unknown) {
       logger.error('[vault-links] Error extending a vault link:', err);
-      return res.redirect('/my/vaults/links?error=hours');
+      return res.redirect('/my/shares?error=hours');
     }
   }
 
@@ -10023,7 +10023,8 @@ ${panes}
       const subject = wikiContext.userContext;
       // This step only classifies the refusal; the ownership comparison below
       // is the gate (slice 3 of #2247).
-      if (!subject?.username) {
+      // A signed-out subject carries the name 'Anonymous', so check the sign-in too.
+      if (!subject?.username || !subject.isAuthenticated) {
         await this.refuse(wikiContext, req, res, 'page', 'profile-manage');
         return;
       }
@@ -10043,7 +10044,7 @@ ${panes}
       if (carriesCeiling(subject) && !(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
       // The request's own subject, forwarded (#2521): the audit row names who clicked.
       await shareManager.revoke(record.id, subject);
-      return res.redirect('/my/vaults/links?notice=revoked');
+      return res.redirect('/my/shares?notice=revoked');
     } catch (err: unknown) {
       logger.error('[vault-links] Error revoking a vault link:', err);
       return res.status(500).send('Internal server error');
@@ -23388,7 +23389,8 @@ ${description}
       const subject = wikiContext.userContext;
       // This step only classifies the refusal; the ownership comparison below
       // is the gate (slice 3 of #2247).
-      if (!subject?.username) {
+      // A signed-out subject carries the name 'Anonymous', so check the sign-in too.
+      if (!subject?.username || !subject.isAuthenticated) {
         return res.status(403).send('Access denied');
       }
       const shareManager = this.engine.getManager('ShareManager');
@@ -23406,7 +23408,8 @@ ${description}
       // Q-G: a token, proxy or share acting for the maker keeps its ceiling.
       if (isMaker && !carriesCeiling(subject)) {
         await shareManager.revoke(record.id, subject);
-        return res.redirect('/shares?revoked=1');
+        // The full list is the administrator's; everyone else has the Shared links page.
+        return res.redirect((await wikiContext.hasPermission('admin-system')) ? '/shares?revoked=1' : '/my/shares?revoked=1');
       }
       if (isMaker && !(await wikiContext.hasPermission('share-revoke'))) {
         return res.status(403).send('Access denied');
@@ -23424,7 +23427,7 @@ ${description}
       } else {
         await shareManager.revoke(record.id, subject);
       }
-      return res.redirect('/shares?revoked=1');
+      return res.redirect(isManager || (await wikiContext.hasPermission('admin-system')) ? '/shares?revoked=1' : '/my/shares?revoked=1');
     } catch (err: unknown) {
       logger.error('[share] Error revoking share:', err);
       return res.status(500).send('Internal server error');
