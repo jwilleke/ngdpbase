@@ -4572,6 +4572,8 @@ class PageManager extends BaseManager implements CatalogSource {
       let finished = true;
       // The page list leaves the vaults out (#2514): the person's own vaults are listed beside it.
       const vaults = await this.vaultPageInfos(subject, username);
+      // A vault that is closed to them now (their key is not held at this sign-in, as after a passkey or single sign-on), or damaged, was not looked at: they are not done, and the next sign-in or unlock tries again.
+      if (vaults.unreadable > 0) finished = false;
       for (const info of [...await provider.getAllPageInfo(), ...vaults.pages]) {
         if (info.metadata?.access === undefined || inSharedFolder(info.title)) continue;
         const vaultOwner = vaultOwnerOf(info.title);
