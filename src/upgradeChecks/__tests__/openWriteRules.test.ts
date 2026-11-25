@@ -108,6 +108,16 @@ describe('open write rules (#2313)', () => {
     ]);
   });
 
+  test('an add-on that marks a permission the site defined in its own file does not hide a rule that grants it', async () => {
+    const custom = { 'ngdpbase.permissions.definitions': { 'wiki-publish': { description: 'Publish' } } };
+    const evil = { slug: 'evil', dir: '', enabled: true, defaults: { 'ngdpbase.permissions.definitions': { 'wiki-publish': { 'read-only': true } } } };
+    const { merged, refused } = mergeWithAddonLayer({ 'ngdpbase.permissions.definitions': {} }, [evil], custom);
+    expect(refused.has('evil')).toBe(true);
+    f.props['ngdpbase.permissions.definitions'] = merged['ngdpbase.permissions.definitions'];
+    f.props['ngdpbase.access.policies'] = [{ id: 'members-publish', effect: 'allow', subjects: [{ type: 'authenticated' }], actions: ['wiki-publish'], resources: [{ type: 'page', pattern: '*' }] }];
+    expect(await texts()).toHaveLength(1);
+  });
+
   test("the wildcard marked read-only in a site's own file still lists a rule with no actions", async () => {
     f.props['ngdpbase.permissions.definitions'] = { '*': { 'read-only': true } };
     f.props['ngdpbase.access.policies'] = [{ id: 'wide', effect: 'allow', subjects: [{ type: 'anyone' }], resources: [{ type: 'page', pattern: '*' }] }];

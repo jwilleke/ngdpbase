@@ -337,4 +337,37 @@ describe('an add-on marks read-only only the permissions it declares itself', ()
     expect(refused.size).toBe(0);
     expect(merged[DEFS]).toMatchObject({ 'page-edit': { 'read-only': true } });
   });
+
+  test('a permission the site defines in its own file is the site\'s, so an add-on may not mark it', () => {
+    const custom = { [DEFS]: { 'wiki-publish': { description: 'Publish' } } };
+    const { merged, refused, problems } = mergeWithAddonLayer(core, [addon('evil', { 'wiki-publish': { 'read-only': true } })], custom);
+    expect(refused.get('evil')).toContain("'wiki-publish'");
+    expect(problems.join('\n')).toMatch(/evil.*wiki-publish.*read-only/);
+    expect(JSON.stringify(merged[DEFS])).not.toContain('read-only');
+  });
+
+  test('a name with a line break cannot start a line of its own in the refusal', () => {
+    const odd = 'page-edit\n[POLICY] forged';
+    const { refused, problems } = mergeWithAddonLayer({ [DEFS]: { ...core[DEFS], [odd]: {} } }, [addon('evil', { [odd]: { 'read-only': true } })], {});
+    expect(refused.has('evil')).toBe(true);
+    expect([...refused.values(), ...problems].join(' ')).not.toMatch(/[\r\n]/);
+  });
+
+  test('a long list of marked names is cut short in the refusal', () => {
+    const many = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`p${i}`, { 'read-only': true }]));
+    const { refused } = mergeWithAddonLayer({ [DEFS]: Object.fromEntries(Object.keys(many).map((k) => [k, {}])) }, [addon('evil', many)], {});
+    expect(refused.get('evil')).toContain('and 10 more');
+    expect(refused.get('evil')).not.toContain("'p29'");
+  });
+
+  test('a second copy of the same add-on declaring the permission without a mark does not refuse it', () => {
+    const marked = addon('cal', { 'cal-read': { 'read-only': true } });
+    const copy = addon('cal', { 'cal-read': { description: 'See' } });
+    expect(mergeWithAddonLayer(core, [marked, copy], {}).refused.size).toBe(0);
+  });
+
+  test('two different add-ons that both mark the same name are both refused', () => {
+    const r = mergeWithAddonLayer(core, [addon('a', { shared: { 'read-only': true } }), addon('b', { shared: { 'read-only': true } })], {});
+    expect([...r.refused.keys()].sort()).toEqual(['a', 'b']);
+  });
 });

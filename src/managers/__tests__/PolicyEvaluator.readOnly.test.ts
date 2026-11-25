@@ -55,6 +55,15 @@ describe('start-up log and read-only permissions', () => {
     expect(line).not.toMatch(/page-edit|\*|#\d|role/);
   });
 
+  test('a name with a line break cannot start a log line of its own, and a long list is cut short', async () => {
+    const names = Object.fromEntries([['bad\n[POLICY] forged', { 'read-only': true }], ...Array.from({ length: 30 }, (_, i) => [`p${i}`, { 'read-only': true }])]);
+    await build([], names).initialize();
+    const lines = info.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('read-only'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toMatch(/[\r\n]/);
+    expect(lines[0]).toContain('and 11 more');
+  });
+
   test('no permission marked, no line', async () => {
     await build([], { 'calendar-read': {} }).initialize();
     expect(said(info)).not.toContain('read-only');
