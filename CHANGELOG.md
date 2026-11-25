@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- __#2522__ — a new Shared links page at `/my/shares` lists every link you made, tag links and private-area links together, and the Profile card counts the same rows. A link an administrator stopped shows as "Page not available (404)". The help page "Share Links" is now "Shared links". `/shares?keyword=X` redirects to the new page; `/shares` still shows an administrator every user's tag links. Anyone who made a shared link can now always revoke it when signed in at their own browser: before, the maker of a tag link also needed the permission to revoke shared links, and the maker of a private-area link needed the permission to manage their profile. An agent token or a proxy acting for the maker still needs those permissions.
+
 - __#2520__ — "My Links" is now called "Pinned pages" wherever you see it: the sidebar heading, the page menu ("Add to pinned pages", "Remove from pinned pages"), the Profile and My Contributions cards, the list page's title and browser tab, and the messages after you pin or unpin a page. The address `/my/links`, your pinned pages and the `[{MyLinks}]` plugin keep working as before, so nothing needs migrating, and a link on a page, or a bookmark, that still says "My Links" opens the renamed help page instead of showing a red link to create a new one. The "My Links" help page is retitled "Pinned pages": a site that never edited it shows Update ready under Admin → Required Pages and takes it with Sync; a site that edited its copy is asked, and until its admin chooses, that help page says "My Links" while the screens say "Pinned pages".
 
 ### Fixed
