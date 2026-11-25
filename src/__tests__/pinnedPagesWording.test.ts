@@ -41,15 +41,15 @@ describe('"Pinned pages" in the header (#2520)', () => {
     expect(doc.querySelector('.my-links-sidebar h6')?.textContent?.trim()).toBe('Pinned pages');
   });
 
-  test('the page menu offers "Add to Pinned pages" on desktop and mobile', async () => {
+  test('the page menu offers "Add to pinned pages" on desktop and mobile', async () => {
     const { html } = await header(OTHER, '/view/Garden');
-    expect(html.match(/Add to Pinned pages/g)?.length).toBe(2);
+    expect(html.match(/Add to pinned pages/g)?.length).toBe(2);
     expect(html).not.toContain('Add to My Links');
   });
 
-  test('a pinned page offers "Remove from Pinned pages" on desktop and mobile', async () => {
+  test('a pinned page offers "Remove from pinned pages" on desktop and mobile', async () => {
     const { html } = await header(HERE, '/view/Garden');
-    expect(html.match(/Remove from Pinned pages/g)?.length).toBe(2);
+    expect(html.match(/Remove from pinned pages/g)?.length).toBe(2);
     expect(html).not.toContain('Remove from My Links');
   });
 
@@ -87,12 +87,31 @@ describe('"Pinned pages" on the Profile card (#2520)', () => {
   });
 });
 
-describe('"Pinned pages" in the messages after a pin changes (#2520)', () => {
-  test('my-links.js says "Pinned pages" in every message', async () => {
+describe('"pinned pages" in the messages after a pin changes (#2520)', () => {
+  test('my-links.js says "pinned pages" in lower case inside every message', async () => {
     const js = await fs.readFile(path.join(ROOT, 'public/js/my-links.js'), 'utf8');
-    for (const message of ['Failed to add to Pinned pages', 'Added to Pinned pages', 'Failed to remove from Pinned pages', 'Removed from Pinned pages']) {
+    for (const message of ['Failed to add to pinned pages', 'Added to pinned pages', 'Failed to remove from pinned pages', 'Removed from pinned pages']) {
       expect(js).toContain(message);
     }
     expect(js).not.toContain('My Links');
+  });
+});
+
+describe('the list page has its own browser tab title (#2520)', () => {
+  test('the tab reads "Pinned pages | <site name>", not just the site name', async () => {
+    const html = await ejs.renderFile(path.join(VIEWS, 'my-list.ejs'), {
+      ...COMMON, currentUser: signedIn([]), currentUrl: '/my/links', pageName: undefined,
+      applicationName: 'Garden Wiki', tabTitle: 'Pinned pages', title: 'Pinned pages', icon: 'fa-link', listKind: 'links',
+      items: [], totalItems: 0, itemCount: 0, emptyMessage: 'Nothing here.'
+    }, { includer: (original: string) => (original === 'footer' ? { template: '' } : undefined) as never });
+    expect(new JSDOM(html).window.document.title).toBe('Pinned pages | Garden Wiki');
+  });
+
+  test('a list page with no tab title keeps showing the site name alone', async () => {
+    const html = await ejs.renderFile(path.join(VIEWS, 'my-list.ejs'), {
+      ...COMMON, currentUser: signedIn([]), currentUrl: '/my/pages', applicationName: 'Garden Wiki',
+      title: 'My Pages', icon: 'fa-file', listKind: 'links', items: [], totalItems: 0, itemCount: 0, emptyMessage: 'Nothing here.'
+    }, { includer: (original: string) => (original === 'footer' ? { template: '' } : undefined) as never });
+    expect(new JSDOM(html).window.document.title).toBe('Garden Wiki');
   });
 });

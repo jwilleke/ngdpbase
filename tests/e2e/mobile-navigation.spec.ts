@@ -133,7 +133,7 @@ test.describe('Mobile Navigation', () => {
       await expect(offcanvas.locator('a[href="/export"]')).toHaveCount(0);
 
       // #785: Add to Pinned pages is now URL-keyed, so it appears on app routes too
-      await expect(offcanvas.getByRole('link', { name: /Add to Pinned pages|Remove from Pinned pages/i })).toBeVisible();
+      await expect(offcanvas.getByRole('link', { name: /Add to pinned pages|Remove from pinned pages/i })).toBeVisible();
 
       // Items that DO need pageName remain absent on /search (no page to edit / no page metadata to view)
       await expect(offcanvas.getByRole('link', { name: /^Edit Page$/i })).toHaveCount(0);

@@ -619,7 +619,8 @@ describe('the "My Links" help page becomes "Pinned pages" (#2520)', () => {
     const source = await fs.readFile(SOURCE, 'utf8');
     expect(source).toMatch(/^title: Pinned pages$/m);
     expect(source).toMatch(/^slug: my-links$/m);
-    expect(source).not.toContain('My Links');
+    // The old title stays only as a former title, so old links keep working.
+    expect(source.replace(/^formerTitles:\n( {2}- .*\n)+/m, '')).not.toContain('My Links');
   });
 
   test('a site that never edited it sees Update ready, and Sync brings the new title', async () => {

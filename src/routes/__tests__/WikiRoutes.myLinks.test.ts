@@ -60,6 +60,7 @@ describe('GET /my/links (#2520)', () => {
     expect(res.render.mock.calls[0][0]).toBe('my-list');
     const view = res.render.mock.calls[0][1] as Record<string, unknown>;
     expect(view.title).toBe('Pinned pages');
+    expect(view.tabTitle).toBe('Pinned pages');
     expect(JSON.stringify(view)).not.toContain('My Links');
     expect(view.items).toEqual([expect.objectContaining({ title: 'Garden', url: '/view/Garden' })]);
   });

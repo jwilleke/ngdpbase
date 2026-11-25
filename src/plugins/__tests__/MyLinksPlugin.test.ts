@@ -142,7 +142,7 @@ describe('MyLinksPlugin', () => {
       const user = authenticatedUser([{ pageName: 'PageX', title: 'Page X' }]);
       const result = MyLinksPlugin.execute({ userContext: user }, {}) as string;
       expect(result).toContain('my-links-remove');
-      expect(result).toContain('Remove from Pinned pages');
+      expect(result).toContain('Remove from pinned pages');
       // #785: remove button targets the unified URL-based handler.
       // Legacy {pageName, title} entries normalise to url=/view/<pageName>.
       expect(result).toContain('removePinnedItem');
