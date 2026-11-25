@@ -12,6 +12,7 @@ import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { CHECKED_DENIES_KEY, DENY_CHECKED_ACTION, pageWritePolicyFindings, policyFingerprint } from '../utils/pageWritePolicies.js';
+import { readOnlyPermissionNames } from '../utils/permissionCatalog.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 import { systemContext } from '../context/bootActions.js';
@@ -565,7 +566,7 @@ class PolicyEvaluator extends BaseManager {
     // #2355: a deny an administrator marked as checked, with the content it has now, is left out of the box and logged quietly.
     const checkedDenies = (config.getProperty(CHECKED_DENIES_KEY, {}) ?? {}) as Record<string, string>;
     const buttons: NonNullable<ManagerStatus['buttons']> = [];
-    for (const finding of pageWritePolicyFindings(this.policies(), checkedDenies)) {
+    for (const finding of pageWritePolicyFindings(this.policies(), checkedDenies, readOnlyPermissionNames(config.getProperty('ngdpbase.permissions.definitions', {})))) {
       if (finding.coveredByUpgradeNotice) logOnly.push(finding.log);
       else if (finding.deny?.checked) checkedLog.push(finding.log);
       else {

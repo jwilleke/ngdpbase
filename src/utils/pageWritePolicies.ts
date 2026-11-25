@@ -468,7 +468,7 @@ export function restoreNarrowedWrites(incoming: unknown, base: unknown, narrowed
  * page-read to `anyone` or `authenticated` (#2261, #2283), and every deny (a deny now overrides any
  * allow; one an administrator marked as checked is still reported, with `deny.checked` set, #2355). Each is a log line in full and the same finding in plain words.
  */
-export function pageWritePolicyFindings(policies: readonly Policy[], checked: Readonly<Record<string, string>> = {}): PolicyFinding[] {
+export function pageWritePolicyFindings(policies: readonly Policy[], checked: Readonly<Record<string, string>> = {}, readOnly: Iterable<string> = []): PolicyFinding[] {
   const out: PolicyFinding[] = [];
   for (const policy of policies) {
     if (policy.effect === 'deny') {
@@ -480,7 +480,7 @@ export function pageWritePolicyFindings(policies: readonly Policy[], checked: Re
       });
       continue;
     }
-    for (const rule of openWriteRules([policy])) {
+    for (const rule of openWriteRules([policy], readOnly)) {
       if (rule.who.kind === 'roles') {
         const roles = rule.who.roles;
         out.push({
@@ -511,17 +511,19 @@ export interface OpenWriteRule {
   id: string;
   /** Who: everyone including signed-out visitors, every signed-in user, or the named roles other than admin. */
   who: { kind: 'anyone' } | { kind: 'authenticated' } | { kind: 'roles'; roles: string[] };
-  /** The actions it grants; for `anyone` and `authenticated`, without page-read. `*` means everything. */
+  /** The actions it grants; for `anyone` and `authenticated`, without the read-only actions. `*` means everything. */
   actions: string[];
   resources: NonNullable<Policy['resources']>;
 }
 
 /**
  * The allow rules in force that let `anyone` (signed-out visitors) or `authenticated` (every signed-in user)
- * do more than page-read, or give page writes to a role other than admin. Deny rules are left out.
+ * do more than read, or give page writes to a role other than admin. Deny rules are left out.
+ * `page-read` counts as a read, and so does each action in `readOnly` (an add-on's, from `readOnlyPermissionNames`).
  * Computed from the policies it is given, so what it returns follows the current policies.
  */
-export function openWriteRules(policies: readonly Policy[]): OpenWriteRule[] {
+export function openWriteRules(policies: readonly Policy[], readOnly: Iterable<string> = []): OpenWriteRule[] {
+  const reads = new Set<string>([READ_ONLY_ACTION, ...readOnly]);
   const out: OpenWriteRule[] = [];
   for (const policy of policies) {
     if (policy.effect === 'deny') continue;
@@ -530,7 +532,7 @@ export function openWriteRules(policies: readonly Policy[]): OpenWriteRule[] {
     const resources = policy.resources ?? [];
     // Missing or empty `actions` means `*` (#2283).
     const held = (policy.actions ?? []).length > 0 ? (policy.actions ?? []) : ['*'];
-    const granted = held.filter((a) => a !== READ_ONLY_ACTION);
+    const granted = held.filter((a) => !reads.has(a));
     if (kind && granted.length > 0) out.push({ id: policy.id, who: { kind }, actions: granted, resources });
     const writes = (policy.actions ?? []).filter((a) => (PAGE_WRITES as readonly string[]).includes(a) || a === '*');
     const roles = subjects.filter((s) => s.type === 'role' && s.value !== 'admin').map((s) => s.value).filter((v): v is string => typeof v === 'string');

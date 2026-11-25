@@ -7,7 +7,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { isGrantable, grantablePermissionNames, grantablePermissions, withRetiredExpanded, RETIRED_PERMISSIONS, permissionLabel, describeScopes } from '../permissionCatalog';
+import { readOnlyPermissionNames, isGrantable, grantablePermissionNames, grantablePermissions, withRetiredExpanded, RETIRED_PERMISSIONS, permissionLabel, describeScopes } from '../permissionCatalog';
 import { delegablePermissions } from '../../managers/OidcManager';
 
 const shipped = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')) as Record<string, unknown>;
@@ -109,5 +109,15 @@ describe('#1764 every permission has plain words', () => {
       { name: 'toString', description: 'toString' }
     ]);
     expect(describeScopes(['page-read'], null)).toEqual([{ name: 'page-read', description: 'page-read' }]);
+  });
+});
+
+describe('readOnlyPermissionNames', () => {
+  test('names the entries marked read-only: true, and nothing else', () => {
+    expect(readOnlyPermissionNames({ a: { 'read-only': true }, b: { 'read-only': false }, c: {}, d: { 'read-only': 'yes' }, e: null, f: { 'read-only': true, grantable: false } })).toEqual(['a', 'f']);
+  });
+
+  test('anything that is not a catalog reads as empty', () => {
+    for (const value of [undefined, null, 'x', 3, [], [{ 'read-only': true }]]) expect(readOnlyPermissionNames(value)).toEqual([]);
   });
 });

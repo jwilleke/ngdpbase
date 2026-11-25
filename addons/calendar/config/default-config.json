@@ -14,7 +14,8 @@
       "description": "See the events of calendars set to signed-in visibility, in the calendar view, the API and the .ics feed",
       "label": "See events of calendars shown to signed-in people",
       "icon": "calendar",
-      "color": "#6c757d"
+      "color": "#6c757d",
+      "read-only": true
     },
     "calendar-reserve": {
       "description": "Make and cancel your own reservations",

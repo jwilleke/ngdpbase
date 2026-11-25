@@ -332,6 +332,16 @@ __A permission that needs a fresh sign-in__ (step-up: a refund, an adjustment, a
 
 Nothing else is needed in your code: the PDP refuses the stale sign-in, `ctx.enforceDeny` (or `requirePermission`) answers with the `reauth` link, and the sign-in window is the site's. A form the forms add-on shows keeps its page and what was typed across the fresh sign-in and is sent once after its own prompt is confirmed (not another tab's), unless it was changed meanwhile; a page's own form POST is redone by core. What each covers, and what it does not, is in the [authentication guide](authentication-developer-guide.md#standing-rules).
 
+__A permission that only lets someone see something__ (a calendar's events, a list) carries `"read-only": true` on its entry. Admin lists an allow rule that gives `anyone` or `authenticated` more than reading, as a rule that lets many people change things; a rule that grants only `page-read` and your read-only permissions is not listed. Without the flag, a rule that grants your read permission to every signed-in user is listed as letting them "use" every page it covers.
+
+```json
+"calendar-read": {
+  "description": "See the events of calendars set to signed-in visibility",
+  "label": "See events of calendars shown to signed-in people",
+  "read-only": true
+}
+```
+
 __A permission over a user's own records__ ("your receipts", "your health record", "your residency") is always granted to every user, the same way in every add-on (operator, 2026-10-24): name the role every account is given, never site roles and never a list of every role. Core gives every account the roles in `ngdpbase.user.account-roles` (shipped: `vault-owner`), new accounts when they are created and older ones once at the next start ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)); core's own `signed-in-self-service` policy grants `profile-manage` the same way. Put the grant in your own policy:
 
 ```json
