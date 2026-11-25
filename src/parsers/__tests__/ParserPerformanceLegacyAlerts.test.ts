@@ -82,10 +82,10 @@ describe('importLegacyAlerts (#2468)', () => {
     ];
     source = {
       getAllNotifications: vi.fn(() => stored),
-      removeByTitlePrefix: vi.fn(async (prefix: string) => {
+      removeByTitles: vi.fn(async (titles: readonly string[]) => {
         events.push(`removed:file-present=${fs.existsSync(legacyFile())}`);
         const before = stored.length;
-        stored = stored.filter((n) => !n.title.startsWith(prefix));
+        stored = stored.filter((n) => !titles.includes(n.title));
         return before - stored.length;
       })
     };
@@ -111,8 +111,30 @@ describe('importLegacyAlerts (#2468)', () => {
     await importLegacyAlerts(dir, source, NOW);
 
     expect(events).toEqual(['removed:file-present=true']);
-    expect(source.removeByTitlePrefix).toHaveBeenCalledWith('MarkupParser Performance Alert: ');
+    expect(source.removeByTitles).toHaveBeenCalledWith([
+      'MarkupParser Performance Alert: SLOW_PARSING',
+      'MarkupParser Performance Alert: LOW_CACHE_HIT_RATIO',
+      'MarkupParser Performance Alert: HIGH_ERROR_RATE'
+    ]);
     expect(stored.map((n) => n.title)).toEqual(['Media files without a capture date']);
+  });
+
+  test('a notification whose title only starts like an old alert is neither counted nor deleted', async () => {
+    stored.push(
+      { title: 'MarkupParser Performance Alert: SLOW_PARSING (copy)', message: 'Average parse time 1ms', createdAt: new Date() },
+      { title: 'MarkupParser Performance Alert: SOMETHING_ELSE', message: 'x', createdAt: new Date() },
+      { title: 'MarkupParser Performance Alert: ', message: 'x', createdAt: new Date() }
+    );
+
+    const result = await importLegacyAlerts(dir, source, NOW);
+
+    expect(result).toEqual({ imported: 3, skipped: 1, removed: 4 });
+    expect(stored.map((n) => n.title)).toEqual([
+      'Media files without a capture date',
+      'MarkupParser Performance Alert: SLOW_PARSING (copy)',
+      'MarkupParser Performance Alert: SOMETHING_ELSE',
+      'MarkupParser Performance Alert: '
+    ]);
   });
 
   test('after the removal the file says when and how many; no stray temporary file is left', async () => {
@@ -135,18 +157,18 @@ describe('importLegacyAlerts (#2468)', () => {
     await importLegacyAlerts(dir, source, NOW);
     const before = fs.readFileSync(legacyFile(), 'utf8');
     stored.push(alert('SLOW_PARSING', 'Average parse time 300ms exceeds threshold 100ms'));
-    (source.removeByTitlePrefix as ReturnType<typeof vi.fn>).mockClear();
+    (source.removeByTitles as ReturnType<typeof vi.fn>).mockClear();
 
     const again = await importLegacyAlerts(dir, source, NOW + 60_000);
 
     expect(again).toBeNull();
-    expect(source.removeByTitlePrefix).not.toHaveBeenCalled();
+    expect(source.removeByTitles).not.toHaveBeenCalled();
     expect(fs.readFileSync(legacyFile(), 'utf8')).toBe(before);
   });
 
   test('a crash after the file was written retries only the removal, and imports nothing twice', async () => {
     // First start: the removal fails, as if the process died there.
-    (source.removeByTitlePrefix as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('crash'));
+    (source.removeByTitles as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('crash'));
     await importLegacyAlerts(dir, source, NOW);
     const afterCrash = await readLegacyAlerts(dir);
     expect(afterCrash?.removedAt).toBeUndefined();
@@ -171,7 +193,7 @@ describe('importLegacyAlerts (#2468)', () => {
 
     await expect(importLegacyAlerts(path.join(blocked, 'inside'), source, NOW)).resolves.toBeNull();
 
-    expect(source.removeByTitlePrefix).not.toHaveBeenCalled();
+    expect(source.removeByTitles).not.toHaveBeenCalled();
     expect(stored).toHaveLength(5);
   });
 
@@ -181,7 +203,7 @@ describe('importLegacyAlerts (#2468)', () => {
     await expect(importLegacyAlerts(dir, source, NOW)).resolves.toBeNull();
 
     expect(fs.readFileSync(legacyFile(), 'utf8')).toBe('{ not json');
-    expect(source.removeByTitlePrefix).not.toHaveBeenCalled();
+    expect(source.removeByTitles).not.toHaveBeenCalled();
     expect(stored).toHaveLength(5);
   });
 

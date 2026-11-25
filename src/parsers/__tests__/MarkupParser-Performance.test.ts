@@ -551,16 +551,16 @@ describe('MarkupParser Advanced Caching and Performance', () => {
       ];
       const notifications = {
         getAllNotifications: () => stored,
-        removeByTitlePrefix: vi.fn(async (prefix: string) => {
+        removeByTitles: vi.fn(async (titles: readonly string[]) => {
           const before = stored.length;
-          stored = stored.filter((n) => !n.title.startsWith(prefix));
+          stored = stored.filter((n) => !titles.includes(n.title));
           return before - stored.length;
         })
       };
       const p = await makeWith(notifications);
       await p.shutdown();
 
-      expect(notifications.removeByTitlePrefix).toHaveBeenCalledWith(PREFIX);
+      expect(notifications.removeByTitles).toHaveBeenCalledWith([`${PREFIX}SLOW_PARSING`, `${PREFIX}LOW_CACHE_HIT_RATIO`, `${PREFIX}HIGH_ERROR_RATE`]);
       const file = JSON.parse(fs.readFileSync(path.join(dir, 'legacy-alerts.json'), 'utf8'));
       expect(file.samples).toHaveLength(1);
       expect(file.removed).toBe(1);
@@ -570,7 +570,7 @@ describe('MarkupParser Advanced Caching and Performance', () => {
     test('a failing removal does not stop the parser from starting', async () => {
       const notifications = {
         getAllNotifications: () => [{ title: `${PREFIX}SLOW_PARSING`, message: 'Average parse time 119.50ms exceeds threshold 100ms', createdAt: new Date() }],
-        removeByTitlePrefix: vi.fn(async () => { throw new Error('disk full'); })
+        removeByTitles: vi.fn(async () => { throw new Error('disk full'); })
       };
       const p = await makeWith(notifications);
       try {
@@ -615,6 +615,63 @@ describe('MarkupParser Advanced Caching and Performance', () => {
         expect(report.rollup.hour.hit).toMatchObject({ count: 1, p50: 0.5 });
         expect(report.legacy.parse).toMatchObject({ count: 1, max: 310 });
         expect(report.limits).toEqual({ parseTime: 100, cacheHitRatio: 0.6, errorRate: 0.05 });
+      } finally {
+        await p.shutdown();
+      }
+    });
+
+    test('counts the checks in each window once, whatever numbers each check carried', async () => {
+      const store = new ParserPerformanceHistory(dir);
+      await store.open();
+      const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+      await store.record({ t: ago(60_000), parse: 100, hit: null, err: null, n: 4 });
+      await store.record({ t: ago(120_000), parse: null, hit: 0.5, err: 0, n: 4 });
+      await store.record({ t: ago(3 * 60 * 60 * 1000), parse: 90, hit: 0.5, err: 0, n: 4 });
+      const config = new MockAdvancedConfigurationManager();
+      Object.assign(config, { getResolvedDataPath: () => dir });
+      const p = new MarkupParser(new MockAdvancedWikiEngine({ ConfigurationManager: config }));
+      await p.initialize();
+      try {
+        const report = await p.getPerformanceReport();
+        expect(report.checks).toEqual({ hour: 2, day: 3, week: 3, month: 3 });
+      } finally {
+        await p.shutdown();
+      }
+    });
+
+    test('reads the kept files once for page views within a minute, and again after that', async () => {
+      const config = new MockAdvancedConfigurationManager();
+      Object.assign(config, { getResolvedDataPath: () => dir });
+      const p = new MarkupParser(new MockAdvancedWikiEngine({ ConfigurationManager: config }));
+      await p.initialize();
+      try {
+        const history = (p as unknown as { performanceMonitor: { history: ParserPerformanceHistory } }).performanceMonitor.history;
+        const read = vi.spyOn(history, 'read');
+        const start = Date.now();
+
+        await p.getPerformanceReport(start);
+        await p.getPerformanceReport(start + 30_000);
+        await Promise.all([p.getPerformanceReport(start + 59_000), p.getPerformanceReport(start + 59_500)]);
+        expect(read).toHaveBeenCalledTimes(1);
+
+        await p.getPerformanceReport(start + 61_000);
+        expect(read).toHaveBeenCalledTimes(2);
+      } finally {
+        await p.shutdown();
+      }
+    });
+
+    test('a folder that could not be made is not "recording"', async () => {
+      const blocker = path.join(dir, 'a-file');
+      fs.writeFileSync(blocker, 'x');
+      const config = new MockAdvancedConfigurationManager();
+      Object.assign(config, { getResolvedDataPath: () => path.join(blocker, 'inside') });
+      const p = new MarkupParser(new MockAdvancedWikiEngine({ ConfigurationManager: config }));
+      await p.initialize();
+      try {
+        const report = await p.getPerformanceReport();
+        expect(report.recording).toBe(false);
+        expect(report.rollup.month).toEqual({ parse: null, hit: null, err: null });
       } finally {
         await p.shutdown();
       }

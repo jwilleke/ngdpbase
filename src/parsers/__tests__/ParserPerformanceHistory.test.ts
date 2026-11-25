@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import logger from '../../utils/logger';
-import { ParserPerformanceHistory, rollupSamples, type PerformanceSample } from '../ParserPerformanceHistory';
+import { ParserPerformanceHistory, rollupSamples, countChecks, type PerformanceSample } from '../ParserPerformanceHistory';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -37,6 +37,24 @@ describe('ParserPerformanceHistory (#2468)', () => {
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0])).toEqual({ t: '2026-11-22T14:15:00.000Z', parse: 119.5, hit: 0.192, err: 0, n: 20 });
     expect(JSON.parse(lines[1])).toEqual({ t: '2026-11-22T14:16:00.000Z', parse: null, hit: null, err: null, n: 3 });
+  });
+
+  test('open() says whether the folder is there: true when it is made, false when it could not be', async () => {
+    const made = new ParserPerformanceHistory(path.join(dir, 'new-folder'));
+    expect(await made.open()).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'new-folder'))).toBe(true);
+
+    fs.writeFileSync(path.join(dir, 'a-file'), 'x');
+    const blocked = new ParserPerformanceHistory(path.join(dir, 'a-file', 'inside'));
+    expect(await blocked.open()).toBe(false);
+  });
+
+  test('a failed old-file removal does not make open() say the folder is missing', async () => {
+    const stuck = path.join(dir, 'parser-performance-2020-01-01.jsonl');
+    fs.mkdirSync(stuck);
+    fs.writeFileSync(path.join(stuck, 'inside'), 'x');
+
+    expect(await new ParserPerformanceHistory(dir).open()).toBe(true);
   });
 
   test('a second store opened on the same folder reads every line back (restart)', async () => {
@@ -122,6 +140,29 @@ describe('ParserPerformanceHistory (#2468)', () => {
 
       expect(fs.readdirSync(dir)).toEqual([]);
       expect(logger.warn).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([
+      ['month 99 and day 99', '9999-99-99T00:00:00.000Z'],
+      ['day 30 of February', '2026-02-30T10:00:00.000Z'],
+      ['month 13', '2026-13-01T10:00:00.000Z'],
+      ['day 00', '2026-11-00T10:00:00.000Z']
+    ])('a date that cannot exist (%s) is dropped with a warning and no file is made', async (_label, t) => {
+      const store = new ParserPerformanceHistory(dir);
+      await store.open();
+      await store.record(sample(t));
+
+      expect(fs.readdirSync(dir)).toEqual([]);
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+    });
+
+    test('29 February of a leap year is kept; of another year it is not', async () => {
+      const store = new ParserPerformanceHistory(dir);
+      await store.open();
+      await store.record(sample('2028-02-29T10:00:00.000Z'));
+      await store.record(sample('2026-02-29T10:00:00.000Z'));
+
+      expect(fs.readdirSync(dir)).toEqual(['parser-performance-2028-02-29.jsonl']);
     });
 
     test('a good check after a refused one is still kept', async () => {
@@ -278,5 +319,23 @@ describe('rollupSamples (#2468)', () => {
     expect(hour.parse).toMatchObject({ count: 1, max: 10 });
     expect(hour.hit).toBeNull();
     expect(hour.err).toBeNull();
+  });
+});
+
+describe('countChecks (#2468)', () => {
+  const NOW = Date.parse('2026-11-23T12:00:00.000Z');
+  const at = (ms: number) => new Date(NOW - ms).toISOString();
+
+  test('counts every check in each window, whichever numbers it carried', () => {
+    const checks = countChecks([
+      sample(at(60_000), { parse: null, hit: null, err: null }),
+      sample(at(2 * 60 * 60 * 1000)),
+      sample(at(2 * DAY)),
+      sample(at(20 * DAY)),
+      sample(at(40 * DAY)),
+      { t: 'not a date' }
+    ], NOW);
+
+    expect(checks).toEqual({ hour: 1, day: 2, week: 3, month: 4 });
   });
 });

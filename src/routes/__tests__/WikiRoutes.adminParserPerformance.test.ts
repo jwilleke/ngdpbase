@@ -22,6 +22,7 @@ const report = (over: Partial<PerformanceReport> = {}): PerformanceReport => ({
     week: { parse: null, hit: null, err: null },
     month: { parse: null, hit: null, err: null }
   },
+  checks: { hour: 58, day: 58, week: 58, month: 58 },
   legacy: { parse: stats({ count: 7, max: 310 }), hit: null, err: null },
   limits: { parseTime: 150, cacheHitRatio: 0.2, errorRate: 0.05 },
   recording: true,
@@ -91,33 +92,86 @@ describe('who may open the Page building speed page (#2468)', () => {
     expect(getPerformanceReport).not.toHaveBeenCalled();
   });
 
-  test('the admin dashboard has a button to it, beside Logs', () => {
-    const dashboard = fs.readFileSync(path.join(VIEWS, 'admin-dashboard.ejs'), 'utf8');
-    expect(dashboard).toContain('href="/admin/parser-performance"');
+  test('the route is registered: GET /admin/parser-performance reaches the handler', async () => {
+    const { routes } = makeRoutes(['admin-read']);
+    const gets = new Map<string, (req: unknown, res: unknown) => unknown>();
+    const app = new Proxy({}, {
+      get: (_t, method: string) => (route: string, handler: (req: unknown, res: unknown) => unknown) => {
+        if (method === 'get' && typeof route === 'string') gets.set(route, handler);
+      }
+    });
+    (routes as unknown as { registerRoutes: (a: unknown) => void }).registerRoutes(app);
+
+    const handler = gets.get('/admin/parser-performance');
+    expect(handler).toBeDefined();
+    const res = createMockRes();
+    await handler?.(createMockReq(admin), res);
+    expect(rendered(res)).toBe(true);
   });
 });
 
 describe('what the Page building speed page says (#2468)', () => {
-  async function page(r: PerformanceReport): Promise<string> {
+  const empty = () => ({ parse: null, hit: null, err: null });
+  const nothing = (over: Partial<PerformanceReport> = {}) => report({
+    rollup: { hour: empty(), day: empty(), week: empty(), month: empty() },
+    checks: { hour: 0, day: 0, week: 0, month: 0 },
+    legacy: empty(),
+    ...over
+  });
+
+  async function dom(r: PerformanceReport): Promise<Document> {
     const html = await ejs.renderFile(path.join(VIEWS, 'admin-parser-performance.ejs'), {
       pageName: '', csrfToken: 'csrf', title: 'Page building speed', report: r,
       jsonForScript: (v: unknown) => JSON.stringify(v), pageUrl: (n: string) => `/view/${n}`, lockedUnless: () => ''
     });
     const doc = new JSDOM(html).window.document;
     doc.querySelectorAll('script, style').forEach((e) => e.remove());
-    return (doc.body.textContent ?? '').replace(/\s+/g, ' ');
+    return doc;
+  }
+  const squash = (t: string | null) => (t ?? '').replace(/\s+/g, ' ').trim();
+  async function page(r: PerformanceReport): Promise<string> {
+    return squash((await dom(r)).body.textContent);
   }
 
-  test('has the title, the plain-words intro and the three measures with their limits from the settings', async () => {
+  test('has the title with its unit, a one-sentence intro and the three measures with their limits from the settings', async () => {
     const text = await page(report());
 
     expect(text).toContain('Page building speed');
     expect(text).toContain('How quickly the site turns page text into what you read.');
-    expect(text).toContain('Time to build a page, in milliseconds (pages not already stored). Limit: 150.');
-    expect(text).toContain('Pages served from stored copies, in percent. Lower than 20 is flagged.');
-    expect(text).toContain('Pages that failed to build, in percent. Higher than 5 is flagged.');
-    for (const label of ['Last hour', 'Last 24 hours', 'Last 7 days', 'Last 30 days', 'Typical', 'Slowest 1 in 20', 'Slowest', 'Average', 'Checks counted']) {
+    expect(text).toContain('Page build time (ms)');
+    expect(text).toContain('Limit: 150 ms. Slower is too slow.');
+    expect(text).toContain('Below 20 is too low.');
+    expect(text).toContain('Above 5 is too high.');
+    for (const label of ['Last hour', 'Last 24 hours', 'Last 7 days', 'Last 30 days', 'Typical', 'Slowest 1 in 20', 'Slowest', 'Average']) {
       expect(text).toContain(label);
+    }
+  });
+
+  test('promises no flag the page does not show, and uses "checks", not "samples" or "minutes"', async () => {
+    const text = await page(report());
+
+    expect(text).not.toMatch(/flagged/i);
+    expect(text).not.toMatch(/samples?\b/i);
+    expect(text).not.toMatch(/\bminutes\b/i);
+    expect(text).not.toMatch(/over-limit/i);
+  });
+
+  test('the meaning of Typical, Slowest 1 in 20 and Slowest is behind a details control, not in the first view', async () => {
+    const doc = await dom(report());
+    const details = doc.querySelector('details');
+
+    expect(squash(details?.querySelector('summary')?.textContent)).toBe('What Typical, Slowest 1 in 20 and Slowest mean');
+    expect(squash(details?.textContent)).toContain('once a minute');
+    expect(squash(details?.textContent)).toContain('19 of 20');
+    expect(details?.hasAttribute('open')).toBe(false);
+  });
+
+  test('fewer than 111 words greet the reader outside the tables and the details control', async () => {
+    for (const r of [report(), report({ recording: false }), nothing()]) {
+      const doc = await dom(r);
+      doc.querySelectorAll('details > :not(summary), table').forEach((e) => e.remove());
+      const words = squash(doc.body.textContent).split(' ').filter(Boolean).length;
+      expect(words).toBeLessThan(111);
     }
   });
 
@@ -127,37 +181,97 @@ describe('what the Page building speed page says (#2468)', () => {
     expect(text).toContain('119.5'); // milliseconds
     expect(text).toContain('19.2%'); // a ratio shown as percent
     expect(text).toContain('6.5%');
-    expect(text).toContain('58'); // checks counted
   });
 
-  test('an empty period says so', async () => {
+  test('says how many checks each period holds once, in its column heading, not in every table', async () => {
+    const doc = await dom(report({ checks: { hour: 58, day: 1210, week: 7840, month: 30120 } }));
+    const heads = [...doc.querySelectorAll('[data-testid="parser-performance-parse"] thead th')].map((th) => squash(th.textContent));
+
+    expect(heads).toEqual(['', 'Last hour 58 checks', 'Last 24 hours 1210 checks', 'Last 7 days 7840 checks', 'Last 30 days 30120 checks']);
+    expect(squash(doc.body.textContent)).not.toContain('Checks counted');
+  });
+
+  test('a table whose count differs from the period total says so on its own row', async () => {
+    const doc = await dom(report({
+      rollup: {
+        hour: { parse: stats({ count: 40 }), hit: stats({ count: 58 }), err: stats({ count: 58 }) },
+        day: { parse: null, hit: null, err: null }, week: { parse: null, hit: null, err: null }, month: { parse: null, hit: null, err: null }
+      }
+    }));
+
+    expect(squash(doc.querySelector('[data-testid="parser-performance-parse"] tbody')?.textContent)).toContain('Checks with this number 40');
+    expect(squash(doc.querySelector('[data-testid="parser-performance-hit"] tbody')?.textContent)).not.toContain('Checks with this number');
+  });
+
+  test('a period with no checks says so once, without "yet"', async () => {
     const text = await page(report());
-    expect(text).toContain('No checks recorded in this period yet.');
+    expect(text).toContain('No checks in this period.');
+    expect(text).not.toMatch(/period yet/);
   });
 
-  test('the earlier warnings table appears only when there are earlier warnings', async () => {
+  test('the earlier warnings table appears only when there are earlier warnings, says they are not comparable, and says "checks"', async () => {
     const withLegacy = await page(report());
-    expect(withLegacy).toContain('Earlier warnings (over-limit samples only)');
-    expect(withLegacy).toContain('Before this page existed, the site saved only the minutes when a number went over its limit.');
+    expect(withLegacy).toContain('Earlier warnings (only checks over the limit)');
+    expect(withLegacy).toContain('Saved before this page existed, for checks over the limit only.');
+    expect(withLegacy).toContain('Not a view of the whole site.');
+    expect(withLegacy).toMatch(/totals since start-up.*do not compare/);
     expect(withLegacy).toContain('310');
 
     const without = await page(report({ legacy: { parse: null, hit: null, err: null } }));
     expect(without).not.toContain('Earlier warnings');
   });
 
-  test('a site with no folder to keep the checks in says so', async () => {
-    const text = await page(report({ recording: false }));
-    expect(text).toContain('This site is not keeping these checks.');
+  describe('a site that is not keeping checks', () => {
+    test('shows the cause and the step, and no tables', async () => {
+      const doc = await dom(nothing({ recording: false }));
+      const banner = squash(doc.querySelector('.alert')?.textContent);
+
+      expect(banner).toContain('Page checks are not being saved because the site has no folder it can write them to.');
+      expect(banner).toContain('Admin → Configuration');
+      expect(banner).toContain('ngdpbase.markup.performance.history.dir');
+      expect(banner).toContain('restart');
+      expect(doc.querySelectorAll('table')).toHaveLength(0);
+      expect(squash(doc.body.textContent)).not.toContain('No checks');
+    });
+  });
+
+  describe('a site that is keeping checks but has none yet', () => {
+    test('has no banner, no tables, and one line saying when they appear', async () => {
+      const doc = await dom(nothing());
+      const text = squash(doc.body.textContent);
+
+      expect(doc.querySelector('.alert-warning')).toBeNull();
+      expect(doc.querySelectorAll('table')).toHaveLength(0);
+      expect(text.match(/No checks recorded yet\./g)).toHaveLength(1);
+      expect(text).toContain('They appear within a minute of pages being viewed.');
+    });
+
+    test('a measure with nothing at all shows one line in place of its table; the others keep theirs', async () => {
+      const doc = await dom(report({
+        rollup: {
+          hour: { parse: stats(), hit: null, err: null }, day: { parse: stats(), hit: null, err: null },
+          week: { parse: stats(), hit: null, err: null }, month: { parse: stats(), hit: null, err: null }
+        }
+      }));
+
+      expect(doc.querySelectorAll('[data-testid="parser-performance-parse"] table')).toHaveLength(1);
+      expect(doc.querySelectorAll('[data-testid="parser-performance-hit"] table')).toHaveLength(0);
+      expect(squash(doc.querySelector('[data-testid="parser-performance-hit"]')?.textContent)).toContain('No checks recorded yet.');
+    });
+  });
+
+  test('column headings may wrap and the row names do not force a sideways scroll on a phone', async () => {
+    const html = fs.readFileSync(path.join(VIEWS, 'admin-parser-performance.ejs'), 'utf8');
+    expect(html).not.toMatch(/<th scope="col"[^>]*text-nowrap/);
+    expect(html).not.toMatch(/<th scope="row"[^>]*text-nowrap/);
   });
 
   test.each([
     ['with data', () => report()],
-    ['with nothing recorded', () => report({
-      rollup: { hour: { parse: null, hit: null, err: null }, day: { parse: null, hit: null, err: null }, week: { parse: null, hit: null, err: null }, month: { parse: null, hit: null, err: null } },
-      legacy: { parse: null, hit: null, err: null }, recording: false
-    })]
+    ['with nothing recorded', () => nothing()],
+    ['not recording', () => nothing({ recording: false })]
   ])('the visible text has no issue number, file path, "see the log" or the word role (%s)', async (_label, make) => {
-    const text = await page(make());
+    const text = (await page(make())).replace('ngdpbase.markup.performance.history.dir', 'THE-SETTING');
 
     expect(text).not.toMatch(/#\s*\d/);
     expect(text).not.toMatch(/\b(docs|src|views|config)\//i);
