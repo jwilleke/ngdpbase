@@ -775,6 +775,18 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       expect(mockShareManager.revoke).toHaveBeenCalledWith('s1', expect.objectContaining({ username: 'ed' }));
     });
 
+    test('a maker who can no longer open the Shared links page lands on the front page, not a 403 (round 4)', async () => {
+      shareState.records = [{ id: 's8', token: 'b'.repeat(64), scope: SCOPE, createdBy: 'nobody', createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null }];
+      mockUserContext = { ...editorUser, username: 'nobody', roles: [] };
+      const res = await request(app)
+        .post('/shares/s8/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(302);
+      expect(mockShareManager.revoke).toHaveBeenCalledWith('s8', expect.objectContaining({ username: 'nobody' }));
+      expect(res.headers.location).toBe('/');
+    });
+
     test('a signed-out subject cannot revoke a link (round 3 Sec L1)', async () => {
       shareState.records = [{ id: 's9', token: 'd'.repeat(64), scope: SCOPE, createdBy: 'Anonymous', createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null }];
       mockUserContext = { username: 'Anonymous', displayName: 'Anonymous', isAuthenticated: false, roles: ['Anonymous'] };

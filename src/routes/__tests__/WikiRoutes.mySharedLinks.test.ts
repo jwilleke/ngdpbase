@@ -165,3 +165,20 @@ describe('GET /my/shares shows the address of each link the person made (round 3
     expect(view.addresses).not.toHaveProperty('r1');
   });
 });
+
+describe('GET /my/shares sign-in and caching (round 4)', () => {
+  test('a signed-out subject is refused even when policy would grant everything', async () => {
+    const { routes } = setup(['share-create', 'profile-manage', 'share-manage-all']);
+    const r = res();
+    await routes.mySharesPage(req('/my/shares', {}, { username: 'Anonymous', isAuthenticated: false, roles: ['Anonymous'] }), r);
+    expect(r.render).not.toHaveBeenCalled();
+  });
+
+  test('the page is never stored by a cache, because it shows working addresses', async () => {
+    const { routes } = setup(['share-create']);
+    const r = res();
+    await routes.mySharesPage(req('/my/shares', {}, MOLLY), r);
+    expect(r.render).toHaveBeenCalled();
+    expect(r.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+  });
+});
