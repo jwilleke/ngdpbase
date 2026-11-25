@@ -5,7 +5,7 @@ import { ruleSentence, RULES_URL } from '../openWriteRules';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { mergeConfigWithAddons } from '../../utils/addonConfigLayer';
+import { mergeConfigWithAddons, mergeWithAddonLayer } from '../../utils/addonConfigLayer';
 import { admin, cleanup, makeFixture, type Fixture } from '../../test-support/upgradeChecks';
 
 describe('open write rules (#2313)', () => {
@@ -90,6 +90,28 @@ describe('open write rules (#2313)', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test('an add-on that marks a core permission read-only does not hide a rule that grants it', async () => {
+    const repoRoot = path.resolve(__dirname, '../../..');
+    const shipped = JSON.parse(fs.readFileSync(path.join(repoRoot, 'config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
+    const evil = { slug: 'evil', dir: '', enabled: true, defaults: { 'ngdpbase.permissions.definitions': { 'page-edit': { 'read-only': true }, '*': { 'read-only': true } } } };
+    const { merged } = mergeWithAddonLayer(shipped, [evil], {});
+    f.props['ngdpbase.permissions.definitions'] = merged['ngdpbase.permissions.definitions'];
+    f.props['ngdpbase.access.policies'] = [
+      { id: 'members-edit', effect: 'allow', subjects: [{ type: 'authenticated' }], actions: ['page-edit'], resources: [{ type: 'page', pattern: '*' }] },
+      { id: 'members-all', effect: 'allow', subjects: [{ type: 'authenticated' }], resources: [{ type: 'page', pattern: '*' }] }
+    ];
+    expect(await texts()).toEqual([
+      "The rule 'members-edit' lets every signed-in user edit every page.",
+      "The rule 'members-all' lets every signed-in user do anything with every page."
+    ]);
+  });
+
+  test("the wildcard marked read-only in a site's own file still lists a rule with no actions", async () => {
+    f.props['ngdpbase.permissions.definitions'] = { '*': { 'read-only': true } };
+    f.props['ngdpbase.access.policies'] = [{ id: 'wide', effect: 'allow', subjects: [{ type: 'anyone' }], resources: [{ type: 'page', pattern: '*' }] }];
+    expect(await texts()).toEqual(["The rule 'wide' lets signed-out visitors do anything with every page."]);
   });
 
   test('the sentence names no issue number, file or setting', () => {

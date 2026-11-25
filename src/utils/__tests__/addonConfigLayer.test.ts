@@ -297,3 +297,44 @@ describe('#1823 an add-on\'s resource types start with its slug', () => {
     expect(mergeWithAddonLayer({}, [addon('phr', { page: {} }, false)], {}).refused.size).toBe(0);
   });
 });
+
+describe('an add-on marks read-only only the permissions it declares itself', () => {
+  const DEFS = 'ngdpbase.permissions.definitions';
+  const core = { [DEFS]: { 'page-read': { description: 'View pages' }, 'page-edit': { description: 'Edit pages' } } };
+  const addon = (slug: string, defs: unknown, enabled = true) => ({ slug, dir: '', enabled, defaults: { [DEFS]: defs, [`ngdpbase.addons.${slug}.setting`]: 1 } });
+
+  test('its own new permission may be marked, and is merged with the mark', () => {
+    const { merged, refused, problems } = mergeWithAddonLayer(core, [addon('cal', { 'cal-read': { description: 'See', 'read-only': true } })], {});
+    expect(refused.size).toBe(0);
+    expect(problems).toEqual([]);
+    expect(merged[DEFS]).toMatchObject({ 'cal-read': { 'read-only': true } });
+  });
+
+  test('a mark on a core permission refuses the add-on, with a plain line naming both', () => {
+    const { merged, refused, problems } = mergeWithAddonLayer(core, [addon('cal', { 'page-edit': { 'read-only': true } })], {});
+    expect(refused.get('cal')).toContain("'page-edit'");
+    expect(problems.join('\n')).toMatch(/cal.*page-edit.*read-only/);
+    expect(problems.join('\n')).not.toMatch(/#\d|role/);
+    expect(JSON.stringify(merged[DEFS])).not.toContain('read-only');
+  });
+
+  test('a mark on the wildcard, or on another add-on\'s permission, refuses the add-on', () => {
+    const star = mergeWithAddonLayer(core, [addon('cal', { '*': { 'read-only': true } })], {});
+    expect(star.refused.get('cal')).toContain("'*'");
+    const other = mergeWithAddonLayer(core, [addon('ledger', { 'ledger-adjust': { description: 'Adjust' } }), addon('cal', { 'ledger-adjust': { 'read-only': true } })], {});
+    expect(other.refused.has('cal')).toBe(true);
+    expect(other.refused.has('ledger')).toBe(false);
+    expect(JSON.stringify(other.merged[DEFS])).not.toContain('read-only');
+  });
+
+  test('a mark that is not exactly true changes nothing, and a turned-off add-on is not checked', () => {
+    expect(mergeWithAddonLayer(core, [addon('cal', { 'page-edit': { 'read-only': false } })], {}).refused.size).toBe(0);
+    expect(mergeWithAddonLayer(core, [addon('cal', { 'page-edit': { 'read-only': true } }, false)], {}).refused.size).toBe(0);
+  });
+
+  test('the operator\'s own file may mark any permission', () => {
+    const { merged, refused } = mergeWithAddonLayer(core, [], { [DEFS]: { 'page-edit': { 'read-only': true } } });
+    expect(refused.size).toBe(0);
+    expect(merged[DEFS]).toMatchObject({ 'page-edit': { 'read-only': true } });
+  });
+});

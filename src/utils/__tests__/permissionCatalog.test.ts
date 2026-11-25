@@ -120,4 +120,8 @@ describe('readOnlyPermissionNames', () => {
   test('anything that is not a catalog reads as empty', () => {
     for (const value of [undefined, null, 'x', 3, [], [{ 'read-only': true }]]) expect(readOnlyPermissionNames(value)).toEqual([]);
   });
+
+  test('the wildcard is never read-only, whoever marks it', () => {
+    expect(readOnlyPermissionNames({ '*': { 'read-only': true }, a: { 'read-only': true } })).toEqual(['a']);
+  });
 });
