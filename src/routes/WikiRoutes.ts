@@ -10389,6 +10389,7 @@ ${panes}
         }
         if (!hadHandle) req.session.privateStoreHandle = handle;
         await this.adoptSealedPages(state.username, handle);
+        this.startCleanupAfterUnlock(req, state.username, handle);
         await this.auditAuthentication(req, state.username, 'success', 'private store unlocked with recovery words');
         return res.redirect(next);
       }
@@ -10406,12 +10407,35 @@ ${panes}
         pagesDirectory: state.pagesDirectory
       });
       await this.adoptSealedPages(state.username, handle);
+      this.startCleanupAfterUnlock(req, state.username, handle);
       await this.auditAuthentication(req, state.username, 'success', 'private store unlocked');
       return res.redirect(next);
     } catch (err) {
       logger.error('[private-store] unlock failed:', err);
       return this.renderError(req, res, 500, 'Error', 'The private store could not be unlocked. Nothing was changed.');
     }
+  }
+
+  /**
+   * After an unlock (#2514): the upgrade clean-up of the owner's own private
+   * pages runs again, now that their key is open. At sign-in a vault that was
+   * closed held the person back as not done; this is the moment it can be read.
+   * It runs as the person the request already carries (their permissions as this
+   * sign-in holds them), starts on a later turn and is never waited for, so it
+   * cannot slow or stop the unlock; a failure is logged and nothing more.
+   */
+  private startCleanupAfterUnlock(req: Request, username: string, handle: string): void {
+    const pages = this.engine.getManager<{ convertLegacyAccessOnSignIn?(subject: unknown): Promise<unknown> }>('PageManager');
+    const convert = pages?.convertLegacyAccessOnSignIn?.bind(pages);
+    if (!convert) return;
+    const caller = req.userContext;
+    if (!caller || caller.username !== username) return;
+    const subject = { ...caller, privateStoreHandle: handle };
+    setImmediate(() => {
+      void Promise.resolve()
+        .then(() => convert(subject))
+        .catch((err: unknown) => logger.warn(`[private-store] The clean-up of a person's private pages after unlock did not finish; the unlock was not affected: ${err instanceof Error ? err.message : String(err)}`));
+    });
   }
 
   /**

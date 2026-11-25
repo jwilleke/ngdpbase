@@ -115,6 +115,28 @@ export interface PrivateStorePageRef {
 }
 
 /**
+ * One page in a private store with what a clean-up of its frontmatter reads
+ * (#2514): its path name, uuid, file and metadata.
+ */
+export interface PrivateStorePageInfo {
+  /** The page's path name, `vaults/{owner}/{store}/{title}`. */
+  title: string;
+  uuid: string;
+  filePath: string;
+  metadata: Partial<PageFrontmatter>;
+}
+
+/**
+ * What {@link PageProvider.listPrivateStorePageInfo} found: the pages it could
+ * read, and how many vaults and pages it could not (a closed encrypted vault,
+ * a damaged index or file). A count only: nothing names a page or a path.
+ */
+export interface PrivateStorePageInfoList {
+  pages: PrivateStorePageInfo[];
+  unreadable: number;
+}
+
+/**
  * Options for {@link PageProvider.getPagesByCreator} (#640).
  */
 export interface GetPagesByCreatorOptions {
@@ -260,6 +282,16 @@ export interface PageProvider extends BaseProvider {
    * theirs. Optional capability, like the catalog adoption above.
    */
   listPrivateStorePages?(ctx: ActorContext, owner?: string): Promise<PrivateStorePageRef[]>;
+
+  /**
+   * The pages {@link listPrivateStorePages} lists, each read for its
+   * frontmatter, for the upgrade clean-up of old access limits (#2514). A
+   * vault that cannot be opened with `ctx` (closed, or its index is damaged)
+   * and a page whose file cannot be read are left out and counted in
+   * `unreadable`, so a caller can tell "nothing there" from "could not look".
+   * Never logs a page's name or path. Optional capability, like the listing.
+   */
+  listPrivateStorePageInfo?(ctx: ActorContext, owner?: string): Promise<PrivateStorePageInfoList>;
 
   /**
    * One owner's private stores as `ctx` can read them (#1457), by store id.
