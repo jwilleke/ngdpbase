@@ -56,10 +56,10 @@ test.describe('Admin Backup', () => {
     for (const id of ids) {
       const card = page.locator(`#${id}`);
       const state = await card.getAttribute('data-status');
-      expect(['ok', 'attention', 'broken', 'idle']).toContain(state);
+      expect(['plain', 'amber', 'red']).toContain(state);
       await expect(card.locator('summary .badge')).not.toHaveText('');
       const open = await card.locator('details').evaluate((d) => (d as HTMLDetailsElement).open);
-      expect(open).toBe(state === 'attention' || state === 'broken');
+      expect(open).toBe(state === 'amber' || state === 'red');
     }
   });
 

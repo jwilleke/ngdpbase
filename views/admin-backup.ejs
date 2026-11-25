@@ -23,18 +23,17 @@
     <% } %>
 
     <%# #2470: the state of each card, worked out in one place. A card is one of
-        ok (green, collapsed), attention (amber, open: the admin has something to do),
-        broken (red, open) or idle (grey, collapsed: not used on this site).
-        Four decisions are still open with the operator (Auto Backup off, Manual Backup with no stored
-        backup, Shared folders key with no folders, Shared-folders manager absent). Each is set by the
-        STATE_ lines below; the Manual Backup one takes two lines. Change the line, and the matching case
-        in src/__tests__/adminBackupStatusCards.test.ts. %>
+        plain (no colour, collapsed: all is well, or not used on this site), amber (degraded, open:
+        the admin has something to do) or red (failed, open).
+        Four product rules are set by the STATE_ lines below (Auto Backup off, Manual Backup with no stored
+        backup, Shared folders key with no folders, Shared-folders manager absent); the Manual Backup one
+        takes two lines. Change a line, and the matching case in src/__tests__/adminBackupStatusCards.test.ts. %>
     <%
-        const STATE_AUTO_OFF = 'attention';                     // Auto Backup is switched off and the last good backup is recent (once it is not, backupHealth.fault makes it red)
-        const STATE_MANUAL_NONE_WHEN_AUTO_OK = 'ok';            // no stored backup, automatic backups working
-        const STATE_MANUAL_NONE_OTHERWISE = 'attention';        // no stored backup, automatic backups not working
-        const STATE_SHARED_FOLDERS_UNUSED = 'idle';             // no recovery words and no shared folder yet
-        const STATE_SHARED_FOLDERS_ABSENT = 'idle';             // the shared-folders manager is not there
+        const STATE_AUTO_OFF = 'amber';                     // Auto Backup is switched off and the last good backup is recent (once it is not, backupHealth.fault makes it red)
+        const STATE_MANUAL_NONE_WHEN_AUTO_OK = 'plain';            // no stored backup, automatic backups working
+        const STATE_MANUAL_NONE_OTHERWISE = 'amber';        // no stored backup, automatic backups not working
+        const STATE_SHARED_FOLDERS_UNUSED = 'plain';             // no recovery words and no shared folder yet
+        const STATE_SHARED_FOLDERS_ABSENT = 'plain';             // the shared-folders manager is not there
 
         const backupKey = locals.backupKey || { set: false, fingerprint: null, saved: false };
         const sfKey = locals.sharedFoldersKey || { set: false, fingerprint: null, saved: false };
@@ -48,44 +47,44 @@
         const cardFolders = locals.sharedFolderNames || [];
         const iso = function (d) { return new Date(d).toISOString(); };
 
-        const autoCard = (cardHealth && cardHealth.fault) ? { state: 'broken', badge: 'Not working', hint: 'Backups are not working' }
+        const autoCard = (cardHealth && cardHealth.fault) ? { state: 'red', badge: 'Not working', hint: 'Backups are not working' }
             : !status.config.enabled ? { state: STATE_AUTO_OFF, badge: 'Off', hint: 'Off: no backup is made on its own' }
-            : (cardHealth && cardHealth.lastGood) ? { state: 'ok', badge: 'On', hint: 'On, last backup', hintTime: cardHealth.lastGood.at }
-            : { state: 'ok', badge: 'On', hint: 'On' };
+            : (cardHealth && cardHealth.lastGood) ? { state: 'plain', badge: 'On', hint: 'On, last backup', hintTime: cardHealth.lastGood.at }
+            : { state: 'plain', badge: 'On', hint: 'On' };
 
         const newestStored = cardStored.reduce(function (n, b) { return !n || new Date(b.created) > new Date(n.created) ? b : n; }, null);
-        const manualCard = newestStored ? { state: 'ok', badge: 'Ready', hint: 'Last backup kept here', hintTime: iso(newestStored.created) }
-            : { state: autoCard.state === 'ok' ? STATE_MANUAL_NONE_WHEN_AUTO_OK : STATE_MANUAL_NONE_OTHERWISE,
-                badge: autoCard.state === 'ok' ? 'Ready' : 'No backup yet',
-                hint: autoCard.state === 'ok' ? 'No backup kept on this server yet, automatic backups are on' : 'No backup kept on this server yet' };
+        const manualCard = newestStored ? { state: 'plain', badge: 'Ready', hint: 'Last backup kept here', hintTime: iso(newestStored.created) }
+            : { state: autoCard.state === 'plain' ? STATE_MANUAL_NONE_WHEN_AUTO_OK : STATE_MANUAL_NONE_OTHERWISE,
+                badge: autoCard.state === 'plain' ? 'Ready' : 'No backup yet',
+                hint: autoCard.state === 'plain' ? 'No backup kept on this server yet, automatic backups are on' : 'No backup kept on this server yet' };
 
         const cardEnvChanged = Boolean(cardKeys && (cardKeys.added.length > 0 || cardKeys.removed.length > 0));
         // The "I have saved .env off the server" button sits in the Backup key card, so that card needs the admin whenever the button is shown.
         const cardEnvConfirm = Boolean(cardKeys && (cardEnvChanged || (backupKey.set && !backupKey.saved && cardKeys.holdsBackupKey) || (sfKey.set && !sfKey.saved && cardKeys.holdsSharedFoldersKey)));
-        const keyCard = !backupKey.set ? { state: 'broken', badge: 'No key', hint: 'This site has no backup key' }
-            : !backupKey.saved ? { state: 'attention', badge: 'Save it', hint: 'Not yet saved off this server' }
-            : cardEnvChanged ? { state: 'attention', badge: 'Save .env', hint: 'The keys in .env changed: save a new copy' }
-            : cardEnvConfirm ? { state: 'attention', badge: 'Save .env', hint: '.env, which holds the keys, is not yet saved off this server' }
-            : { state: 'ok', badge: 'Saved', hint: 'Saved off this server, fingerprint ' + backupKey.fingerprint };
+        const keyCard = !backupKey.set ? { state: 'red', badge: 'No key', hint: 'This site has no backup key' }
+            : !backupKey.saved ? { state: 'amber', badge: 'Save it', hint: 'Not yet saved off this server' }
+            : cardEnvChanged ? { state: 'amber', badge: 'Save .env', hint: 'The keys in .env changed: save a new copy' }
+            : cardEnvConfirm ? { state: 'amber', badge: 'Save .env', hint: '.env, which holds the keys, is not yet saved off this server' }
+            : { state: 'plain', badge: 'Saved', hint: 'Saved off this server, fingerprint ' + backupKey.fingerprint };
 
         const sharedCard = locals.sharedFoldersAbsent ? { state: STATE_SHARED_FOLDERS_ABSENT, badge: 'Not available', hint: 'Shared folders are not available on this site' }
-            : sfUnavailable ? { state: 'broken', badge: 'Not working', hint: 'The shared-folders keys cannot be used' }
+            : sfUnavailable ? { state: 'red', badge: 'Not working', hint: 'The shared-folders keys cannot be used' }
             : (!sfWords && cardFolders.length === 0) ? { state: STATE_SHARED_FOLDERS_UNUSED, badge: 'Not in use', hint: 'No shared folder has been made yet' }
-            : !sfWords ? { state: 'attention', badge: 'Make words', hint: 'The recovery words are not made yet' }
-            : sfWords.pending.length > 0 ? { state: 'attention', badge: 'Confirm words', hint: 'The recovery words are not confirmed as saved yet' }
-            : (sfKey.set && !sfKey.saved) ? { state: 'attention', badge: 'Save .env', hint: '.env, which holds the key, is not yet saved off this server' }
-            : { state: 'ok', badge: 'Set up', hint: cardFolders.length + (cardFolders.length === 1 ? ' shared folder' : ' shared folders') };
+            : !sfWords ? { state: 'amber', badge: 'Make words', hint: 'The recovery words are not made yet' }
+            : sfWords.pending.length > 0 ? { state: 'amber', badge: 'Confirm words', hint: 'The recovery words are not confirmed as saved yet' }
+            : (sfKey.set && !sfKey.saved) ? { state: 'amber', badge: 'Save .env', hint: '.env, which holds the key, is not yet saved off this server' }
+            : { state: 'plain', badge: 'Set up', hint: cardFolders.length + (cardFolders.length === 1 ? ' shared folder' : ' shared folders') };
 
-        const siteCard = locals.stagedSiteRestoreError ? { state: 'broken', badge: "Can't read", hint: "The record of a staged restore can't be read" }
-            : stagedSite ? { state: 'attention', badge: 'Restart needed', hint: stagedSite.state === 'staged' ? 'A restore is staged and waits for the restart' : 'A restore was not finished being prepared' }
-            : restoreRunning ? { state: 'attention', badge: 'Preparing', hint: 'A restore is being prepared' }
-            : { state: 'ok', badge: 'Ready', hint: cardStored.length > 0 ? 'No restore waiting' : 'No backup kept on this server yet' };
+        const siteCard = locals.stagedSiteRestoreError ? { state: 'red', badge: "Can't read", hint: "The record of a staged restore can't be read" }
+            : stagedSite ? { state: 'amber', badge: 'Restart needed', hint: stagedSite.state === 'staged' ? 'A restore is staged and waits for the restart' : 'A restore was not finished being prepared' }
+            : restoreRunning ? { state: 'amber', badge: 'Preparing', hint: 'A restore is being prepared' }
+            : { state: 'plain', badge: 'Ready', hint: cardStored.length > 0 ? 'No restore waiting' : 'No backup kept on this server yet' };
 
-        const dbCard = locals.databaseUnavailable ? { state: 'broken', badge: "Can't open", hint: "The application database can't be opened" }
-            : stagedRestore ? { state: 'attention', badge: 'Restart needed', hint: 'A restore is staged and waits for the restart' }
-            : restoreRunning ? { state: 'attention', badge: 'Preparing', hint: 'A restore is being prepared' }
-            : stagedSite ? { state: 'ok', badge: 'Ready', hint: 'A whole-site restore is waiting for the restart, and it includes the databases' }
-            : { state: 'ok', badge: 'Ready', hint: 'No restore waiting' };
+        const dbCard = locals.databaseUnavailable ? { state: 'red', badge: "Can't open", hint: "The application database can't be opened" }
+            : stagedRestore ? { state: 'amber', badge: 'Restart needed', hint: 'A restore is staged and waits for the restart' }
+            : restoreRunning ? { state: 'amber', badge: 'Preparing', hint: 'A restore is being prepared' }
+            : stagedSite ? { state: 'plain', badge: 'Ready', hint: 'A whole-site restore is waiting for the restart, and it includes the databases' }
+            : { state: 'plain', badge: 'Ready', hint: 'No restore waiting' };
 
         const card = function (part, id, icon, title, c) { return include('_status-card', Object.assign({ part: part, id: id, icon: icon, title: title, helpSlug: 'Backup' }, c || {})); };
     %>

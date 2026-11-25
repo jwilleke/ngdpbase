@@ -314,12 +314,12 @@ describe('#2470 Admin → Backup status cards', () => {
     });
   });
 
-  test('the style sheet gives a status card a 4px coloured left edge, a turning chevron and a visible focus ring', () => {
+  test('the style sheet gives an amber or red status card a 4px coloured left edge, a turning chevron and a visible focus ring', () => {
     const css = fs.readFileSync(path.join(__dirname, '../../themes/core.css'), 'utf8');
-    expect(css).toMatch(/\.status-card\s*\{[^}]*border-left-width:\s*4px/);
+    expect(css).toMatch(/\.status-card-amber,\s*\.status-card-red\s*\{[^}]*border-left-width:\s*4px/);
     for (const tone of ['amber', 'red']) expect(css).toMatch(new RegExp(`\\.status-card-${tone}\\s*\\{[^}]*border-left-color`));
     // A plain card has no colour on its edge and no green or grey states exist.
-    expect(css).toMatch(/\.status-card-plain\s*\{[^}]*border-left-width:\s*1px/);
+    expect(css).toMatch(/\.status-card-plain > \.card-body\s*\{[^}]*padding-left/);
     expect(css).not.toMatch(/\.status-card-(success|secondary|warning|danger)\b/);
     expect(css).toMatch(/\.status-badge-plain\s*\{[^}]*background:\s*transparent/);
     expect(css).toMatch(/details\[open\][^{]*\.card-summary-chevron\s*\{[^}]*rotate\(180deg\)/);
