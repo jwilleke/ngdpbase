@@ -814,6 +814,50 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       expect(subject).toMatchObject({ username: 'ed', roles: ['editor'] });
     });
 
+    // Slice 3 of #2247 (Q-D, Q-G): a person who made a link revokes it at their
+    // own session with no permission; a token acting for them keeps its ceiling.
+    test('slice 3: a person who made a tag link revokes it holding no permission at all', async () => {
+      shareState.records = [{ id: 's9', token: 'f'.repeat(64), scope: SCOPE, createdBy: 'maker', createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null }];
+      mockUserContext = { ...editorUser, username: 'maker', roles: [] };
+      const res = await request(app)
+        .post('/shares/s9/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(302);
+      expect(mockShareManager.revoke).toHaveBeenCalledWith('s9', expect.objectContaining({ username: 'maker' }));
+      expect(mockShareManager.revoke.mock.calls[0]).toHaveLength(2);
+    });
+
+    test('slice 3: an agent token of the maker without share-revoke gets 403 on the same link', async () => {
+      shareState.records = [{ id: 's9', token: 'f'.repeat(64), scope: SCOPE, createdBy: 'maker', createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null }];
+      mockUserContext = { ...editorUser, username: 'maker', roles: [], viaToken: { id: 't1' } };
+      const res = await request(app)
+        .post('/shares/s9/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(403);
+      expect(mockShareManager.revoke).not.toHaveBeenCalled();
+    });
+
+    test('slice 3: a signed-in user with no permission gets 404 for an unknown id, not the old blanket 403', async () => {
+      mockUserContext = { ...editorUser, username: 'maker', roles: [] };
+      const res = await request(app)
+        .post('/shares/nope/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(404);
+    });
+
+    test('slice 3: a signed-in user with no permission who did not make the link gets 403', async () => {
+      mockUserContext = { ...editorUser, username: 'stranger', roles: [] };
+      const res = await request(app)
+        .post('/shares/s1/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(403);
+      expect(mockShareManager.revoke).not.toHaveBeenCalled();
+    });
+
     test('403 for an editor who is not the creator', async () => {
       mockUserContext = { ...editorUser, username: 'other-editor' };
       const res = await request(app)
