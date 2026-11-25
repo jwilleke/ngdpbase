@@ -170,12 +170,13 @@ describe('what the Page building speed page says (#2468)', () => {
     expect(details?.hasAttribute('open')).toBe(false);
   });
 
-  test('fewer than 111 words greet the reader outside the tables and the details control', async () => {
+  test('fewer than 121 words greet the reader outside the tables and the details control', async () => {
     for (const r of [report(), report({ recording: false }), nothing()]) {
       const doc = await dom(r);
       doc.querySelectorAll('details > :not(summary), table').forEach((e) => e.remove());
       const words = squash(doc.querySelector('h1')?.closest('.col-12')?.textContent).split(' ').filter(Boolean).length;
-      expect(words).toBeLessThan(111);
+      // 111 before the earlier-warnings note gained its 10-word direction line.
+      expect(words).toBeLessThan(121);
     }
   });
 
