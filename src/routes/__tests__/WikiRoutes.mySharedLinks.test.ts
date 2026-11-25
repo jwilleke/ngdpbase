@@ -116,3 +116,52 @@ describe('GET /shares, the old address (slice 3 of #2247)', () => {
     expect(r.render.mock.calls[0][0]).toBe('shares');
   });
 });
+
+describe('GET /my/shares shows the address of each link the person made (round 3 H1)', () => {
+  const tokenOf = (c: string) => c.repeat(64);
+  const mine = [
+    { ...base, id: 'r1', token: tokenOf('a'), scope: { kind: 'keyword', keyword: 'Garden' } },
+    { ...base, id: 'r2', token: tokenOf('b'), scope: { kind: 'vault', owner: 'molly', vault: 'Journal', pages: ['u1'] } },
+    { ...base, id: 'r4', token: tokenOf('d'), scope: { kind: 'vault', owner: 'molly', vault: 'Family', pages: null }, lockedFor: { x: 'key' } },
+    { ...base, id: 'r5', token: tokenOf('e'), scope: { kind: 'keyword', keyword: 'Old' }, revokedAt: '2026-11-02T00:00:00.000Z' }
+  ];
+  const stranger = { ...base, id: 'r9', token: tokenOf('f'), createdBy: 'someone-else', scope: { kind: 'keyword', keyword: 'Theirs' } };
+
+  test('a person with only share-create sees the full address of the tag link they just made', async () => {
+    const { routes, shareManager } = setup(['share-create']);
+    shareManager.list.mockReturnValue(mine);
+    const r = res();
+    await routes.mySharesPage(req('/my/shares', { created: 'r1' }, MOLLY), r);
+    const view = r.render.mock.calls[0][1] as { addresses: Record<string, string> };
+    expect(view.addresses.r1).toBe(`https://wiki.example.com/share/${tokenOf('a')}`);
+  });
+
+  test('a private-area link is shown too, but an encrypted one and a revoked one are not', async () => {
+    const { routes, shareManager } = setup(['share-create', 'profile-manage']);
+    shareManager.list.mockReturnValue(mine);
+    const r = res();
+    await routes.mySharesPage(req('/my/shares', {}, MOLLY), r);
+    const view = r.render.mock.calls[0][1] as { addresses: Record<string, string> };
+    expect(Object.keys(view.addresses).sort()).toEqual(['r1', 'r2']);
+  });
+
+  test('another person\'s link never appears, even if the list returns it', async () => {
+    const { routes, shareManager } = setup(['share-create']);
+    shareManager.list.mockReturnValue([...mine, stranger] as never);
+    const r = res();
+    await routes.mySharesPage(req('/my/shares', {}, MOLLY), r);
+    const view = r.render.mock.calls[0][1] as { addresses: Record<string, string>; rows: { id: string }[] };
+    expect(view.addresses).not.toHaveProperty('r9');
+    expect(view.rows.map((x) => x.id)).not.toContain('r9');
+    expect(JSON.stringify(view)).not.toContain(tokenOf('f'));
+  });
+
+  test('the address of a link of a kind the person may no longer make is not handed to the page', async () => {
+    const { routes, shareManager } = setup(['profile-manage']);
+    shareManager.list.mockReturnValue(mine);
+    const r = res();
+    await routes.mySharesPage(req('/my/shares', {}, MOLLY), r);
+    const view = r.render.mock.calls[0][1] as { addresses: Record<string, string> };
+    expect(view.addresses).not.toHaveProperty('r1');
+  });
+});
