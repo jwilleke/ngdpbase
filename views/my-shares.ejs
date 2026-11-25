@@ -6,7 +6,7 @@
     </div>
 
     <% if (createdId) { %>
-        <div class="alert alert-success"><i class="fas fa-check-circle"></i> Link made. It appears in the list below.</div>
+        <div class="alert alert-success"><i class="fas fa-check-circle"></i> Link made. Copy it from the list below and send it to whoever should see it.</div>
     <% } %>
     <% if (revoked) { %>
         <div class="alert alert-info"><i class="fas fa-ban"></i> Link stopped. It stopped working immediately.</div>
@@ -76,13 +76,26 @@
     <% } else { %>
         <div class="table-responsive">
             <table id="sharedLinksTable" class="table table-sm align-middle">
-                <thead><tr><th>What</th><th>Status</th><th>Expires</th><th>Actions</th></tr></thead>
+                <thead><tr><th>What</th><th>Status</th><th>Expires</th><th>Link</th><th>Actions</th></tr></thead>
                 <tbody>
                 <% rows.forEach(function (row) { %>
                     <tr data-share-id="<%= row.id %>" data-status="<%= row.status %>">
                         <td><%= row.what %></td>
                         <td><%= row.status === 'page not available' ? 'Page not available (404)' : row.status.charAt(0).toUpperCase() + row.status.slice(1) %></td>
                         <td><%= row.expiresAt ? row.expiresAt.slice(0, 10) : 'Until cancelled' %></td>
+                        <td>
+                            <% if (addresses[row.id]) { %>
+                                <div class="input-group input-group-sm" style="max-width: 360px;">
+                                    <input type="text" class="form-control" value="<%= addresses[row.id] %>" readonly onclick="this.select()">
+                                    <button type="button" class="btn btn-outline-secondary" title="Copy link"
+                                            onclick="navigator.clipboard.writeText(this.previousElementSibling.value).then(() => { this.innerHTML = '<i class=&quot;fas fa-check&quot;></i>'; })">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </div>
+                            <% } else { %>
+                                <span class="text-muted">-</span>
+                            <% } %>
+                        </td>
                         <td>
                             <% if (row.actions.indexOf('extend') !== -1 || row.actions.indexOf('visits') !== -1) { %>
                                 <a class="btn btn-sm btn-outline-secondary" href="/my/vaults/links">Extend or see visits</a>

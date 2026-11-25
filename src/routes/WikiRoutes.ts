@@ -23287,7 +23287,18 @@ ${description}
         await this.refuse(wikiContext, req, res, 'page', 'share-create');
         return;
       }
-      const rows = sharedLinkRows(shareManager.list(subject.username), { tag: mayTag, vault: mayVault }, Date.now());
+      // Only the signed-in person's own links, whatever the list returns.
+      const own = shareManager.list(subject.username).filter((r) => r.createdBy === subject.username);
+      const rows = sharedLinkRows(own, { tag: mayTag, vault: mayVault }, Date.now());
+      // The address comes from the record here, never from the row function, so
+      // the rows and the Profile card hold no token. A link to an encrypted
+      // vault has no address to show: its key is in the browser that made it.
+      const baseUrl = this.shareLinkBase(req);
+      const addresses: Record<string, string> = {};
+      for (const row of rows) {
+        const record = own.find((r) => r.id === row.id);
+        if (record && row.status === 'active' && !record.lockedFor) addresses[row.id] = `${baseUrl}/share/${record.token}`;
+      }
       const query = (k: string) => (typeof req.query[k] === 'string' ? String(req.query[k]) : '');
       const picked = mayVault
         ? await this.pickedVaultPage(req, subject, vaults)
@@ -23308,7 +23319,8 @@ ${description}
         mayVault,
         vaults: vaultChoices,
         ...picked,
-        baseUrl: this.shareLinkBase(req),
+        baseUrl,
+        addresses,
         notice: query('notice') || null,
         shareChoice: query('share'),
         tagPrefill: query('tag'),
