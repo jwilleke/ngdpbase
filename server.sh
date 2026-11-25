@@ -453,6 +453,17 @@ case "${1:-}" in
     OLD_VERSION=$(_version)
     echo "🔄 Updating $APP_NAME from $OLD_VERSION (${OLD_SHA:0:7})..."
 
+    # npm install rewrites package-lock.json whenever it disagrees with
+    # package.json (#2519), which leaves the tree dirty and makes the next
+    # update refuse. The tree was clean when we started, so put the committed
+    # lockfile back after every install.
+    _npm_install() {
+      npm install
+      local rc=$?
+      git checkout -q -- package-lock.json 2>/dev/null || true
+      return $rc
+    }
+
     # Back to the commit we started from: the branch at that commit, or a
     # detached HEAD if we were not on a branch. -f drops the lockfile edits
     # npm install may have made; the tree was clean when we started.
@@ -518,7 +529,7 @@ case "${1:-}" in
 
     FAILED=""
     echo "📦 Installing dependencies..."
-    if ! npm install; then
+    if ! _npm_install; then
       FAILED="npm install"
     else
       echo "🔨 Building..."
@@ -542,7 +553,7 @@ case "${1:-}" in
     echo ""
     echo "❌ Update to $NEW_VERSION (${NEW_SHA:0:7}) failed at: $FAILED"
     echo "⏪ Rolling back to $OLD_VERSION (${OLD_SHA:0:7})..."
-    if _checkout_old && npm install && npm run build && _restart && _wait_ready; then
+    if _checkout_old && _npm_install && npm run build && _restart && _wait_ready; then
       echo "⏪ Rolled back: running $OLD_VERSION (${OLD_SHA:0:7}) again. The update did NOT happen."
       exit 1
     fi

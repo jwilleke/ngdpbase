@@ -10007,7 +10007,8 @@ ${panes}
       if (!record || record.scope.kind !== 'vault' || record.createdBy !== request.owner.username) {
         return res.status(404).send('Not Found');
       }
-      await shareManager.revoke(record.id, request.owner.username);
+      // The request's own subject, forwarded (#2521): the audit row names who clicked.
+      await shareManager.revoke(record.id, request.owner);
       return res.redirect('/my/vaults/links?notice=revoked');
     } catch (err: unknown) {
       logger.error('[vault-links] Error revoking a vault link:', err);
@@ -23270,11 +23271,21 @@ ${description}
         return res.status(404).send('Not Found');
       }
       const username = wikiContext.userContext?.username ?? '';
-      if (!(await wikiContext.hasPermission('admin-system')) && record.createdBy !== username) {
+      const isMaker = record.createdBy === username;
+      const isManager = !isMaker && (await wikiContext.hasPermission('admin-system'));
+      if (!isMaker && !isManager) {
         return res.status(403).send('Access denied');
       }
 
-      await shareManager.revoke(record.id, username);
+      // #2521: the request's own subject, forwarded, never a name. Someone
+      // other than the maker who got past the check above is a manager's
+      // revoke, and the manager records it as one (slice 2 of #2247).
+      const subject = wikiContext.userContext;
+      if (isManager) {
+        await shareManager.revoke(record.id, subject, { asManager: true });
+      } else {
+        await shareManager.revoke(record.id, subject);
+      }
       return res.redirect('/shares?revoked=1');
     } catch (err: unknown) {
       logger.error('[share] Error revoking share:', err);
