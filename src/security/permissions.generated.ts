@@ -77,6 +77,8 @@ export type CorePermission =
   | 'share-create'
   /** Extend your own share links (#1638) */
   | 'share-extend'
+  /** See and revoke every user's share links, whoever made them. Revoking one is recorded as share-revoke; needs no fresh sign-in */
+  | 'share-manage-all'
   /** Revoke your own share links; revoking anyone's also needs admin-system (#1638) */
   | 'share-revoke'
   /** Add, edit and delete pages and files in a shared folder (/shared/<name>, #2125). Scoped to one folder by the policy's resource (type shared-folder, pattern shared/<name>). The writes themselves are recorded by the page and file doors (page-create, page-edit, page-delete, asset-upload, asset-delete) */
@@ -137,6 +139,7 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'session-revoke',
   'share-create',
   'share-extend',
+  'share-manage-all',
   'share-revoke',
   'shared-folder-file',
   'shared-folder-read',

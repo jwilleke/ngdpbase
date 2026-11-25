@@ -196,6 +196,12 @@ export interface ShareRecord {
   /** ISO 8601 revocation timestamp — record retained for audit (decision 5). */
   revokedAt?: string;
   /**
+   * Set when the link was ended by someone holding the permission to revoke
+   * everyone's links, not by its maker (#2521). The owner's list shows such a
+   * link as no longer available. Names nobody: no administrator, no wording.
+   */
+  revokedByManager?: true;
+  /**
    * The owner's own note for a vault link, e.g. "For Dr Smith, October"
    * (#1388). Shown to the owner only: never in a log or an audit record.
    */

@@ -398,6 +398,27 @@ describe('MarkupParser Advanced Caching and Performance', () => {
     });
   });
 
+  describe('The recovery line for the cache share reads the right way round (#2468)', () => {
+    test('the cache share was "below the lowest allowed", not "under"', () => {
+      const info = vi.spyOn(logger, 'info').mockImplementation(() => logger);
+      vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+      markupParser.config.performance.alertThresholds.cacheHitRatio = 0.5;
+      markupParser.config.performance.alertThresholds.minCacheSamples = 50;
+      const check = () => { markupParser.performanceMonitor.lastCheck = 0; markupParser.checkPerformanceThresholds(); };
+
+      markupParser.metrics.cacheHits = 10;
+      markupParser.metrics.cacheMisses = 90;
+      check();
+      markupParser.metrics.cacheHits = 110;
+      check();
+
+      const line = info.mock.calls.map((c) => String(c[0])).find((l) => l.includes('Stored copies are back above their limit'));
+      expect(line).toMatch(/It was below the lowest allowed for \d+ minutes?\.$/);
+      expect(line).not.toMatch(/was under/);
+      vi.restoreAllMocks();
+    });
+  });
+
   describe('Recording every check (#2468)', () => {
     let dir: string;
     let parser;
@@ -499,6 +520,174 @@ describe('MarkupParser Advanced Caching and Performance', () => {
         await broken.shutdown();
       }
       expect(await broken.parse('still works', { pageName: 'P' })).toContain('still works');
+    });
+  });
+
+  describe('Old alerts are imported at start-up, then removed (#2468)', () => {
+    let dir: string;
+    const PREFIX = 'MarkupParser Performance Alert: ';
+    const makeWith = async (notifications: unknown) => {
+      const config = new MockAdvancedConfigurationManager();
+      Object.assign(config, { getResolvedDataPath: (_key: string, _fallback: string) => dir });
+      const engine = new MockAdvancedWikiEngine({ ConfigurationManager: config, NotificationManager: notifications });
+      const p = new MarkupParser(engine);
+      await p.initialize();
+      return p;
+    };
+    beforeEach(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'markup-legacy-'));
+      vi.spyOn(logger, 'info').mockImplementation(() => logger);
+      vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    });
+    afterEach(() => {
+      fs.rmSync(dir, { recursive: true, force: true });
+      vi.restoreAllMocks();
+    });
+
+    test('the numbers are kept in legacy-alerts.json and the old notifications are removed', async () => {
+      let stored = [
+        { title: `${PREFIX}SLOW_PARSING`, message: 'Average parse time 119.50ms exceeds threshold 100ms', createdAt: new Date() },
+        { title: 'Something else', message: 'keep', createdAt: new Date() }
+      ];
+      const notifications = {
+        getAllNotifications: () => stored,
+        removeByTitles: vi.fn(async (titles: readonly string[]) => {
+          const before = stored.length;
+          stored = stored.filter((n) => !titles.includes(n.title));
+          return before - stored.length;
+        })
+      };
+      const p = await makeWith(notifications);
+      await p.shutdown();
+
+      expect(notifications.removeByTitles).toHaveBeenCalledWith([`${PREFIX}SLOW_PARSING`, `${PREFIX}LOW_CACHE_HIT_RATIO`, `${PREFIX}HIGH_ERROR_RATE`]);
+      const file = JSON.parse(fs.readFileSync(path.join(dir, 'legacy-alerts.json'), 'utf8'));
+      expect(file.samples).toHaveLength(1);
+      expect(file.removed).toBe(1);
+      expect(stored.map((n) => n.title)).toEqual(['Something else']);
+    });
+
+    test('a failing removal does not stop the parser from starting', async () => {
+      const notifications = {
+        getAllNotifications: () => [{ title: `${PREFIX}SLOW_PARSING`, message: 'Average parse time 119.50ms exceeds threshold 100ms', createdAt: new Date() }],
+        removeByTitles: vi.fn(async () => { throw new Error('disk full'); })
+      };
+      const p = await makeWith(notifications);
+      try {
+        expect(await p.parse('still works', { pageName: 'P' })).toContain('still works');
+      } finally {
+        await p.shutdown();
+      }
+    });
+  });
+
+  describe('The page building report for the admin page (#2468)', () => {
+    let dir: string;
+    beforeEach(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'markup-report-'));
+      vi.spyOn(logger, 'info').mockImplementation(() => logger);
+      vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    });
+    afterEach(() => {
+      fs.rmSync(dir, { recursive: true, force: true });
+      vi.restoreAllMocks();
+    });
+
+    test('sums up the kept checks, the earlier warnings and the limits', async () => {
+      const store = new ParserPerformanceHistory(dir);
+      await store.open();
+      const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+      await store.record({ t: ago(60_000), parse: 100, hit: 0.5, err: 0, n: 4 });
+      await store.record({ t: ago(120_000), parse: 200, hit: null, err: null, n: 0 });
+      fs.writeFileSync(path.join(dir, 'legacy-alerts.json'), JSON.stringify({
+        importedAt: ago(1000), skipped: 0, removedAt: ago(900), removed: 1,
+        samples: [{ t: ago(5 * 24 * 60 * 60 * 1000), measure: 'parse', value: 310 }]
+      }));
+      const config = new MockAdvancedConfigurationManager();
+      Object.assign(config, { getResolvedDataPath: () => dir });
+      const p = new MarkupParser(new MockAdvancedWikiEngine({ ConfigurationManager: config }));
+      await p.initialize();
+      try {
+        const report = await p.getPerformanceReport();
+
+        expect(report.recording).toBe(true);
+        expect(report.rollup.hour.parse).toMatchObject({ count: 2, max: 200, mean: 150 });
+        expect(report.rollup.hour.hit).toMatchObject({ count: 1, p50: 0.5 });
+        expect(report.legacy.parse).toMatchObject({ count: 1, max: 310 });
+        expect(report.limits).toEqual({ parseTime: 100, cacheHitRatio: 0.6, errorRate: 0.05 });
+      } finally {
+        await p.shutdown();
+      }
+    });
+
+    test('counts the checks in each window once, whatever numbers each check carried', async () => {
+      const store = new ParserPerformanceHistory(dir);
+      await store.open();
+      const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+      await store.record({ t: ago(60_000), parse: 100, hit: null, err: null, n: 4 });
+      await store.record({ t: ago(120_000), parse: null, hit: 0.5, err: 0, n: 4 });
+      await store.record({ t: ago(3 * 60 * 60 * 1000), parse: 90, hit: 0.5, err: 0, n: 4 });
+      const config = new MockAdvancedConfigurationManager();
+      Object.assign(config, { getResolvedDataPath: () => dir });
+      const p = new MarkupParser(new MockAdvancedWikiEngine({ ConfigurationManager: config }));
+      await p.initialize();
+      try {
+        const report = await p.getPerformanceReport();
+        expect(report.checks).toEqual({ hour: 2, day: 3, week: 3, month: 3 });
+      } finally {
+        await p.shutdown();
+      }
+    });
+
+    test('reads the kept files once for page views within a minute, and again after that', async () => {
+      const config = new MockAdvancedConfigurationManager();
+      Object.assign(config, { getResolvedDataPath: () => dir });
+      const p = new MarkupParser(new MockAdvancedWikiEngine({ ConfigurationManager: config }));
+      await p.initialize();
+      try {
+        const history = (p as unknown as { performanceMonitor: { history: ParserPerformanceHistory } }).performanceMonitor.history;
+        const read = vi.spyOn(history, 'read');
+        const start = Date.now();
+
+        await p.getPerformanceReport(start);
+        await p.getPerformanceReport(start + 30_000);
+        await Promise.all([p.getPerformanceReport(start + 59_000), p.getPerformanceReport(start + 59_500)]);
+        expect(read).toHaveBeenCalledTimes(1);
+
+        await p.getPerformanceReport(start + 61_000);
+        expect(read).toHaveBeenCalledTimes(2);
+      } finally {
+        await p.shutdown();
+      }
+    });
+
+    test('a folder that could not be made is not "recording"', async () => {
+      const blocker = path.join(dir, 'a-file');
+      fs.writeFileSync(blocker, 'x');
+      const config = new MockAdvancedConfigurationManager();
+      Object.assign(config, { getResolvedDataPath: () => path.join(blocker, 'inside') });
+      const p = new MarkupParser(new MockAdvancedWikiEngine({ ConfigurationManager: config }));
+      await p.initialize();
+      try {
+        const report = await p.getPerformanceReport();
+        expect(report.recording).toBe(false);
+        expect(report.rollup.month).toEqual({ parse: null, hit: null, err: null });
+      } finally {
+        await p.shutdown();
+      }
+    });
+
+    test('with no folder to keep checks in, it says so and has nothing to show', async () => {
+      const p = new MarkupParser(new MockAdvancedWikiEngine());
+      await p.initialize();
+      try {
+        const report = await p.getPerformanceReport();
+        expect(report.recording).toBe(false);
+        expect(report.rollup.month).toEqual({ parse: null, hit: null, err: null });
+        expect(report.legacy).toEqual({ parse: null, hit: null, err: null });
+      } finally {
+        await p.shutdown();
+      }
     });
   });
 

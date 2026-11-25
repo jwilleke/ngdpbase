@@ -50,7 +50,7 @@ describe('AuthManager.closeAccess — the one deactivation step (#1765)', () => 
       },
       ShareManager: {
         list: (o?: string) => [{ id: `share-${o}`, revokedAt: null }],
-        revoke: (id: string, by: string) => { calls.push(`share:${id}:${by}`); return Promise.resolve(true); }
+        revoke: (id: string, by: { username: string }) => { calls.push(`share:${id}:${by.username}`); return Promise.resolve(true); }
       },
       // #1603: the account's consent records go with it.
       ConsentManager: { removeAccount: (u: string, by: { username: string }) => { calls.push(`consent:${u}:${by.username}`); return Promise.resolve(); } },

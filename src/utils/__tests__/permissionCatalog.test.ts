@@ -55,6 +55,55 @@ describe('#1638 the shipped catalog keeps the promise', () => {
   });
 });
 
+// #2521 (slice 2 of #2247): `share-manage-all` is what lets an administrator see
+// and revoke other people's shared links. It ships as its own policy id, so a
+// site holding a stored copy of `admin-full-access` still gets it.
+describe('#2521 share-manage-all', () => {
+  const policies = shipped['ngdpbase.access.policies'] as Array<{ id: string; effect?: string; subjects?: Array<{ type: string; value: string }>; actions?: string[] }>;
+  const granting = policies.filter((p) => (p.actions ?? []).includes('share-manage-all'));
+
+  test('is a catalog entry in plain words, with no step-up and no audit event of its own', () => {
+    const entry = catalog['share-manage-all'] as { grantable?: boolean; label?: string; description?: string; audit?: unknown; 'step-up'?: unknown };
+    expect(entry).toBeDefined();
+    expect(isGrantable(entry)).toBe(true);
+    expect(entry.label).toBe('See and revoke everyone\'s shared links');
+    expect(String(entry.description).length).toBeGreaterThan(20);
+    expect(entry['step-up']).toBeUndefined();
+    expect(entry.audit).toBeUndefined();
+  });
+
+  test('exactly one shipped policy grants it, a new id for the administrator role, never an edit to admin-full-access', () => {
+    expect(granting.map((p) => p.id)).toEqual(['admin-share-manage-all']);
+    expect(granting[0].effect).toBe('allow');
+    expect(granting[0].subjects).toEqual([{ type: 'role', value: 'admin' }]);
+    expect(granting[0].actions).toEqual(['share-manage-all']);
+  });
+
+  test('the Roles and Permissions page lists it under the administrator role and under no other', async () => {
+    const { default: PolicyDecisionPoint } = await import('../../security/PolicyDecisionPoint');
+    const engine = {
+      getManager: (name: string) => (name === 'ConfigurationManager'
+        ? { getProperty: (k: string, d: unknown) => (k === 'ngdpbase.access.policies' ? policies : k === 'ngdpbase.access.policies.enabled' ? true : d) }
+        : null)
+    };
+    const held = [...new PolicyDecisionPoint(engine).rolePermissions().entries()]
+      .filter(([, names]) => names.has('share-manage-all'))
+      .map(([role]) => role);
+    expect(held).toEqual(['admin']);
+  });
+
+  test('share-revoke stays grantable and in the policies that grant it today (Q-G: a token or proxy keeps its ceiling)', () => {
+    expect(isGrantable(catalog['share-revoke'])).toBe(true);
+    const grantingRevoke = policies.filter((p) => (p.actions ?? []).includes('share-revoke')).map((p) => p.id);
+    expect(grantingRevoke).toEqual(['admin-full-access', 'editor-permissions', 'vault-owner-permissions']);
+  });
+
+  test('the revoke reuses the share-revoke event: no second share event is declared', () => {
+    const events = Object.entries(catalog).filter(([n, e]) => e.audit && /^share-/.test(n)).map(([n]) => n).sort();
+    expect(events).toEqual(['share-access', 'share-create', 'share-extend', 'share-revoke']);
+  });
+});
+
 describe('#1638 a split permission still grants what it stood for', () => {
   test('share-manage reads as share-create, share-extend and share-revoke', () => {
     expect(withRetiredExpanded(['page-read', 'share-manage', 'share-create'])).toEqual(['page-read', 'share-create', 'share-extend', 'share-revoke']);

@@ -315,6 +315,18 @@ jobs:
         # #1450 retried; #2318 ffmpeg-static binary cached, so a warm cache never asks GitHub's release CDN
         uses: ./.github/actions/npm-ci-ffmpeg-cache
 
+      # #2519: a lockfile that disagrees with package.json is rewritten by every
+      # npm install, which leaves a site's tree dirty and blocks its update.
+      # Dependabot and the release job write the lockfile, so check it here.
+      - name: Check package-lock.json is in sync with package.json
+        if: needs.filter.outputs.docs_only != 'true'
+        run: |
+          npm install --package-lock-only --ignore-scripts
+          git diff --exit-code package-lock.json || {
+            echo "::error::package-lock.json is out of step with package.json. Run 'npm install --package-lock-only' and commit the result."
+            exit 1
+          }
+
       # #1278: the whole lint chain, not markdown alone. The guards (page door,
       # CSRF, permissions, context, audit docs, addon boundary, …) ran only in
       # the pre-commit hook, which a Dependabot merge never passes through.

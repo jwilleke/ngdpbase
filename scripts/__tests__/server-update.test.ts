@@ -173,6 +173,25 @@ describe('./server.sh update (#2208)', () => {
     expect(r.out).toContain(`1.0.0 (${oldSha.slice(0, 7)}) → 1.1.0 (${newSha.slice(0, 7)})`);
   }, 60000);
 
+  it('leaves package-lock.json as committed when npm install rewrites it (#2519)', () => {
+    // npm install can rewrite the lockfile (it drops an entry the manifest
+    // does not list). The stub does the same, so the tree must be clean after.
+    fs.writeFileSync(path.join(seed, 'package-lock.json'), '{"lockfileVersion":3}\n');
+    publish('1.1.0');
+    stub('npm', [
+      'echo "$*" >> "$NPM_LOG"',
+      'if [ "$1" = "install" ]; then echo "{\\"lockfileVersion\\":3,\\"rewritten\\":true}" > package-lock.json; fi',
+      'if [ "$1 $2" = "run build" ]; then mkdir -p dist/src && echo "" > dist/src/app.js; fi',
+      'exit 0'
+    ].join('\n'));
+
+    const r = update();
+
+    expect(r.status, r.out).toBe(0);
+    expect(git(instance, 'status', '--porcelain')).toBe('');
+    expect(npmCalls()).toEqual(['install', 'run build']);
+  }, 60000);
+
   it('checks out a named tag', () => {
     const v11 = publish('1.1.0');
     publish('1.2.0');
