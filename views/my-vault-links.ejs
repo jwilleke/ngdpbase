@@ -8,16 +8,7 @@
     </div>
 
     <p class="text-muted mb-2">The links you have made to pages in your vaults, or to a whole vault, and the forms to make more.</p>
-    <%# #2245: what a link does, as ShareManager.issueVaultShare, extend and
-        revoke enforce it, before any form that makes one. %>
-    <ul class="small text-muted mb-4" data-share-explanation>
-        <li><strong>Who can see it:</strong> anyone you give the link to, without an account.</li>
-        <li><strong>What they see:</strong> the current pages the link covers and the files those pages use. Never earlier versions, and no search.</li>
-        <li><strong>Read-only:</strong> they can read, download and print. They cannot change anything.</li>
-        <li><strong>How long:</strong> you choose, up to the vault's limit in days. You can extend a working link by 1 to 24 hours at a time.</li>
-        <li><strong>Stopping it:</strong> revoke it in the list below at any time, and it stops working at once. Every visit is recorded, and the list shows them.</li>
-        <li><strong>Encrypted vaults:</strong> the link is made in your browser and its full address is shown only once. The person opening it needs JavaScript.</li>
-    </ul>
+    <%- include('_vault-link-explanation') %>
 
     <%- include('_vault-link-result') %>
 
