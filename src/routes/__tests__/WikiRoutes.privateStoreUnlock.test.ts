@@ -46,6 +46,7 @@ describe('private store unlock door (#1448)', () => {
   let migratePrivateLinks: ReturnType<typeof vi.fn>;
   let buildMissingStoreSearchIndexes: ReturnType<typeof vi.fn>;
   let purgeExpiredOwnPrivateTrash: ReturnType<typeof vi.fn>;
+  let convertLegacyAccessOnSignIn: ReturnType<typeof vi.fn>;
 
   /** The restart case: the session still names a key-bag handle, the bag is empty. */
   const owner = { username: 'molly', roles: ['reader'], isAuthenticated: true, privateStoreHandle: 'h1' };
@@ -84,6 +85,7 @@ describe('private store unlock door (#1448)', () => {
     migratePrivateLinks = vi.fn(async () => 0);
     buildMissingStoreSearchIndexes = vi.fn(async () => 0);
     purgeExpiredOwnPrivateTrash = vi.fn(async () => 0);
+    convertLegacyAccessOnSignIn = vi.fn(async () => ({ converted: 0, left: 0 }));
     throttle = null;
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
@@ -100,7 +102,8 @@ describe('private store unlock door (#1448)', () => {
         adoptUserPageCatalog,
         migratePrivateLinks,
         buildMissingStoreSearchIndexes,
-        purgeExpiredOwnPrivateTrash
+        purgeExpiredOwnPrivateTrash,
+        convertLegacyAccessOnSignIn
       }
     };
     routes = new WikiRoutes({ getManager: (name: string) => managers[name] ?? null });
@@ -152,6 +155,26 @@ describe('private store unlock door (#1448)', () => {
     );
   });
 
+  test('an unlock runs the upgrade clean-up of the owner\'s own pages, with the key now open', async () => {
+    // A vault that was closed at sign-in was held back as not done (#2514); this
+    // is the moment it can be opened, so the same per-person pass runs again.
+    await giveMollyKeys();
+    await routes.privateStoreUnlock(req({ body: { password: RIGHT_PW, next: '/' } }), newRes());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(convertLegacyAccessOnSignIn).toHaveBeenCalledTimes(1);
+    expect(convertLegacyAccessOnSignIn).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly', privateStoreHandle: 'h1' }));
+  });
+
+  test('a clean-up that fails after an unlock does not fail the unlock', async () => {
+    await giveMollyKeys();
+    convertLegacyAccessOnSignIn.mockRejectedValue(new Error('boom'));
+    const res = newRes();
+    await routes.privateStoreUnlock(req({ body: { password: RIGHT_PW, next: '/view/Journal' } }), res);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(res.redirect).toHaveBeenCalledWith('/view/Journal');
+    expect(hasUnlockedKey({ privateStoreHandle: 'h1' })).toBe(true);
+  });
+
   test('a wrong password leaves it locked and says so', async () => {
     await giveMollyKeys();
     const res = newRes();
@@ -159,6 +182,7 @@ describe('private store unlock door (#1448)', () => {
     expect(res.redirect).not.toHaveBeenCalled();
     expect(res.render).toHaveBeenCalledWith('private-store-unlock', expect.objectContaining({ error: 'That password is not correct.' }));
     expect(hasUnlockedKey({ privateStoreHandle: 'h1' })).toBe(false);
+    expect(convertLegacyAccessOnSignIn).not.toHaveBeenCalled();
   });
 
   test('login\'s throttle applies — a blocked caller is refused even with the right password', async () => {
@@ -254,6 +278,8 @@ describe('private store unlock door (#1448)', () => {
       expect(res.redirect).toHaveBeenCalledWith('/view/Journal');
       expect(hasUnlockedKey({ privateStoreHandle: 'h1' })).toBe(true);
       expect(adoptUserPageCatalog).toHaveBeenCalled();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(convertLegacyAccessOnSignIn).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly', privateStoreHandle: 'h1' }));
       // No password check ran: the words ARE the proof.
       expect(authenticate).not.toHaveBeenCalled();
       expect(auditAuthentication).toHaveBeenCalledWith(expect.anything(), 'molly', 'success', 'private store unlocked with recovery words');
