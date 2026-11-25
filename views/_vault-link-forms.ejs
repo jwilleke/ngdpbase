@@ -1,0 +1,74 @@
+    <% if (vaults.length === 0) { %>
+        <div class="alert alert-info"><i class="fas fa-info-circle"></i> You have no vaults yet. Make a page private to start one.</div>
+    <% } else { %>
+        <% if (pickVault) { %>
+        <div class="card mb-4">
+            <div class="card-body">
+                <h2 class="h6 card-title">Share pages from your <%= pickVault %> vault</h2>
+                <% const pickEncrypted = (vaults.find(function(v) { return v.id === pickVault; }) || {}).encrypted === true; %>
+                <form method="post" action="/my/vaults/links" data-vault-link data-base-url="<%= baseUrl %>">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="vault" value="<%= pickVault %>" data-encrypted="<%= pickEncrypted ? 'true' : 'false' %>">
+                    <input type="hidden" name="scope" value="pages">
+                    <div class="border rounded p-2 mb-2" style="max-height: 16rem; overflow-y: auto;">
+                        <% pickPages.forEach(function(p) { %>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="pages" value="<%= p.uuid %>" id="pg-<%= p.uuid %>" <%= p.uuid === preselected ? 'checked' : '' %>>
+                                <label class="form-check-label" for="pg-<%= p.uuid %>"><%= p.title %></label>
+                            </div>
+                        <% }); %>
+                    </div>
+                    <% const pickMax = (vaults.find(function(v) { return v.id === pickVault; }) || { maxDays: 15 }).maxDays; %>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-auto">
+                            <label for="pick-label" class="form-label small mb-0">Label (only you see it)</label>
+                            <input type="text" class="form-control form-control-sm" id="pick-label" name="label" maxlength="100" placeholder="e.g. For Dr Smith, October">
+                        </div>
+                        <div class="col-auto">
+                            <label for="pick-days" class="form-label small mb-0">Lasts (days, up to <%= pickMax %>)</label>
+                            <input type="number" class="form-control form-control-sm" id="pick-days" name="days" min="1" max="<%= pickMax %>" value="<%= Math.min(7, pickMax) %>" required>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-link"></i> Make link</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <% } %>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <h2 class="h6 card-title">Sharing a whole vault</h2>
+                <p class="text-muted small mb-2">A whole-vault link covers every current page in the vault and the files they use, and pages you add while the link works.</p>
+                <details>
+                <summary class="mb-2">Share a whole vault</summary>
+                <form method="post" action="/my/vaults/links" class="row g-2 align-items-end" data-vault-link data-base-url="<%= baseUrl %>">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="scope" value="whole">
+                    <div class="col-auto">
+                        <label for="whole-vault" class="form-label small mb-0">Vault</label>
+                        <select class="form-select form-select-sm" id="whole-vault" name="vault">
+                            <% vaults.forEach(function(v) { %>
+                                <option value="<%= v.id %>" data-max="<%= v.maxDays %>" data-encrypted="<%= v.encrypted ? 'true' : 'false' %>"><%= v.id %><%= v.encrypted ? ' (encrypted)' : '' %> (up to <%= v.maxDays %> days)</option>
+                            <% }); %>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label for="whole-label" class="form-label small mb-0">Label (only you see it)</label>
+                        <input type="text" class="form-control form-control-sm" id="whole-label" name="label" maxlength="100" placeholder="e.g. For Dr Smith, October">
+                    </div>
+                    <div class="col-auto">
+                        <label for="whole-days" class="form-label small mb-0">Lasts (days)</label>
+                        <input type="number" class="form-control form-control-sm" id="whole-days" name="days" min="1" max="<%= vaults[0].maxDays %>" value="<%= Math.min(7, vaults[0].maxDays) %>" required>
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-link"></i> Make link</button>
+                    </div>
+                </form>
+                </details>
+                <p class="text-muted small mt-2 mb-0">To share only some pages, open a private page and choose <em>Share this page</em> from its menu.</p>
+            </div>
+        </div>
+    <% } %>
+

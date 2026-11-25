@@ -9869,6 +9869,22 @@ ${panes}
   }
 
   /**
+   * A page named in the query (`?page=`) picks its vault; its siblings are
+   * offered too, and the page itself is ticked.
+   */
+  private async pickedVaultPage(
+    req: Request,
+    owner: NonNullable<WikiContext['userContext']> & { username: string },
+    vaults: string[]
+  ): Promise<{ pickVault: string | null; pickPages: { uuid: string; title: string }[]; preselected: string | null }> {
+    const asked = typeof req.query.page === 'string' ? parsePrivatePageName(req.query.page) : null;
+    const pickVault = asked && asked.owner === owner.username && vaults.includes(asked.store) ? asked.store : null;
+    const pickPages = pickVault ? await this.engine.getManager('PageManager').listVaultPages(owner, owner.username, pickVault) : [];
+    const preselected = asked ? pickPages.find((p) => p.title === asked.title)?.uuid ?? null : null;
+    return { pickVault, pickPages, preselected };
+  }
+
+  /**
    * GET /my/vaults/links — the owner's vault links, and the forms that make
    * them: a whole vault, or chosen pages of one (`?page=` preselects a page).
    */
@@ -9879,11 +9895,7 @@ ${panes}
       const { owner, vaults, shareManager } = request;
       const pageManager = this.engine.getManager('PageManager');
 
-      // A page named in the query picks its vault; its siblings are offered too.
-      const asked = typeof req.query.page === 'string' ? parsePrivatePageName(req.query.page) : null;
-      const pickVault = asked && asked.owner === owner.username && vaults.includes(asked.store) ? asked.store : null;
-      const pickPages = pickVault ? await pageManager.listVaultPages(owner, owner.username, pickVault) : [];
-      const preselected = asked ? pickPages.find((p) => p.title === asked.title)?.uuid ?? null : null;
+      const { pickVault, pickPages, preselected } = await this.pickedVaultPage(req, owner, vaults);
 
       const now = Date.now();
       const links = shareManager.list(owner.username)
@@ -23270,6 +23282,16 @@ ${description}
       }
       const rows = sharedLinkRows(shareManager.list(subject.username), { tag: mayTag, vault: mayVault }, Date.now());
       const query = (k: string) => (typeof req.query[k] === 'string' ? String(req.query[k]) : '');
+      const picked = mayVault
+        ? await this.pickedVaultPage(req, subject, vaults)
+        : { pickVault: null, pickPages: [], preselected: null };
+      const vaultChoices = mayVault
+        ? await Promise.all(vaults.map(async (v) => ({
+          id: v,
+          maxDays: shareManager.maxShareDays(v),
+          encrypted: await shareManager.isEncryptedVault(subject.username, v)
+        })))
+        : [];
       const commonData = await this.getCommonTemplateData(req);
       return res.render('my-shares', {
         ...commonData,
@@ -23277,6 +23299,10 @@ ${description}
         rows,
         mayTag,
         mayVault,
+        vaults: vaultChoices,
+        ...picked,
+        baseUrl: this.shareLinkBase(req),
+        notice: query('notice') || null,
         shareChoice: query('share'),
         tagPrefill: query('tag'),
         pagePrefill: query('page'),

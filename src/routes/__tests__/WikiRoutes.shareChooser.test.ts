@@ -12,11 +12,11 @@ function setup(granted: string[]) {
     list: vi.fn(() => []),
     get: vi.fn(),
     maxShareDays: vi.fn(() => 15),
-    isEncryptedVault: vi.fn(async (_o: string, v: string) => v === 'Family'),
+    isEncryptedVault: vi.fn(async (_o: string, v: string) => v === 'family'),
     linkBaseUrl: vi.fn(() => 'https://wiki.example.com')
   };
   const pageManager = {
-    listOwnStoreIds: vi.fn(async () => ['Journal', 'Family']),
+    listOwnStoreIds: vi.fn(async () => ['journal', 'family']),
     listVaultPages: vi.fn(async () => [{ uuid: 'u1', title: 'Day one' }, { uuid: 'u2', title: 'Day two' }])
   };
   const engine = {
@@ -51,8 +51,8 @@ describe('the Share... chooser holds the private-area forms (slice 3 of #2247)',
     await routes.mySharesPage(req('/my/shares', { share: 'vault' }, MOLLY), r);
     const view = r.render.mock.calls[0][1] as { vaults: { id: string; maxDays: number; encrypted: boolean }[]; baseUrl: string; shareChoice: string };
     expect(view.vaults).toEqual([
-      { id: 'Journal', maxDays: 15, encrypted: false },
-      { id: 'Family', maxDays: 15, encrypted: true }
+      { id: 'journal', maxDays: 15, encrypted: false },
+      { id: 'family', maxDays: 15, encrypted: true }
     ]);
     expect(view.baseUrl).toBe('https://wiki.example.com');
     expect(view.shareChoice).toBe('vault');
@@ -61,9 +61,9 @@ describe('the Share... chooser holds the private-area forms (slice 3 of #2247)',
   test('a page in the query picks its area, offers the pages beside it and ticks it', async () => {
     const { routes } = setup(['profile-manage']);
     const r = res();
-    await routes.mySharesPage(req('/my/shares', { share: 'vault', page: 'vaults/molly/Journal/Day two' }, MOLLY), r);
+    await routes.mySharesPage(req('/my/shares', { share: 'vault', page: 'vaults/molly/journal/Day two' }, MOLLY), r);
     const view = r.render.mock.calls[0][1] as { pickVault: string | null; pickPages: unknown[]; preselected: string | null };
-    expect(view.pickVault).toBe('Journal');
+    expect(view.pickVault).toBe('journal');
     expect(view.pickPages).toHaveLength(2);
     expect(view.preselected).toBe('u2');
   });

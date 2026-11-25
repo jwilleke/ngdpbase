@@ -17,11 +17,28 @@
         <div class="alert alert-danger">Choose how long the link lasts.</div>
     <% } %>
 
-    <% if (mayTag || mayVault) { %>
-    <details class="card mb-4" id="share-new" <%= shareChoice ? 'open' : '' %>>
+    <%- include('_vault-link-result') %>
+    <% if (notice === 'revoked') { %>
+        <div class="alert alert-info"><i class="fas fa-ban"></i> Link stopped. It stopped working immediately.</div>
+    <% } else if (notice === 'extended') { %>
+        <div class="alert alert-info"><i class="fas fa-clock"></i> Link extended.</div>
+    <% } else if (notice === 'not-extended') { %>
+        <div class="alert alert-warning">That link can no longer be extended: it has expired or was revoked.</div>
+    <% } %>
+
+    <% if (mayTag || mayVault) {
+        const choice = shareChoice === 'tag' && mayTag ? 'tag' : shareChoice === 'vault' && mayVault ? 'vault' : (mayTag && !mayVault ? 'tag' : (mayVault && !mayTag ? 'vault' : ''));
+    %>
+    <details class="card mb-4" id="share-new" <%= (shareChoice || createdId) ? 'open' : '' %>>
         <summary class="card-body py-2"><strong>Share&hellip;</strong> <span class="text-muted small">Choose what to share.</span></summary>
         <div class="card-body pt-0">
-            <% if (mayTag) { %>
+            <% if (mayTag && mayVault) { %>
+            <div class="btn-group mb-3" role="group" aria-label="What to share" data-share-chooser>
+                <a class="btn btn-sm <%= choice === 'tag' ? 'btn-primary' : 'btn-outline-primary' %>" href="/my/shares?share=tag#share-new">Everything with a tag</a>
+                <a class="btn btn-sm <%= choice === 'vault' ? 'btn-primary' : 'btn-outline-primary' %>" href="/my/shares?share=vault#share-new">Pages in a private area</a>
+            </div>
+            <% } %>
+            <% if (choice === 'tag') { %>
             <h2 class="h6">Everything with a tag</h2>
             <p class="text-muted small mb-2">Shares every page and file with the tag, with anyone who has the link. Anything marked <code>owner-only</code> and private pages are never included.</p>
             <form method="post" action="/shares/create" class="row g-2 align-items-end mb-3">
@@ -41,10 +58,8 @@
                 </div>
                 <div class="col-auto"><button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-plus"></i> Make link</button></div>
             </form>
-            <% } %>
-            <% if (mayVault) { %>
-            <h2 class="h6">Pages in a private area</h2>
-            <p class="text-muted small mb-0">Choose pages, or a whole private area, on <a href="/my/vaults/links<%= pagePrefill ? '?page=' + encodeURIComponent(pagePrefill) : '' %>">the private area links page</a>.</p>
+            <% } else if (choice === 'vault') { %>
+            <%- include('_vault-link-forms') %>
             <% } %>
         </div>
     </details>
@@ -86,5 +101,7 @@
         </div>
     <% } %>
 </div>
+
+<%- include('_vault-link-scripts') %>
 
 <%- include('footer') %>

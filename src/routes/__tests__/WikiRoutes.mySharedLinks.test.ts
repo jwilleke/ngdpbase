@@ -18,14 +18,16 @@ function setup(granted: string[]) {
     list: vi.fn(() => RECORDS),
     get: vi.fn(),
     revoke: vi.fn(),
-    linkBaseUrl: vi.fn(() => 'https://wiki.example.com')
+    linkBaseUrl: vi.fn(() => 'https://wiki.example.com'),
+    maxShareDays: vi.fn(() => 15),
+    isEncryptedVault: vi.fn(async () => false)
   };
   const engine = {
     getManager: vi.fn((name: string) => {
       if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
       if (name === 'ShareManager') return shareManager;
       if (name === 'PolicyDecisionPoint') return { permits: vi.fn(async (_u: string, action: string) => granted.includes(action)) };
-      if (name === 'PageManager') return { listOwnStoreIds: vi.fn(async () => ['Journal', 'Family']) };
+      if (name === 'PageManager') return { listOwnStoreIds: vi.fn(async () => ['Journal', 'Family']), listVaultPages: vi.fn(async () => []) };
       return null;
     })
   };
