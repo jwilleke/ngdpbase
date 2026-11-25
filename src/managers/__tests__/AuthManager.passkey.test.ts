@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { encodeCBOR } from '@levischuck/tiny-cbor';
-import AuthManager from '../AuthManager';
+import AuthManager, { PasskeyRefused } from '../AuthManager';
 import { CREDENTIALS_KEY_ENV } from '../../providers/BaseCredentialsProvider';
 
 const ORIGIN = 'https://wiki.example.com';
@@ -135,6 +135,13 @@ describe('passkeys end to end (#448)', () => {
     const wrongHost = softwareAuthenticator('evil.example', 'https://evil.example');
     expect(await am.passkeyRegister(molly, 'molly', wrongHost.create(options.challenge), options.challenge, 'x')).toBeNull();
     expect(await am.listCredentials(molly, 'molly')).toEqual([]);
+  });
+
+  test('#2494: enrolling where passkeys are off is a PasskeyRefused whose text is for the person', async () => {
+    const am = await started(ORIGIN, false);
+    const error = await am.passkeyRegistrationOptions(molly, 'molly', 'Molly').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PasskeyRefused);
+    expect((error as Error).message).toBe('Passkeys are not available on this site');
   });
 
   test('#2345: passkeysAvailable follows the relying party: off, http non-localhost, https', async () => {

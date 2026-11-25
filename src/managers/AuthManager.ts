@@ -1165,6 +1165,18 @@ export interface AuthenticateResult {
   knownDevice?: boolean;
 }
 
+/**
+ * A passkey can not be added, for a reason the person can act on (#2494):
+ * passkeys are off on this site, or the account may not sign in with one.
+ * `message` is written for the person, so a route may show it as it is.
+ */
+export class PasskeyRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PasskeyRefused';
+  }
+}
+
 class AuthManager extends BaseManager {
   private providers: Map<string, AuthProvider>;
   private factorEntries: FactorEntry[];
@@ -2019,9 +2031,9 @@ class AuthManager extends BaseManager {
 
   async passkeyRegistrationOptions(ctx: PermissionSubject, username: string, displayName: string): Promise<unknown> {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
-    if (!(await this.userMayUseProvider(username, 'passkey'))) throw new Error('This account cannot sign in with a passkey');
+    if (!(await this.userMayUseProvider(username, 'passkey'))) throw new PasskeyRefused('This account cannot sign in with a passkey');
     const provider = this.passkeyProvider();
-    if (!provider) throw new Error('Passkeys are not available on this site');
+    if (!provider) throw new PasskeyRefused('Passkeys are not available on this site');
     const existing = this.requireCredentialsStore().list(username).filter(c => c.kind === 'passkey');
     return provider.registrationOptions(username, displayName, existing);
   }
