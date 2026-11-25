@@ -303,25 +303,79 @@ describe('#2470 Admin → Backup status cards', () => {
       expect(row.querySelector('summary input, summary button')).toBeNull();
     });
 
-    test('opens amber when the drive does not let the folder be made private, and red when the folder cannot be used', async () => {
-      const withFolder = (folder: Record<string, unknown>, directory = '/b'): Record<string, unknown> => ({
-        status: { config: { ...((allWell().status as { config: object }).config), directory }, lastBackup: null, folder }
-      });
-      const open = await render(withFolder({ ownerOnly: false, exists: true, account: 'wiki' }));
+    const withFolder = (folder: Record<string, unknown>, directory = '/b'): Record<string, unknown> => ({
+      status: { config: { ...((allWell().status as { config: object }).config), directory }, lastBackup: null, folder }
+    });
+    const badge = (doc: Document): string => text(folderRow(doc).querySelector('summary .badge'));
+    const note = (doc: Document): string => text(folderRow(doc).querySelector('summary > span.text-muted'));
+    const alertOf = (doc: Document): string => text(folderRow(doc).querySelector('#backup-folder-problem'));
+
+    test('opens amber with "Not private" when the drive does not let the folder be made private', async () => {
+      const open = await render(withFolder({ ownerOnly: false, exists: true, fault: null, account: 'wiki' }));
       expect(statusOf(open, 'backup-folder')).toBe('amber');
       expect(isOpen(open, 'backup-folder')).toBe(true);
-      expect(text(folderRow(open).querySelector('summary > span.text-muted'))).toBe('/b');
-      expect(text(folderRow(open).querySelector('summary .badge'))).not.toBe('Folder OK');
+      expect(note(open)).toBe('/b');
+      expect(badge(open)).toBe('Not private');
       expect(open.querySelector('#backup-folder-open')).not.toBeNull();
+      expect(open.querySelector('#backup-folder-problem')).toBeNull();
+    });
 
-      const missing = await render(withFolder({ ownerOnly: null, exists: false, account: 'wiki' }));
-      expect(statusOf(missing, 'backup-folder')).toBe('red');
-      expect(isOpen(missing, 'backup-folder')).toBe(true);
-      expect(folderRow(missing).querySelector('summary .badge')!.className).toMatch(/status-badge-red/);
+    test('opens red with "Can\'t use" and says in plain words what is wrong and the one step to fix it, for each cause', async () => {
+      const causes: Array<[string, string, string, RegExp, string]> = [
+        ['missing', '/b', 'Folder not found', /isn't there/, '/b'],
+        ['file', '/b', 'Not a folder', /file, not a folder/, '/b'],
+        ['unset', '', 'No folder is set', /No folder is set/, ''],
+        ['unmounted', '', 'Drive not connected', /drive it is on is not connected/, '']
+      ];
+      for (const [fault, directory, hint, words, field] of causes) {
+        const doc = await render(withFolder({ ownerOnly: null, exists: false, fault, account: 'wiki' }, directory));
+        expect(statusOf(doc, 'backup-folder')).toBe('red');
+        expect(isOpen(doc, 'backup-folder')).toBe(true);
+        expect(badge(doc)).toBe("Can't use");
+        expect(folderRow(doc).querySelector('summary .badge')!.className).toMatch(/status-badge-red/);
+        expect(note(doc)).toBe(hint);
+        const alert = folderRow(doc).querySelector('#backup-folder-problem')!;
+        expect(alert.className).toMatch(/\balert-danger\b/);
+        expect(alertOf(doc)).toMatch(words);
+        expect(alertOf(doc)).toMatch(/Save Folder/);
+        expect((doc.querySelector('#directory') as HTMLInputElement).value).toBe(field);
+        // The alert sits inside the open body, not in the grey note.
+        expect(folderRow(doc).querySelector('summary')!.contains(alert)).toBe(false);
+      }
+    });
 
+    test('a folder that is a file is red even though the drive reports it as private', async () => {
+      const doc = await render(withFolder({ ownerOnly: true, exists: false, fault: 'file', account: 'wiki' }));
+      expect(statusOf(doc, 'backup-folder')).toBe('red');
+      expect(badge(doc)).not.toBe('Folder OK');
+    });
+
+    test('a missing folder is red, not amber, even when the drive could not make it private', async () => {
+      const doc = await render(withFolder({ ownerOnly: false, exists: false, fault: 'missing', account: 'wiki' }));
+      expect(statusOf(doc, 'backup-folder')).toBe('red');
+      expect(badge(doc)).toBe("Can't use");
+      expect(doc.querySelector('#backup-folder-open')).toBeNull();
+    });
+
+    test('a status with no fault named still opens red with a reason, as before', async () => {
+      const gone = await render(withFolder({ ownerOnly: null, exists: false, account: 'wiki' }));
+      expect(statusOf(gone, 'backup-folder')).toBe('red');
+      expect(alertOf(gone)).toMatch(/isn't there/);
       const none = await render(withFolder({ ownerOnly: null, exists: false, account: 'wiki' }, ''));
       expect(statusOf(none, 'backup-folder')).toBe('red');
-      expect(isOpen(none, 'backup-folder')).toBe(true);
+      expect(alertOf(none)).toMatch(/No folder is set/);
+    });
+
+    test('a plain folder shows no problem box, and the form still posts to /admin/backup/config with Save Folder', async () => {
+      const doc = await render(withFolder({ ownerOnly: true, exists: true, fault: null, account: 'wiki' }));
+      expect(doc.querySelector('#backup-folder-problem')).toBeNull();
+      expect(badge(doc)).toBe('Folder OK');
+      const form = folderRow(doc).querySelector('form')!;
+      expect(form.getAttribute('method')).toBe('POST');
+      expect(form.getAttribute('action')).toBe('/admin/backup/config');
+      expect((form.querySelector('input[name="section"]') as HTMLInputElement).value).toBe('folder');
+      expect(form.querySelector('input[name="_csrf"]')).not.toBeNull();
+      expect(text(form.querySelector('button[type="submit"]'))).toBe('Save Folder');
     });
   });
 
