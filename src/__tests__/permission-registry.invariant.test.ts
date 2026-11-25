@@ -95,6 +95,13 @@ const PAGE_ACTION_ALIASES_BLOCK = /PAGE_ACTION_ALIASES = \{([\s\S]*?)\} as const
  * cannot quietly become a place to hide new drift.
  */
 const KNOWN_UNENFORCED: Record<string, string> = {
+  // #2521 (slice 2 of #2247): `share-manage-all` ships before anything asks it.
+  // The revoke route still decides a manager by `admin-system` (its checks do
+  // not change in this slice), and the screen that lists everyone's links is
+  // slice 3. Until that screen asks for it, the permission is held by the
+  // administrator role and gates nothing new. Remove this entry when the
+  // manager list and its route ask `share-manage-all` (#2247).
+  'share-manage-all': 'not yet asked by any route: the manager screen and its check come in a later slice of #2247 (#2521)'
   // `page-export` was here until #2120. Chasing it as an orphan found #1060:
   // the export routes had no authorization check at all, so a private page was
   // extractable by anyone who could name it. Those routes are gated on READ
