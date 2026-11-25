@@ -790,6 +790,19 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       expect(mockShareManager.revoke.mock.calls[0]).toHaveLength(2);
     });
 
+    test('#2521: a token acting for the maker revokes through the maker branch, with no asManager', async () => {
+      mockUserContext = { ...editorUser, viaToken: { id: 't1' } };
+      const res = await request(app)
+        .post('/shares/s1/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('/shares?revoked=1');
+      expect(mockShareManager.revoke).toHaveBeenCalledTimes(1);
+      expect(mockShareManager.revoke).toHaveBeenCalledWith('s1', expect.objectContaining({ username: 'ed', viaToken: { id: 't1' } }));
+      expect(mockShareManager.revoke.mock.calls[0]).toHaveLength(2);
+    });
+
     test('#2521: a creator revoking their own tag link passes the request\'s own subject, not a name', async () => {
       mockUserContext = { ...editorUser };
       await request(app)

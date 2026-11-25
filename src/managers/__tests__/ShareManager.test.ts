@@ -21,6 +21,7 @@ import ShareManager, { OWNER_ONLY_KEYWORD } from '../ShareManager';
 import type { VaultShareScope } from '../../types/Share';
 import { newLinkKeyPair, openLockbox } from '../../utils/shareLockbox';
 import logger from '../../utils/logger';
+import { jobContextFromSystem } from '../../context/JobContext';
 import type { WikiEngine } from '../../types/WikiEngine';
 import type { ShareRecord } from '../../types/Share';
 
@@ -438,6 +439,17 @@ describe('ShareManager', () => {
 
       const event = revokeEvents().at(-1);
       expect(event.user).toBe('alice');
+      expect(meta(event)).not.toHaveProperty('byManager');
+      expect(readShareFile(rec.id)).not.toHaveProperty('revokedByManager');
+    });
+
+    test('a job or system context revokes too, and the audit row names its principal', async () => {
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('alice'));
+      const job = jobContextFromSystem('system', 'account closed');
+      expect(await sm.revoke(rec.id, job)).toBe(true);
+
+      const event = revokeEvents().at(-1);
+      expect(event.user).toBe('system');
       expect(meta(event)).not.toHaveProperty('byManager');
       expect(readShareFile(rec.id)).not.toHaveProperty('revokedByManager');
     });
