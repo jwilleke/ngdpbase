@@ -56,7 +56,7 @@ const MyLinksPlugin: SimplePlugin = {
         icon: 'fas fa-bookmark me-1 small text-muted',
         trailingHtml:
           '<button class="btn btn-link btn-sm p-0 ms-1 text-muted my-links-remove" '
-          + 'title="Remove from Pinned pages" '
+          + 'title="Remove from pinned pages" '
           + `onclick="removePinnedItem('${escapeHtml(item.url).replace(/'/g, '&#39;')}'); return false;">`
           + '<i class="fas fa-times small"></i></button>'
       })),

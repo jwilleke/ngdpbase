@@ -58,7 +58,7 @@ All endpoints require authentication; anonymous requests receive `401`.
 
 - `public/js/my-links.js` — `addPinnedPage(pageName, title)` and `removePinnedPage(pageName)`
 - Loaded via `views/footer.ejs`
-- The "Add to Pinned pages" / "Remove from Pinned pages" entry in the More dropdown is rendered in `views/header.ejs`
+- The "Add to pinned pages" / "Remove from pinned pages" entry in the More dropdown is rendered in `views/header.ejs`
 
 ## Cache Key
 

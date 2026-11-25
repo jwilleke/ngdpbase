@@ -20,10 +20,10 @@ async function addPinnedItem(url, title, pageName) {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      showTemporaryMessage(err.error || 'Failed to add to Pinned pages', 'error');
+      showTemporaryMessage(err.error || 'Failed to add to pinned pages', 'error');
       return;
     }
-    showTemporaryMessage('Added to Pinned pages', 'success');
+    showTemporaryMessage('Added to pinned pages', 'success');
     setTimeout(() => location.reload(), 500);
   } catch {
     showTemporaryMessage('Network error', 'error');
@@ -37,10 +37,10 @@ async function removePinnedItem(ident) {
       credentials: 'same-origin'
     });
     if (!res.ok) {
-      showTemporaryMessage('Failed to remove from Pinned pages', 'error');
+      showTemporaryMessage('Failed to remove from pinned pages', 'error');
       return;
     }
-    showTemporaryMessage('Removed from Pinned pages', 'success');
+    showTemporaryMessage('Removed from pinned pages', 'success');
     setTimeout(() => location.reload(), 500);
   } catch {
     showTemporaryMessage('Network error', 'error');

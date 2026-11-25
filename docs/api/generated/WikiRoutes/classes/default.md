@@ -243,7 +243,7 @@ The frontmatter uuid, or '' when absent or unparseable
 
 Defined in: src/routes/WikiRoutes.ts:12019
 
-POST /api/user/pinned-pages — add an item to Pinned pages.
+POST /api/user/pinned-pages — add an item to pinned pages.
 
 Accepts either form:
 
@@ -7629,7 +7629,7 @@ POST /profile/credentials/:id/remove — remove one of your own credentials (#15
 
 Defined in: src/routes/WikiRoutes.ts:12065
 
-DELETE /api/user/pinned-pages/:pageName — remove an item from Pinned pages.
+DELETE /api/user/pinned-pages/:pageName — remove an item from pinned pages.
 
 For back-compat the path segment is named `:pageName`, but it accepts any
 URL-decoded identifier: either a legacy pageName OR a URL-encoded canonical
@@ -7719,7 +7719,7 @@ Defined in: src/routes/WikiRoutes.ts:2537
 
 Defined in: src/routes/WikiRoutes.ts:12101
 
-PUT /api/user/pinned-pages/order — reorder Pinned pages.
+PUT /api/user/pinned-pages/order — reorder pinned pages.
 
 Accepts `order: string[]` where each entry is a URL (preferred) or a
 legacy pageName. Matching falls back through both fields so old clients
