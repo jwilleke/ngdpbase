@@ -1,7 +1,7 @@
 /**
  * #2470 — Admin → Backup is six status cards, in the order an admin works through them:
  * Auto Backup, Manual Backup, Backup key, Shared folders key, Restore whole site,
- * Restore databases only. Each has an icon, a name, a grey note giving the state in
+ * Restore databases only, after a seventh row above them for the Backup folder. Each has an icon, a name, a grey note giving the state in
  * words, a badge on the right and a left edge. A card takes one of three states: plain (no
  * colour, all is well), amber (degraded) or red (failed); there is no green and no grey.
  * A plain card starts collapsed, an amber or red one starts open, so a page of collapsed
@@ -73,8 +73,9 @@ describe('#2470 Admin → Backup status cards', () => {
   test('six cards, in order: Auto Backup, Manual Backup, Backup key, Shared folders key, Restore whole site, Restore databases only', async () => {
     const doc = await render();
     const cards = [...doc.querySelectorAll('.status-card')];
-    expect(cards.map(c => c.id)).toEqual(ORDER);
-    expect(cards.map(c => text(c.querySelector('summary h6')))).toEqual([
+    // The Backup folder is a row in the same style, first, above the six.
+    expect(cards.map(c => c.id)).toEqual(['backup-folder', ...ORDER]);
+    expect(cards.slice(1).map(c => text(c.querySelector('summary h6')))).toEqual([
       'Auto Backup', 'Manual Backup', 'Backup key', 'Shared folders key', 'Restore the whole site', 'Restore the databases only'
     ]);
   });
@@ -268,6 +269,78 @@ describe('#2470 Admin → Backup status cards', () => {
     expect(amber.querySelector('.badge')!.className).toMatch(/status-badge-amber/);
     expect(red.querySelector('.badge')!.className).toMatch(/status-badge-red/);
     for (const c of [plain, amber, red]) expect(c.outerHTML).not.toMatch(/success|secondary|bg-/);
+    // A misspelt state must not hide a card that may need the admin: it opens as amber.
+    const unknown = cardOf('ambr');
+    expect(unknown.getAttribute('data-status')).toBe('amber');
+    expect(unknown.querySelector('details')!.hasAttribute('open')).toBe(true);
+  });
+
+  describe('the Backup folder row', () => {
+    const folderRow = (doc: Document): Element => card(doc, 'backup-folder');
+
+    test('is the first row, in the status-card style, collapsed and plain by default, with the path as its grey note and the badge "Folder OK"', async () => {
+      const doc = await render({ status: { ...(allWell().status as object), folder: { ownerOnly: true, exists: true, account: 'wiki' } } });
+      const row = folderRow(doc);
+      expect(doc.querySelector('.status-card')!.id).toBe('backup-folder');
+      expect(row.classList.contains('status-card-plain')).toBe(true);
+      expect(statusOf(doc, 'backup-folder')).toBe('plain');
+      expect(isOpen(doc, 'backup-folder')).toBe(false);
+      expect(text(row.querySelector('summary h6'))).toBe('Backup folder');
+      expect(text(row.querySelector('summary > span.text-muted'))).toBe('/b');
+      expect(text(row.querySelector('summary .badge'))).toBe('Folder OK');
+      expect(row.querySelector('summary .badge')!.className).toMatch(/status-badge-plain/);
+    });
+
+    test('the path field and Save Folder sit inside the row, and Save Folder is an outline button', async () => {
+      const row = folderRow(await render());
+      const body = row.querySelector(':scope > .card-body > details > div.mt-3')!;
+      expect(body.querySelector('input#directory')).not.toBeNull();
+      const save = body.querySelector('button[type="submit"]')!;
+      expect(text(save)).toBe('Save Folder');
+      expect(save.classList.contains('btn-outline-primary')).toBe(true);
+      expect(save.classList.contains('btn-primary')).toBe(false);
+      // Nothing of the form sits outside the row.
+      expect(row.querySelector('summary input, summary button')).toBeNull();
+    });
+
+    test('opens amber when the drive does not let the folder be made private, and red when the folder cannot be used', async () => {
+      const withFolder = (folder: Record<string, unknown>, directory = '/b'): Record<string, unknown> => ({
+        status: { config: { ...((allWell().status as { config: object }).config), directory }, lastBackup: null, folder }
+      });
+      const open = await render(withFolder({ ownerOnly: false, exists: true, account: 'wiki' }));
+      expect(statusOf(open, 'backup-folder')).toBe('amber');
+      expect(isOpen(open, 'backup-folder')).toBe(true);
+      expect(text(folderRow(open).querySelector('summary > span.text-muted'))).toBe('/b');
+      expect(text(folderRow(open).querySelector('summary .badge'))).not.toBe('Folder OK');
+      expect(open.querySelector('#backup-folder-open')).not.toBeNull();
+
+      const missing = await render(withFolder({ ownerOnly: null, exists: false, account: 'wiki' }));
+      expect(statusOf(missing, 'backup-folder')).toBe('red');
+      expect(isOpen(missing, 'backup-folder')).toBe(true);
+      expect(folderRow(missing).querySelector('summary .badge')!.className).toMatch(/status-badge-red/);
+
+      const none = await render(withFolder({ ownerOnly: null, exists: false, account: 'wiki' }, ''));
+      expect(statusOf(none, 'backup-folder')).toBe('red');
+      expect(isOpen(none, 'backup-folder')).toBe(true);
+    });
+  });
+
+  test('Restore the whole site with no stored backup says "Nothing to restore", not "Ready"', async () => {
+    const doc = await render({ recentBackups: [] });
+    expect(statusOf(doc, 'site-restore-card')).toBe('plain');
+    expect(text(card(doc, 'site-restore-card').querySelector('summary .badge'))).toBe('Nothing to restore');
+  });
+
+  test('Shared folders key: a folder but no recovery words yet is amber and open, "Make words"', async () => {
+    const doc = await render({ sharedFoldersWords: null, sharedFolderNames: ['default'] });
+    expect(statusOf(doc, 'shared-folders-key')).toBe('amber');
+    expect(isOpen(doc, 'shared-folders-key')).toBe(true);
+    expect(text(card(doc, 'shared-folders-key').querySelector('summary .badge'))).toBe('Make words');
+  });
+
+  test('the page says "permissions", never "roles", in text a person reads', async () => {
+    const doc = await render();
+    expect(doc.body.textContent).not.toMatch(/\broles?\b/i);
   });
 
   describe('a URL fragment opens the card it names', () => {
@@ -334,5 +407,11 @@ describe('#2470 Admin → Backup status cards', () => {
     const narrow = (css.match(/@media \(max-width: 575\.98px\)\s*\{[^@]*\}\s*\}/) || [''])[0];
     expect(narrow).toMatch(/\.status-card \.card-summary > h6\s*\{[^}]*flex:\s*1 1 0[^}]*min-width:\s*0/);
     expect(narrow).toMatch(/\.status-card \.card-summary > \.badge,\s*\.status-card \.card-summary > \.card-summary-chevron\s*\{[^}]*flex:\s*0 0 auto/);
+  });
+
+  test('the inline red alert text uses the badge red, and open card text stops at 70 characters a line', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../../themes/core.css'), 'utf8');
+    expect(css).toMatch(/\.status-card \.text-danger\s*\{[^}]*color:\s*#b02a37/);
+    expect(css).toMatch(/\.status-card details > div\.mt-3 (p|> p)[^{]*\{[^}]*max-width:\s*70ch/);
   });
 });
