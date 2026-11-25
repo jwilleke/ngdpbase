@@ -217,6 +217,14 @@ describe('what the Page building speed page says (#2468)', () => {
     expect(code?.classList.contains('text-reset')).toBe(true);
   });
 
+  test('the setting name in the banner may break after its dots, not in the middle of a word, on a narrow screen', async () => {
+    const doc = await dom(report({ recording: false }));
+    const code = doc.querySelector('.alert-warning code');
+
+    expect(code?.querySelectorAll('wbr')).toHaveLength(4);
+    expect(code?.textContent).toBe('ngdpbase.markup.performance.history.dir');
+  });
+
   test('the header row lets the Back button wrap below the title on a narrow screen', async () => {
     const doc = await dom(report());
 
