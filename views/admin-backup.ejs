@@ -92,10 +92,10 @@
         const folderInfo = status.folder || {};
         const folderFault = folderInfo.fault || (!status.config.directory ? 'unset' : folderInfo.exists === false ? 'missing' : null);
         const folderRed = {
-            unset: { hint: 'No folder is set', why: 'No folder is set, so backups can\'t be saved.', fix: 'Type a folder in the box below and press Save Folder.' },
-            unmounted: { hint: 'Drive not connected', why: 'The folder in the setting is not available: the drive it is on is not connected.', fix: 'Connect the drive and restart the site, or type another folder in the box below and press Save Folder.' },
-            missing: { hint: 'Folder not found', why: 'This folder isn\'t there, or this site can\'t open it, so backups can\'t be saved.', fix: 'Make the folder on the server, or type another folder in the box below and press Save Folder.' },
-            file: { hint: 'Not a folder', why: 'This path is a file, not a folder, so backups can\'t be saved.', fix: 'Type the path of a folder in the box below and press Save Folder.' }
+            unset: { hint: 'No folder is set', why: 'No folder is set, so backups can\'t be saved.', fix: 'Type a folder in the box above and press Save Folder.' },
+            unmounted: { hint: 'Drive not connected', why: 'The folder in the setting is not available: the drive it is on is not connected.', fix: 'Connect the drive and restart the site, or type another folder in the box above and press Save Folder.' },
+            missing: { hint: 'Folder not found', why: 'This folder isn\'t there, or this site can\'t open it, so backups can\'t be saved.', fix: 'Make the folder on the server, or type another folder in the box above and press Save Folder.' },
+            file: { hint: 'Not a folder', why: 'This path is a file, not a folder, so backups can\'t be saved.', fix: 'Type the path of a folder in the box above and press Save Folder.' }
         }[folderFault];
         const folderCard = folderRed ? { state: 'red', badge: "Can't use", hint: folderRed.hint }
             : folderInfo.ownerOnly === false ? { state: 'amber', badge: 'Not private', hint: status.config.directory }
