@@ -271,10 +271,10 @@ export interface PerformanceMonitor {
   overSince: Record<PerformanceLimit, number | null>;
 }
 
-/** The three limits the once-a-minute check holds the parser to. */
 /** How long a page building report is reused, in milliseconds (#2468). */
 const REPORT_CACHE_MS = 60_000;
 
+/** The three limits the once-a-minute check holds the parser to. */
 export type PerformanceLimit = 'SLOW_PARSING' | 'LOW_CACHE_HIT_RATIO' | 'HIGH_ERROR_RATE';
 
 /** Performance alert */

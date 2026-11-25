@@ -403,11 +403,11 @@ A line that does not parse, such as the half-written last line after a crash, is
   limits: { parseTime: number; cacheHitRatio: number; errorRate: number },
   recording: boolean
 }
-// MeasureStats = { count, p50, p95, max, mean }
+// MeasureStats = { count, p50, p95, max, p5, min, mean }
 ```
 
 - The windows are the last hour, 24 hours, 7 days and 30 days up to `now`, the edge included. They are worked out when called; nothing is stored.
-- `p50` and `p95` are nearest-rank: the value at rank `ceil(p / 100 × N)` of the N values, smallest first. `mean` is the plain average. A check with no value for a measure is left out of that measure's sums.
+- `p50`, `p95` and `p5` are nearest-rank: the value at rank `ceil(p / 100 × N)` of the N values, smallest first. `max` and `min` are the highest and lowest value; `mean` is the plain average. The admin page shows `p95` and `max` for the "Slowest 1 in 20" and "Slowest" rows, except on the stored-copies share, where a low value is the bad end and it shows `p5` and `min`. A check with no value for a measure is left out of that measure's sums.
 - A measure with no value in a window is `null`.
 - `checks` is how many checks each window holds, whichever numbers a check carried. The page shows it once, in the column headings; a table whose own count differs says so on its own row.
 - `recording` is false when there is no folder to keep checks in, or the folder could not be made when the parser started. In that case the parser does not try to keep checks and leaves the old notifications where they are.

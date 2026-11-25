@@ -164,8 +164,14 @@ export interface MeasureStats {
   /** Checks with a value for this measure. */
   count: number;
   p50: number;
+  /** The value 19 of 20 checks stayed under: the high end. */
   p95: number;
+  /** The highest value. */
   max: number;
+  /** The value 19 of 20 checks stayed over: the low end, for a measure where low is bad. */
+  p5: number;
+  /** The lowest value. */
+  min: number;
   mean: number;
 }
 
@@ -187,7 +193,7 @@ function nearestRank(sorted: number[], percentile: number): number {
   return sorted[rank - 1];
 }
 
-/** p50, p95, max and the plain mean of a set of values; null when there are none. */
+/** p50, p95, p5, the highest and lowest, and the plain mean of a set of values; null when there are none. */
 export function measureStats(values: number[]): MeasureStats | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -196,6 +202,8 @@ export function measureStats(values: number[]): MeasureStats | null {
     p50: nearestRank(sorted, 50),
     p95: nearestRank(sorted, 95),
     max: sorted[sorted.length - 1],
+    p5: nearestRank(sorted, 5),
+    min: sorted[0],
     mean: sorted.reduce((sum, v) => sum + v, 0) / sorted.length
   };
 }

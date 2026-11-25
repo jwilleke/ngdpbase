@@ -4,7 +4,7 @@ For operators: how fast the site turns page text into the page people read, and 
 
 ## What it does
 
-While pages are being viewed, the site checks itself once a minute and keeps each check. __Admin → Page building speed__ (`/admin/parser-performance`, a button next to Logs on the dashboard) sums those checks for the last hour, the last 24 hours, the last 7 days and the last 30 days.
+While pages are being viewed, the site checks itself once a minute and keeps each check. __Admin → Page building speed__ (`/admin/parser-performance`, a button next to Logs on the dashboard) sums those checks for the last hour, the last 24 hours, the last 7 days and the last 30 days (the column headings read 1 hour, 24 hours, 7 days and 30 days).
 
 It opens for an account that passes the `admin-read` permission check (`admin-system` also passes), and the dashboard button is shown to both. Anyone else gets "Access Denied". The page only reads; it changes no setting and removes no file.
 
@@ -26,6 +26,8 @@ The first view is a one-sentence intro; what the rows mean is in a closed "What 
 | Slowest 1 in 20 | 19 of 20 checks stayed under it. |
 | Slowest | The worst check. |
 | Average | The plain average. |
+
+On the "Pages from stored copies (%)" table, a low share is the bad end. So there, "Slowest 1 in 20" is the value that 19 of 20 checks stayed over and "Slowest" is the lowest check. On all three tables these two rows mean the worst builds, and the table's note says so. The earlier-warnings table follows the same rule for its stored-copies column.
 
 A period with no checks says "No checks in this period." A table with nothing at all says "No checks recorded yet." and, when there are no checks anywhere, the page shows that one line and no tables. When a table's own count of checks with a number is lower than the period's, it adds a row "Checks with this number". A minute in which no page was built has no check, so a quiet site has gaps.
 

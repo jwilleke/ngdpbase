@@ -6,10 +6,10 @@
   const pct = (v) => (Math.round(v * 1000) / 10).toFixed(1) + '%';
   const limitPct = (v) => String(Math.round(v * 1000) / 10);
   const windows = [
-    ['hour', 'Last hour'],
-    ['day', 'Last 24 hours'],
-    ['week', 'Last 7 days'],
-    ['month', 'Last 30 days']
+    ['hour', '1 hour'],
+    ['day', '24 hours'],
+    ['week', '7 days'],
+    ['month', '30 days']
   ];
   const measures = [
     {
@@ -21,8 +21,10 @@
     {
       key: 'hit',
       title: 'Pages from stored copies (%)',
-      note: 'Below ' + limitPct(report.limits.cacheHitRatio) + ' is too low.',
-      fmt: pct
+      note: 'Below ' + limitPct(report.limits.cacheHitRatio) + ' is too low, so the Slowest rows show the lowest values.',
+      fmt: pct,
+      // A low share is the bad end, so its Slowest rows take the lowest checks, not the highest.
+      fields: { p95: 'p5', max: 'min' }
     },
     {
       key: 'err',
@@ -37,6 +39,7 @@
     ['Slowest', 'max'],
     ['Average', 'mean']
   ];
+  const fieldFor = (measure, field) => (measure.fields && measure.fields[field]) || field;
   const hasData = (key) => windows.some(([window]) => report.rollup[window][key]);
   const anyData = measures.some((measure) => hasData(measure.key));
   // A table whose count of checks with its number differs from the period's total says so on a row of its own.
@@ -44,11 +47,19 @@
   const hasLegacy = ['parse', 'hit', 'err'].some((k) => report.legacy[k]);
 %>
 
+<style>
+  /* On a phone the four period columns have to fit without sideways scrolling. */
+  @media (max-width: 420px) {
+    .perf-table { font-size: 0.8rem; }
+    .perf-table th, .perf-table td { padding-left: 0.2rem; padding-right: 0.2rem; }
+  }
+</style>
+
 <div class="container mt-4">
   <div class="row">
     <div class="col-12">
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h2 me-3"><i class="fas fa-gauge-high"></i> Page building speed</h1>
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <h1 class="h2 mb-0 me-3"><i class="fas fa-gauge-high"></i> Page building speed</h1>
         <a href="/admin" class="btn btn-secondary">
           <i class="fas fa-arrow-left"></i> Back to Dashboard
         </a>
@@ -61,7 +72,8 @@
         <p class="mt-2 mb-0">
           The site checks once a minute while pages are being viewed.
           Typical is the middle value. Slowest 1 in 20 is the value that 19 of 20 checks stayed under.
-          Slowest is the worst check.
+          Slowest is the worst check. For Pages from stored copies, a low share is the bad end,
+          so there Slowest 1 in 20 and Slowest are the lowest values.
         </p>
       </details>
 
@@ -69,7 +81,7 @@
         <div class="alert alert-warning" role="alert">
           <i class="fas fa-exclamation-triangle"></i>
           Page checks are not being saved because the site has no folder it can write them to.
-          In Admin → Configuration, set <code>ngdpbase.markup.performance.history.dir</code> to a folder the site can write to, then restart.
+          In Admin → Configuration, set <code class="text-reset">ngdpbase.markup.performance.history.dir</code> to a folder the site can write to, then restart.
         </div>
       <% } else if (!anyData) { %>
         <p class="text-muted">No checks recorded yet. They appear within a minute of pages being viewed.</p>
@@ -81,20 +93,20 @@
           <div class="card-header">
             <h5 class="mb-0"><%= measure.title %></h5>
           </div>
-          <div class="card-body">
+          <div class="card-body px-2 px-sm-3">
             <p class="text-muted"><%= measure.note %></p>
             <% if (!hasData(measure.key)) { %>
               <p class="mb-0">No checks recorded yet.</p>
             <% } else { %>
             <div class="table-responsive">
-              <table class="table table-sm small align-middle mb-0">
+              <table class="table table-sm small align-middle mb-0 perf-table">
                 <thead>
                   <tr>
-                    <th scope="col"></th>
+                    <th scope="col" class="fw-normal text-muted align-bottom">Checks</th>
                     <% windows.forEach(([window, label]) => { %>
                       <th scope="col" class="text-end">
-                        <%= label %>
-                        <span class="d-block fw-normal text-muted small"><%= report.checks[window] %> checks</span>
+                        <span class="text-nowrap"><%= label %></span>
+                        <span class="d-block fw-normal text-muted small"><%= report.checks[window] %><span class="visually-hidden"> checks</span></span>
                       </th>
                     <% }); %>
                   </tr>
@@ -110,7 +122,7 @@
                             <td class="text-end text-muted small" rowspan="<%= rows.length %>">No checks in this period.</td>
                           <% } %>
                         <% } else { %>
-                          <td class="text-end"><%= measure.fmt(s[field]) %></td>
+                          <td class="text-end"><%= measure.fmt(s[fieldFor(measure, field)]) %></td>
                         <% } %>
                       <% }); %>
                     </tr>
@@ -138,13 +150,13 @@
           <div class="card-header">
             <h5 class="mb-0">Earlier warnings (only checks over the limit)</h5>
           </div>
-          <div class="card-body">
+          <div class="card-body px-2 px-sm-3">
             <p class="text-muted">
               Saved before this page existed, for checks over the limit only. Not a view of the whole site.
-              The two shares were totals since start-up: do not compare them with the tables above.
+              The two percentages were totals since start-up: do not compare them with the tables above.
             </p>
             <div class="table-responsive">
-              <table class="table table-sm small align-middle mb-0">
+              <table class="table table-sm small align-middle mb-0 perf-table">
                 <thead>
                   <tr>
                     <th scope="col"></th>
@@ -165,7 +177,7 @@
                           <% } else if (field === 'count') { %>
                             <%= s.count %>
                           <% } else { %>
-                            <%= measure.fmt(s[field]) %>
+                            <%= measure.fmt(s[fieldFor(measure, field)]) %>
                           <% } %>
                         </td>
                       <% }); %>

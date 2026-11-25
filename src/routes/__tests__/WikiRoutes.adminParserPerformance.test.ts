@@ -140,9 +140,9 @@ describe('what the Page building speed page says (#2468)', () => {
     expect(text).toContain('How quickly the site turns page text into what you read.');
     expect(text).toContain('Page build time (ms)');
     expect(text).toContain('Limit: 150 ms. Slower is too slow.');
-    expect(text).toContain('Below 20 is too low.');
+    expect(text).toContain('Below 20 is too low, so the Slowest rows show the lowest values.');
     expect(text).toContain('Above 5 is too high.');
-    for (const label of ['Last hour', 'Last 24 hours', 'Last 7 days', 'Last 30 days', 'Typical', 'Slowest 1 in 20', 'Slowest', 'Average']) {
+    for (const label of ['1 hour', '24 hours', '7 days', '30 days', 'Typical', 'Slowest 1 in 20', 'Slowest', 'Average']) {
       expect(text).toContain(label);
     }
   });
@@ -205,11 +205,25 @@ describe('what the Page building speed page says (#2468)', () => {
     expect(squash(doc.querySelector('[data-testid="parser-performance-hit"]')?.textContent)).toContain('Slowest rows show the lowest');
   });
 
+  test('the setting name in the not-saving banner takes the banner text colour, not the pink code colour', async () => {
+    const doc = await dom(report({ recording: false }));
+    const code = doc.querySelector('.alert-warning code');
+
+    expect(code?.textContent).toBe('ngdpbase.markup.performance.history.dir');
+    expect(code?.classList.contains('text-reset')).toBe(true);
+  });
+
+  test('the header row lets the Back button wrap below the title on a narrow screen', async () => {
+    const doc = await dom(report());
+
+    expect(doc.querySelector('h1')?.parentElement?.classList.contains('flex-wrap')).toBe(true);
+  });
+
   test('says how many checks each period holds once, in its column heading, not in every table', async () => {
     const doc = await dom(report({ checks: { hour: 58, day: 1210, week: 7840, month: 30120 } }));
     const heads = [...doc.querySelectorAll('[data-testid="parser-performance-parse"] thead th')].map((th) => squash(th.textContent));
 
-    expect(heads).toEqual(['', 'Last hour 58 checks', 'Last 24 hours 1210 checks', 'Last 7 days 7840 checks', 'Last 30 days 30120 checks']);
+    expect(heads).toEqual(['Checks', '1 hour 58 checks', '24 hours 1210 checks', '7 days 7840 checks', '30 days 30120 checks']);
     expect(squash(doc.querySelector('[data-testid="parser-performance-parse"]')?.textContent)).not.toContain('Checks counted');
     expect(squash(doc.querySelector('[data-testid="parser-performance-hit"]')?.textContent)).not.toContain('Checks counted');
   });

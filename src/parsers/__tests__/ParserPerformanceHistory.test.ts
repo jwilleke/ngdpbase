@@ -259,7 +259,7 @@ describe('rollupSamples (#2468)', () => {
     const samples = Array.from({ length: 20 }, (_, i) => at((i + 1) * 60 * 1000, { parse: i + 1, hit: null, err: null }));
     const parse = rollupSamples(samples, NOW).hour.parse;
 
-    expect(parse).toEqual({ count: 20, p50: 10, p95: 19, max: 20, mean: 10.5 });
+    expect(parse).toEqual({ count: 20, p50: 10, p95: 19, max: 20, p5: 1, min: 1, mean: 10.5 });
   });
 
   test('the low end: the lowest value and the 1-in-20 from the bottom (nearest rank)', () => {
@@ -273,7 +273,7 @@ describe('rollupSamples (#2468)', () => {
   test('nearest rank on an odd count and on a single value', () => {
     const five = [5, 1, 4, 2, 3].map((v) => at(60 * 1000, { parse: v }));
     expect(rollupSamples(five, NOW).hour.parse).toMatchObject({ count: 5, p50: 3, p95: 5, max: 5, mean: 3 });
-    expect(rollupSamples([at(1000, { parse: 7 })], NOW).hour.parse).toEqual({ count: 1, p50: 7, p95: 7, max: 7, mean: 7 });
+    expect(rollupSamples([at(1000, { parse: 7 })], NOW).hour.parse).toEqual({ count: 1, p50: 7, p95: 7, max: 7, p5: 7, min: 7, mean: 7 });
   });
 
   test('a null measure is skipped, not counted as zero', () => {
