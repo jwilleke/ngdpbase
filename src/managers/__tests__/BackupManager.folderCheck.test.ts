@@ -115,6 +115,7 @@ describe('the backup folder is checked, and a fault is said in plain words (#249
     expect(message).toContain(unreachable);
     expect(props['ngdpbase.backup.directory']).toBe(old);
     expect((await bm.getAutoBackupStatus()).config.directory).toBe(old);
+    expect((await bm.getAutoBackupStatus()).folder.exists).toBe(true);
     // The old folder still works.
     await expect(bm.createBackup(CTX)).resolves.toContain(old);
   });

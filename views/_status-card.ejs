@@ -10,7 +10,8 @@
     (the grey note, in words), hintTime (an ISO time shown after the hint in the viewer's own
     time zone) and helpSlug (a help link to that wiki page). %>
 <% if (locals.part === 'start') {
-    const tone = ['plain', 'amber', 'red'].includes(locals.state) ? locals.state : 'plain';
+    // A misspelt state opens the card as amber: it must never hide a card that may need the admin.
+    const tone = ['plain', 'amber', 'red'].includes(locals.state) ? locals.state : 'amber';
 %>
 <div class="card mb-4 status-card status-card-<%= tone %>" id="<%= locals.id %>" data-status="<%= tone %>">
     <div class="card-body py-2">

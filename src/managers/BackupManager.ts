@@ -2389,7 +2389,7 @@ class BackupManager extends BaseManager {
   /**
    * Return current auto-backup configuration and last backup info for the admin UI.
    */
-  async getAutoBackupStatus(): Promise<{ config: AutoBackupConfig; lastBackup: Date | null; folder: { ownerOnly: boolean | null; account: string | null } }> {
+  async getAutoBackupStatus(): Promise<{ config: AutoBackupConfig; lastBackup: Date | null; folder: { ownerOnly: boolean | null; exists: boolean; account: string | null } }> {
     const backups = await this.listBackups();
     return {
       config: {
@@ -2401,7 +2401,7 @@ class BackupManager extends BaseManager {
       },
       lastBackup: backups.length > 0 ? backups[0].created : null,
       // #2492: whether the folder could be made closed to every other account (a network share may not allow it).
-      folder: { ownerOnly: this.backupDirectory ? secretDirIsOwnerOnly(this.backupDirectory) : null, account: runningAccount() }
+      folder: { ownerOnly: this.backupDirectory ? secretDirIsOwnerOnly(this.backupDirectory) : null, exists: Boolean(this.backupDirectory) && existsSync(this.backupDirectory as string), account: runningAccount() }
     };
   }
 

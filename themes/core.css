@@ -1684,6 +1684,9 @@ summary {
 .status-badge-plain { background: transparent; color: var(--bs-body-color); font-weight: 400; }
 .status-badge-amber { background: #ffc107; color: #000; }
 .status-badge-red { background: #b02a37; color: #fff; }
+.status-card .text-danger { color: #b02a37 !important; } /* the red of the badge and edge: 6.5:1 on white, where Bootstrap's #dc3545 is 4.5:1 */
+[data-bs-theme="dark"] .status-card .text-danger { color: var(--bs-danger-text-emphasis) !important; }
+.status-card details > div.mt-3 p { max-width: 70ch; }
 .card-summary-chevron { font-size: 0.75rem; color: var(--bs-secondary-color); transition: transform 0.15s; }
 details[open] > .card-summary .card-summary-chevron { transform: rotate(180deg); }
 .card-summary:focus-visible { outline: 2px solid var(--bs-primary); outline-offset: 2px; border-radius: 0.25rem; }

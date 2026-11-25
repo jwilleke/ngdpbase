@@ -78,7 +78,8 @@
         const siteCard = locals.stagedSiteRestoreError ? { state: 'red', badge: "Can't read", hint: "The record of a staged restore can't be read" }
             : stagedSite ? { state: 'amber', badge: 'Restart needed', hint: stagedSite.state === 'staged' ? 'A restore is staged and waits for the restart' : 'A restore was not finished being prepared' }
             : restoreRunning ? { state: 'amber', badge: 'Preparing', hint: 'A restore is being prepared' }
-            : { state: 'plain', badge: 'Ready', hint: cardStored.length > 0 ? 'No restore waiting' : 'No backup kept on this server yet' };
+            : cardStored.length > 0 ? { state: 'plain', badge: 'Ready', hint: 'No restore waiting' }
+            : { state: 'plain', badge: 'Nothing to restore', hint: 'No backup kept on this server yet' };
 
         const dbCard = locals.databaseUnavailable ? { state: 'red', badge: "Can't open", hint: "The application database can't be opened" }
             : stagedRestore ? { state: 'amber', badge: 'Restart needed', hint: 'A restore is staged and waits for the restart' }
@@ -86,16 +87,19 @@
             : stagedSite ? { state: 'plain', badge: 'Ready', hint: 'A whole-site restore is waiting for the restart, and it includes the databases' }
             : { state: 'plain', badge: 'Ready', hint: 'No restore waiting' };
 
+        // The Backup folder is a row like the cards: plain and collapsed with "Folder OK"; amber when the drive
+        // does not let it be made private; red when no folder is set or it is not there.
+        const folderInfo = status.folder || {};
+        const folderCard = (!status.config.directory || folderInfo.exists === false) ? { state: 'red', badge: "Can't use", hint: status.config.directory || 'No folder is set' }
+            : folderInfo.ownerOnly === false ? { state: 'amber', badge: 'Not private', hint: status.config.directory }
+            : { state: 'plain', badge: 'Folder OK', hint: status.config.directory };
+
         const card = function (part, id, icon, title, c) { return include('_status-card', Object.assign({ part: part, id: id, icon: icon, title: title, helpSlug: 'Backup' }, c || {})); };
     %>
     <!-- ================================================================ -->
-    <!-- Backup folder (#2492): used by manual and automatic backups       -->
+    <!-- Backup folder (#2492): a row like the cards below, used by manual and automatic backups -->
     <!-- ================================================================ -->
-    <div class="card mb-4" id="backup-folder">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-folder-open"></i> Backup folder</h5>
-        </div>
-        <div class="card-body">
+    <%- card('start', 'backup-folder', 'fa-folder-open', 'Backup folder', folderCard) %>
             <form method="POST" action="/admin/backup/config">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <input type="hidden" name="section" value="folder">
@@ -107,7 +111,7 @@
                         Where manual and automatic backups are saved. It is checked when you save; if it can't be used, the current one stays.
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
+                <button type="submit" class="btn btn-outline-primary"<%- lockedUnless('config-manage') %>>
                     <i class="fas fa-save"></i> Save Folder
                 </button>
             </form>
@@ -124,8 +128,7 @@
                     The file your browser downloads when you press Create &amp; Download is your copy, to keep somewhere safe.
                 </p>
             </details>
-        </div>
-    </div>
+    <%- card('end', 'backup-folder') %>
 
     <!-- ================================================================ -->
     <!-- Auto Backup, with its backup health (#1563) -->
@@ -228,7 +231,7 @@
             <h6 class="mt-3">What is included</h6>
             <ul>
                 <li>Configuration settings</li>
-                <li>User accounts and roles</li>
+                <li>User accounts and permissions</li>
                 <li>Access control lists (ACLs)</li>
                 <li>Attachment metadata (filenames, page links, hashes)</li>
                 <li>Search index</li>
@@ -576,7 +579,6 @@ document.querySelectorAll('input.restore-confirm').forEach(function (input) {
     input.addEventListener('input', update);
     update();
 });
-// When "Custom" radio is selected, build the autoBackupDays value from checked day checkboxes on submit
 // A link to /admin/backup#<id> (the recovery-words reminder, the redirects after making words or
 // folders) lands on visible content: open the card that holds the element the fragment names.
 function openCardFromHash() {
@@ -591,6 +593,7 @@ function openCardFromHash() {
 }
 openCardFromHash();
 window.addEventListener('hashchange', openCardFromHash);
+// When "Custom" radio is selected, build the autoBackupDays value from checked day checkboxes on submit
 document.getElementById('auto-backup-form').addEventListener('submit', function(e) {
     const customRadio = document.getElementById('days_custom');
     if (customRadio && customRadio.checked) {
