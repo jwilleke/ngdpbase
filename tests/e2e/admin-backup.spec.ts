@@ -49,16 +49,16 @@ test.describe('Admin Backup', () => {
     }
   });
 
-  test('the page is status cards in order, each with a status, and a card is open exactly when it needs the admin (#2470)', async ({ page }) => {
+  test('the page is the Backup folder row then the status cards in order, each with a status, and a card is open exactly when it needs the admin (#2470)', async ({ page }) => {
     await page.goto('/admin/backup');
     const ids = await page.locator('.status-card').evaluateAll((els) => els.map((e) => e.id));
-    expect(ids).toEqual(['auto-backup-card', 'manual-backup-card', 'backup-key-card', 'shared-folders-key', 'site-restore-card', ...(ids.includes('restore-card') ? ['restore-card'] : [])]);
+    expect(ids).toEqual(['backup-folder', 'auto-backup-card', 'manual-backup-card', 'backup-key-card', 'shared-folders-key', 'site-restore-card', ...(ids.includes('restore-card') ? ['restore-card'] : [])]);
     for (const id of ids) {
       const card = page.locator(`#${id}`);
       const state = await card.getAttribute('data-status');
       expect(['plain', 'amber', 'red']).toContain(state);
-      await expect(card.locator('summary .badge')).not.toHaveText('');
-      const open = await card.locator('details').evaluate((d) => (d as HTMLDetailsElement).open);
+      await expect(card.locator(':scope > .card-body > details > summary .badge')).not.toHaveText('');
+      const open = await card.locator(':scope > .card-body > details').evaluate((d) => (d as HTMLDetailsElement).open);
       expect(open).toBe(state === 'amber' || state === 'red');
     }
   });
