@@ -1668,6 +1668,36 @@ summary {
   gap: 0.5rem;
 }
 
+/* #2470: a status card (views/_status-card.ejs) shows amber or red as a 4px coloured left edge on the
+   theme's ordinary card border, so a card that needs the admin stands out against plain ones. The
+   chevron after the badge turns when the card is open; the summary shows a 2px focus ring for a
+   keyboard. Below 576px the grey note drops to its own full-width line under the title, badge and
+   chevron; the title wraps inside its own column, and the badge and chevron never leave the first
+   line. */
+/* Three states only: plain (all is well: no colour, no coloured edge, the badge is plain text),
+   amber (degraded) and red (failed). Badge text on amber is #000 on #ffc107 (13:1) and white on red
+   #b02a37 (6.9:1), in both themes. */
+.status-card-amber, .status-card-red { border-left-width: 4px; }
+.status-card-plain > .card-body { padding-left: calc(var(--bs-card-spacer-x, 1rem) + 3px); }
+.status-card-amber { border-left-color: #ffc107; }
+.status-card-red { border-left-color: #b02a37; }
+.status-badge-plain { background: transparent; color: var(--bs-body-color); font-weight: 400; }
+.status-badge-amber { background: #ffc107; color: #000; }
+.status-badge-red { background: #b02a37; color: #fff; }
+.status-card .text-danger { color: #b02a37 !important; } /* the red of the badge and edge: 6.5:1 on white, where Bootstrap's #dc3545 is 4.5:1 */
+[data-bs-theme="dark"] .status-card .text-danger { color: var(--bs-danger-text-emphasis) !important; }
+.status-card details > div.mt-3 p { max-width: 70ch; }
+.card-summary-chevron { font-size: 0.75rem; color: var(--bs-secondary-color); transition: transform 0.15s; }
+details[open] > .card-summary .card-summary-chevron { transform: rotate(180deg); }
+.card-summary:focus-visible { outline: 2px solid var(--bs-primary); outline-offset: 2px; border-radius: 0.25rem; }
+@media (max-width: 575.98px) {
+  .status-card .card-summary { flex-wrap: wrap; }
+  .status-card .card-summary > span.text-muted { order: 1; flex-basis: 100%; }
+  .status-card .card-summary > h6 { flex: 1 1 0; min-width: 0; }
+  .status-card .card-summary > .badge,
+  .status-card .card-summary > .card-summary-chevron { flex: 0 0 auto; }
+}
+
 
 /* #2317: passkeys can't work on this address. Bootstrap's warning button is
    black on #ffc107 (13:1) in both themes; the alert tint follows the theme. */

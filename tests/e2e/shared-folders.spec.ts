@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { randomUUID } from 'crypto';
-import { instanceOrigin, signInWithPassword } from './fixtures/helpers';
+import { instanceOrigin, signInWithPassword, openStatusCards } from './fixtures/helpers';
 
 /**
  * #2125 (epic #1775) — shared folders hold pages and files, by permission.
@@ -80,6 +80,7 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
 
   test('the words confirmed, /shared/default exists; a new folder can be made', async ({ page }) => {
     await page.goto('/admin/backup');
+    await openStatusCards(page);
     if (await page.locator('#shared-folders-words-none').count()) {
       await Promise.all([page.waitForURL(/\/admin\/backup\/shared-folders\/words$/), page.locator('#shared-folders-words-make button').click()]);
       // #2144: all 12 typed back, then the tick.
@@ -89,17 +90,20 @@ test.describe('Shared folders hold pages and files (#2125)', () => {
       await page.check('#recovery-words-saved');
       await Promise.all([page.waitForURL(/\/admin\/backup\?success=/), page.getByRole('button', { name: 'I have saved them — finish' }).click()]);
     }
+    await openStatusCards(page); // the redirect back to /admin/backup reloaded the page: its cards are closed again (#2470)
     await expect(page.locator('#shared-folders-words-confirmed')).toBeVisible();
     if (!(await page.locator('#shared-folders-list a[href="/shared/default"]').count())) {
       await page.locator('#shared-folders-create input[name="name"]').fill('default');
       await Promise.all([page.waitForURL(/\/admin\/backup\?success=/), page.locator('#shared-folders-create button').click()]);
     }
+    await openStatusCards(page);
     await expect(page.locator('#shared-folders-list a[href="/shared/default"]')).toBeVisible();
     // #2095: made with default, with no one asking for it.
     await expect(page.locator('#shared-folders-list a[href="/shared/executive"]')).toBeVisible();
 
     await page.locator('#shared-folders-create input[name="name"]').fill(CLOSED);
     await Promise.all([page.waitForURL(/\/admin\/backup\?success=/), page.locator('#shared-folders-create button').click()]);
+    await openStatusCards(page);
     await expect(page.locator(`#shared-folders-list a[href="/shared/${CLOSED}"]`)).toBeVisible();
   });
 

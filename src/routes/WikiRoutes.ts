@@ -13807,6 +13807,8 @@ ${panes}
         // the organization's recovery words (never the words) and whether their admin confirmed saving them.
         sharedFoldersKey: backupManager.sharedFoldersKeyInfo(),
         sharedFoldersWords: await sharedFoldersWordsState(this.engine),
+        // #2470: a site with no shared-folders manager shows its card as "Not available", not as broken.
+        sharedFoldersAbsent: !this.engine.getManager<SharedFolderManager>('SharedFolderManager'),
         sharedFoldersUnavailable: ((folders) => (folders ? folders.unavailableReason() : 'Shared folders are not available on this site'))(this.engine.getManager<SharedFolderManager>('SharedFolderManager')),
         // #2125: the folders there are, by name (who may open each is policy's).
         sharedFolderNames: this.engine.getManager<SharedFolderManager>('SharedFolderManager')?.folderNames() ?? [],
