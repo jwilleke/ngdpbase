@@ -86,7 +86,7 @@ import { UPGRADE_INTRO, UPGRADE_LIST_HEADING, UPGRADE_READ_ONLY, upgradeEmpty, u
 import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
 import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
-import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, PasskeyRefused, INVITATION_PATH, STEP_UP_CONTINUE_PATH, stepUpPromptId, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
+import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, PasskeyRefused, INVITATION_PATH, STEP_UP_CONTINUE_PATH, stepUpModeFor, stepUpPromptId, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
 import { VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
@@ -2546,8 +2546,11 @@ class WikiRoutes {
     permission: string,
     req: Request,
     res: Response,
-    mode: ReauthMode
+    asked: ReauthMode
   ): Promise<void> {
+    // #2360: a plain form post is answered as a page, whichever way its route asked, so the person
+    // is sent to the "confirm it is you" step and never shown the JSON a script is given.
+    const mode = stepUpModeFor(req, asked);
     // #1758: step-up is AuthManager's; without it the refusal carries no way to re-authenticate.
     const answer = await this.engine.getManager<AuthManager>('AuthManager')?.askForFreshSignIn(req, wikiContext.userContext, permission, mode)
       ?? { permission, delegated: false, error: 'A fresh sign-in is needed' };
@@ -14753,7 +14756,8 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
-      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'json'))) return; // #1525, #1635: the prompt, not this handler's refusal
+      // #2360: 'form', not 'json': a plain form is not kept to be redone, so confirming never runs the reset; the person presses Reset again.
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'form'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (
         !currentUser ||
         !(await wikiContext.hasPermission('config-manage'))

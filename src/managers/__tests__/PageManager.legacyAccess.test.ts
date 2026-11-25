@@ -119,18 +119,18 @@ describe('PageManager lists pages whose access: limit no longer applies (#2269)'
     expect(h.status().state).toBe('ready');
   });
 
-  test('a private page is counted but its title stays off the list; a vault page is not counted', async () => {
+  test('a private page is counted but its title stays off the list; a vault page is counted the same way (#2509)', async () => {
     const h = await harness([
       page('Secret Plans', 'u1', { 'system-category': 'general', private: true, access: { view: ['editor'] } }),
       page(formatPrivatePageName('alice', 'notes', 'Vault Page'), 'u2', { 'system-category': 'general', access: { view: ['editor'] } }),
       page('Open Page', 'u3', { 'system-category': 'general', access: { view: ['editor'] } })
     ]);
-    expect(await h.manager.reportLegacyAccessLimits()).toBe(2);
+    expect(await h.manager.reportLegacyAccessLimits()).toBe(3);
     const text = JSON.stringify(h.status());
     expect(text).not.toContain('Secret Plans');
     expect(text).not.toContain('Vault Page');
     expect(text).toContain('Open Page');
-    expect(h.status().details?.join(' ')).toMatch(/1 private page/);
+    expect(h.status().details?.join(' ')).toMatch(/2 private pages/);
   });
 
   test('names the first 50 pages A to Z and counts the rest, so a long list stays readable', async () => {

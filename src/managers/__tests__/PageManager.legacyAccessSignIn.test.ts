@@ -38,6 +38,14 @@ const ANN_ID = 'urn:uuid:33333333-3333-4333-8333-333333333333';
 const ROOT: Subject = { username: 'root', roles: ['admin'], isAuthenticated: true };
 const BOB: Subject = { username: 'bob', roles: ['editor'], isAuthenticated: true };
 const ANN: Subject = { username: 'ann', roles: ['admin'], isAuthenticated: true };
+/** Who holds which role, as the role store has it. A user record carries no `roles` field (#2509). */
+const ROLES: Record<string, string[]> = { root: ['admin'], ann: ['admin'], bob: ['editor'] };
+const KNOWN = new Set(Object.keys(ROLES));
+/** The permission check's answer for a subject that carries no roles: its account's roles, looked up now. */
+async function rolesNow(users: unknown, name: string): Promise<string[]> {
+  const user = await (users as { getUser(u: string): Promise<unknown> }).getUser(name);
+  return user ? ROLES[name] ?? [] : [];
+}
 
 describe('PageManager moves a private page\'s old access: limit when its owner signs in (#2466)', () => {
   let folder: string;
@@ -87,9 +95,9 @@ describe('PageManager moves a private page\'s old access: limit when its owner s
     const stand: Record<string, unknown> = {
       ConfigurationManager: config,
       PolicyInformationPoint: pip,
-      PolicyDecisionPoint: { ...ALLOWING_PDP, policies: () => [ADMIN_RULE], permits: async (s: { roles?: string[] }, action: string) => action !== 'admin-system' || (s.roles ?? []).includes('admin') },
+      PolicyDecisionPoint: { ...ALLOWING_PDP, policies: () => [ADMIN_RULE], permits: async (s: { username: string; roles?: string[] }, action: string) => action !== 'admin-system' || (Array.isArray(s.roles) ? s.roles : await rolesNow(stand.UserManager, s.username)).includes('admin') },
       IdentityManager: { usernameOf: async (_c: unknown, s: string) => (s === ROOT_ID ? 'root' : s === BOB_ID ? 'bob' : s === ANN_ID ? 'ann' : s), storedReferenceOf: async (_c: unknown, n: string) => n },
-      UserManager: { getUser: async (u: string) => (u === 'root' ? { username: 'root', roles: ['admin'] } : u === 'ann' ? { username: 'ann', roles: ['admin'] } : u === 'bob' ? { username: 'bob', roles: ['editor'] } : undefined) },
+      UserManager: { getUser: async (u: string) => (KNOWN.has(u) ? { username: u, isActive: true } : undefined) },
       ...over
     };
     const m = new PageManager({ getManager: vi.fn(withWriteDoorAllowing((name: string) => (stand[name] ?? null))) }) as unknown as TestManager;
@@ -286,7 +294,7 @@ describe('PageManager moves a private page\'s old access: limit when its owner s
       await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
       let down = true;
       const m = manager({
-        UserManager: { getUser: async (u: string) => { if (down) throw new Error('user store unavailable'); return u === 'root' ? { username: 'root', roles: ['admin'] } : undefined; } }
+        UserManager: { getUser: async (u: string) => { if (down) throw new Error('user store unavailable'); return u === 'root' ? { username: 'root', isActive: true } : undefined; } }
       });
       expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 0, left: 1 });
       expect(fs.existsSync(doneFile())).toBe(false);
@@ -350,7 +358,7 @@ describe('PageManager moves a private page\'s old access: limit when its owner s
       await add('Secret Plans', { access: { edit: ['admin'] }, author: ROOT_ID, private: true });
       let rules: unknown[] = [];
       const m = manager({
-        PolicyDecisionPoint: { ...ALLOWING_PDP, policies: () => rules, permits: async (s: { roles?: string[] }, action: string) => action !== 'admin-system' || (s.roles ?? []).includes('admin') }
+        PolicyDecisionPoint: { ...ALLOWING_PDP, policies: () => rules, permits: async (s: { username: string; roles?: string[] }, action: string) => action !== 'admin-system' || (Array.isArray(s.roles) ? s.roles : ROLES[s.username] ?? []).includes('admin') }
       });
       expect(await m.convertLegacyAccessOnSignIn(ROOT)).toEqual({ converted: 0, left: 1 });
       expect(fs.existsSync(doneFile())).toBe(false);
