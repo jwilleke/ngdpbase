@@ -125,7 +125,8 @@ describe('MyContributionsPlugin', () => {
       expect(result).toContain('Private Pages');
       expect(result).toContain('Pages I&#039;ve Authored');
       expect(result).toContain('Journal Entries');
-      expect(result).toContain('My Links');
+      expect(result).toContain('Pinned pages');
+      expect(result).not.toContain('My Links');
       expect(result).toContain('Pages I&#039;ve Edited');
       expect(result).toContain('Pages Shared With Me');
       expect(result).toContain('href="/my/vaults"');

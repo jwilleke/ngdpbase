@@ -73,7 +73,7 @@ describe('workingParts: front-matter that changes behaviour', () => {
 describe('workingParts: each front-matter key is on the side R4 puts it', () => {
   // R4 of docs/design/required-pages-sync-states.md names these keys.
   const working = ['system-category', 'audience', 'requires-setting', 'version', 'effective', 'private', 'status', 'author-lock', 'slug', 'acl'];
-  const wording = ['title', 'description', 'user-keywords', 'system-keywords', 'author', 'editor', 'created', 'lastModified'];
+  const wording = ['title', 'description', 'user-keywords', 'system-keywords', 'author', 'editor', 'created', 'lastModified', 'formerTitles'];
 
   test.each(working)('a changed %s differs', (key) => {
     expect(parts('x', { [key]: 'one' })).not.toEqual(parts('x', { [key]: 'two' }));

@@ -104,7 +104,7 @@ await userManager.updateUser(username, (current) => {
 - Everything else is as for the object form: the checks (a password on an external account, an email another account has), the role change, all or nothing ([#2015](https://github.com/jwilleke/ngdpbase/issues/2015)), and the `user-edit` record of the sensitive fields it returns.
 - It must not call `updateUser` for the same user, or anything that does: the key is not re-entrant, so the inner call would wait for the outer one forever. A function that throws writes nothing, and `updateUser` throws its error.
 
-Core's own preference saves use it: `POST /preferences`, the theme toggle, My Links (add, remove, reorder), a per-user add-on's switch (`AddonsManager`) and the journal's settings.
+Core's own preference saves use it: `POST /preferences`, the theme toggle, Pinned pages (add, remove, reorder), a per-user add-on's switch (`AddonsManager`) and the journal's settings.
 
 ### Every user has an identity record
 

@@ -35,7 +35,7 @@ import { envFileLine, envForBackup, envKeyNames, envKeyNamesFingerprint, INSTANC
 import { readEnvLine } from '../utils/instanceEnvSecret.js';
 import { systemContext } from '../context/bootActions.js';
 import type { JobRunSince } from './BackgroundJobManager.js';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { mkdir, readFile as readFileAsync, writeFile as writeFileAsync } from 'node:fs/promises';
 import type NotificationManager from './NotificationManager.js';
 import { BackupFolderError, ensureBackupFolder, isSystemError, runningAccount } from '../utils/backupFolder.js';
@@ -143,6 +143,19 @@ export interface BackupFileInfo {
  * console.log('Backup created:', backupPath);
  */
 /** Auto-backup schedule configuration */
+/** Why the backup folder can't be used: none is set, its drive was not connected at start-up, it is not there, or the path is a file. */
+export type BackupFolderFault = 'unset' | 'unmounted' | 'missing' | 'file';
+
+/** The backup folder as Admin → Backup shows it: `exists` is true only for a folder; `fault` says why not. */
+export interface BackupFolderStatus {
+  ownerOnly: boolean | null;
+  exists: boolean;
+  fault: BackupFolderFault | null;
+  account: string | null;
+  /** For `unmounted`: the folder the setting still names, so the page can say which drive was expected. */
+  named?: string;
+}
+
 export interface AutoBackupConfig {
   enabled: boolean;
   time: string;       // HH:MM (24-hour)
@@ -2389,8 +2402,9 @@ class BackupManager extends BaseManager {
   /**
    * Return current auto-backup configuration and last backup info for the admin UI.
    */
-  async getAutoBackupStatus(): Promise<{ config: AutoBackupConfig; lastBackup: Date | null; folder: { ownerOnly: boolean | null; account: string | null } }> {
+  async getAutoBackupStatus(): Promise<{ config: AutoBackupConfig; lastBackup: Date | null; folder: BackupFolderStatus }> {
     const backups = await this.listBackups();
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     return {
       config: {
         enabled: this.autoBackupEnabled,
@@ -2401,8 +2415,32 @@ class BackupManager extends BaseManager {
       },
       lastBackup: backups.length > 0 ? backups[0].created : null,
       // #2492: whether the folder could be made closed to every other account (a network share may not allow it).
-      folder: { ownerOnly: this.backupDirectory ? secretDirIsOwnerOnly(this.backupDirectory) : null, account: runningAccount() }
+      folder: this.folderStatus(configManager)
     };
+  }
+
+  /**
+   * The backup folder as the Backup page shows it (#2470): is it a folder, can it be made private to this
+   * account, and when it can't be used, why. A path that is a file is not a folder, and says so.
+   */
+  private folderStatus(configManager: ConfigurationManager | undefined): BackupFolderStatus {
+    const dir = this.backupDirectory;
+    const account = runningAccount();
+    if (!dir) {
+      // Start-up clears the folder when its drive is not connected, while the setting still names it.
+      const setting: unknown = configManager ? configManager.getProperty('ngdpbase.backup.directory', '') : '';
+      const named = typeof setting === 'string' ? setting : '';
+      return { ownerOnly: null, exists: false, fault: named ? 'unmounted' : 'unset', account, ...(named ? { named } : {}) };
+    }
+    let isFolder: boolean;
+    try {
+      isFolder = statSync(dir).isDirectory();
+    } catch {
+      // Not there, or this account can't reach it.
+      return { ownerOnly: null, exists: false, fault: 'missing', account };
+    }
+    if (!isFolder) return { ownerOnly: null, exists: false, fault: 'file', account };
+    return { ownerOnly: secretDirIsOwnerOnly(dir), exists: true, fault: null, account };
   }
 
   /**

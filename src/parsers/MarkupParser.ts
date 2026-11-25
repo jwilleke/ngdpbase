@@ -1271,7 +1271,7 @@ class MarkupParser extends BaseManager {
         userTimezone: (prefs?.['timezone'] ?? userCtx?.['timezone']),
         userDateFormat: prefs?.['dateFormat'],
         userTimeFormat: prefs?.['timeFormat'],
-        // My Links pinned pages affect LeftMenu rendering (#537)
+        // Pinned pages affect LeftMenu rendering (#537)
         navPinnedPages: prefs?.['nav.pinnedPages'],
         timestamp: Math.floor(Date.now() / 300000) // 5-minute buckets
       }))
