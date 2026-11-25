@@ -2,6 +2,10 @@
 import UpgradeCheckManager from '../../managers/UpgradeCheckManager';
 import { shippedLiveChecks } from '../index';
 import { ruleSentence, RULES_URL } from '../openWriteRules';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { mergeConfigWithAddons } from '../../utils/addonConfigLayer';
 import { admin, cleanup, makeFixture, type Fixture } from '../../test-support/upgradeChecks';
 
 describe('open write rules (#2313)', () => {
@@ -67,6 +71,25 @@ describe('open write rules (#2313)', () => {
     expect(say(['vault-proxy'], 'vault', 'Mine')).toBe("The rule 'x' lets every signed-in user act for the owner of vaults named 'Mine'.");
     expect(say(['made-up-action'], 'vault')).not.toMatch(/made-up|use '/);
     for (const text of [say(['asset-upload', 'search-page'], 'shared-folder'), say(['vault-proxy'], 'vault')]) expect(text.replace('signed-in', '')).not.toMatch(/[a-z]+-[a-z]+|items/);
+  });
+
+  test('the shipped calendar rules, add-on included, are not listed: calendar-read is a read', async () => {
+    const repoRoot = path.resolve(__dirname, '../../..');
+    const shipped = JSON.parse(fs.readFileSync(path.join(repoRoot, 'config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'open-write-calendar-'));
+    try {
+      const { merged } = mergeConfigWithAddons({ ...shipped, 'ngdpbase.addons.calendar.enabled': true }, {}, repoRoot, dir);
+      const policies = merged['ngdpbase.access.policies'] as Array<{ id: string }>;
+      expect(policies.some((p) => p.id === 'calendar-read-access')).toBe(true);
+      f.props['ngdpbase.permissions.definitions'] = merged['ngdpbase.permissions.definitions'];
+      f.props['ngdpbase.access.policies'] = policies;
+      expect((await texts()).filter((t) => t.includes('calendar-read-access'))).toEqual([]);
+      // The same rule with a page write is still listed.
+      policies.push({ id: 'members-edit', effect: 'allow', subjects: [{ type: 'authenticated' }], actions: ['page-edit'], resources: [{ type: 'page', pattern: '*' }] } as never);
+      expect(await texts()).toEqual(["The rule 'members-edit' lets every signed-in user edit every page."]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('the sentence names no issue number, file or setting', () => {
