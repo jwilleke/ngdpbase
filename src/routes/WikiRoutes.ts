@@ -9828,7 +9828,7 @@ ${panes}
         listKind: 'vaults',
         emptyMessage: 'You don\'t have any private pages yet.',
         // #1388: the links the owner has made to their vaults.
-        listAction: { href: '/my/vaults/links', label: 'Links you\'ve shared', icon: 'fa-link' }
+        listAction: { href: '/my/shares', label: 'Shared links', icon: 'fa-link' }
       });
     } catch (err) {
       logger.error('Error rendering My Private Pages:', err);
