@@ -21,6 +21,7 @@ import ShareManager, { OWNER_ONLY_KEYWORD } from '../ShareManager';
 import type { VaultShareScope } from '../../types/Share';
 import { newLinkKeyPair, openLockbox } from '../../utils/shareLockbox';
 import logger from '../../utils/logger';
+import { jobContextFromSystem } from '../../context/JobContext';
 import type { WikiEngine } from '../../types/WikiEngine';
 import type { ShareRecord } from '../../types/Share';
 
@@ -315,7 +316,7 @@ describe('ShareManager', () => {
 
     test('null for revoked token', async () => {
       const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('u'));
-      await sm.revoke(rec.id, 'u');
+      await sm.revoke(rec.id, ISSUER('u'));
       expect(sm.validate(rec.token)).toBeNull();
     });
 
@@ -375,7 +376,7 @@ describe('ShareManager', () => {
       expect(sm.subjectFor('f'.repeat(64))).toBeNull();
       expect(sm.subjectFor('')).toBeNull();
       const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('u'));
-      await sm.revoke(rec.id, 'u');
+      await sm.revoke(rec.id, ISSUER('u'));
       expect(sm.subjectFor(rec.token)).toBeNull();
     });
   });
@@ -383,14 +384,96 @@ describe('ShareManager', () => {
   describe('revoke()', () => {
     test('sets revokedAt, persists it, audits, and is idempotent', async () => {
       const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('alice'));
-      expect(await sm.revoke(rec.id, 'bob')).toBe(true);
+      expect(await sm.revoke(rec.id, ISSUER('bob'))).toBe(true);
       expect(typeof readShareFile(rec.id).revokedAt).toBe('string');
       expect(auditEvents.some(e => e.eventType === 'share-revoke' && e.user === 'bob')).toBe(true);
-      expect(await sm.revoke(rec.id, 'bob')).toBe(false);
+      expect(await sm.revoke(rec.id, ISSUER('bob'))).toBe(false);
     });
 
     test('false for unknown id', async () => {
-      expect(await sm.revoke('nope', 'u')).toBe(false);
+      expect(await sm.revoke('nope', ISSUER('u'))).toBe(false);
+    });
+  });
+
+  // #2521 (slice 2 of #2247): the manager's revoke. The route decides who may
+  // ask; the manager records what happened, so the log and the owner's record
+  // never have to infer that someone other than the maker ended a link.
+  describe('#2521 revoke(id, subject, { asManager })', () => {
+    const ADMIN = ISSUER('root', ['admin']);
+    const revokeEvents = () => auditEvents.filter((e) => e.eventType === 'share-revoke');
+    const meta = (e: Record<string, unknown>) => e.metadata as Record<string, unknown>;
+
+    test('a revoke by a holder is recorded with byManager and sets revokedByManager', async () => {
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('alice'));
+      expect(await sm.revoke(rec.id, ADMIN, { asManager: true })).toBe(true);
+
+      const event = revokeEvents().at(-1);
+      expect(event.user).toBe('root');
+      expect(meta(event).byManager).toBe(true);
+      expect(meta(event).createdBy).toBe('alice');
+      expect(readShareFile(rec.id).revokedByManager).toBe(true);
+      expect(sm.get(rec.id)?.revokedByManager).toBe(true);
+      expect(typeof readShareFile(rec.id).revokedAt).toBe('string');
+    });
+
+    test('the stored flag names nobody', async () => {
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('alice'));
+      await sm.revoke(rec.id, ADMIN, { asManager: true });
+      expect(JSON.stringify(readShareFile(rec.id))).not.toContain('root');
+    });
+
+    test('the maker revoking their own link is not a manager revoke', async () => {
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('alice'));
+      expect(await sm.revoke(rec.id, ISSUER('alice'))).toBe(true);
+
+      const event = revokeEvents().at(-1);
+      expect(event.user).toBe('alice');
+      expect(meta(event)).not.toHaveProperty('byManager');
+      expect(readShareFile(rec.id)).not.toHaveProperty('revokedByManager');
+    });
+
+    test('byManager comes from the manager path only: a token acting for the maker is not one', async () => {
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('alice'));
+      const token = { ...ISSUER('alice'), viaToken: { id: 'tok-1' } } as unknown;
+      expect(await sm.revoke(rec.id, token)).toBe(true);
+
+      const event = revokeEvents().at(-1);
+      expect(event.user).toBe('alice');
+      expect(meta(event)).not.toHaveProperty('byManager');
+      expect(readShareFile(rec.id)).not.toHaveProperty('revokedByManager');
+    });
+
+    test('a job or system context revokes too, and the audit row names its principal', async () => {
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('alice'));
+      const job = jobContextFromSystem('system', 'account closed');
+      expect(await sm.revoke(rec.id, job)).toBe(true);
+
+      const event = revokeEvents().at(-1);
+      expect(event.user).toBe('system');
+      expect(meta(event)).not.toHaveProperty('byManager');
+      expect(readShareFile(rec.id)).not.toHaveProperty('revokedByManager');
+    });
+
+    test('a manager revoke whose audit record cannot be written leaves the link live and unflagged', async () => {
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('alice'));
+      mockAuditManager.logAuditEvent.mockRejectedValueOnce(new Error('disk full'));
+
+      await expect(sm.revoke(rec.id, ADMIN, { asManager: true })).rejects.toThrow(/disk full/);
+
+      expect(sm.validate(rec.token)).not.toBeNull();
+      expect(sm.get(rec.id)?.revokedByManager).toBeUndefined();
+      expect(sm.get(rec.id)?.revokedAt).toBeUndefined();
+    });
+
+    test('a second revoke of the same link changes nothing, whoever asks', async () => {
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('alice'));
+      await sm.revoke(rec.id, ISSUER('alice'));
+      const before = revokeEvents().length;
+
+      expect(await sm.revoke(rec.id, ADMIN, { asManager: true })).toBe(false);
+
+      expect(revokeEvents()).toHaveLength(before);
+      expect(readShareFile(rec.id)).not.toHaveProperty('revokedByManager');
     });
   });
 
@@ -414,7 +497,7 @@ describe('ShareManager', () => {
 
     test('includes revoked records (retained for audit)', async () => {
       const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('u'));
-      await sm.revoke(rec.id, 'u');
+      await sm.revoke(rec.id, ISSUER('u'));
       expect(sm.list('u')).toHaveLength(1);
     });
   });
@@ -551,7 +634,7 @@ describe('ShareManager', () => {
       const rec = await sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', ISSUER('alice'));
       mockAuditManager.logAuditEvent.mockRejectedValueOnce(new Error('disk full'));
 
-      await expect(sm.revoke(rec.id, 'bob')).rejects.toThrow(/disk full/);
+      await expect(sm.revoke(rec.id, ISSUER('bob'))).rejects.toThrow(/disk full/);
 
       expect(sm.validate(rec.token)).not.toBeNull();
       expect(sm.get(rec.id)?.revokedAt).toBeUndefined();
@@ -671,7 +754,7 @@ describe('ShareManager', () => {
     test('nobody else extends it, and a revoked link is not extended', async () => {
       const record = await sm.issueVaultShare(vault(), 24, JIM);
       expect(await sm.extend(record.id, 1, ISSUER('admin', ['admin']))).toBeNull();
-      await sm.revoke(record.id, 'jim');
+      await sm.revoke(record.id, ISSUER('jim'));
       expect(await sm.extend(record.id, 1, JIM)).toBeNull();
     });
 
@@ -712,8 +795,8 @@ describe('ShareManager', () => {
         await sm.recordVaultVisit(vaultLink.token, { page: 'u1' });
         sm.recordAccess(keywordLink.token);
         await sm.extend(vaultLink.id, 1, JIM);
-        await sm.revoke(vaultLink.id, 'jim');
-        await sm.revoke(keywordLink.id, 'alice');
+        await sm.revoke(vaultLink.id, ISSUER('jim'));
+        await sm.revoke(keywordLink.id, ISSUER('alice'));
         await sm.shutdown();
         const written = [...lines, JSON.stringify(auditEvents)].join('\n');
         expect(lines.length).toBeGreaterThan(0);
@@ -822,12 +905,22 @@ describe('ShareManager', () => {
       expect((manifest.pages as Array<{ uuid: string }>).map((p) => p.uuid).sort()).toEqual(['u1', 'u3']);
     });
 
+    test('a manager revoking it (#2521) needs no key and drops the same lockboxes', async () => {
+      const link = await newLinkKeyPair();
+      const record = await sm.issueVaultShare(scope(), 24, JIM, { lockedFor: link.publicKey });
+      await sm.prepareLockboxes(record, OWNER_CTX);
+      expect(await sm.revoke(record.id, ISSUER('root', ['admin']), { asManager: true })).toBe(true);
+      expect(fs.existsSync(path.join(tmpDir, 'lockboxes', record.id))).toBe(false);
+      expect(sm.getLockbox(record.token, 'manifest')).toBeNull();
+      expect(readShareFile(record.id).revokedByManager).toBe(true);
+    });
+
     test('revoking deletes everything locked for the link', async () => {
       const link = await newLinkKeyPair();
       const record = await sm.issueVaultShare(scope(), 24, JIM, { lockedFor: link.publicKey });
       await sm.prepareLockboxes(record, OWNER_CTX);
       expect(fs.existsSync(path.join(tmpDir, 'lockboxes', record.id))).toBe(true);
-      await sm.revoke(record.id, 'jim');
+      await sm.revoke(record.id, ISSUER('jim'));
       expect(fs.existsSync(path.join(tmpDir, 'lockboxes', record.id))).toBe(false);
       expect(sm.getLockbox(record.token, 'manifest')).toBeNull();
     });

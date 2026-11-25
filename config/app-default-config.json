@@ -1947,6 +1947,12 @@
         "description": "Share link revoked; pairs with token-revoke"
       }
     },
+    "share-manage-all": {
+      "description": "See and revoke every user's share links, whoever made them. Revoking one is recorded as share-revoke; needs no fresh sign-in",
+      "label": "See and revoke everyone's shared links",
+      "icon": "link-slash",
+      "color": "#20c997"
+    },
     "profile-manage": {
       "description": "Manage your own account — profile, preferences, display theme, pinned pages and the /my/* pages (#1198). Every signed-in role; never anonymous",
       "label": "Manage your own profile and preferences",
@@ -2974,6 +2980,27 @@
         "store-create",
         "proxy-grant",
         "vault-proxy"
+      ]
+    },
+    {
+      "id": "admin-share-manage-all",
+      "name": "Administrator: Everyone's Shared Links",
+      "description": "Lets administrators see and revoke every user's share links. A separate policy, so a site holding a stored copy of admin-full-access still receives it",
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "share-manage-all"
       ]
     },
     {
