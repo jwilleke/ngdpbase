@@ -72,3 +72,15 @@ describe('my-shares.ejs private-area branch (round 3 M1 and test gap)', () => {
     expect(form?.getAttribute('action')).toBe('/my/shares/vault-links');
   });
 });
+
+describe('my-shares.ejs messages for the private-area routes (round 3 M2)', () => {
+  test.each([
+    ['vault', 'Choose one of your vaults.'],
+    ['days', 'Choose a lifetime within that vault'],
+    ['pages', 'Choose at least one page.'],
+    ['hours', 'extended by 1 to 24 hours at a time']
+  ])('?error=%s shows its message', async (error, text) => {
+    const doc = await render({ error });
+    expect(doc.body.textContent).toContain(text);
+  });
+});

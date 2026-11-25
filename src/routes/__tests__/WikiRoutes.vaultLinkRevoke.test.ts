@@ -57,7 +57,7 @@ describe('POST /my/vaults/links/:id/revoke (slice 3 of #2247)', () => {
     await routes.myVaultLinksRevoke(req('v1', MOLLY), r);
     expect(shareManager.revoke).toHaveBeenCalledWith('v1', expect.objectContaining({ username: 'molly' }));
     expect(shareManager.revoke.mock.calls[0]).toHaveLength(2);
-    expect(r.redirect).toHaveBeenCalledWith('/my/vaults/links?notice=revoked');
+    expect(r.redirect).toHaveBeenCalledWith('/my/shares?notice=revoked');
   });
 
   test('a token of the maker without profile-manage gets 403 and the link stays live', async () => {
@@ -65,7 +65,7 @@ describe('POST /my/vaults/links/:id/revoke (slice 3 of #2247)', () => {
     const r = res();
     await routes.myVaultLinksRevoke(req('v1', { ...MOLLY, viaToken: { id: 't' } }), r);
     expect(shareManager.revoke).not.toHaveBeenCalled();
-    expect(r.redirect).not.toHaveBeenCalledWith('/my/vaults/links?notice=revoked');
+    expect(r.redirect).not.toHaveBeenCalledWith('/my/shares?notice=revoked');
   });
 
   test('a token of the maker whose ceiling grants profile-manage revokes it', async () => {

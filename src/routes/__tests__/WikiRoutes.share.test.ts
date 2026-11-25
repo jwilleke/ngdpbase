@@ -771,8 +771,19 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
         .type('form')
         .send(csrfTestBodyField());
       expect(res.status).toBe(302);
-      expect(res.headers.location).toBe('/shares?revoked=1');
+      expect(res.headers.location).toBe('/my/shares?revoked=1');
       expect(mockShareManager.revoke).toHaveBeenCalledWith('s1', expect.objectContaining({ username: 'ed' }));
+    });
+
+    test('a signed-out subject cannot revoke a link (round 3 Sec L1)', async () => {
+      shareState.records = [{ id: 's9', token: 'd'.repeat(64), scope: SCOPE, createdBy: 'Anonymous', createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null }];
+      mockUserContext = { username: 'Anonymous', displayName: 'Anonymous', isAuthenticated: false, roles: ['Anonymous'] };
+      const res = await request(app)
+        .post('/shares/s9/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(403);
+      expect(mockShareManager.revoke).not.toHaveBeenCalled();
     });
 
     test('admin revokes anyone\'s share → 302', async () => {
@@ -808,6 +819,8 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       expect(res.status).toBe(302);
       expect(mockShareManager.revoke).toHaveBeenCalledWith('s2', expect.objectContaining({ username: 'root' }));
       expect(mockShareManager.revoke.mock.calls[0]).toHaveLength(2);
+      // An admin still lands on the full list.
+      expect(res.headers.location).toBe('/shares?revoked=1');
     });
 
     test('#2521: a token acting for the maker revokes through the maker branch, with no asManager', async () => {
@@ -817,7 +830,7 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
         .type('form')
         .send(csrfTestBodyField());
       expect(res.status).toBe(302);
-      expect(res.headers.location).toBe('/shares?revoked=1');
+      expect(res.headers.location).toBe('/my/shares?revoked=1');
       expect(mockShareManager.revoke).toHaveBeenCalledTimes(1);
       expect(mockShareManager.revoke).toHaveBeenCalledWith('s1', expect.objectContaining({ username: 'ed', viaToken: { id: 't1' } }));
       expect(mockShareManager.revoke.mock.calls[0]).toHaveLength(2);
