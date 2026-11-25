@@ -27,7 +27,7 @@ The first view is a one-sentence intro; what the rows mean is in a closed "What 
 | Slowest | The worst check. |
 | Average | The plain average. |
 
-On the "Pages from stored copies (%)" table, a low share is the bad end. So there, "Slowest 1 in 20" is the value that 19 of 20 checks stayed over and "Slowest" is the lowest check. On all three tables these two rows mean the worst builds, and the table's note says so. The earlier-warnings table follows the same rule for its stored-copies column.
+On the "Pages from stored copies (%)" table, a low share is the bad end. So there, "Slowest 1 in 20" is the value that 19 of 20 checks stayed over and "Slowest" is the lowest check. On all three tables these two rows mean the worst builds, and the table's note says so. The earlier-warnings table follows the same rule for its stored-copies column, and its note says so: "For stored copies, the Slowest rows show the lowest values."
 
 A period with no checks says "No checks in this period." A table with nothing at all says "No checks recorded yet." and, when there are no checks anywhere, the page shows that one line and no tables. When a table's own count of checks with a number is lower than the period's, it adds a row "Checks with this number". A minute in which no page was built has no check, so a quiet site has gaps.
 
