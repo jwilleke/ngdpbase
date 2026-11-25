@@ -15,11 +15,12 @@ import {
   privateUserIndexPath,
   privateUserDir,
   resolvePrivateStoreLayout,
+  storePageIndexPath,
   type PrivatePageName
 } from '../utils/privateStorePath.js';
 import { collectUser, listPrivateOwners } from '../utils/privateStoreTakeout.js';
 import { kindIsSealed, storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
-import type { SavedPage, StoreFileLocation, StorePageEntry, PrivateStorePageRef } from '../types/Provider.js';
+import type { SavedPage, StoreFileLocation, StorePageEntry, PrivateStorePageRef, PrivateStorePageInfoList } from '../types/Provider.js';
 import {
   PLAIN_FILE_IO,
   storeFileIO,
@@ -1260,6 +1261,49 @@ class FileSystemProvider extends BasePageProvider {
     const out: PrivateStorePageRef[] = [];
     for (const who of owner ? [owner] : await this.privateOwners()) {
       for (const pages of (await this.readablePrivateStores(who, ctx)).values()) out.push(...pages);
+    }
+    return out;
+  }
+
+  /**
+   * {@link listPrivateStorePages} with each page read for its frontmatter
+   * (#2514), for the upgrade clean-up. One vault whose index is damaged, one
+   * encrypted vault `ctx` holds no key for, or one page whose file cannot be
+   * read is counted in `unreadable` and skipped; the rest are still listed.
+   * Nothing is logged here: a page's name and path are the owner's.
+   *
+   * @param ctx - Whose reading this is (#1179)
+   * @param owner - One user's container, or every user's when omitted
+   */
+  async listPrivateStorePageInfo(ctx: ActorContext, owner?: string): Promise<PrivateStorePageInfoList> {
+    const out: PrivateStorePageInfoList = { pages: [], unreadable: 0 };
+    const pagesDirectory = this.pagesDirectory;
+    if (!pagesDirectory) return out;
+    for (const who of owner ? [owner] : await this.privateOwners()) {
+      for (const store of await this.storeIdsOf(who)) {
+        let pages: Record<string, StorePageEntry> | null;
+        try {
+          pages = this.readStorePagesSync(pagesDirectory, who, store, ctx);
+        } catch {
+          out.unreadable++;
+          continue;
+        }
+        if (pages === null) {
+          // No index at all is an empty vault; an index that cannot be opened is a closed one.
+          if (fs.existsSync(storePageIndexPath(pagesDirectory, who, store, this.privateStoreLayout))) out.unreadable++;
+          continue;
+        }
+        for (const entry of Object.values(pages)) {
+          const filePath = privatePageFilePath(pagesDirectory, who, entry.filename ?? entry.uuid, store, this.privateStoreLayout);
+          try {
+            const io = await this.fileIOFor(ctx, filePath);
+            const { data } = parsePageFrontmatter(await io.readText(filePath, this.encoding));
+            out.pages.push({ title: formatPrivatePageName(who, store, entry.title), uuid: entry.uuid, filePath, metadata: data });
+          } catch {
+            out.unreadable++;
+          }
+        }
+      }
     }
     return out;
   }
