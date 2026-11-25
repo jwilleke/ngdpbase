@@ -88,9 +88,16 @@
             : { state: 'plain', badge: 'Ready', hint: 'No restore waiting' };
 
         // The Backup folder is a row like the cards: plain and collapsed with "Folder OK"; amber when the drive
-        // does not let it be made private; red when no folder is set or it is not there.
+        // does not let it be made private; red when no folder is set, it is not there, or the path is a file.
         const folderInfo = status.folder || {};
-        const folderCard = (!status.config.directory || folderInfo.exists === false) ? { state: 'red', badge: "Can't use", hint: status.config.directory || 'No folder is set' }
+        const folderFault = folderInfo.fault || (!status.config.directory ? 'unset' : folderInfo.exists === false ? 'missing' : null);
+        const folderRed = {
+            unset: { hint: 'No folder is set', why: 'No folder is set, so backups can\'t be saved.', fix: 'Type a folder in the box below and press Save Folder.' },
+            unmounted: { hint: 'Drive not connected', why: 'The folder in the setting is not available: the drive it is on is not connected.', fix: 'Connect the drive and restart the site, or type another folder in the box below and press Save Folder.' },
+            missing: { hint: 'Folder not found', why: 'This folder isn\'t there, or this site can\'t open it, so backups can\'t be saved.', fix: 'Make the folder on the server, or type another folder in the box below and press Save Folder.' },
+            file: { hint: 'Not a folder', why: 'This path is a file, not a folder, so backups can\'t be saved.', fix: 'Type the path of a folder in the box below and press Save Folder.' }
+        }[folderFault];
+        const folderCard = folderRed ? { state: 'red', badge: "Can't use", hint: folderRed.hint }
             : folderInfo.ownerOnly === false ? { state: 'amber', badge: 'Not private', hint: status.config.directory }
             : { state: 'plain', badge: 'Folder OK', hint: status.config.directory };
 
@@ -115,7 +122,11 @@
                     <i class="fas fa-save"></i> Save Folder
                 </button>
             </form>
-            <% if (status.folder && status.folder.ownerOnly === false) { %>
+            <% if (folderRed) { %>
+            <div class="alert alert-danger mt-3 mb-2" id="backup-folder-problem">
+                <%= folderRed.why %> <%= folderRed.fix %>
+            </div>
+            <% } else if (status.folder && status.folder.ownerOnly === false) { %>
             <div class="alert alert-warning mt-3 mb-2" id="backup-folder-open">
                 This folder could not be made private to the site: the drive it is on does not allow it.
                 Other accounts that can reach that drive may be able to open the backups.
