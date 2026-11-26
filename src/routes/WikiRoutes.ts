@@ -10030,7 +10030,7 @@ ${panes}
     }
   }
 
-  /** POST /my/vaults/links/:id/revoke — the owner ends one of their links, at once. */
+  /** POST /my/vaults/links/:id/revoke — the owner, or a holder of share-manage-all, ends a link at once. */
   async myVaultLinksRevoke(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
@@ -10048,8 +10048,19 @@ ${panes}
         return;
       }
       const record = shareManager.get(req.params.id);
-      if (!record || record.scope.kind !== 'vault' || record.createdBy !== subject.username) {
+      if (!record || record.scope.kind !== 'vault') {
         return res.status(404).send('Not Found');
+      }
+      if (record.createdBy !== subject.username) {
+        // Slice 4 of #2247 (Q-A, Q-C): another user's link is revoked by a
+        // holder of share-manage-all alone. It reads no page and enters no
+        // area, so neither profile-manage nor the vault setting applies (F).
+        // Anyone else is told the link is not there.
+        if (!(await wikiContext.hasPermission('share-manage-all'))) {
+          return res.status(404).send('Not Found');
+        }
+        await shareManager.revoke(record.id, subject, { asManager: true });
+        return res.redirect('/my/shares?view=all&notice=revoked');
       }
       // Q-D: the person who made the link always revokes it at their own
       // session. Q-G: a token, proxy or share acting for them keeps its
@@ -10058,7 +10069,7 @@ ${panes}
       if (carriesCeiling(subject) && !(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
       // The request's own subject, forwarded (#2521): the audit row names who clicked.
       await shareManager.revoke(record.id, subject);
-      return res.redirect('/my/shares?notice=revoked');
+      return res.redirect((await this.postedFromAllUsers(wikiContext, req)) ? '/my/shares?view=all&notice=revoked' : '/my/shares?notice=revoked');
     } catch (err: unknown) {
       logger.error('[vault-links] Error revoking a vault link:', err);
       return res.status(500).send('Internal server error');
@@ -13114,6 +13125,13 @@ ${panes}
 
       // #842 — Share Manager summary card (shown under the Add-ons row).
       let shareSummary: { active: number; total: number } | null = null;
+      // The all-users view needs share-manage-all, which admin-system does not imply.
+      let mayManageAllShares = false;
+      try {
+        mayManageAllShares = await wikiContext.hasPermission('share-manage-all');
+      } catch {
+        // non-fatal — the card then shows the line about the permission
+      }
       try {
         const shareManager = this.engine.getManager('ShareManager');
         if (shareManager?.isEnabled()) {
@@ -13228,6 +13246,7 @@ ${panes}
         addonsSummary,
         addonCards,
         shareSummary,
+        mayManageAllShares,
         agentTokenSummary, // #946
         catalogSources,
         // #1109: audit writes are fire-and-forget by design — a failed log must
@@ -23194,98 +23213,25 @@ ${description}
 
 
   /**
-   * GET /shares
-   * Management list: own shares for editors, all shares for admins.
-   * Shows full share link, status (active/expired/revoked), and expiry.
-   */
-  /**
-   * Shares are a governed capability (#1198, #1224), shipped to admin and
-   * editor — never a role-name test, since a share is an anonymous-access
-   * credential. #1638: one permission per action — `share-create` (which
-   * includes seeing your own), `share-extend`, `share-revoke`. Listing
-   * everyone's and revoking anyone's stay `admin-system`.
+   * GET /shares, the old address (slice 4 of #2247). The list of every user's
+   * tag links is the all-users view of the Shared links page now, so this only
+   * redirects: a holder of share-manage-all to that view, everyone else to
+   * their own. `keyword` only fills in the create form, so it goes to the
+   * Share... choice with the tag chosen. Query notices are kept.
    */
   async sharesList(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      // Slice 3 of #2247: `keyword` only fills in the create form, so it
-      // redirects for everyone. A bare /shares redirects too, except for a
-      // holder of admin-system, who keeps the list of every user's tag links
-      // until the all-users view replaces it.
       if (typeof req.query.keyword === 'string' && req.query.keyword) {
         return res.redirect(302, `/my/shares?share=tag&tag=${encodeURIComponent(req.query.keyword)}`);
       }
-      if (!(await wikiContext.hasPermission('admin-system'))) {
-        const kept = ['created', 'revoked', 'error']
-          .filter((k) => typeof req.query[k] === 'string')
-          .map((k) => `${k}=${encodeURIComponent(req.query[k] as string)}`);
-        return res.redirect(302, '/my/shares' + (kept.length ? `?${kept.join('&')}` : ''));
-      }
-      if (!(await wikiContext.hasPermission('share-create'))) {
-        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to manage shares.');
-      }
-      const shareManager = this.engine.getManager('ShareManager');
-      if (!shareManager || !shareManager.isEnabled()) {
-        return await this.renderError(req, res, 404, 'Not Found', 'Share links are disabled on this instance.');
-      }
-
-      const isAdmin = await wikiContext.hasPermission('admin-system');
-      const username = wikiContext.userContext?.username ?? '';
-      const now = Date.now();
-      // #1388: vault links are the owner's alone, managed on /my/vaults/links;
-      // an admin's list of everyone's links never shows one.
-      const shares = shareManager.list(isAdmin ? undefined : username).filter(r => r.scope.kind !== 'vault').map(r => ({
-        ...r,
-        status: r.revokedAt
-          ? 'revoked'
-          : (r.expiresAt && now > Date.parse(r.expiresAt)) ? 'expired' : 'active'
-      }));
-
-      // Referer-aware Back link — /shares is reached from keyword albums,
-      // the page More menu, the admin dashboard, and the profile card, so a
-      // hardcoded "Media" back button lies most of the time. Same-host
-      // referers only, and never /shares itself (create/revoke redirects).
-      let backLink: string | null = null;
-      const referer = req.get('referer');
-      if (referer) {
-        try {
-          const refUrl = new URL(referer);
-          if (refUrl.host === req.get('host') && !refUrl.pathname.startsWith('/shares')) {
-            backLink = refUrl.pathname + refUrl.search;
-          }
-        } catch {
-          // unparseable referer — no back link
-        }
-      }
-
-      const commonData = await this.getCommonTemplateData(req);
-      // #1304: shares had no summary at all while every row carried a status
-      // badge. The counts are worth stating, and since every share is on the
-      // page they can filter it too.
-      const shareStatus = (value: string) => shares.filter((sh) => sh.status === value).length;
-      const shareStatsHtml = this.formatters.formatStatFilters([
-        { label: 'Total Shares', value: shares.length, clears: true, tone: 'primary', title: 'Show all shares' },
-        { label: 'Active', value: shareStatus('active'), match: 'status=active', tone: 'success', title: 'Filter: active shares' },
-        { label: 'Expired', value: shareStatus('expired'), match: 'status=expired', tone: 'secondary', title: 'Filter: expired shares' },
-        { label: 'Revoked', value: shareStatus('revoked'), match: 'status=revoked', tone: 'danger', title: 'Filter: revoked shares' }
-      ], { rowSelector: '#sharesTable tbody tr[data-share-id]', ariaLabel: 'Share summary filters' });
-
-      return res.render('shares', {
-        ...commonData,
-        wikiContext,
-        shares,
-        shareStatsHtml,
-        isAdmin,
-        backLink,
-        baseUrl: this.shareLinkBase(req),
-        createdId: typeof req.query.created === 'string' ? req.query.created : null,
-        revoked: req.query.revoked === '1',
-        error: typeof req.query.error === 'string' ? req.query.error : null,
-        keywordPrefill: typeof req.query.keyword === 'string' ? req.query.keyword : '',
-        title: 'All shared links (admin)'
-      });
+      const kept = ['created', 'revoked', 'error']
+        .filter((k) => typeof req.query[k] === 'string')
+        .map((k) => `${k}=${encodeURIComponent(req.query[k] as string)}`);
+      const params = [...((await wikiContext.hasPermission('share-manage-all')) ? ['view=all'] : []), ...kept];
+      return res.redirect(302, '/my/shares' + (params.length ? `?${params.join('&')}` : ''));
     } catch (err: unknown) {
-      logger.error('[share] Error rendering shares list:', err);
+      logger.error('[share] Error redirecting the shares list:', err);
       return res.status(500).send('Internal server error');
     }
   }
@@ -23305,16 +23251,25 @@ ${description}
   }
 
   /**
-   * Where a person lands after revoking a tag link: an administrator on the
-   * full list, anyone who may open the Shared links page there, and everyone
-   * else on the front page, which opens for all.
+   * Where a person lands after revoking their own tag link: the Shared links
+   * page when they may open it, and otherwise the front page, which opens for all.
    */
   private async afterTagRevokeUrl(
     wikiContext: WikiContext,
-    subject: NonNullable<WikiContext['userContext']>
+    subject: NonNullable<WikiContext['userContext']>,
+    stayInAllUsers = false
   ): Promise<string> {
-    if (await wikiContext.hasPermission('admin-system')) return '/shares?revoked=1';
-    return (await this.sharedLinksAccess(wikiContext, subject)).mayOpen ? '/my/shares?revoked=1' : '/';
+    if (!(await this.sharedLinksAccess(wikiContext, subject)).mayOpen) return '/';
+    return stayInAllUsers ? '/my/shares?view=all&revoked=1' : '/my/shares?revoked=1';
+  }
+
+  /**
+   * True when a revoke form was posted from the all-users view and the person
+   * may use that view. The field is only a hint about where to land: a person
+   * without share-manage-all who posts it is sent to their own list.
+   */
+  private async postedFromAllUsers(wikiContext: WikiContext, req: Request): Promise<boolean> {
+    return (req.body as { view?: unknown } | undefined)?.view === 'all' && (await wikiContext.hasPermission('share-manage-all'));
   }
 
   /**
@@ -23345,21 +23300,29 @@ ${description}
         await this.refuse(wikiContext, req, res, 'page', 'share-create');
         return;
       }
-      // Only the signed-in person's own links, whatever the list returns.
-      const own = shareManager.list(subject.username).filter((r) => r.createdBy === subject.username);
-      const rows = sharedLinkRows(own, { tag: mayTag, vault: mayVault }, Date.now());
+      // Slice 4 of #2247 (R13): the all-users view is for a holder of
+      // share-manage-all alone; anyone else asking for it gets their own. It
+      // is not recorded: only a revoke is (answer C).
+      const mayManageAll = await wikiContext.hasPermission('share-manage-all');
+      const allUsers = mayManageAll && req.query.view === 'all';
+      // Otherwise only the signed-in person's own links, whatever the list returns.
+      const own = allUsers
+        ? shareManager.list()
+        : shareManager.list(subject.username).filter((r) => r.createdBy === subject.username);
+      const rows = sharedLinkRows(own, { tag: mayTag, vault: mayVault }, Date.now(), allUsers ? { viewer: subject.username } : undefined);
       // The address comes from the record here, never from the row function, so
       // the rows and the Profile card hold no token. A link to an encrypted
       // vault has no address to show: its key is in the browser that made it.
       const baseUrl = this.shareLinkBase(req);
       const addresses: Record<string, string> = {};
-      for (const row of rows) {
+      // The all-users view shows no address and reads no page: it is a list of who has what.
+      for (const row of allUsers ? [] : rows) {
         const record = own.find((r) => r.id === row.id);
         if (record && row.status === 'active' && !record.lockedFor) addresses[row.id] = `${baseUrl}/share/${record.token}`;
       }
       // A one-page link with no label is named by its page's title, read as the owner.
       const pageTitles: Record<string, string> = {};
-      const singles = rows.filter((row) => row.pageUuid);
+      const singles = allUsers ? [] : rows.filter((row) => row.pageUuid);
       for (const vault of new Set(singles.map((row) => { const sc = own.find((r) => r.id === row.id)?.scope; return sc && sc.kind === 'vault' ? sc.vault : ''; }))) {
         if (!vault || !vaults.includes(vault)) continue;
         const known = new Map((await this.engine.getManager('PageManager').listVaultPages(subject, subject.username, vault)).map((p) => [p.uuid, p.title]));
@@ -23383,8 +23346,11 @@ ${description}
       const commonData = await this.getCommonTemplateData(req);
       return res.render('my-shares', {
         ...commonData,
-        title: 'Shared links',
+        title: allUsers ? 'Shared links: all users' : 'Shared links',
         rows,
+        allUsers,
+        mayManageAll,
+        viewer: subject.username,
         mayTag,
         mayVault,
         vaults: vaultChoices,
@@ -23425,11 +23391,11 @@ ${description}
       const body = req.body as Record<string, unknown>;
       const keyword = typeof body.keyword === 'string' ? body.keyword.trim() : '';
       if (!keyword) {
-        return res.redirect('/shares?error=keyword');
+        return res.redirect('/my/shares?error=keyword');
       }
       const ttlRaw = typeof body.ttl === 'string' ? body.ttl : '';
       if (!['24h', '7d', '30d', 'never'].includes(ttlRaw)) {
-        return res.redirect('/shares?error=ttl');
+        return res.redirect('/my/shares?error=ttl');
       }
       const ttl = ttlRaw === 'never' ? null : (ttlRaw as '24h' | '7d' | '30d');
 
@@ -23442,7 +23408,7 @@ ${description}
         ttl,
         wikiContext.userContext
       );
-      return res.redirect(`/shares?created=${encodeURIComponent(record.id)}`);
+      return res.redirect(`/my/shares?created=${encodeURIComponent(record.id)}`);
     } catch (err: unknown) {
       logger.error('[share] Error creating share:', err);
       return res.status(500).send('Internal server error');
@@ -23474,30 +23440,22 @@ ${description}
         return res.status(404).send('Not Found');
       }
       const isMaker = record.createdBy === subject.username;
-      // Q-D: a person who made the link always revokes it at their own session.
-      // Q-G: a token, proxy or share acting for the maker keeps its ceiling.
-      if (isMaker && !carriesCeiling(subject)) {
+      if (isMaker) {
+        // Q-D: a person who made the link always revokes it at their own session.
+        // Q-G: a token, proxy or share acting for the maker keeps its ceiling.
+        if (carriesCeiling(subject) && !(await wikiContext.hasPermission('share-revoke'))) {
+          return res.status(403).send('Access denied');
+        }
         await shareManager.revoke(record.id, subject);
-        // The full list is the administrator's; everyone else has the Shared links page.
-        return res.redirect(await this.afterTagRevokeUrl(wikiContext, subject));
+        return res.redirect(await this.afterTagRevokeUrl(wikiContext, subject, await this.postedFromAllUsers(wikiContext, req)));
       }
-      if (isMaker && !(await wikiContext.hasPermission('share-revoke'))) {
+      // Another user's link (Q-B, Q-C): share-manage-all alone, no share-revoke
+      // and no admin-system. Recorded as a manager's revoke (R14).
+      if (!(await wikiContext.hasPermission('share-manage-all'))) {
         return res.status(403).send('Access denied');
       }
-      // Another user's link, until slice 4: share-revoke and admin-system, as
-      // today. #2521: the manager records it as a manager's revoke.
-      const isManager = !isMaker
-        && (await wikiContext.hasPermission('share-revoke'))
-        && (await wikiContext.hasPermission('admin-system'));
-      if (!isMaker && !isManager) {
-        return res.status(403).send('Access denied');
-      }
-      if (isManager) {
-        await shareManager.revoke(record.id, subject, { asManager: true });
-      } else {
-        await shareManager.revoke(record.id, subject);
-      }
-      return res.redirect(isManager ? '/shares?revoked=1' : await this.afterTagRevokeUrl(wikiContext, subject));
+      await shareManager.revoke(record.id, subject, { asManager: true });
+      return res.redirect('/my/shares?view=all&revoked=1');
     } catch (err: unknown) {
       logger.error('[share] Error revoking share:', err);
       return res.status(500).send('Internal server error');
