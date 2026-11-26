@@ -385,6 +385,26 @@ describe('review of the admin routes (#2494)', () => {
     expect(errorLog).toHaveBeenCalledTimes(1);
   });
 
+  test.each([
+    ['not in the install list', 'forms is not in ngdpbase.addons.install', /forms is not on this site's list of installed add-ons/],
+    ['not installed yet', 'forms is not installed, so there is nothing to update', /forms is not on this site's list of installed add-ons/],
+    ['needs a newer ngdpbase', '@acme/forms@2.0.0 needs ngdpbase 6.0.0 or later; this is 5.46.0', /forms was not updated: that version needs a newer ngdpbase than this site runs/],
+    ['outside the allowed range', "2.0.0 is outside the configured range '^1.0.0'", /forms was not updated: that version is outside the range this site allows/],
+    ['already downloaded', '1.2.0 is already downloaded; restart the site to use it', /forms was not updated: that version is already downloaded; restart the site to use it/]
+  ])('an add-on update refused because it is %s says why in plain words', async (_kind, reason, expected) => {
+    const routes = makeRoutes(failure, false, {
+      AddonsManager: { updateInstalledAddon: async () => ({ status: 'refused', reason }) }
+    });
+    const res = makeRes();
+
+    await routes.adminAddonUpdate(makeReq({ params: { name: 'forms' } }), res);
+
+    const shown = String(messageOf(res));
+    expect(shown).toMatch(expected);
+    expect(shown).not.toMatch(/ngdpbase\.addons|@acme|\/srv\/|EACCES|\bat .*:\d+/);
+    expect(shown).not.toMatch(NODE_ERROR_TEXT);
+  });
+
   test('an add-on update the installer refuses shows one plain sentence, and the installer text goes to the log', async () => {
     const reason = 'cannot write /srv/ngdpbase/addons/x (EACCES); config key ngdpbase.addons.install';
     const routes = makeRoutes(failure, false, {
