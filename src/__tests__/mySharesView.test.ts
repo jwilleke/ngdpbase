@@ -522,3 +522,12 @@ describe('the Link column, inactive rows, phone cards and the empty state (round
     expect(code.classList.contains('text-nowrap')).toBe(true);
   });
 });
+
+describe('the Actions column keeps both actions on one line each (round 8 measurement)', () => {
+  test('the Actions cell does not wrap, so the link is not squeezed to a few letters beside Revoke', async () => {
+    const doc = await render({ rows: [LABELLED] });
+    const cell = doc.querySelector('tr[data-share-id="r2"] td:last-child') as Element;
+    expect(cell.querySelector('a[href="/my/vaults/links"]')).not.toBeNull();
+    expect(cell.classList.contains('text-nowrap')).toBe(true);
+  });
+});
