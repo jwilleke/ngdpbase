@@ -3,6 +3,7 @@
  */
 import ejs from 'ejs';
 import path from 'path';
+import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { JSDOM } from 'jsdom';
 
@@ -20,6 +21,37 @@ async function render(locals: Record<string, unknown>): Promise<Document> {
     ...COMMON, rows: [], mayTag: true, mayVault: true, vaults: [], pickVault: null, pickPages: [], preselected: null,
     baseUrl: 'https://wiki.example.com', notice: null, shareChoice: '', tagPrefill: '', pagePrefill: '', createdId: '',
     revoked: false, error: null, addresses: {}, pageTitles: {}, ...locals
+  });
+  return new JSDOM(html).window.document;
+}
+
+const ROOT = path.join(VIEWS, '..');
+
+/** Where a stylesheet href is served from, as src/app.ts serves it: /themes from themes/, everything else from public/. Remote hrefs (CDN) are not ours. */
+function stylesheetFile(href: string): string | null {
+  if (/^(https?:)?\/\//.test(href)) return null;
+  const clean = href.split('?')[0];
+  return clean.startsWith('/themes/') ? path.join(ROOT, clean) : path.join(ROOT, 'public', clean);
+}
+
+/** The hrefs of every local stylesheet the page links, in load order. */
+function localStylesheets(doc: Document): string[] {
+  return [...doc.querySelectorAll('link[rel="stylesheet"]')]
+    .map(l => l.getAttribute('href') ?? '')
+    .filter(h => stylesheetFile(h) !== null);
+}
+
+/** The text of the local stylesheets a rendered page really loads, in load order. A browser, unlike jsdom, reads these. */
+function loadedCss(doc: Document): string {
+  return localStylesheets(doc).map(h => readFileSync(stylesheetFile(h), 'utf8')).join('\n');
+}
+
+const SHARE = { id: 's1', token: 'tok', status: 'active', scope: { keyword: 'garden' }, expiresAt: null, createdBy: 'molly', createdAt: '2026-11-01T00:00:00.000Z' };
+
+async function renderAdmin(): Promise<Document> {
+  const html = await ejs.renderFile(path.join(VIEWS, 'shares.ejs'), {
+    ...COMMON, shares: [SHARE], shareStatsHtml: '', isAdmin: true, backLink: null, baseUrl: 'https://wiki.example.com',
+    createdId: null, revoked: false, error: null, keywordPrefill: ''
   });
   return new JSDOM(html).window.document;
 }
@@ -191,19 +223,17 @@ describe('my-shares.ejs share panel (round 5)', () => {
 
 describe('the admin list and the style (round 5)', () => {
   test('the admin list is named "All shared links (admin)"', async () => {
-    const { readFileSync } = await import('fs');
     const html = readFileSync(path.join(VIEWS, 'shares.ejs'), 'utf8');
     expect(html).toContain('All shared links (admin)');
     expect(html).not.toContain('Share Links');
   });
 
   test('the shared-links table undoes the system-info first-column style', async () => {
-    const { readFileSync } = await import('fs');
-    const css = readFileSync(path.join(VIEWS, '../public/css/style.css'), 'utf8');
+    const css = loadedCss(await render({ rows: [LABELLED] }));
     const rule = css.match(/\.shared-links td:first-child\s*\{[^}]*\}/)?.[0] ?? '';
     expect(rule).toContain('width: auto');
     expect(rule).toContain('font-weight: normal');
-    expect(css).toMatch(/\.shared-links[^{]*\{[^}]*min-width: 280px/);
+    expect(css).toMatch(/\.shared-link-cell[^{]*\{[^}]*min-width: 280px/);
   });
 });
 
@@ -264,9 +294,8 @@ function cascaded(css: string, element: Element, property: string): string | nul
 
 describe('the shared-links table style wins the cascade (round 6 M1, item 4)', () => {
   test('the first column is not bold, grey or 40% wide, whatever rule comes later in the file', async () => {
-    const { readFileSync } = await import('fs');
-    const css = readFileSync(path.join(VIEWS, '../public/css/style.css'), 'utf8');
     const doc = await render({ rows: [LABELLED] });
+    const css = loadedCss(doc);
     const cell = doc.querySelector('table#sharedLinksTable td:first-child') as Element;
     expect(cell.closest('table')?.classList.contains('table-sm')).toBe(true);
     expect(cascaded(css, cell, 'width')).toBe('auto');
@@ -275,14 +304,40 @@ describe('the shared-links table style wins the cascade (round 6 M1, item 4)', (
   });
 
   test('the Link column is at least 280px wide and its address box can grow and shrink', async () => {
-    const { readFileSync } = await import('fs');
-    const css = readFileSync(path.join(VIEWS, '../public/css/style.css'), 'utf8');
     const doc = await render({ rows: [ROW], addresses: { r1: 'https://wiki.example.com/share/abc' } });
-    const linkCell = doc.querySelector('table#sharedLinksTable td:nth-child(5)') as Element;
+    const css = loadedCss(doc);
+    const linkCell = doc.querySelector('table#sharedLinksTable td.shared-link-cell') as Element;
     expect(cascaded(css, linkCell, 'min-width')).toBe('280px');
     const group = doc.querySelector('table#sharedLinksTable .input-group') as Element;
     expect(cascaded(css, group, 'display')).toBe('flex');
     const input = group.querySelector('input') as Element;
+    expect(cascaded(css, input, 'flex')).toBe('1 1 auto');
+    expect(cascaded(css, input, 'min-width')).toBe('0');
+  });
+});
+
+describe('the rules are in a stylesheet the page loads (round 7)', () => {
+  test('the pages link their own stylesheets from disk; the shared-links rules are in one of them', async () => {
+    for (const doc of [await render({ rows: [LABELLED] }), await renderAdmin()]) {
+      const hrefs = localStylesheets(doc);
+      expect(hrefs).toContain('/themes/core.css?v=3.0.7');
+      for (const href of hrefs) expect(readFileSync(stylesheetFile(href), 'utf8').length).toBeGreaterThan(0);
+      expect(loadedCss(doc)).toMatch(/\.table\.shared-links td:first-child\s*\{/);
+      expect(loadedCss(doc)).toMatch(/\.table\.shared-links \.input-group > input\s*\{/);
+    }
+  });
+
+  test('the admin table has the same class, so its first column and address box are styled like the person page', async () => {
+    const doc = await renderAdmin();
+    const css = loadedCss(doc);
+    const table = doc.querySelector('table#sharesTable') as Element;
+    expect(table.classList.contains('shared-links')).toBe(true);
+    const first = doc.querySelector('table#sharesTable td:first-child') as Element;
+    expect(cascaded(css, first, 'font-weight')).toBe('normal');
+    expect(cascaded(css, first, 'color')).toBe('inherit');
+    const cell = doc.querySelector('table#sharesTable td.shared-link-cell') as Element;
+    expect(cascaded(css, cell, 'min-width')).toBe('280px');
+    const input = doc.querySelector('table#sharesTable .input-group > input') as Element;
     expect(cascaded(css, input, 'flex')).toBe('1 1 auto');
     expect(cascaded(css, input, 'min-width')).toBe('0');
   });
@@ -309,7 +364,6 @@ describe('expired and revoked rows have no actions (round 6 L3)', () => {
 
 describe('the admin page is named "All shared links (admin)" everywhere (round 6 item 5)', () => {
   test('the route passes that title, and the heading and tab say it', async () => {
-    const { readFileSync } = await import('fs');
     const route = readFileSync(path.join(VIEWS, '../src/routes/WikiRoutes.ts'), 'latin1');
     const render = route.slice(route.indexOf("res.render('shares'"));
     expect(render.slice(0, render.indexOf('});'))).toContain("title: 'All shared links (admin)'");
