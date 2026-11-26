@@ -2,6 +2,12 @@
 <%
 const mayExtend = row.status === 'active' && (row.actions.indexOf('extend') !== -1 || row.actions.indexOf('visits') !== -1);
 const mayRevoke = row.status === 'active' && row.actions.indexOf('revoke') !== -1;
+// In the all-users view, stopping someone else's link asks first and names its owner (R14).
+const others = locals.allUsers && row.madeBy !== locals.viewer;
+const confirmText = others
+    ? 'Stop ' + row.madeBy + "'s link? “" + row.what + '” stops working for everyone who has it. ' + row.madeBy + "'s list will show it as “Page not available (404)”."
+    : '';
+const revokeAction = row.kind === 'tag' ? '/shares/' + row.id + '/revoke' : '/my/vaults/links/' + row.id + '/revoke';
 %>
 <% if (mayExtend || mayRevoke) { %>
 <div class="shared-link-actions">
@@ -9,7 +15,11 @@ const mayRevoke = row.status === 'active' && row.actions.indexOf('revoke') !== -
     <a class="btn btn-sm btn-link px-0 text-start d-inline-flex align-items-center" href="/my/vaults/links" style="min-height: 44px;">Extend or see who visited&nbsp;<i class="fas fa-arrow-right"></i></a>
 <% } %>
 <% if (mayRevoke) { %>
-    <form method="post" action="<%= row.kind === 'tag' ? '/shares/' + row.id + '/revoke' : '/my/vaults/links/' + row.id + '/revoke' %>" class="d-inline" onsubmit="return confirm('Stop this link? It stops working immediately.')">
+    <% if (others) { %>
+    <form method="post" action="<%= revokeAction %>" class="d-inline" data-confirm="<%= confirmText %>">
+    <% } else { %>
+    <form method="post" action="<%= revokeAction %>" class="d-inline" onsubmit="return confirm('Stop this link? It stops working immediately.')">
+    <% } %>
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <button type="submit" class="btn btn-sm btn-outline-danger" style="min-height: 44px;"><i class="fas fa-ban"></i> Revoke</button>
     </form>

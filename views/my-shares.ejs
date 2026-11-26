@@ -1,9 +1,26 @@
-<%- include('header', { pageName: 'Shared links' }) %>
+<%- include('header', { pageName: locals.allUsers ? 'Shared links: all users' : 'Shared links' }) %>
+<%
+// Slice 4 of #2247: a holder of share-manage-all may see every user's links. These are
+// absent on a page for anyone else, so read them from locals.
+const allUsers = locals.allUsers === true;
+const mayManageAll = locals.mayManageAll === true;
+const viewer = locals.viewer || '';
+%>
 
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1><i class="fas fa-share-nodes"></i> Shared links <%- include('_help-icon', { slug: 'share-links', label: 'Shared links' }) %></h1>
+        <h1><i class="fas fa-share-nodes"></i> <%= allUsers ? 'Shared links: all users' : 'Shared links' %> <%- include('_help-icon', { slug: 'share-links', label: 'Shared links' }) %></h1>
+        <% if (mayManageAll) { %>
+            <% if (allUsers) { %>
+            <a class="btn btn-sm btn-outline-primary" href="/my/shares" style="min-height: 44px;">My shared links</a>
+            <% } else { %>
+            <a class="btn btn-sm btn-outline-primary" href="/my/shares?view=all" style="min-height: 44px;">All users</a>
+            <% } %>
+        <% } %>
     </div>
+    <% if (allUsers) { %>
+        <p class="text-muted">You are seeing every user's links. Opening this list is not recorded; stopping a link is.</p>
+    <% } %>
 
     <% if (createdId) { %>
         <div class="alert alert-success"><i class="fas fa-check-circle"></i> Link made. Copy it from the list below and send it to whoever should see it.</div>
@@ -79,7 +96,9 @@
 
     <% if (rows.length === 0) { %>
         <div class="alert alert-info">
-            <% if (mayTag || mayVault) { %>
+            <% if (allUsers) { %>
+                Nobody has shared anything yet.
+            <% } else if (mayTag || mayVault) { %>
                 You haven't shared anything yet. Choose what to share above and press Make link.
             <% } else { %>
                 You have no shared links, and you may not make any.
@@ -93,11 +112,16 @@
         <div class="shared-links-wrap">
         <div class="shared-links-table table-responsive">
             <table id="sharedLinksTable" class="table table-sm align-middle shared-links">
+                <% if (allUsers) { %>
+                <thead><tr><th>Made by</th><th>What</th><th>Status</th><th>Expires</th><th>Made</th><th>Actions</th></tr></thead>
+                <% } else { %>
                 <thead><tr><th>What</th><th>Status</th><th>Expires</th><th>Made</th><th>Link</th><th>Actions</th></tr></thead>
+                <% } %>
                 <tbody>
                 <% rows.forEach(function (row) { %>
                     <% const dim = row.status === 'active' ? '' : ' class="text-muted"'; %>
                     <tr data-share-id="<%= row.id %>" data-status="<%= row.status %>">
+                        <% if (allUsers) { %><td class="text-nowrap<%= dim ? ' text-muted' : '' %>" data-made-by><%= row.madeBy === viewer ? 'you' : row.madeBy %></td><% } %>
                         <td class="shared-link-what<%= dim ? ' text-muted' : '' %>">
                             <% if (heading(row)) { %><strong><%= heading(row) %></strong><br><% } %>
                             <%= row.what %>
@@ -105,7 +129,7 @@
                         <td<%- dim %>><%= statusText(row) %></td>
                         <td class="text-nowrap<%= dim ? ' text-muted' : '' %>"><%= row.expiresAt ? row.expiresAt.slice(0, 10) : 'Until cancelled' %></td>
                         <td class="text-nowrap<%= dim ? ' text-muted' : '' %>" data-made><%= row.createdAt.slice(0, 10) %></td>
-                        <td class="shared-link-cell<%= dim ? ' text-muted' : '' %>"><%- include('_shared-link-address', { row: row, addresses: addresses }) %></td>
+                        <% if (!allUsers) { %><td class="shared-link-cell<%= dim ? ' text-muted' : '' %>"><%- include('_shared-link-address', { row: row, addresses: addresses }) %></td><% } %>
                         <td class="text-nowrap<%= dim ? ' text-muted' : '' %>"><%- include('_shared-link-actions', { row: row }) %></td>
                     </tr>
                 <% }); %>
@@ -118,8 +142,8 @@
                     <div class="card-body">
                         <% if (heading(row)) { %><div><strong><%= heading(row) %></strong></div><% } %>
                         <div><%= row.what %></div>
-                        <div class="small text-muted mb-2"><%= endsText(row) %>. Made <%= row.createdAt.slice(0, 10) %></div>
-                        <% if (addresses[row.id] || row.status === 'active') { %>
+                        <div class="small text-muted mb-2"><% if (allUsers) { %>Made by <%= row.madeBy === viewer ? 'you' : row.madeBy %>. <% } %><%= endsText(row) %>. Made <%= row.createdAt.slice(0, 10) %></div>
+                        <% if (!allUsers && (addresses[row.id] || row.status === 'active')) { %>
                         <div class="mb-2"><%- include('_shared-link-address', { row: row, addresses: addresses }) %></div>
                         <% } %>
                         <%- include('_shared-link-actions', { row: row }) %>
@@ -133,6 +157,11 @@
 
 <%- include('_vault-link-scripts') %>
 <script nonce="<%= locals.cspNonce %>">
+    // Stopping another user's link asks first, naming its owner.
+    document.addEventListener('submit', function (event) {
+        var message = event.target && event.target.getAttribute ? event.target.getAttribute('data-confirm') : null;
+        if (message && !window.confirm(message)) event.preventDefault();
+    });
     // Copy: the browser clipboard when there is one, else select the address and copy it.
     document.addEventListener('click', function (event) {
         var button = event.target.closest ? event.target.closest('[data-copy-link]') : null;
