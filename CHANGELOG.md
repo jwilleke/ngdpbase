@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+### Added
+
+- __#2534__: The search page has a Delete button on a file in the site's own files, for the person who uploaded it and for anyone who may delete files. Its confirm box names the pages that still use the file (only pages you may open, at most 10, the rest counted) and the delete still goes ahead if you confirm. The delete itself is the existing one, and the server now allows the uploader of a shared file as well as holders of the delete permission, with no new permission; an explicit deny, an agent token, share link or proxy, a signed-out request and a file in a vault keep their existing rules. Renaming or replacing a file is [#2536](https://github.com/jwilleke/ngdpbase/issues/2536); deleting from the Media Manager is [#2537](https://github.com/jwilleke/ngdpbase/issues/2537).
+
 ### Fixed
 
 - __#2532__: `./server.sh update` and `update all` do nothing when the site is already at the latest commit and its build matches it: no install, build or restart (a site that is stopped is still started, without a build), and `update all` lists the site as `unchanged` in its summary. A successful build now records its commit in `dist/.built-from`; a site without that file, with a failed build, or with a build of another commit still rebuilds. A site built before this release rebuilds once on its next update.

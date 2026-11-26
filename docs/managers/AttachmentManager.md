@@ -62,7 +62,8 @@ await attachmentManager.deleteAttachment(attachment.identifier, wikiContext);
 | `getAttachmentMetadata(id)` | `Promise<Object>` | Get metadata only |
 | `getAttachmentsForPage(pageName)` | `Promise<Array>` | List page attachments |
 | `getAllAttachments()` | `Promise<Array>` | List all attachments |
-| `deleteAttachment(id, context)` | `Promise<boolean>` | Delete attachment |
+| `deleteAttachment(id, context)` | `Promise<boolean>` | Delete attachment. Allowed with `asset-delete`, or for the person who uploaded the file (shared files only; [rules](../guides/storage-developer-guide.md#writing-pages-and-files)); the audit record is written first |
+| `mayDeleteAttachment(context, id)` | `Promise<boolean>` | The answer `deleteAttachment` would give, for the Delete button on `/search`. Records and changes nothing |
 | `attachmentExists(id)` | `Promise<boolean>` | Check existence |
 | `attachToPage(id, pageName)` | `Promise<boolean>` | Link attachment to page |
 | `detachFromPage(id, pageName)` | `Promise<boolean>` | Unlink from page |
