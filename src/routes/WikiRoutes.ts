@@ -13103,6 +13103,13 @@ ${panes}
 
       // #842 — Share Manager summary card (shown under the Add-ons row).
       let shareSummary: { active: number; total: number } | null = null;
+      // The all-users view needs share-manage-all, which admin-system does not imply.
+      let mayManageAllShares = false;
+      try {
+        mayManageAllShares = await wikiContext.hasPermission('share-manage-all');
+      } catch {
+        // non-fatal — the card then shows the line about the permission
+      }
       try {
         const shareManager = this.engine.getManager('ShareManager');
         if (shareManager?.isEnabled()) {
@@ -13217,6 +13224,7 @@ ${panes}
         addonsSummary,
         addonCards,
         shareSummary,
+        mayManageAllShares,
         agentTokenSummary, // #946
         catalogSources,
         // #1109: audit writes are fire-and-forget by design — a failed log must

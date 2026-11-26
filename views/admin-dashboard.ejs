@@ -587,9 +587,13 @@
                                 Every share link on this instance. A share link is a capability: holding the URL
                                 is the permission, so revoking one is the only way to take that access back.
                             </p>
+                            <% if (typeof mayManageAllShares !== 'undefined' && mayManageAllShares) { %>
                             <a href="/my/shares?view=all" class="btn btn-sm btn-outline-primary">
                                 <i class="fas fa-cog me-1"></i>Manage shared links
                             </a>
+                            <% } else { %>
+                            <p class="text-muted small mb-0">Seeing everyone's links needs the permission "See and revoke everyone's shared links".</p>
+                            <% } %>
                         </div>
                     </details>
                 </div>
