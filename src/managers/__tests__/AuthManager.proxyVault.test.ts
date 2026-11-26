@@ -34,7 +34,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { Request } from 'express';
-import AuthManager, { PROXY_ACCESS_ENABLED_KEY } from '../AuthManager';
+import AuthManager, { PROXY_ACCESS_ENABLED_KEY, ProxyGrantRefused } from '../AuthManager';
 import { CREDENTIALS_KEY_ENV } from '../../providers/BaseCredentialsProvider';
 import { TEST_PRIVATE_STORE_KDF, createEncryptedStore, createUserKeys, unwrapDek } from '../../utils/privateStoreCrypto';
 import { privateUserKeysPath, storeMetaPath } from '../../utils/privateStorePath';
@@ -161,6 +161,7 @@ describe('AuthManager — encrypted vaults through a wrapped key copy, slice 5 (
     // Locked: refused in plain words, and nothing is recorded or stored.
     expect(await am.vaultGrantBlocked(selfOf('mom'), 'mom')).toMatch(/Unlock your private store first/);
     await expect(grantMomToJim()).rejects.toThrow(/Unlock your private store first/);
+    await expect(grantMomToJim()).rejects.toBeInstanceOf(ProxyGrantRefused);
     expect(await am.listProxyGrants(selfOf('mom'), { asOwner: 'mom' })).toEqual([]);
 
     await unlock('mom');
@@ -175,6 +176,8 @@ describe('AuthManager — encrypted vaults through a wrapped key copy, slice 5 (
     await enrol('cat', { withoutKeyPair: true });
     await expect(am.grantProxy(selfOf('mom'), { owner: 'mom', proxy: 'cat', permissions: ['vault-proxy'] }))
       .rejects.toThrow(/cat cannot be given access to your encrypted vaults yet/);
+    await expect(am.grantProxy(selfOf('mom'), { owner: 'mom', proxy: 'cat', permissions: ['vault-proxy'] }))
+      .rejects.toBeInstanceOf(ProxyGrantRefused);
 
     const given = await grantMomToJim();
     expect(given.vault).toBe('copy');
@@ -281,6 +284,8 @@ describe('AuthManager — encrypted vaults through a wrapped key copy, slice 5 (
     expect(byAdmin.vault).toBe('never');
     expect(keyCopyOf(byAdmin.id)).toBeUndefined();
     expect(await am.vaultGrantBlocked(subject('admin'), 'mom')).toMatch(/Only mom can/);
+    // sealVaultCopy refuses with the same words, written for the person, as a typed refusal.
+    await expect((am as unknown as { sealVaultCopy(c: unknown, o: string, p: string): Promise<unknown> }).sealVaultCopy(subject('admin'), 'mom', 'jim')).rejects.toBeInstanceOf(ProxyGrantRefused);
 
     // Re-delegation: jim acting for mom under a grant that lets him give access.
     const redelegating = await grantMomToJim(['proxy-grant', 'page-read']);
