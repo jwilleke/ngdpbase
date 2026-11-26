@@ -133,12 +133,21 @@
         var button = event.target.closest ? event.target.closest('[data-copy-link]') : null;
         if (!button) return;
         var input = button.parentNode.querySelector('input');
+        var help = button.parentNode.parentNode.querySelector('[data-copy-help]');
         var done = function () {
+            if (help) help.hidden = true;
             button.innerHTML = '<i class="fas fa-check"></i>';
             setTimeout(function () { button.innerHTML = '<i class="fas fa-copy"></i>'; }, 2000);
         };
+        // Nothing could copy: keep the address selected and say how to copy it by hand.
+        var failed = function () {
+            try { input.focus(); input.select(); } catch (e) { /* the address is still on the page */ }
+            if (help) help.hidden = false;
+        };
         var fallback = function () {
-            try { input.select(); if (document.execCommand('copy')) done(); } catch (e) { /* the address stays selected */ }
+            var copied = false;
+            try { input.select(); copied = !!(document.execCommand && document.execCommand('copy')); } catch (e) { copied = false; }
+            if (copied) done(); else failed();
         };
         if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(input.value).then(done, fallback);
         else fallback();

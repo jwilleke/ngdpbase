@@ -23252,7 +23252,7 @@ ${description}
         revoked: req.query.revoked === '1',
         error: typeof req.query.error === 'string' ? req.query.error : null,
         keywordPrefill: typeof req.query.keyword === 'string' ? req.query.keyword : '',
-        title: 'Share Links'
+        title: 'All shared links (admin)'
       });
     } catch (err: unknown) {
       logger.error('[share] Error rendering shares list:', err);

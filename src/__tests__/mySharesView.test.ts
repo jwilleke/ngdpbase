@@ -295,7 +295,7 @@ describe('expired and revoked rows have no actions (round 6 L3)', () => {
     const doc = await render({ rows: [{ ...LABELLED, status }] });
     expect(doc.querySelector('tr[data-share-id="r2"] form[action$="/revoke"]')).toBeNull();
     expect(doc.querySelector('[data-share-card="r2"] form[action$="/revoke"]')).toBeNull();
-    expect(doc.body.textContent).not.toContain('Revoke');
+    expect(doc.body.textContent).not.toMatch(/\bRevoke\b/);
     expect(doc.body.textContent).not.toContain('Extend or see who visited');
   });
 

@@ -1,8 +1,8 @@
-<%# One link's buttons: the page with its visits, and Revoke. %>
-<% if (row.actions.indexOf('extend') !== -1 || row.actions.indexOf('visits') !== -1) { %>
+<%# One link's buttons: the page with its visits, and Revoke. Only a link that still works has any. %>
+<% if (row.status === 'active' && (row.actions.indexOf('extend') !== -1 || row.actions.indexOf('visits') !== -1)) { %>
     <a class="btn btn-sm btn-outline-secondary" href="/my/vaults/links" style="min-height: 44px;">Extend or see who visited</a>
 <% } %>
-<% if (row.actions.indexOf('revoke') !== -1) { %>
+<% if (row.status === 'active' && row.actions.indexOf('revoke') !== -1) { %>
     <form method="post" action="<%= row.kind === 'tag' ? '/shares/' + row.id + '/revoke' : '/my/vaults/links/' + row.id + '/revoke' %>" class="d-inline">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <button type="submit" class="btn btn-sm btn-outline-danger" style="min-height: 44px;"><i class="fas fa-ban"></i> Revoke</button>
