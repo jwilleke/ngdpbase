@@ -300,29 +300,6 @@ body {
     color: #6c757d;
 }
 
-/* The Shared links table is not a system-info table: its first column is the link's name.
-   `.table.shared-links` outranks the generic `.table-sm td:first-child` rule further down. */
-.table.shared-links td:first-child {
-    font-weight: normal;
-    color: inherit;
-    width: auto;
-}
-
-/* The Link column holds the address box, so it never gets squeezed. */
-.table.shared-links td:nth-child(5) {
-    min-width: 280px;
-}
-
-.table.shared-links .input-group {
-    display: flex;
-    flex-wrap: nowrap;
-}
-
-.table.shared-links .input-group > input {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .jspwiki-header .col-md-6 form {

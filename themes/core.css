@@ -476,6 +476,29 @@ main[role="main"] {
     width: 40%;
 }
 
+/* The Shared links tables (/my/shares and the admin list) are not system-info tables: the first
+   column is the link's name. `.table.shared-links` outranks `.table-sm td:first-child` above. */
+.table.shared-links td:first-child {
+    font-weight: normal;
+    color: inherit;
+    width: auto;
+}
+
+/* The Link column holds the address box, so it never gets squeezed. */
+.table.shared-links td.shared-link-cell {
+    min-width: 280px;
+}
+
+.table.shared-links .input-group {
+    display: flex;
+    flex-wrap: nowrap;
+}
+
+.table.shared-links .input-group > input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 /* Mobile responsive rules moved to @media (max-width: 767.98px) block below */
 
 .sidebar .nav-link {

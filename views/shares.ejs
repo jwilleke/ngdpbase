@@ -57,7 +57,7 @@
         <div class="alert alert-info"><i class="fas fa-info-circle"></i> No shares yet.</div>
     <% } else { %>
         <div class="table-responsive">
-            <table id="sharesTable" class="table table-sm align-middle">
+            <table id="sharesTable" class="table table-sm align-middle shared-links">
                 <thead>
                     <tr>
                         <th>Keyword</th>
@@ -74,7 +74,7 @@
                         <% const url = baseUrl + '/share/' + s.token; %>
                         <tr data-share-id="<%= s.id %>" data-status="<%= s.status %>" class="<%= s.id === createdId ? 'table-success' : '' %>">
                             <td><a href="/media/keyword/<%= encodeURIComponent(s.scope.keyword) %>"><%= s.scope.keyword %></a></td>
-                            <td>
+                            <td class="shared-link-cell">
                                 <% if (s.status === 'active') { %>
                                     <div class="input-group input-group-sm" style="max-width: 360px;">
                                         <input type="text" class="form-control" value="<%= url %>" readonly onclick="this.select()">

@@ -103,7 +103,7 @@
                         <td><%= statusText(row) %></td>
                         <td class="text-nowrap"><%= row.expiresAt ? row.expiresAt.slice(0, 10) : 'Until cancelled' %></td>
                         <td class="text-nowrap" data-made><%= row.createdAt.slice(0, 10) %></td>
-                        <td><%- include('_shared-link-address', { row: row, addresses: addresses }) %></td>
+                        <td class="shared-link-cell"><%- include('_shared-link-address', { row: row, addresses: addresses }) %></td>
                         <td><%- include('_shared-link-actions', { row: row }) %></td>
                     </tr>
                 <% }); %>
