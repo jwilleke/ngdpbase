@@ -484,9 +484,10 @@ main[role="main"] {
     width: auto;
 }
 
-/* The Link column holds the address box, so it never gets squeezed. */
+/* The Link column holds the address box, so it never gets squeezed, and it takes the leftover width. */
 .table.shared-links td.shared-link-cell {
     min-width: 280px;
+    width: 100%;
 }
 
 .table.shared-links .input-group {

@@ -48,7 +48,7 @@
             <% } %>
             <% if (choice === 'tag') { %>
             <h2 class="h6">Everything with a tag</h2>
-            <p class="text-muted small mb-2">Shares every page and file with the tag, with anyone who has the link. Anything marked <code>owner-only</code> and private pages are never included.</p>
+            <p class="text-muted small mb-2">Shares every page and file with the tag, with anyone who has the link. Anything marked <code class="text-nowrap">owner-only</code> and private pages are never included.</p>
             <form method="post" action="/shares/create" class="row g-2 align-items-end mb-3">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <div class="col-auto">
@@ -95,16 +95,17 @@
                 <thead><tr><th>What</th><th>Status</th><th>Expires</th><th>Made</th><th>Link</th><th>Actions</th></tr></thead>
                 <tbody>
                 <% rows.forEach(function (row) { %>
+                    <% const dim = row.status === 'active' ? '' : ' class="text-muted"'; %>
                     <tr data-share-id="<%= row.id %>" data-status="<%= row.status %>">
-                        <td>
+                        <td<%- dim %>>
                             <% if (heading(row)) { %><strong><%= heading(row) %></strong><br><% } %>
                             <%= row.what %>
                         </td>
-                        <td><%= statusText(row) %></td>
-                        <td class="text-nowrap"><%= row.expiresAt ? row.expiresAt.slice(0, 10) : 'Until cancelled' %></td>
-                        <td class="text-nowrap" data-made><%= row.createdAt.slice(0, 10) %></td>
-                        <td class="shared-link-cell"><%- include('_shared-link-address', { row: row, addresses: addresses }) %></td>
-                        <td><%- include('_shared-link-actions', { row: row }) %></td>
+                        <td<%- dim %>><%= statusText(row) %></td>
+                        <td class="text-nowrap<%= dim ? ' text-muted' : '' %>"><%= row.expiresAt ? row.expiresAt.slice(0, 10) : 'Until cancelled' %></td>
+                        <td class="text-nowrap<%= dim ? ' text-muted' : '' %>" data-made><%= row.createdAt.slice(0, 10) %></td>
+                        <td class="shared-link-cell<%= dim ? ' text-muted' : '' %>"><%- include('_shared-link-address', { row: row, addresses: addresses }) %></td>
+                        <td<%- dim %>><%- include('_shared-link-actions', { row: row }) %></td>
                     </tr>
                 <% }); %>
                 </tbody>
@@ -117,8 +118,10 @@
                         <% if (heading(row)) { %><div><strong><%= heading(row) %></strong></div><% } %>
                         <div><%= row.what %></div>
                         <div class="small text-muted mb-2"><%= endsText(row) %>. Made <%= row.createdAt.slice(0, 10) %></div>
+                        <% if (addresses[row.id] || row.status === 'active') { %>
                         <div class="mb-2"><%- include('_shared-link-address', { row: row, addresses: addresses }) %></div>
-                        <div class="d-flex gap-2 flex-wrap"><%- include('_shared-link-actions', { row: row }) %></div>
+                        <% } %>
+                        <%- include('_shared-link-actions', { row: row }) %>
                     </div>
                 </div>
             <% }); %>
