@@ -284,7 +284,7 @@ export default class FootnoteManager extends BaseManager {
 
   /** The sources with this tidy key `ctx` may see, oldest first: what the add form offers (R2). Hidden ones are left out, never named. */
   async findSourcesFor(urlKey: string, ctx: ActorContext): Promise<SourceRecord[]> {
-    return (await this.visibleOf(await this.sources().findByKey(urlKey), ctx)).map((e) => e.source);
+    return (await this.visibleOf(await this.sources().findByKey(urlKey), ctx)).map((hit) => hit.source);
   }
 
   private async visibleOf(records: SourceRecord[], ctx: ActorContext): Promise<Array<{ source: SourceRecord; citedBy: string[]; used: boolean }>> {
