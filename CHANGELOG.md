@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - __#2359__: four small security follow-ups. A page form sent with a lost session (a cleared cookie, or a session the server no longer holds) now goes to sign-in and back to the page, instead of showing a plain-text refusal; JSON callers and signed-in callers keep the refusal. A signed-out file upload is refused before any of the file is read. A signed-in caller without edit rights now gets the same answer from the page-conversion requests for a page that is not there and one that is. The log now gives a line its own place only for the frames of a real stack trace: a line inside an error message that merely looks like a frame stays on the message line.
+- __#2540__: the Shared links page now shows a link that an administrator stopped as "Page not available (404)", as the administrator's confirm and the sharing guide already said. It read "Page no longer available".
 - __#2532__: `./server.sh update` and `update all` do nothing when the site is already at the latest commit and its build matches it: no install, build or restart (a site that is stopped is still started, without a build), and `update all` lists the site as `unchanged` in its summary. A successful build now records its commit in `dist/.built-from`; a site without that file, with a failed build, or with a build of another commit still rebuilds. A site built before this release rebuilds once on its next update.
 
 ## [5.48.0] - 2026-11-25
