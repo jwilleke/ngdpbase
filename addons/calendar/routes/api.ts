@@ -7,6 +7,7 @@ import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { CalendarViewer } from '../managers/CalendarDataManager.js';
 import { MANAGE_PERMISSION, calendarGate, currentCalendarConfig } from '../managers/calendarVisibility.js';
 import { declaredPermissionNames, resolveManagePermission } from '../managers/calendarManage.js';
+import { isSafeEventUrl } from '../managers/eventUrl.js';
 import type { CalendarGate } from '../managers/calendarVisibility.js';
 import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
 
@@ -54,7 +55,9 @@ async function onlyVisible(events: CalendarEvent[], may: CalendarGate): Promise<
  * when it names none. A name the site has not declared is refused for everyone.
  * An edit that changes `calendarId` is checked against both calendars. A
  * reservation calendar, and any event that carries (or is given) a `_private`
- * block, always asks `calendar-manage`.
+ * block, always asks `calendar-manage`. An event's `url` must be empty, relative,
+ * or start with `http:`, `https:` or `mailto:` (400 otherwise), and one stored
+ * before that rule is left out of what is returned.
  *
  * Endpoints:
  *   GET    /api/calendar/events                  — list / FullCalendar feed
@@ -124,6 +127,17 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     if (typeof value === 'string') return value;
     if (value === undefined) return undefined;
     throw new ApiError(400, 'calendarId must be text');
+  }
+
+  /**
+   * A body's `url`, when it has one, must be an address the calendar block may open
+   * (see `isSafeEventUrl`): a 400 otherwise, so a script address is never stored.
+   */
+  function checkEventUrl(body: unknown): void {
+    if (!body || typeof body !== 'object' || !Object.hasOwn(body, 'url')) return;
+    const value = (body as Record<string, unknown>)['url'];
+    if (value === undefined) return;
+    if (!isSafeEventUrl(value)) throw new ApiError(400, 'url must be empty, a relative address, or start with http:, https: or mailto:');
   }
 
   /**
@@ -197,6 +211,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       // The calendar the event lands on: the manager files one with none on `default`.
       await requireManage(ctx, bodyCalendarId(req.body) ?? 'default');
       await requirePrivateBlock(ctx, undefined, req.body);
+      checkEventUrl(req.body);
       const event = await m.create(req.body as Parameters<typeof m.create>[0]);
       res.status(201).json(m.toFullCalendar(event, viewer));
     } catch (err) {
@@ -235,6 +250,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       // Moving an event is a change to two calendars: ask the one it goes to as well.
       if (existing && target !== undefined && target !== existing.calendarId) await requireManage(ctx, target);
       await requirePrivateBlock(ctx, existing, req.body);
+      checkEventUrl(req.body);
       stillOn(m, id, existing);
       const event = await m.update(id, req.body as Parameters<typeof m.update>[1]);
       res.json(m.toFullCalendar(event, viewer));
@@ -323,7 +339,7 @@ function toIcsEvent(e: CalendarEvent): IcsEvent {
 
   if (e.description)  event.description  = e.description;
   if (e.location)     event.location     = e.location;
-  if (e.url)          event.url          = e.url;
+  if (e.url && isSafeEventUrl(e.url)) event.url = e.url;
   if (e.created)      event.created      = { date: new Date(e.created) };
   if (e.updated)      event.lastModified = { date: new Date(e.updated) };
 

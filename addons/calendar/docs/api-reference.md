@@ -50,13 +50,13 @@ __Response__ `200 OK`
 
 Create a new event on a `managed` calendar.
 
-__Auth__: the permission the event's calendar names in its `manage-permission` setting, `calendar-manage` when it names none (an event with no `calendarId` goes to the `default` calendar). A permission the site has not declared is refused for everyone.
+__Auth__: the permission the event's calendar names in its `manage-permission` setting, `calendar-manage` when it names none (an event with no `calendarId` goes to the `default` calendar). A permission the site has not declared is refused for everyone. A body with a `_private` block also needs `calendar-manage`, whatever the calendar names.
 
 #### Request body
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `calendarId` | yes | Target calendar ID |
+| `calendarId` | no | Target calendar ID, text (default: `default`). Anything that is not text is refused with `400` |
 | `title` | yes | Event title |
 | `start` | yes | ISO 8601 datetime |
 | `end` | no | ISO 8601 datetime |
@@ -65,17 +65,17 @@ __Auth__: the permission the event's calendar names in its `manage-permission` s
 | `location` | no | Venue |
 | `color` | no | CSS colour string |
 | `status` | no | `CONFIRMED` `TENTATIVE` `CANCELLED` (default: `CONFIRMED`) |
-| `url` | no | Link opened on event click |
+| `url` | no | Link opened on event click. Must be empty, a relative address (`/wiki/Page`, `#top`), a protocol-relative one (`//host/page`, which takes the page's own http or https), or start with `http:`, `https:` or `mailto:` (any case); anything else, and anything with a control character such as a tab or newline, is refused with `400` |
 
-__Response__ `201 Created` — full `FullCalendarEvent` object.
+__Response__ `201 Created` — full `FullCalendarEvent` object. A `url` stored before the rule above existed is left out of every event the API returns (list, single, search and the `.ics` feed).
 
 #### Errors
 
 | Code | Reason |
 |------|--------|
 | `401` | Not authenticated |
-| `403` | Missing required role |
-| `400` | Missing `title`, `start`, or `calendarId` |
+| `403` | Missing the permission the calendar names (or `calendar-manage`, for a body with a `_private` block) |
+| `400` | Missing `title` or `start`, a `calendarId` that is not text, or a `url` that is not allowed |
 
 ---
 
@@ -117,7 +117,7 @@ __Auth__: the permission the event's calendar names in its `manage-permission` s
 
 __Response__ `200 OK` — updated `FullCalendarEvent`.
 
-__Errors__: `400` if `calendarId` is not text, `401`, `403`, `404`, `409` if the event was moved by another request while the check ran.
+__Errors__: `400` if `calendarId` is not text or `url` is not allowed (same rule as create), `401`, `403`, `404`, `409` if the event was moved by another request while the check ran.
 
 ---
 
