@@ -197,6 +197,21 @@ describe('csrfMiddleware', () => {
       expect(res.headers.location).toBe('/login?redirect=' + encodeURIComponent('/'));
     });
 
+    // The gate answers an unlisted route before CSRF runs, so a lost session reaches this check only on a
+    // route the signed-out write list names (sign-in, password reset): that is where the redirect applies.
+    it('a form POST to a signed-out write route with a lost session is sent to sign-in', async () => {
+      const { app } = buildApp({});
+      const res = await request(app)
+        .post('/recover-password')
+        .set('Accept', 'text/html')
+        .set('Content-Type', 'application/x-www-form-urlencoded')
+        .set('Host', 'localhost')
+        .set('Referer', 'http://localhost/recover-password')
+        .send('_csrf=stale-token')
+        .expect(302);
+      expect(res.headers.location).toBe('/login?redirect=' + encodeURIComponent('/recover-password'));
+    });
+
     it('a JSON caller keeps the plain 403', async () => {
       const { app } = buildApp({});
       await request(app).post('/save').set('Accept', 'application/json').send({ foo: 'bar' }).expect(403);

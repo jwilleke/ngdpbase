@@ -122,14 +122,15 @@ test.describe('a signed-out write is refused whatever the route or target (#2298
   test('every route on the list reaches its own handler signed out', async () => {
     const ctx = await fresh();
     try {
-      const csrf = await csrfOf(ctx);
       for (const route of CORE_SIGNED_OUT_WRITES) {
         // Registration is rate limited per address; the registration test below makes a real one.
         if (route.path === '/register') continue;
         const path = route.path.replace(/:[A-Za-z]+/g, 'github');
-        const res = await postForm(ctx, path, {}, csrf);
+        // A token for each request: a route such as /logout ends the session, which takes its token with it, and a
+        // stale token would send the next form to sign-in (#2359) before it reached its own handler.
+        const res = await postForm(ctx, path, {}, await csrfOf(ctx));
         expect(sentBackByGate(res), `${route.method} ${route.path} was answered by the gate`).toBe(false);
-        const json = await ctx.fetch(path, { method: route.method, maxRedirects: 0, headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, data: {} });
+        const json = await ctx.fetch(path, { method: route.method, maxRedirects: 0, headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': await csrfOf(ctx) }, data: {} });
         expect(await refusedByGateAsJson(json), `${route.method} ${route.path} (json) was answered by the gate`).toBe(false);
       }
     } finally { await ctx.dispose(); }
