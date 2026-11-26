@@ -1938,8 +1938,8 @@
       }
     },
     "share-revoke": {
-      "description": "Revoke your own share links; revoking anyone's also needs admin-system (#1638)",
-      "label": "Revoke your own share links",
+      "description": "Revoke share links through a token or proxy acting for the person who made them. A person at their own session needs no permission to revoke their own link. Revoking another user's link needs share-manage-all instead (#1638)",
+      "label": "Revoke share links through a token or proxy",
       "icon": "ban",
       "color": "#20c997",
       "audit": {
