@@ -495,8 +495,16 @@ main[role="main"] {
     min-width: 10rem;
 }
 
-/* In the table the Extend link sits above Revoke, so the Actions column is one button wide.
-   On a phone card the same group sits side by side and wraps. */
+/* A link's buttons sit side by side and wrap, as on a phone card. The group carries no Bootstrap
+   utility classes: they are !important and would beat the table rule below. */
+.shared-link-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+}
+
+/* In the table the Extend link sits above Revoke, so the Actions column is one button wide. */
 .table.shared-links .shared-link-actions {
     flex-direction: column;
     flex-wrap: nowrap;

@@ -4,7 +4,7 @@ const mayExtend = row.status === 'active' && (row.actions.indexOf('extend') !== 
 const mayRevoke = row.status === 'active' && row.actions.indexOf('revoke') !== -1;
 %>
 <% if (mayExtend || mayRevoke) { %>
-<div class="shared-link-actions d-flex gap-2 align-items-center flex-wrap">
+<div class="shared-link-actions">
 <% if (mayExtend) { %>
     <a class="btn btn-sm btn-link px-0 text-start d-inline-flex align-items-center" href="/my/vaults/links" style="min-height: 44px;">Extend or see who visited&nbsp;<i class="fas fa-arrow-right"></i></a>
 <% } %>
