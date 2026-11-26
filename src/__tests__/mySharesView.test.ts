@@ -275,22 +275,33 @@ function specificity(selector: string): number {
   return ids * 10000 + classes * 100 + elements;
 }
 
-/** The value the cascade gives `property` on `element`, by specificity and then source order. */
+/** The value the cascade gives `property` on `element`: an !important declaration beats a normal one, then specificity, then source order. */
 function cascaded(css: string, element: Element, property: string): string | null {
-  let winner: { value: string; spec: number; order: number } | null = null;
+  let winner: { value: string; important: boolean; spec: number; order: number } | null = null;
   for (const rule of topLevelRules(css)) {
     let matches: boolean;
     try { matches = element.matches(rule.selector); } catch { continue; }
     if (!matches) continue;
     const declaration = rule.body.split(';').map(d => d.split(':')).find(([name]) => name.trim() === property);
     if (!declaration) continue;
+    const raw = declaration.slice(1).join(':').trim();
+    const important = /\s*!important$/.test(raw);
     const spec = specificity(rule.selector);
-    if (!winner || spec > winner.spec || (spec === winner.spec && rule.order > winner.order)) {
-      winner = { value: declaration.slice(1).join(':').trim(), spec, order: rule.order };
-    }
+    const beats = !winner
+      || (important !== winner.important ? important : spec !== winner.spec ? spec > winner.spec : rule.order > winner.order);
+    if (beats) winner = { value: raw.replace(/\s*!important$/, ''), important, spec, order: rule.order };
   }
   return winner?.value ?? null;
 }
+
+describe('cascaded() reads !important the way a browser does', () => {
+  test('an !important rule beats a more specific normal rule', () => {
+    const doc = new JSDOM('<table class="t"><tbody><tr><td class="a">x</td></tr></tbody></table>').window.document;
+    const cell = doc.querySelector('td') as Element;
+    expect(cascaded('.a { gap: 1rem !important; } .t td.a { gap: 0; }', cell, 'gap')).toBe('1rem');
+    expect(cascaded('.a { gap: 1rem; } .t td.a { gap: 0; }', cell, 'gap')).toBe('0');
+  });
+});
 
 describe('the shared-links table style wins the cascade (round 6 M1, item 4)', () => {
   test('the first column is not bold, grey or 40% wide, whatever rule comes later in the file', async () => {
@@ -472,7 +483,9 @@ describe('the link actions read as a link and Revoke (round 8 items 1 and 2)', (
       expect(link.querySelector('i.fas.fa-arrow-right')).not.toBeNull();
       expect(link.getAttribute('style')).toContain('min-height: 44px');
       const group = link.parentElement as Element;
-      for (const name of ['shared-link-actions', 'd-flex', 'gap-2', 'align-items-center', 'flex-wrap']) expect(group.classList.contains(name)).toBe(true);
+      expect(group.classList.contains('shared-link-actions')).toBe(true);
+      // Bootstrap utilities are !important, so they would beat the table rule in core.css: the group's layout comes from core.css alone.
+      for (const name of ['d-flex', 'gap-2', 'align-items-center', 'flex-wrap']) expect(group.classList.contains(name)).toBe(false);
       expect(group.querySelector('form[action$="/revoke"]')).not.toBeNull();
     }
   });
@@ -554,9 +567,13 @@ describe('the table fits its box and the layout switches by the box width (round
     expect(cascaded(css, inTable, 'flex-direction')).toBe('column');
     expect(cascaded(css, inTable, 'align-items')).toBe('flex-start');
     expect(cascaded(css, inTable, 'flex-wrap')).toBe('nowrap');
+    expect(cascaded(css, inTable, 'gap')).toBe('0');
     const onCard = doc.querySelector('[data-share-card="r2"] .shared-link-actions') as Element;
     expect(cascaded(css, onCard, 'flex-direction')).toBeNull();
-    expect(onCard.classList.contains('flex-wrap')).toBe(true);
+    expect(cascaded(css, onCard, 'display')).toBe('flex');
+    expect(cascaded(css, onCard, 'flex-wrap')).toBe('wrap');
+    expect(cascaded(css, onCard, 'align-items')).toBe('center');
+    expect(cascaded(css, onCard, 'gap')).toBe('.5rem');
   });
 
   test('cards are the default and the table appears only when its box is wide enough for every column', async () => {
