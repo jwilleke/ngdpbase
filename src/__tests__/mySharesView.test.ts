@@ -46,16 +46,6 @@ function loadedCss(doc: Document): string {
   return localStylesheets(doc).map(h => readFileSync(stylesheetFile(h), 'utf8')).join('\n');
 }
 
-const SHARE = { id: 's1', token: 'tok', status: 'active', scope: { keyword: 'garden' }, expiresAt: null, createdBy: 'molly', createdAt: '2026-11-01T00:00:00.000Z' };
-
-async function renderAdmin(): Promise<Document> {
-  const html = await ejs.renderFile(path.join(VIEWS, 'shares.ejs'), {
-    ...COMMON, shares: [SHARE], shareStatsHtml: '', isAdmin: true, backLink: null, baseUrl: 'https://wiki.example.com',
-    createdId: null, revoked: false, error: null, keywordPrefill: ''
-  });
-  return new JSDOM(html).window.document;
-}
-
 describe('my-shares.ejs addresses (round 3 H1)', () => {
   test('an active tag link shows its full address and a Copy button', async () => {
     const doc = await render({ rows: [ROW], addresses: { r1: 'https://wiki.example.com/share/abc' }, createdId: 'r1' });
@@ -221,13 +211,7 @@ describe('my-shares.ejs share panel (round 5)', () => {
   });
 });
 
-describe('the admin list and the style (round 5)', () => {
-  test('the admin list is named "All shared links (admin)"', async () => {
-    const html = readFileSync(path.join(VIEWS, 'shares.ejs'), 'utf8');
-    expect(html).toContain('All shared links (admin)');
-    expect(html).not.toContain('Share Links');
-  });
-
+describe('the style (round 5)', () => {
   test('the shared-links table undoes the system-info first-column style', async () => {
     const css = loadedCss(await render({ rows: [LABELLED] }));
     const rule = css.match(/\.shared-links td:first-child\s*\{[^}]*\}/)?.[0] ?? '';
@@ -328,29 +312,13 @@ describe('the shared-links table style wins the cascade (round 6 M1, item 4)', (
 });
 
 describe('the rules are in a stylesheet the page loads (round 7)', () => {
-  test('the pages link their own stylesheets from disk; the shared-links rules are in one of them', async () => {
-    for (const doc of [await render({ rows: [LABELLED] }), await renderAdmin()]) {
-      const hrefs = localStylesheets(doc);
-      expect(hrefs.map(h => h.split('?')[0])).toContain('/themes/core.css');
-      for (const href of hrefs) expect(readFileSync(stylesheetFile(href), 'utf8').length).toBeGreaterThan(0);
-      expect(loadedCss(doc)).toMatch(/\.table\.shared-links td:first-child\s*\{/);
-      expect(loadedCss(doc)).toMatch(/\.table\.shared-links \.input-group > input\s*\{/);
-    }
-  });
-
-  test('the admin table has the same class, so its first column and address box are styled like the person page', async () => {
-    const doc = await renderAdmin();
-    const css = loadedCss(doc);
-    const table = doc.querySelector('table#sharesTable') as Element;
-    expect(table.classList.contains('shared-links')).toBe(true);
-    const first = doc.querySelector('table#sharesTable td:first-child') as Element;
-    expect(cascaded(css, first, 'font-weight')).toBe('normal');
-    expect(cascaded(css, first, 'color')).toBe('inherit');
-    const cell = doc.querySelector('table#sharesTable td.shared-link-cell') as Element;
-    expect(cascaded(css, cell, 'min-width')).toBe('180px');
-    const input = doc.querySelector('table#sharesTable .input-group > input') as Element;
-    expect(cascaded(css, input, 'flex')).toBe('1 1 auto');
-    expect(cascaded(css, input, 'min-width')).toBe('0');
+  test('the page links its own stylesheets from disk; the shared-links rules are in one of them', async () => {
+    const doc = await render({ rows: [LABELLED] });
+    const hrefs = localStylesheets(doc);
+    expect(hrefs.map(h => h.split('?')[0])).toContain('/themes/core.css');
+    for (const href of hrefs) expect(readFileSync(stylesheetFile(href), 'utf8').length).toBeGreaterThan(0);
+    expect(loadedCss(doc)).toMatch(/\.table\.shared-links td:first-child\s*\{/);
+    expect(loadedCss(doc)).toMatch(/\.table\.shared-links \.input-group > input\s*\{/);
   });
 });
 
@@ -373,14 +341,63 @@ describe('expired and revoked rows have no actions (round 6 L3)', () => {
   });
 });
 
-describe('the admin page is named "All shared links (admin)" everywhere (round 6 item 5)', () => {
-  test('the route passes that title, and the heading and tab say it', async () => {
-    const route = readFileSync(path.join(VIEWS, '../src/routes/WikiRoutes.ts'), 'latin1');
-    const render = route.slice(route.indexOf("res.render('shares'"));
-    expect(render.slice(0, render.indexOf('});'))).toContain("title: 'All shared links (admin)'");
-    const view = readFileSync(path.join(VIEWS, 'shares.ejs'), 'utf8');
-    expect(view).toContain("pageName: 'All shared links (admin)'");
-    expect(view).toContain('All shared links (admin) <%-');
+describe('the all-users view (slice 4 of #2247, R13, R14)', () => {
+  const OTHER = { ...ROW, id: 'o1', kind: 'vault', what: '3 pages in sam\'s Journal vault', madeBy: 'sam', actions: ['revoke'] };
+  const MINE = { ...ROW, id: 'm1', madeBy: 'molly' };
+  const ALL = { allUsers: true, mayManageAll: true, viewer: 'molly', title: 'Shared links: all users' };
+
+  test('the heading says all users, and the page says whose links these are', async () => {
+    const doc = await render({ ...ALL, rows: [OTHER, MINE], mayTag: false, mayVault: false });
+    expect(doc.querySelector('h1')?.textContent).toContain('Shared links: all users');
+    expect(doc.body.textContent).toContain('You are seeing every user\'s links.');
+  });
+
+  test('a Made by column names each owner, and there is no Link column and no address', async () => {
+    const doc = await render({ ...ALL, rows: [OTHER, MINE], mayTag: false, mayVault: false });
+    const headings = [...doc.querySelectorAll('table#sharedLinksTable th')].map(th => th.textContent);
+    expect(headings).toContain('Made by');
+    expect(headings).not.toContain('Link');
+    expect(doc.querySelector('tr[data-share-id="o1"] [data-made-by]')?.textContent).toBe('sam');
+    expect(doc.querySelector('tr[data-share-id="m1"] [data-made-by]')?.textContent).toBe('you');
+    expect(doc.querySelector('input[aria-label="Link address"]')).toBeNull();
+    expect(doc.querySelector('[data-copy-link]')).toBeNull();
+  });
+
+  test('stopping another user\'s link asks first and names the owner and the 404 the owner will see', async () => {
+    const doc = await render({ ...ALL, rows: [OTHER], mayTag: false, mayVault: false });
+    const form = doc.querySelector('tr[data-share-id="o1"] form[action="/my/vaults/links/o1/revoke"]');
+    const message = form?.getAttribute('data-confirm') ?? '';
+    expect(message).toContain('Stop sam\'s link?');
+    expect(message).toContain('stops working for everyone who has it');
+    expect(message).toContain('Page not available (404)');
+    expect(form?.getAttribute('onsubmit')).toBeNull();
+  });
+
+  test('your own link in the all-users view keeps the ordinary confirm', async () => {
+    const doc = await render({ ...ALL, rows: [MINE], mayTag: false, mayVault: false });
+    const form = doc.querySelector('tr[data-share-id="m1"] form[action="/shares/m1/revoke"]');
+    expect(form?.getAttribute('data-confirm')).toBeNull();
+    expect(form?.getAttribute('onsubmit')).toContain('confirm(');
+  });
+
+  test('a manager sees a way to switch between the two views; anyone else does not', async () => {
+    const own = await render({ rows: [MINE], mayManageAll: true, allUsers: false, viewer: 'molly' });
+    expect(own.querySelector('a[href="/my/shares?view=all"]')?.textContent).toBe('All users');
+    const all = await render({ ...ALL, rows: [MINE] });
+    expect(all.querySelector('a[href="/my/shares"]')?.textContent).toBe('My shared links');
+    const plain = await render({ rows: [MINE] });
+    expect(plain.querySelector('a[href="/my/shares?view=all"]')).toBeNull();
+  });
+
+  test('with nobody having shared anything it says so', async () => {
+    const doc = await render({ ...ALL, rows: [], mayTag: false, mayVault: false });
+    expect(doc.body.textContent).toContain('Nobody has shared anything yet.');
+  });
+
+  test('a page of an ordinary person never carries the confirm attribute or the owner column', async () => {
+    const doc = await render({ rows: [MINE] });
+    expect(doc.querySelector('[data-confirm]')).toBeNull();
+    expect(doc.querySelector('[data-made-by]')).toBeNull();
   });
 });
 
@@ -550,14 +567,12 @@ describe('the Actions column keeps both actions on one line each (round 8 measur
 describe('the table fits its box and the layout switches by the box width (round 9)', () => {
   const RULE = (css: string, selector: string): string => css.match(new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}'))?.[1] ?? '';
 
-  test('the What column has room to read, on the person page only', async () => {
+  test('the What column has room to read', async () => {
     const doc = await render({ rows: [LABELLED] });
     const css = loadedCss(doc);
     const what = doc.querySelector('table#sharedLinksTable td:first-child') as Element;
     expect(what.classList.contains('shared-link-what')).toBe(true);
     expect(cascaded(css, what, 'min-width')).toBe('10rem');
-    const admin = await renderAdmin();
-    expect(cascaded(css, admin.querySelector('table#sharesTable td:first-child') as Element, 'min-width')).toBeNull();
   });
 
   test('in the table the Extend link sits above Revoke; on a card they sit side by side and wrap', async () => {
