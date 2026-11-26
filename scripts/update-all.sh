@@ -273,7 +273,8 @@ ngdp_update_all_child_env() {
   # process has already exported its .env (set -a), including storage paths.
   local -a args
   args=(env -i "PATH=${PATH:-/usr/bin:/bin}" "HOME=${HOME:-}" "TMPDIR=${TMPDIR:-/tmp}" "NGDP_UPDATE_ALL_PARENT=1")
-  # Where the child reports that it had nothing to do (#2532).
+  # Where the child reports that it had nothing to do (#2532). Internal to
+  # update all: server.sh writes "unchanged" there; it is not a user setting.
   [ -n "${_UA_RESULT_FILE:-}" ] && args+=("NGDP_UPDATE_RESULT_FILE=${_UA_RESULT_FILE}")
   local key
   for key in USER LOGNAME SHELL LANG LC_ALL LC_CTYPE TERM PM2_HOME \

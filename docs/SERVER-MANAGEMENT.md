@@ -331,9 +331,11 @@ In order, it:
 3. Runs `git fetch --tags origin`, then `git pull --ff-only origin master` (no ref) or
    `git checkout <ref>`. A pull that is not a fast-forward is refused; nothing is ever forced.
    If nothing was pulled (the commit is the one it started from) and `dist/.built-from` holds
-   that same commit, it prints `<app> is already at <version> (<sha>), nothing to do`, runs
-   no install, build or restart, and exits 0
-   ([#2532](https://github.com/jwilleke/ngdpbase/issues/2532)). A successful build writes
+   that same commit, and PM2 lists the app as online, it prints
+   `<app> is already at <version> (<sha>), nothing to do`, runs no install, build or restart,
+   and exits 0 ([#2532](https://github.com/jwilleke/ngdpbase/issues/2532)). If the app is not
+   online (stopped, or left down by an earlier failure), it says so, skips install and build,
+   and restarts it as step 6 does. A successful build writes
    `dist/.built-from` with the commit it built; a build starts by deleting it, so a failed
    build, a missing `dist/` or a build of another commit never matches and the update does the
    full job. A site built before this existed has no such file, so its next update builds once.
@@ -432,8 +434,9 @@ replaced. `--dry-run` shows the same plan with no `update` run, and takes no loc
 The command ends with a summary: updated (or would update), unchanged (already at that commit
 with a matching build, so nothing was installed, built or restarted; not shown in a dry run),
 not online, held by git (any of the other skip reasons), and failed. An unchanged checkout is
-still checked for uncommitted changes first, so a held checkout is never counted as unchanged. A checkout is recognised only when the PM2 working directory
-itself holds its `server.sh`. Exit codes:
+still checked for uncommitted changes first, so a held checkout is never counted as unchanged.
+A checkout is recognised only when the PM2 working directory itself holds its `server.sh`.
+Exit codes:
 
 | Code | When |
 | --- | --- |
