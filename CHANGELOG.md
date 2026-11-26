@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+### Added
+
+- __#2534__: The search page has a Delete button on a file in the site's own files, for the person who uploaded it and for anyone who may delete files. Its confirm box names the pages that still use the file (only pages you may open, at most 10, the rest counted) and the delete still goes ahead if you confirm. The delete itself is the existing one, and the server now allows the uploader of a shared file as well as holders of the delete permission, with no new permission; an explicit deny, an agent token, share link or proxy, a signed-out request and a file in a vault keep their existing rules. Renaming or replacing a file is [#2536](https://github.com/jwilleke/ngdpbase/issues/2536); deleting from the Media Manager is [#2537](https://github.com/jwilleke/ngdpbase/issues/2537).
+
 ### Changed
 
 - __#2523 (slice 4 of #2247)__: the Shared links page has an all-users view for managers, at `/my/shares?view=all`. Revoking another user's link, of either kind, now needs the permission "See and revoke everyone's shared links" and nothing else. For tag links it replaces the system-administration permission and the permission to revoke shared links. A site that uses the default administrator policy sees no change. A site where a custom policy gives system administration to someone without the new permission loses that person's ability to revoke other users' tag links until the policy grants it. The view lists each owner, the area name and the number of pages, with no page titles and no addresses, and opening it is not recorded; stopping a link is, naming the manager and the owner. The administrator dashboard's link to the view shows only to someone who holds that permission; anyone else sees a line naming it. The old all-shares page at `/shares` now redirects to the all-users view, and the permission "Revoke share links through a token or proxy" (formerly "Revoke your own share links") now applies only to a token or proxy acting for the person who made a link.

@@ -204,6 +204,14 @@ export interface Decision {
  */
 export const STEP_UP_REASON = 'step-up';
 
+/**
+ * The reason a decision carries when no policy spoke to the question (#2534).
+ * Declared once: the evaluator writes it, and a door with a narrow exception
+ * to a missing permission reads it to tell "no policy said anything" from an
+ * explicit deny or an engine that could not answer.
+ */
+export const NO_POLICY_REASON = 'No matching policy';
+
 /** True when `pattern` covers `id` for a resource of that type. `*` is everything. */
 export function resourceMatches(pattern: string, id: string): boolean {
   if (pattern === '*') return true;

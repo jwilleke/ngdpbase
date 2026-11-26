@@ -2,7 +2,7 @@ import BaseManager, { type ManagerStatus } from './BaseManager.js';
 // #1431: the one declaration of a policy. A local copy with `effect` required
 // sat here and drifted from it.
 import type { Policy, PolicySubject, PolicyResource, PolicyCondition } from '../types/Policy.js';
-import { isAttributeName } from '../types/Policy.js';
+import { isAttributeName, NO_POLICY_REASON } from '../types/Policy.js';
 import { readDeclaredAsWritten, COMPARISON_FUNCTIONS, CONDITION_EXAMPLE, CONDITION_FUNCTIONS, DATATYPES, GROUP_FUNCTIONS, LEGACY_CONDITION_KEYS, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_GROUP_CHILDREN, MAX_IN_ITEMS, NOT_FUNCTION, OPERAND_KEYS, RULE_COMBINING_ALGORITHM_KEY, combiningAlgorithmProblem, compareLeaf, datatypeOf, ATTRIBUTE_RESOURCE_TYPES, attributesForResourceTypes, declaredAttributes, declaredEnvironmentAttributes, declaredSubjectAttributes, environmentAttributesFindings, environmentDeclarationProblem, literalFits, literalType, subjectAttributesFindings, subjectDeclarationProblem, unenforcedConditionsLine, unenforcedConditionsNotice, type DeclaredEnvironmentAttribute, type DeclaredSubjectAttribute, type ResourceTypeDeclarations } from '../utils/policyAttributes.js';
 import { SCHEDULES_KEY, TIME_ZONE_KEY, scheduleIsEnabled, scheduleProblem, type Schedule } from '../utils/availability.js';
 import { normalizeUsername } from '../utils/username.js';
@@ -427,7 +427,7 @@ interface EvaluationResult {
   conditionNotMet?: string[];
 }
 
-const NO_POLICY: EvaluationResult = { hasDecision: false, allowed: false, reason: 'No matching policy', policyName: null, policyIds: [] };
+const NO_POLICY: EvaluationResult = { hasDecision: false, allowed: false, reason: NO_POLICY_REASON, policyName: null, policyIds: [] };
 
 /**
  * PolicyEvaluator - Evaluates access policies against a given context.
