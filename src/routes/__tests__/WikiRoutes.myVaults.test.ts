@@ -75,14 +75,14 @@ describe('GET /my/vaults (#2245)', () => {
     expect(res.render.mock.calls[0][0]).toBe('my-list');
     const view = res.render.mock.calls[0][1] as Record<string, unknown>;
     expect(view).toMatchObject({ listKind: 'vaults', items: VAULTS, itemCount: 5 });
-    expect(view.listAction).toEqual({ href: '/my/vaults/links', label: 'Links you\'ve shared', icon: 'fa-link' });
+    expect(view.listAction).toEqual({ href: '/my/shares', label: 'Shared links', icon: 'fa-link' });
   });
 });
 
 describe('my-list.ejs, listKind vaults (#2245)', () => {
   const locals = {
     title: 'My Private Pages', icon: 'fa-eye-slash', items: VAULTS, itemCount: 5, listKind: 'vaults',
-    emptyMessage: 'none', listAction: { href: '/my/vaults/links', label: 'Links you\'ve shared', icon: 'fa-link' }
+    emptyMessage: 'none', listAction: { href: '/my/shares', label: 'Shared links', icon: 'fa-link' }
   };
 
   test('each vault lists its own pages, by name, linked to /vaults/<user>/<vault>/<page>', async () => {
@@ -132,10 +132,10 @@ describe('my-list.ejs, listKind vaults (#2245)', () => {
     expect(doc.querySelector('section[data-vault="notes"] img')).toBeNull();
   });
 
-  test('the header links to /my/vaults/links as "Links you\'ve shared"', async () => {
+  test('the header links to /my/shares as "Shared links"', async () => {
     const doc = await renderMyList(locals);
-    const a = doc.querySelector('a[href="/my/vaults/links"]');
-    expect(a?.textContent?.trim()).toBe('Links you\'ve shared');
+    const a = doc.querySelector('a[href="/my/shares"]');
+    expect(a?.textContent?.trim()).toBe('Shared links');
     expect(doc.body.textContent).not.toContain('Vault links');
   });
 });

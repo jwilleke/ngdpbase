@@ -359,7 +359,7 @@
                                 <% } %>
                                 <%
                                     // #842: Share entries — one per user-keyword on this page, opening
-                                    // /shares with the keyword prefilled. Shares are keyword-scoped;
+                                    // /my/shares with the keyword prefilled. Shares are keyword-scoped;
                                     // gated on the same roles that may create shares (decision 2).
                                     const _shareKws = (typeof shareEnabled !== 'undefined' && shareEnabled
                                         && typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated
@@ -375,14 +375,14 @@
                                         && typeof pageName === 'string' && pageName.indexOf('vaults/' + currentUser.username + '/') === 0;
                                 %>
                                 <% if (_ownVaultPage) { %>
-                                    <li><a class="dropdown-item" href="/my/vaults/links?page=<%= encodeURIComponent(pageName) %>" title="Make a read-only link to this page, and others in its vault">
+                                    <li><a class="dropdown-item" href="/my/shares?share=vault&page=<%= encodeURIComponent(pageName) %>" title="Make a read-only link to this page, and others in its vault">
                                         <i class="fas fa-link"></i> Share this page&hellip;
                                     </a></li>
                                     <li><hr class="dropdown-divider"></li>
                                 <% } %>
                                 <% if (_shareKws.length > 0) { %>
                                     <% _shareKws.forEach(function(kw) { %>
-                                        <li><a class="dropdown-item" href="/shares?keyword=<%= encodeURIComponent(kw) %>" title="Create a share link for everything tagged '<%= kw %>'">
+                                        <li><a class="dropdown-item" href="/my/shares?share=tag&tag=<%= encodeURIComponent(kw) %>" title="Create a share link for everything tagged '<%= kw %>'">
                                             <i class="fas fa-share-nodes"></i> Share &lsquo;<%= kw %>&rsquo;&hellip;
                                         </a></li>
                                     <% }); %>

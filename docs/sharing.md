@@ -26,6 +26,9 @@ Every link, whatever its kind, goes through the same code:
   - Only then does the link stand in for global policy.
   - `shareCoversPage` is the one coverage rule both page doors use: the decider and the list filter.
 - __Revoking.__ `ShareManager.revoke(id, subject, { asManager })` writes `share-revoke` first, then marks the record. The next request through the link gets the 404. It takes the request's own subject, so a token or proxy that clicked is named in the audit row beside the user it acted for.
+- __Who may revoke what.__ The person who made a link can always revoke it at their own session, on both revoke routes, with no `share-revoke` check on a tag link and no `profile-manage` check on a private-area link. Both routes read the record and compare its maker before any permission is asked. A token, proxy or share acting for the maker keeps its ceiling: it needs `share-revoke` on `POST /shares/:id/revoke` and `profile-manage` on `POST /my/vaults/links/:id/revoke`. A token or proxy needs no private-area check to revoke, because revoking reads no page.
+- __The Shared links page.__ `GET /my/shares` lists the user's own links of both kinds, built by one row function (`sharedLinkRows`) that the Profile card also counts with. It hides links of a kind the user may no longer make, and shows a link a manager revoked as "Page not available (404)". `GET /shares?keyword=X` redirects to it for everyone; a bare `GET /shares` redirects unless the user holds `admin-system`.
+- __The Share... chooser.__ The page's __Share...__ card offers __Everything with a tag__ and __Pages in a private area__; each opens its form on the same page (`?share=tag&tag=X`, `?share=vault&page=P`). The private-area forms post to `POST /my/shares/vault-links` and `POST /my/shares/:id/extend`; the old `POST /my/vaults/links` and `/my/vaults/links/:id/extend` answer `307` to them, and `GET /my/vaults/links?page=P` redirects to the chooser. A bare `GET /my/vaults/links` still lists the visits. The page menu, the media tag page and the Private pages list all open the chooser.
 - __Revoking another user's link.__ The route decides who may. A holder of `share-manage-all` ("See and revoke everyone's shared links", held by administrators through the policy `admin-share-manage-all`) may see and revoke every user's links; it needs no fresh sign-in, and it is not governed by the "admins can enter private areas" setting, because revoking shows no page. Today `POST /shares/:id/revoke` still asks `share-revoke` and `admin-system` for another user's tag link, and passes `asManager: true` when the person who clicked did not make the link. The manager then records `byManager: true` in the `share-revoke` audit metadata and sets `revokedByManager` on the stored record. The flag names nobody. No second audit event exists: the revoke is still `share-revoke`. A revoke by the maker, or by a token or proxy acting for them, never carries the flag. Moving the route's check to `share-manage-all`, and the screen that uses it, follow in later changes to the shared links design.
 
 `WikiRoutes.shareDoors.test.ts` holds statically that no `/share/*` handler makes an access decision of its own.
@@ -39,12 +42,12 @@ Every link, whatever its kind, goes through the same code:
 | Resources | `keyword:{keyword}` on `page` and `media` | `vault:{owner}/{vault}`, or one `vault-page:{owner}/{vault}/{uuid}` per page |
 | A page is covered by | its `user-keywords` | its uuid, or being in the vault. A whole-vault link covers pages added while it is live |
 | Never covered | `owner-only` content, private pages, pages with `audience` or `access` | anything outside the named vault, and every page's earlier versions |
-| Issued by | `ShareManager.issue`, behind `share-create` (shipped to admin and editor; `share-revoke` to revoke your own, #1638) | `ShareManager.issueVaultShare`: the vault's owner only, whatever their role. `issue()` refuses a vault scope |
+| Issued by | `ShareManager.issue`, behind `share-create` (shipped to admin and editor; the person who made a link revokes it with no permission, and `share-revoke` applies to a token or proxy acting for them) | `ShareManager.issueVaultShare`: the vault's owner only, whatever their role. `issue()` refuses a vault scope |
 | Lifetime | 24 hours, 7 days, 30 days, or until revoked | The owner's choice, up to the vault's maximum. Never unlimited |
 | Extending | not offered | By the issuer, 1 to 24 hours at a time, past the maximum |
 | Files | `/share/{token}/file/:id` and `/thumb/:id`: the media doors | `/share/{token}/attachment/:id`: `AttachmentManager.getVaultShareAttachment`. It serves only files that a covered current page uses, from the linked vault. A shared page's `/attachments/…` URLs are rewritten to it |
 | Visits in the audit log | batched `share-access` counts, one row per link per 5 minutes | one `share-access` record per page, file or list opened, naming the page by uuid, never by title |
-| Managed at | `/shares`: own links; `admin-system` sees and revokes everyone's | `/my/vaults/links`: the owner only. `/shares` leaves vault links out, even for an admin, and refuses to revoke one |
+| Managed at | `/my/shares`: own links of both kinds; `/shares` still lists every user's tag links for a holder of `admin-system` | `/my/vaults/links`: the owner only. `/shares` leaves vault links out, even for an admin, and refuses to revoke one |
 
 ### Vault links
 
@@ -54,7 +57,7 @@ The data in a vault is always the user's, so sharing it is the owner's decision 
 - __The permission.__ Making a vault link is `share-create` and extending one is `share-extend` (#1638), asked inside that vault (`ShareManager.permitsInScope` → `permitsInVault`), so the `vault-owner` role grants it; each action the link delegates (`page-read`, `asset-read`) must likewise be held in the vault. Revoking a link needs only ownership: it takes access away ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)).
 - __Lifetime.__ The maximum is the `shareMaxDays` of the vault's system-category, read by `ValidationManager.getShareMaxDays`. It is 15 days on `general`, `journal` and `capture`, and 15 days where an entry sets none. It is the only say the system-category's `owner` has in sharing, and it limits a link only when the link is made. The owner can choose less, revoke sooner, or extend (`ShareManager.extend`, audited as `share-extend` before the change).
 - __What the recipient sees.__ The link's page list: the vault's current pages, or the chosen ones, listed by `PageManager.listVaultPages` and filtered by the page door. Each page is shown read-only, with the files it uses. They see no history and no search. A file that no covered page uses is not shared, including a copy left behind by a vault move.
-- __For the owner.__ __Share this page…__ in a private page's menu opens `/my/vaults/links` with that page's vault and the page ticked. The same page makes a whole-vault link, lists the owner's links, and extends or revokes them. It is titled __Links you've shared__, and `/my/vaults` links to it under that name. Above its forms it says what a link does: who can open it, that it is read-only, its lifetime and extension, how to revoke it, and what an encrypted vault's link needs ([#2245](https://github.com/jwilleke/ngdpbase/issues/2245)). That text restates the rules in this section, so a change to them changes `views/my-vault-links.ejs` too.
+- __For the owner.__ __Share this page…__ in a private page's menu opens the Shared links page at `/my/shares` with that page's vault and the page ticked. Under __Share...__ the page offers both kinds of link. Choosing __Pages in a private area__ shows what a link does (who can open it, that it is read-only, its lifetime and extension, how to revoke it, and what an encrypted vault's link needs) above the forms ([#2245](https://github.com/jwilleke/ngdpbase/issues/2245)). The same page lists the owner's links with the full address and a Copy button for each, except a link to an encrypted vault, whose key is shown only once when it is made. Making, extending and revoking a private-area link all return to this page. `/my/vaults/links` stays as the list with each link's visits, and it extends links too. That text restates the rules in this section, so a change to them changes `views/_vault-link-explanation.ejs` too.
 - __Label and visits__ (from yourphr#462). The owner may give a link a label, such as "For Dr Smith, October", shown only to them and never logged or audited. Each link keeps its last 100 visits (when, and which page, file or list) and a count, on its own record, and `/my/vaults/links` shows them. The audit trail keeps the full record of every visit. `ShareManager.test.ts` holds that a link's token never appears in a log line or an audit record.
 
 ## Decided, not yet built
@@ -90,7 +93,7 @@ The data in a vault is always the user's, so sharing it is the owner's decision 
 
 ### Where links point
 
-`ShareManager.linkBaseUrl` decides the address of every link: the `/shares` list, the `/my/vaults/links` list, and the link to an encrypted vault that the owner's browser builds (the form's `data-base-url`). In order:
+`ShareManager.linkBaseUrl` decides the address of every link: the `/my/shares` page, where each link shows its address and a Copy button, the `/shares` list, the `/my/vaults/links` list, and the link to an encrypted vault that the owner's browser builds (the form's `data-base-url`). In order:
 
 - `ngdpbase.share.public-base-url`, when it is set and valid.
 - `ngdpbase.application.base-url`.
@@ -133,9 +136,9 @@ ingress:
 | The vault rule | `src/utils/privateStoreAccess.ts` |
 | The link as a ceiling | `PolicyDecisionPoint.ceiling`; `PolicyInformationPoint` (page decider and list filter) |
 | Files through a vault link | `AttachmentManager.getVaultShareAttachment` |
-| The recipient's routes, `/shares`, `/my/vaults/links` | `src/routes/WikiRoutes.ts` (`shareResolve`, `shareAlbum`, `sharePage`, `shareAttachment`, `sharesList`, `myVaultLinksPage`) |
+| The recipient's routes, `/my/shares`, `/shares`, `/my/vaults/links` | `src/routes/WikiRoutes.ts` (`shareResolve`, `shareAlbum`, `sharePage`, `shareAttachment`, `mySharesPage`, `sharesList`, `myVaultLinksPage`) |
 | Where links point | `ShareManager.linkBaseUrl`, `ShareManager.publicOriginTlsWarning` (logged at startup by `src/app.ts`) |
-| Views | `views/share-album.ejs`, `views/share-page.ejs`, `views/share-locked.ejs`, `views/shares.ejs`, `views/my-vault-links.ejs` |
+| Views | `views/share-album.ejs`, `views/share-page.ejs`, `views/share-locked.ejs`, `views/shares.ejs`, `views/my-shares.ejs`, `views/my-vault-links.ejs` |
 | The encrypted-vault viewer | `public/share/_assets/share-viewer.js`, served at `/share/_assets/share-viewer.js` |
 
 ## History

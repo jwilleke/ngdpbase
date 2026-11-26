@@ -586,28 +586,23 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
   // ── management: GET /shares ────────────────────────────────────────────────
 
   describe('GET /shares', () => {
-    test('403 for anonymous', async () => {
+    test('anonymous and readers are sent to /my/shares, which makes its own permission check', async () => {
       mockUserContext = null;
-      const res = await request(app).get('/shares');
-      expect(res.status).toBe(403);
-    });
-
-    test('403 for a reader (no admin/editor role)', async () => {
+      const anon = await request(app).get('/shares');
+      expect(anon.status).toBe(302);
+      expect(anon.headers.location).toBe('/my/shares');
       mockUserContext = { ...readerUser };
-      const res = await request(app).get('/shares');
-      expect(res.status).toBe(403);
+      const reader = await request(app).get('/shares');
+      expect(reader.status).toBe(302);
+      expect(reader.headers.location).toBe('/my/shares');
     });
 
-    test('editor sees ONLY their own shares', async () => {
+    test('an editor without admin-system is sent to their own page, not shown a list', async () => {
       mockUserContext = { ...editorUser };
-      shareState.records = [{ id: 's1', token: 'c'.repeat(64), scope: SCOPE, createdBy: 'ed', createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null }];
-      const res = await request(app).get('/shares');
-      expect(res.status).toBe(200);
-      expect(mockShareManager.list).toHaveBeenCalledWith('ed');
-      const body = JSON.parse(res.text) as { view: string; isAdmin: boolean; shares: Array<{ status: string }> };
-      expect(body.view).toBe('shares');
-      expect(body.isAdmin).toBe(false);
-      expect(body.shares[0]?.status).toBe('active');
+      const res = await request(app).get('/shares?created=s1');
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('/my/shares?created=s1');
+      expect(mockShareManager.list).not.toHaveBeenCalled();
     });
 
     test('admin sees ALL shares with computed statuses', async () => {
@@ -641,7 +636,7 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
     });
 
     test('backLink follows a same-host referer', async () => {
-      mockUserContext = { ...editorUser };
+      mockUserContext = { ...adminUser };
       const res = await request(app)
         .get('/shares')
         .set('Host', 'wiki.test')
@@ -651,7 +646,7 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
     });
 
     test('backLink is null for /shares self-referer and cross-host referer', async () => {
-      mockUserContext = { ...editorUser };
+      mockUserContext = { ...adminUser };
       const self = await request(app)
         .get('/shares')
         .set('Host', 'wiki.test')
@@ -666,6 +661,31 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
 
       const none = await request(app).get('/shares');
       expect((JSON.parse(none.text) as { backLink: string | null }).backLink).toBeNull();
+    });
+  });
+
+  describe('slice 3: the old private-area POST addresses', () => {
+    test('POST /my/vaults/links is sent on, body and all, with a 307', async () => {
+      mockUserContext = { ...editorUser };
+      const res = await request(app).post('/my/vaults/links').type('form').send({ ...csrfTestBodyField(), vault: 'journal' });
+      expect(res.status).toBe(307);
+      expect(res.headers.location).toBe('/my/shares/vault-links');
+    });
+
+    test('POST /my/vaults/links/:id/extend is sent on with a 307', async () => {
+      mockUserContext = { ...editorUser };
+      const res = await request(app).post('/my/vaults/links/abc/extend').type('form').send({ ...csrfTestBodyField(), hours: '6' });
+      expect(res.status).toBe(307);
+      expect(res.headers.location).toBe('/my/shares/abc/extend');
+    });
+
+    test('the new addresses are served', async () => {
+      mockUserContext = { ...editorUser };
+      for (const url of ['/my/shares/vault-links', '/my/shares/abc/extend']) {
+        const res = await request(app).post(url).type('form').send({ ...csrfTestBodyField() });
+        expect(res.status).not.toBe(404);
+        expect(res.status).not.toBe(307);
+      }
     });
   });
 
@@ -751,8 +771,31 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
         .type('form')
         .send(csrfTestBodyField());
       expect(res.status).toBe(302);
-      expect(res.headers.location).toBe('/shares?revoked=1');
+      expect(res.headers.location).toBe('/my/shares?revoked=1');
       expect(mockShareManager.revoke).toHaveBeenCalledWith('s1', expect.objectContaining({ username: 'ed' }));
+    });
+
+    test('a maker who can no longer open the Shared links page lands on the front page, not a 403 (round 4)', async () => {
+      shareState.records = [{ id: 's8', token: 'b'.repeat(64), scope: SCOPE, createdBy: 'nobody', createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null }];
+      mockUserContext = { ...editorUser, username: 'nobody', roles: [] };
+      const res = await request(app)
+        .post('/shares/s8/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(302);
+      expect(mockShareManager.revoke).toHaveBeenCalledWith('s8', expect.objectContaining({ username: 'nobody' }));
+      expect(res.headers.location).toBe('/');
+    });
+
+    test('a signed-out subject cannot revoke a link (round 3 Sec L1)', async () => {
+      shareState.records = [{ id: 's9', token: 'd'.repeat(64), scope: SCOPE, createdBy: 'Anonymous', createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null }];
+      mockUserContext = { username: 'Anonymous', displayName: 'Anonymous', isAuthenticated: false, roles: ['Anonymous'] };
+      const res = await request(app)
+        .post('/shares/s9/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(403);
+      expect(mockShareManager.revoke).not.toHaveBeenCalled();
     });
 
     test('admin revokes anyone\'s share → 302', async () => {
@@ -788,6 +831,8 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       expect(res.status).toBe(302);
       expect(mockShareManager.revoke).toHaveBeenCalledWith('s2', expect.objectContaining({ username: 'root' }));
       expect(mockShareManager.revoke.mock.calls[0]).toHaveLength(2);
+      // An admin still lands on the full list.
+      expect(res.headers.location).toBe('/shares?revoked=1');
     });
 
     test('#2521: a token acting for the maker revokes through the maker branch, with no asManager', async () => {
@@ -797,7 +842,7 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
         .type('form')
         .send(csrfTestBodyField());
       expect(res.status).toBe(302);
-      expect(res.headers.location).toBe('/shares?revoked=1');
+      expect(res.headers.location).toBe('/my/shares?revoked=1');
       expect(mockShareManager.revoke).toHaveBeenCalledTimes(1);
       expect(mockShareManager.revoke).toHaveBeenCalledWith('s1', expect.objectContaining({ username: 'ed', viaToken: { id: 't1' } }));
       expect(mockShareManager.revoke.mock.calls[0]).toHaveLength(2);
@@ -812,6 +857,50 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       const [, subject] = mockShareManager.revoke.mock.calls[0] as unknown as [string, { username: string; roles: string[] }];
       expect(typeof subject).toBe('object');
       expect(subject).toMatchObject({ username: 'ed', roles: ['editor'] });
+    });
+
+    // Slice 3 of #2247 (Q-D, Q-G): a person who made a link revokes it at their
+    // own session with no permission; a token acting for them keeps its ceiling.
+    test('slice 3: a person who made a tag link revokes it holding no permission at all', async () => {
+      shareState.records = [{ id: 's9', token: 'f'.repeat(64), scope: SCOPE, createdBy: 'maker', createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null }];
+      mockUserContext = { ...editorUser, username: 'maker', roles: [] };
+      const res = await request(app)
+        .post('/shares/s9/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(302);
+      expect(mockShareManager.revoke).toHaveBeenCalledWith('s9', expect.objectContaining({ username: 'maker' }));
+      expect(mockShareManager.revoke.mock.calls[0]).toHaveLength(2);
+    });
+
+    test('slice 3: an agent token of the maker without share-revoke gets 403 on the same link', async () => {
+      shareState.records = [{ id: 's9', token: 'f'.repeat(64), scope: SCOPE, createdBy: 'maker', createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null }];
+      mockUserContext = { ...editorUser, username: 'maker', roles: [], viaToken: { id: 't1' } };
+      const res = await request(app)
+        .post('/shares/s9/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(403);
+      expect(mockShareManager.revoke).not.toHaveBeenCalled();
+    });
+
+    test('slice 3: a signed-in user with no permission gets 404 for an unknown id, not the old blanket 403', async () => {
+      mockUserContext = { ...editorUser, username: 'maker', roles: [] };
+      const res = await request(app)
+        .post('/shares/nope/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(404);
+    });
+
+    test('slice 3: a signed-in user with no permission who did not make the link gets 403', async () => {
+      mockUserContext = { ...editorUser, username: 'stranger', roles: [] };
+      const res = await request(app)
+        .post('/shares/s1/revoke')
+        .type('form')
+        .send(csrfTestBodyField());
+      expect(res.status).toBe(403);
+      expect(mockShareManager.revoke).not.toHaveBeenCalled();
     });
 
     test('403 for an editor who is not the creator', async () => {

@@ -1,0 +1,16 @@
+<script nonce="<%= locals.cspNonce %>">
+    // The whole-vault form's lifetime follows the chosen vault's limit.
+    (function () {
+        var select = document.getElementById('whole-vault');
+        var days = document.getElementById('whole-days');
+        if (!select || !days) return;
+        select.addEventListener('change', function () {
+            var max = Number(select.options[select.selectedIndex].getAttribute('data-max')) || 15;
+            days.max = String(max);
+            if (Number(days.value) > max) days.value = String(max);
+        });
+    })();
+</script>
+
+<script src="/js/vault-link-create.js"></script>
+
