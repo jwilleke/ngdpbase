@@ -507,6 +507,18 @@ export function backupHealthPlain(health: Pick<BackupHealth, 'failure' | 'lastGo
 }
 
 /** Whether backups are working, as Admin → Backup and the /admin dashboard show it (#1563). */
+/**
+ * Confirming the backup key is saved was refused, with a reason written for the
+ * administrator who pressed the button (#2494): the page they were on is out of
+ * date. Nothing was recorded.
+ */
+export class BackupKeyRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BackupKeyRefused';
+  }
+}
+
 export interface BackupHealth {
   /** The newest backup in the backup directory that is not a failed one: when, how big (with the files beside it), where. */
   lastGood: { filename: string; at: string; size: number; location: string } | null;
@@ -1364,10 +1376,10 @@ class BackupManager extends BaseManager {
     const STALE_KEY = 'That is not the fingerprint of the current backup key; reload Admin → Backup and check the key you saved';
     const info = this.backupKeyInfo();
     const env = envFingerprint === undefined ? null : this.envKeysInfo();
-    if (envFingerprint !== undefined && env?.fingerprint !== envFingerprint) throw new Error('The keys in .env changed since that page was loaded; reload Admin → Backup, download .env again and confirm');
+    if (envFingerprint !== undefined && env?.fingerprint !== envFingerprint) throw new BackupKeyRefused('The keys in .env changed since that page was loaded; reload Admin → Backup, download .env again and confirm');
     // A saved .env is a saved backup key only when the file holds the key this site uses.
     const recordsKey = info.set && (env ? env.holdsBackupKey : true);
-    if (recordsKey ? info.fingerprint !== fingerprint : !env) throw new Error(STALE_KEY);
+    if (recordsKey ? info.fingerprint !== fingerprint : !env) throw new BackupKeyRefused(STALE_KEY);
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) throw new Error('ConfigurationManager not available');
     if (recordsKey) await configManager.setProperty(BACKUP_KEY_SAVED_KEY, fingerprint, ctx);

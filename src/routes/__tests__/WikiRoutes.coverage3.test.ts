@@ -20,6 +20,7 @@ import { policyShaped } from './__fixtures__/policyShaped';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { JobActionError } from '../../managers/BackgroundJobManager';
 import { readDoor } from './__fixtures__/pageReadDoor';
 
 vi.mock('../../utils/LocaleUtils', () => {
@@ -602,7 +603,7 @@ describe('WikiRoutes — coverage batch 3', () => {
     });
 
     test('returns 404 for unknown job', async () => {
-      mockBackgroundJobManager.enqueue.mockRejectedValue(new Error('unknown job: no-such-job'));
+      mockBackgroundJobManager.enqueue.mockRejectedValue(new JobActionError("There is no job named 'no-such-job'.", 404));
 
       const res = await request(app)
         .post('/api/admin/jobs/no-such-job/enqueue')

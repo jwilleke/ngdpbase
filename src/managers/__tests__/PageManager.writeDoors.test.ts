@@ -17,7 +17,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import matter from 'gray-matter';
-import PageManager from '../PageManager';
+import PageManager, { PageRuleRefusedError } from '../PageManager';
 import VersioningFileProvider from '../../providers/VersioningFileProvider';
 import { withWriteDoorAllowing } from '../../__tests__/__fixtures__/pageWriteDoor';
 
@@ -412,6 +412,9 @@ describe('the title rule at the door (#1455)', () => {
     await expect(pm.savePage('vaults/jim/default/Docs/Setup', 'body', {}, JIM, {
       normaliseTitle: true, skipValidation: true, skipConflictCheck: true
     })).rejects.toThrow(/is not a private page name/);
+    await expect(pm.savePage('vaults/jim/default/Docs/Setup', 'body', {}, JIM, {
+      normaliseTitle: true, skipValidation: true, skipConflictCheck: true
+    })).rejects.toBeInstanceOf(PageRuleRefusedError);
     expect(provider.savePage).not.toHaveBeenCalled();
   });
 

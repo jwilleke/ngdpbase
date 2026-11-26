@@ -42,7 +42,7 @@ test.describe('Add-on Update (#2100)', () => {
       maxRedirects: 0
     });
     expect(res.status()).toBe(302);
-    expect(decodeURIComponent(res.headers().location ?? '')).toContain('e2e-no-such-addon was not updated: e2e-no-such-addon is not in ngdpbase.addons.install');
+    expect(decodeURIComponent(res.headers().location ?? '')).toContain("e2e-no-such-addon is not on this site's list of installed add-ons, so it was not updated");
   });
 
   test('an installed add-on is listed, and npm being unreachable is said plainly', async ({ page }) => {

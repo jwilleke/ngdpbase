@@ -32,7 +32,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import { randomBytes } from 'crypto';
-import PageManager from '../PageManager';
+import PageManager, { PageRuleRefusedError } from '../PageManager';
 import ValidationManager from '../../managers/ValidationManager';
 import FileSystemProvider from '../../providers/FileSystemProvider';
 import { actor } from '../../test-support/actors';
@@ -208,6 +208,10 @@ describe('shared folders hold pages through the page door (#2125)', () => {
     expect((await manager.searchSharedFolderPages(rita, ['default', 'executive'], { query: 'quince' })).map((h) => h.name)).toEqual([MINUTES]);
     await expect(manager.savePage(BOARD, 'changed', { uuid: BOARD_UUID }, rita)).rejects.toThrow();
     await expect(manager.savePage(formatPrivatePageName(SHARED_FOLDER_OWNER, 'executive', 'New'), 'new', {}, rita)).rejects.toThrow();
+    // The refusal for a folder she may not file into is written for the person, so a route may show it as written (#2494).
+    const refused = await manager.savePage(formatPrivatePageName(SHARED_FOLDER_OWNER, 'executive', 'New'), 'new', {}, rita).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(PageRuleRefusedError);
+    expect((refused as Error).message).toMatch(/may not add, edit or delete pages in shared folder 'executive'/);
   });
 
   test('an executive reads every folder, files in shared/executive, and is refused filing anywhere else (#2095)', async () => {

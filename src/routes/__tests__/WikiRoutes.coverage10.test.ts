@@ -12,6 +12,7 @@ import express from 'express';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { JobActionError } from '../../managers/BackgroundJobManager';
 import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
 vi.mock('../../utils/LocaleUtils', () => {
@@ -676,7 +677,7 @@ describe('WikiRoutes — coverage batch 10', () => {
     });
 
     test('returns 404 when job is unknown', async () => {
-      mockBackgroundJobManager.enqueue.mockRejectedValue(new Error('unknown job: missing'));
+      mockBackgroundJobManager.enqueue.mockRejectedValue(new JobActionError("There is no job named 'missing'.", 404));
       const res = await request(app)
         .post('/api/admin/jobs/missing/enqueue')
         .set('x-csrf-token', 'test-csrf-token');

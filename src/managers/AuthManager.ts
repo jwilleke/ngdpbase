@@ -1177,6 +1177,17 @@ export class PasskeyRefused extends Error {
   }
 }
 
+/**
+ * A proxy grant that was refused, with a reason written for the person who asked (#2494):
+ * nothing was changed, and trying again would not change the answer.
+ */
+export class ProxyGrantRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProxyGrantRefused';
+  }
+}
+
 class AuthManager extends BaseManager {
   private providers: Map<string, AuthProvider>;
   private factorEntries: FactorEntry[];
@@ -2360,7 +2371,7 @@ class AuthManager extends BaseManager {
   }
 
   private requireProxyAccess(): BaseCredentialsProvider {
-    if (!this.proxyAccessEnabled()) throw new Error('Proxy access is turned off on this site');
+    if (!this.proxyAccessEnabled()) throw new ProxyGrantRefused('Proxy access is turned off on this site');
     return this.requireCredentialsStore();
   }
 
@@ -2401,33 +2412,33 @@ class AuthManager extends BaseManager {
     const store = this.requireProxyAccess();
     const owner = typeof input?.owner === 'string' ? input.owner.trim() : '';
     const proxy = typeof input?.proxy === 'string' ? input.proxy.trim() : '';
-    if (!owner || !proxy) throw new Error('Name the person represented and the person acting for them');
-    if (!(await this.mayManageProxyGrants(ctx, owner))) throw new Error('Permission denied');
-    if (owner === proxy) throw new Error('A person cannot act for themselves');
+    if (!owner || !proxy) throw new ProxyGrantRefused('Name the person represented and the person acting for them');
+    if (!(await this.mayManageProxyGrants(ctx, owner))) throw new ProxyGrantRefused('Permission denied');
+    if (owner === proxy) throw new ProxyGrantRefused('A person cannot act for themselves');
 
     const { pdp, pip, ownerSubject } = await this.proxyOwnerSubject(ctx, owner);
-    if (!(await pip.subjectFor(proxy))) throw new Error(`There is no active account ${proxy}`);
+    if (!(await pip.subjectFor(proxy))) throw new ProxyGrantRefused(`There is no active account ${proxy}`);
 
     const permissions = requireScopeList(input.permissions);
     // Vault access is added only by the person themselves (operator, 2026-10-12): an administrator's grant never carries it.
     if (ctx.username !== owner && permissions.includes(VAULT_PROXY_PERMISSION)) {
-      throw new Error('A grant made for someone else can never include access to their vaults');
+      throw new ProxyGrantRefused('A grant made for someone else can never include access to their vaults');
     }
     // Nor does a proxy's, re-delegating: it would hand on the owner's vault key (#1762 slice 5).
     if (ctx.viaProxy && permissions.includes(VAULT_PROXY_PERMISSION)) {
-      throw new Error(`Only ${owner} can give access to their vaults`);
+      throw new ProxyGrantRefused(`Only ${owner} can give access to their vaults`);
     }
     // Held, not fresh: the owner's own step-up is not the question when an administrator makes it.
     const lacking = await lackingScopes(permissions, p => pdp.holds(ownerSubject, p));
     if (lacking.length > 0) {
-      throw new Error(`${owner} does not hold ${lacking.join(', ')}. A grant can only carry permissions the person represented has.`);
+      throw new ProxyGrantRefused(`${owner} does not hold ${lacking.join(', ')}. A grant can only carry permissions the person represented has.`);
     }
 
     const now = Date.now();
     let expiresAt: string | null = null;
     if (input.expiresAt !== undefined && input.expiresAt !== null) {
       const end = typeof input.expiresAt === 'string' ? Date.parse(input.expiresAt) : NaN;
-      if (!Number.isFinite(end) || end <= now) throw new Error('The end date must be a date in the future');
+      if (!Number.isFinite(end) || end <= now) throw new ProxyGrantRefused('The end date must be a date in the future');
       expiresAt = new Date(end).toISOString();
     }
 
@@ -2477,15 +2488,15 @@ class AuthManager extends BaseManager {
    */
   private async sealVaultCopy(ctx: PermissionSubject, owner: string, proxy: string): Promise<Lockbox | null> {
     const blocked = await this.vaultGrantBlocked(ctx, owner);
-    if (blocked) throw new Error(blocked);
+    if (blocked) throw new ProxyGrantRefused(blocked);
     const pagesDirectory = this.pagesDirectory();
     if (!pagesDirectory || !(await hasUserKeys(pagesDirectory, owner))) return null;
     const proxyKey = await personKeyOf(pagesDirectory, proxy);
     if (!proxyKey) {
-      throw new Error(`${proxy} cannot be given access to your encrypted vaults yet: they need a private store of their own, unlocked at least once. Give access without vaults, or ask them to set one up first.`);
+      throw new ProxyGrantRefused(`${proxy} cannot be given access to your encrypted vaults yet: they need a private store of their own, unlocked at least once. Give access without vaults, or ask them to set one up first.`);
     }
     const copy = await sealKekCopyFor(ctx, proxyKey);
-    if (!copy) throw new Error('Unlock your private store first: access to your encrypted vaults can only be given while it is open.');
+    if (!copy) throw new ProxyGrantRefused('Unlock your private store first: access to your encrypted vaults can only be given while it is open.');
     return copy;
   }
 
