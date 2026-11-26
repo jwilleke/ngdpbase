@@ -24,7 +24,7 @@ import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
 
 const host = () => buildAddonHost('calendar', {});
 
-const who = vi.hoisted(() => ({ signedIn: false, permissions: new Set<string>() }));
+const who = vi.hoisted((): { signedIn: boolean; permissions: Set<string>; during?: () => void } => ({ signedIn: false, permissions: new Set<string>() }));
 vi.mock('../../../dist/src/context/ApiContext', async () => {
   const real = await vi.importActual<typeof import('../../../dist/src/context/ApiContext.js')>('../../../dist/src/context/ApiContext.js');
   return {
@@ -36,6 +36,8 @@ vi.mock('../../../dist/src/context/ApiContext', async () => {
         actingUsername: () => 'ann',
         hasPermission: async (p: string) => who.permissions.has(p),
         requirePermission: async (p: string) => {
+          await Promise.resolve();
+          who.during?.(); // another request gets in while the answer is awaited
           if (!who.permissions.has(p)) throw new real.ApiError(who.signedIn ? 403 : 401, 'Forbidden');
         }
       })
@@ -80,6 +82,7 @@ beforeEach(async () => {
   declared = DECLARED;
   who.signedIn = true;
   who.permissions = new Set();
+  who.during = undefined;
   dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'cal-manage-'));
   const byCalendar = new Map<string, unknown[]>();
   for (const e of EVENTS) byCalendar.set(e.calendarId, [...(byCalendar.get(e.calendarId) ?? []), e]);
@@ -267,6 +270,18 @@ describe('a request that changes the event\'s calendar cannot get around the che
     holds('association-event-post');
     const res = await request(app).put('/api/calendar/events/e-assoc').send({ calendarId: 'association-events', title: 'Same' });
     expect(res.status).toBe(200);
+  });
+
+  test('an event moved by another request while the check was awaited is refused, not changed', async () => {
+    holds('association-event-post');
+    who.during = () => { who.during = undefined; void manager.update('e-assoc', { calendarId: 'clubhouse' }); };
+    const edit = await request(app).put('/api/calendar/events/e-assoc').send({ title: 'Hijacked' });
+    expect(edit.status).toBe(409);
+    expect(manager.getById('e-assoc')?.title).toBe('Title e-assoc');
+    who.during = () => { who.during = undefined; void manager.update('e-plain', { calendarId: 'clubhouse' }); };
+    holds('calendar-manage');
+    expect((await request(app).delete('/api/calendar/events/e-plain')).status).toBe(409);
+    expect(stillThere('e-plain')).toBe(true);
   });
 
   test.each([[null], [42], [['clubhouse']], [{ a: 1 }]])('a calendarId that is not text (%j) is refused as a bad request and changes nothing', async (value) => {

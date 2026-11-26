@@ -50,7 +50,7 @@ __Response__ `200 OK`
 
 Create a new event on a `managed` calendar.
 
-__Auth__: `admin` or `clubhouse-manager`
+__Auth__: the permission the event's calendar names in its `manage-permission` setting, `calendar-manage` when it names none (an event with no `calendarId` goes to the `default` calendar). A permission the site has not declared is refused for everyone.
 
 #### Request body
 
@@ -113,11 +113,11 @@ __Errors__: `404` if not found, or if the event's calendar is not visible to the
 Partial update of an existing event. Send only the fields to change.
 `id`, `created`, and `dtstamp` are protected and ignored in the patch.
 
-__Auth__: `admin` or `clubhouse-manager`
+__Auth__: the permission the event's calendar names in its `manage-permission` setting, `calendar-manage` when it names none. A patch that changes `calendarId` needs the permission of both calendars.
 
 __Response__ `200 OK` — updated `FullCalendarEvent`.
 
-__Errors__: `404`, `401`, `403`.
+__Errors__: `400` if `calendarId` is not text, `401`, `403`, `404`, `409` if the event was moved by another request while the check ran.
 
 ---
 
@@ -125,11 +125,11 @@ __Errors__: `404`, `401`, `403`.
 
 Delete an event.
 
-__Auth__: `admin` or `clubhouse-manager`
+__Auth__: the permission the event's calendar names in its `manage-permission` setting, `calendar-manage` when it names none.
 
 __Response__ `204 No Content`
 
-__Errors__: `404`, `401`, `403`.
+__Errors__: `401`, `403`, `404`, `409` if the event was moved by another request while the check ran.
 
 ---
 

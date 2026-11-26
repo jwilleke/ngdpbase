@@ -56,6 +56,22 @@ Management (create, edit, delete events; see private reservation details; cancel
 
 The add-on never names a role (#1198, #1220).
 
+#### A calendar with its own manage permission
+
+By default `calendar-manage` decides who adds, edits and deletes events on every calendar. A calendar can name a different permission in its `manage-permission` setting, so a group can look after one calendar and nothing else, for example the board adding events to the association's events calendar without being able to touch the clubhouse calendar:
+
+```json
+"ngdpbase.addons.calendar.calendars": {
+  "clubhouse":          { "workflow": "reservation", "visibility": "authenticated", "enabled": true },
+  "association-events": { "workflow": "managed", "visibility": "authenticated", "enabled": true,
+                          "manage-permission": "association-event-post" }
+}
+```
+
+The permission must be declared by the site (an add-on or your `app-custom-config.json` under `ngdpbase.permissions.definitions`) and granted by a policy. Once a calendar names its own permission, `calendar-manage` alone no longer lets someone change its events. A name the site has not declared, or a value that is not text, leaves nobody able to change that calendar's events until it is fixed. A calendar with no `manage-permission` asks `calendar-manage`, as before.
+
+Cancelling a reservation and seeing private reservation details always ask `calendar-manage`, whatever a calendar names. The calendar admin page also asks `calendar-manage`, because it shows reservation details. An edit that moves an event to another calendar needs the permission of both calendars. The setting is read on each request, so a change applies with no restart.
+
 ### Who may see a calendar
 
 Each calendar's `visibility` setting (see [configuration](docs/configuration.md)) applies to the calendar view, the API (`/api/calendar/events`, `/events/search`, `/events/:id`) and the `.ics` feed alike. A `public` calendar is shown to everyone. Every calendar must have a `visibility`: a configured one with no setting is read as `private`, and the calendar admin page names it. A calendar the configuration does not name is read as `private`, and one set to `enabled: false` is shown to no one. An `authenticated` calendar is shown to holders of the `calendar-read` permission, which this add-on grants to every signed-in account. A `private` calendar is shown to holders of `calendar-manage`. A calendar the viewer may not see shows no events, including in the marquee text, and its single-event and `.ics` addresses answer as not found. A changed `visibility` or `enabled` setting applies on the next request, with no restart.

@@ -43,6 +43,14 @@ export interface CalendarConfig {
    * public: anyone, authenticated: holders of calendar-read, private: holders of calendar-manage.
    */
   visibility: 'public' | 'authenticated' | 'private';
+
+  /**
+   * The permission that lets someone add, edit and delete this calendar's events.
+   * Defaults to calendar-manage. A name the site has not declared leaves nobody
+   * able to change the events. Cancelling a reservation and seeing private
+   * reservation details stay on calendar-manage (managers/calendarManage.ts).
+   */
+  'manage-permission'?: string;
 }
 
 export default CalendarConfig;

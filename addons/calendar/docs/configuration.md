@@ -6,6 +6,7 @@ All keys live under `ngdpbase.addons.calendar` in `app-custom-config.json`.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| `manage-permission` | permission name | Optional. The permission that lets someone add, edit and delete this calendar's events. Defaults to `calendar-manage`. The name must be declared by the site; a name that is not declared, or a value that is not text, leaves nobody able to change this calendar's events. Cancelling a reservation and seeing private reservation details stay on `calendar-manage` for every calendar. See [Who may manage the calendar](../README.md#who-may-manage-the-calendar). |
 | `enabled` | boolean | `false` | Enable the calendar add-on |
 | `dataPath` | string | `./data/calendar` | Directory for per-calendar JSON files. Supports `${FAST_STORAGE}` expansion. |
 | `clubhouse-manager-email` | string | — | Email address that receives reservation notification copies |
@@ -53,7 +54,7 @@ The Clubhouse reservation form saves its events to the calendar `clubhouse`. A s
 
 ### When a change applies
 
-`visibility`, `enabled` and `workflow` are read from the current configuration on each request, so a change applies on the next request, with no restart; that includes the admin dashboard and `POST /api/calendar/reservations`. `clubhouse-manager-email` is read when the site starts.
+`visibility`, `enabled`, `manage-permission` and `workflow` are read from the current configuration on each request, so a change applies on the next request, with no restart; that includes the admin dashboard and `POST /api/calendar/reservations`. `clubhouse-manager-email` is read when the site starts.
 
 Reservations follow the same two settings. `POST /api/calendar/reservations` answers "does not accept reservations" (400) for a calendar the requester may not see under its `visibility`, for a disabled one and for an id the configuration does not name, with the same message for all three. So a reservation calendar needs a `visibility` its requesters meet.
 

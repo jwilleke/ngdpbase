@@ -5,7 +5,8 @@ import type { IcsEvent } from 'ts-ics';
 import type { ApiContext } from '../../../dist/src/context/ApiContext.js';
 import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { CalendarViewer } from '../managers/CalendarDataManager.js';
-import { calendarGate, currentCalendarConfig } from '../managers/calendarVisibility.js';
+import { MANAGE_PERMISSION, calendarGate, currentCalendarConfig } from '../managers/calendarVisibility.js';
+import { declaredPermissionNames, resolveManagePermission } from '../managers/calendarManage.js';
 import type { CalendarGate } from '../managers/calendarVisibility.js';
 import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
 
@@ -48,13 +49,18 @@ async function onlyVisible(events: CalendarEvent[], may: CalendarGate): Promise<
  * configuration does not name is read as private, and one set to
  * `enabled: false` is left out.
  *
+ * The write routes (create, edit, delete) ask policy for the permission the
+ * event's calendar names in its `manage-permission` setting, `calendar-manage`
+ * when it names none. A name the site has not declared is refused for everyone.
+ * An edit that changes `calendarId` is checked against both calendars.
+ *
  * Endpoints:
  *   GET    /api/calendar/events                  — list / FullCalendar feed
- *   POST   /api/calendar/events                  — create event (admin/clubhouse-manager)
+ *   POST   /api/calendar/events                  - create event (the calendar's manage permission)
  *   GET    /api/calendar/events/search            — keyword search
  *   GET    /api/calendar/events/:id               — get single event
- *   PUT    /api/calendar/events/:id               — update event (admin/clubhouse-manager)
- *   DELETE /api/calendar/events/:id               — delete event (admin/clubhouse-manager)
+ *   PUT    /api/calendar/events/:id               - update event (the calendar's manage permission)
+ *   DELETE /api/calendar/events/:id               - delete event (the calendar's manage permission)
  *   GET    /api/calendar/:calendarId/feed.ics     — RFC 5545 .ics feed
  */
 export default function apiRoutes(engine: WikiEngine, config: Record<string, unknown>, host: AddonHost): Router {
@@ -71,6 +77,40 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
    */
   function gateFor(ctx: ApiContext): CalendarGate {
     return calendarGate(p => ctx.hasPermission(p), currentCalendarConfig(engine, config));
+  }
+
+  /**
+   * Refuse unless the request holds the permission `calendarId` names for managing
+   * its events, read from the configuration as it is now. The permission is asked
+   * through `requirePermission`, so the refusal and the step-up rule are the usual
+   * ones. A calendar whose permission nobody can hold is refused the same way.
+   */
+  async function requireManage(ctx: ApiContext, calendarId: string): Promise<void> {
+    const permission = resolveManagePermission(currentCalendarConfig(engine, config), calendarId, declaredPermissionNames(engine));
+    if (permission === null) throw new ApiError(ctx.isAuthenticated ? 403 : 401, 'Forbidden');
+    await ctx.requirePermission(permission); // #2546: the calendar's own permission, policy not a role name
+  }
+
+  /**
+   * The permission answers above take a moment, and another request may move the event
+   * meanwhile. Called right before the change, with no wait between: an event that is
+   * now on another calendar than the one that was checked is refused.
+   */
+  function stillOn(m: CalendarDataManager, id: string, checked: CalendarEvent | undefined): void {
+    if (m.getById(id)?.calendarId !== checked?.calendarId) throw new ApiError(409, 'The event changed while it was being checked. Try again.');
+  }
+
+  /**
+   * The `calendarId` a request body names: undefined when it names none. Throws a
+   * 400 for a value that is not text, so a body cannot slip past the check as a
+   * number, list or null that the manager would store as it is.
+   */
+  function bodyCalendarId(body: unknown): string | undefined {
+    if (!body || typeof body !== 'object' || !Object.hasOwn(body, 'calendarId')) return undefined;
+    const value = (body as Record<string, unknown>)['calendarId'];
+    if (typeof value === 'string') return value;
+    if (value === undefined) return undefined;
+    throw new ApiError(400, 'calendarId must be text');
   }
 
   /**
@@ -141,7 +181,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
       const viewer = await viewerOf(ctx, engine, host);
-      await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
+      // The calendar the event lands on: the manager files one with none on `default`.
+      await requireManage(ctx, bodyCalendarId(req.body) ?? 'default');
       const event = await m.create(req.body as Parameters<typeof m.create>[0]);
       res.status(201).json(m.toFullCalendar(event, viewer));
     } catch (err) {
@@ -172,8 +213,15 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
       const viewer = await viewerOf(ctx, engine, host);
-      await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
-      const event = await m.update(String(req.params['id']), req.body as Parameters<typeof m.update>[1]);
+      const id = String(req.params['id']);
+      const existing = m.getById(id);
+      // An event that is not there is asked about the way it always was.
+      await (existing ? requireManage(ctx, existing.calendarId) : ctx.requirePermission(MANAGE_PERMISSION));
+      const target = bodyCalendarId(req.body);
+      // Moving an event is a change to two calendars: ask the one it goes to as well.
+      if (existing && target !== undefined && target !== existing.calendarId) await requireManage(ctx, target);
+      stillOn(m, id, existing);
+      const event = await m.update(id, req.body as Parameters<typeof m.update>[1]);
       res.json(m.toFullCalendar(event, viewer));
     } catch (err) {
       handleError(err, res);
@@ -186,8 +234,11 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
-      await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
-      await m.delete(String(req.params['id']));
+      const id = String(req.params['id']);
+      const existing = m.getById(id);
+      await (existing ? requireManage(ctx, existing.calendarId) : ctx.requirePermission(MANAGE_PERMISSION));
+      stillOn(m, id, existing);
+      await m.delete(id);
       res.status(204).end();
     } catch (err) {
       handleError(err, res);
