@@ -8,14 +8,17 @@ import { csrfTestHeaders } from '../../middleware/__tests__/__fixtures__/csrfTes
  * #2359: POST /files/upload asks who is signed in BEFORE multer reads the body, so a signed-out
  * caller's file (up to the 10 MB limit and past it) is never buffered.
  */
+const managers: Record<string, unknown> = {
+  ConfigurationManager: { getProperty: vi.fn((_key: string, def: unknown) => def) }
+};
 const mockEngine = {
-  getManager: vi.fn(() => null),
+  getManager: vi.fn((name: string) => managers[name] ?? null),
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
 };
 
 const OVER_THE_LIMIT = Buffer.alloc(11 * 1024 * 1024, 'a');
 
-function appFor(userContext: { username: string; isAuthenticated: boolean } | null) {
+function appFor(userContext: { username: string; isAuthenticated: boolean }) {
   const app = buildTestApp({ withCsrf: true, userContext });
   const seen: Request[] = [];
   app.use((req: Request, _res: Response, next: NextFunction) => { seen.push(req); next(); });
@@ -25,7 +28,7 @@ function appFor(userContext: { username: string; isAuthenticated: boolean } | nu
 
 describe('POST /files/upload checks sign-in before the body is read (#2359)', () => {
   test('a signed-out upload over the limit is refused and none of the body is read', async () => {
-    const { app, seen } = appFor(null);
+    const { app, seen } = appFor({ username: 'Anonymous', isAuthenticated: false });
     const res = await request(app)
       .post('/files/upload')
       .set(csrfTestHeaders())
