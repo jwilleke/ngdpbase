@@ -93,7 +93,7 @@ class FileLoggingProvider extends BaseLoggingProvider {
    * stack, which can hold a caller-sent value, from its frames (#2359).
    */
   private static knownMessages(info: Record<string, unknown>): string[] {
-    const splat: unknown = info[Symbol.for('splat')];
+    const splat: unknown = (info as Record<symbol, unknown>)[Symbol.for('splat')];
     const candidates: unknown[] = [...(Array.isArray(splat) ? (splat as unknown[]) : []), info.error];
     return candidates.flatMap((c) => (c instanceof Error ? [c.message] : typeof c === 'string' ? [c] : [])).filter((m) => m !== '');
   }
