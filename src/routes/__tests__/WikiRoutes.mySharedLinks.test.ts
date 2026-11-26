@@ -2,6 +2,8 @@
  * GET /my/shares and the old /shares address, slice 3 of #2247 (R1, R7, R9).
  */
 
+import ejs from 'ejs';
+import path from 'path';
 import WikiRoutes from '../WikiRoutes';
 import { TEST_PLUGIN_MANAGER } from '../../test-support/plugins';
 
@@ -158,6 +160,24 @@ describe('GET /my/shares?view=all, the all-users view (slice 4 of #2247, R13, R1
     expect(text).not.toContain('Chemo schedule');
     expect(text).not.toContain('Secret trip plan');
     expect(pageManager.listVaultPages).not.toHaveBeenCalled();
+  });
+
+  test('the page rendered from the arguments the route gave it holds no token and no page title (design R13)', async () => {
+    const { routes } = setup(['share-manage-all'], [{ uuid: 'u1', title: 'Chemo schedule' }], everyone);
+    const r = res();
+    await routes.mySharesPage(req('/my/shares', { view: 'all' }, MOLLY), r);
+    const [viewName, args] = r.render.mock.calls[0] as [string, Record<string, unknown>];
+    // The route's own arguments, plus what the layout adds: nothing here is hand-built.
+    const html = await ejs.renderFile(path.join(__dirname, '../../../views', `${viewName}.ejs`), {
+      title: 'Shared links', csrfToken: 'csrf-value', jsonForScript: (v: unknown) => JSON.stringify(v), pageUrl: (n: string) => `/view/${n}`,
+      lockedUnless: () => '', currentUser: { username: 'molly', displayName: 'Molly', roles: [], isAuthenticated: true },
+      ...args
+    });
+    expect(html).toContain('Shared links: all users');
+    for (const c of ['a', 'b', 'c']) expect(html).not.toContain(c.repeat(64));
+    expect(html).not.toContain('/share/');
+    expect(html).not.toContain('Chemo schedule');
+    expect(html).not.toContain('Secret trip plan');
   });
 
   test('opening the all-users view writes no audit entry and revokes nothing', async () => {

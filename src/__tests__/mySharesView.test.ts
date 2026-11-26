@@ -46,6 +46,21 @@ function loadedCss(doc: Document): string {
   return localStylesheets(doc).map(h => readFileSync(stylesheetFile(h), 'utf8')).join('\n');
 }
 
+describe('my-shares.ejs revoke forms (slice 4 of #2247)', () => {
+  test('in the all-users view every Revoke form says so, so a manager stopping their own link stays there', async () => {
+    const doc = await render({ allUsers: true, mayManageAll: true, viewer: 'molly', rows: [{ ...ROW, madeBy: 'molly' }, { ...ROW, id: 'r2', madeBy: 'sam' }] });
+    const forms = [...doc.querySelectorAll('form[action$="/revoke"]')];
+    expect(forms.length).toBeGreaterThanOrEqual(2);
+    for (const f of forms) expect(f.querySelector('input[name="view"]')?.getAttribute('value')).toBe('all');
+  });
+
+  test('in a person\'s own view the Revoke form carries no view field', async () => {
+    const doc = await render({ rows: [{ ...ROW, madeBy: 'molly' }], viewer: 'molly' });
+    expect(doc.querySelector('form[action$="/revoke"]')).not.toBeNull();
+    expect(doc.querySelector('form[action$="/revoke"] input[name="view"]')).toBeNull();
+  });
+});
+
 describe('my-shares.ejs addresses (round 3 H1)', () => {
   test('an active tag link shows its full address and a Copy button', async () => {
     const doc = await render({ rows: [ROW], addresses: { r1: 'https://wiki.example.com/share/abc' }, createdId: 'r1' });
