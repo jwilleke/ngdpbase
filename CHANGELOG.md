@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+### Fixed
+
+- __#2532__: `./server.sh update` and `update all` do nothing when the site is already at the latest commit and its build matches it: no install, build or restart (a site that is stopped is still started, without a build), and `update all` lists the site as `unchanged` in its summary. A successful build now records its commit in `dist/.built-from`; a site without that file, with a failed build, or with a build of another commit still rebuilds. A site built before this release rebuilds once on its next update.
+
 ## [5.48.0] - 2026-11-25
 
 ### Upgrade notes

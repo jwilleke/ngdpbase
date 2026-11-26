@@ -507,6 +507,65 @@ describe('./server.sh update all', () => {
     expect(git(bad, 'status', '--porcelain')).toBe('');
   }, 60000);
 
+  it('lists a checkout as unchanged, and restarts nothing, on a second run at the same commit (#2532)', () => {
+    const one = cloneFrom(primary(), 'one');
+    const two = cloneFrom(primary(), 'two');
+    publish(primary(), '1.1.0');
+    writeJlist([
+      { name: 'one', cwd: one },
+      { name: 'two', cwd: two }
+    ]);
+    const first = run(['update', 'all']);
+    expect(first.status, first.out).toBe(0);
+    expect(first.out).toContain('updated       2');
+    expect(first.out).toContain('unchanged     0');
+    fs.rmSync(npmLog, { force: true });
+    fs.rmSync(curlLog, { force: true });
+
+    const second = run(['update', 'all']);
+
+    expect(second.status, second.out).toBe(0);
+    expect(second.out).toContain('unchanged     2');
+    expect(second.out).toContain('updated       0');
+    expect(second.out).toContain('result: unchanged');
+    expect(second.out).not.toContain('result: updated');
+    expect(npmLines()).toEqual([]);
+    expect(fs.existsSync(curlLog)).toBe(false);
+    expect(second.out).not.toContain('Server started');
+  }, 60000);
+
+  it('counts a changed checkout as updated and an unchanged one as unchanged in the same run (#2532)', () => {
+    const stays = cloneFrom(primary(), 'stays');
+    const moves = cloneFrom(makeOrigin('other'), 'moves');
+    publish(primary(), '1.1.0');
+    writeJlist([
+      { name: 'stays', cwd: stays },
+      { name: 'moves', cwd: moves }
+    ]);
+    expect(run(['update', 'all']).status).toBe(0);
+    publish({ bare: path.join(tmp, 'other.git'), seed: path.join(tmp, 'other-seed') }, '1.1.0');
+
+    const second = run(['update', 'all']);
+
+    expect(second.status, second.out).toBe(0);
+    expect(second.out).toContain('updated       1');
+    expect(second.out).toContain('unchanged     1');
+  }, 60000);
+
+  it('still holds a dirty checkout when its commit and build are unchanged (#2532)', () => {
+    const site = cloneFrom(primary(), 'site');
+    publish(primary(), '1.1.0');
+    writeJlist([{ name: 'site', cwd: site }]);
+    expect(run(['update', 'all']).status).toBe(0);
+    fs.writeFileSync(path.join(site, 'notes.txt'), 'wip');
+
+    const second = run(['update', 'all']);
+
+    expect(second.status, second.out).toBe(1);
+    expect(second.out).toContain('held by git   1');
+    expect(second.out).toContain('unchanged     0');
+  }, 60000);
+
   it('leaves a stopped checkout stopped', () => {
     const site = cloneFrom(primary(), 'stopped');
     const head = git(site, 'rev-parse', 'HEAD');

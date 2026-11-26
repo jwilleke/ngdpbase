@@ -475,6 +475,30 @@ case "${1:-}" in
       fi
     }
 
+    # dist/.built-from holds the commit the current dist/ was built from. It is
+    # written only after a build succeeds and cleared before one starts, so a
+    # failed build, a missing dist/ or a build of another commit never matches
+    # (#2532). Without a match, update always installs and builds.
+    BUILD_STAMP="$SCRIPT_DIR/dist/.built-from"
+    _build() {
+      rm -f "$BUILD_STAMP"
+      npm run build || return 1
+      mkdir -p "$SCRIPT_DIR/dist" && git rev-parse HEAD > "$BUILD_STAMP"
+    }
+    # Online means PM2 lists this app as online. When the pm2 CLI and daemon
+    # disagree on version, `pm2 show` prints only a banner, so a process
+    # listening on the port counts as online too.
+    _site_online() {
+      local st
+      st=$(npx --no pm2 show "$APP_NAME" 2>/dev/null | _strip_ansi | grep -E "^\s*status" | awk '{print $NF}' || true)
+      [ "$st" = "online" ] && return 0
+      [ -z "$st" ] && [ -n "$(_port_pid)" ] && return 0
+      return 1
+    }
+    _build_is_current() {
+      [ -f "$BUILD_STAMP" ] && [ "$(cat "$BUILD_STAMP" 2>/dev/null)" = "$(git rev-parse HEAD)" ]
+    }
+
     _restart() {
       "$0" stop || return 1
       sleep 2
@@ -527,33 +551,59 @@ case "${1:-}" in
     NEW_SHA=$(git rev-parse HEAD)
     NEW_VERSION=$(_version)
 
-    FAILED=""
-    echo "📦 Installing dependencies..."
-    if ! _npm_install; then
-      FAILED="npm install"
-    else
-      echo "🔨 Building..."
-      if ! npm run build; then
-        FAILED="npm run build"
-      else
-        echo "🚀 Restarting..."
-        if ! _restart; then
-          FAILED="server start"
-        elif ! _wait_ready; then
-          FAILED="readiness check"
+    # Nothing was pulled and the built files are from this commit: there is
+    # nothing to install or build (#2532). A site that is online has nothing
+    # to restart either, so stop here. A site that is stopped (or left down by
+    # an earlier failure) is still started, as before.
+    BUILD_CURRENT=0
+    if [ "$NEW_SHA" = "$OLD_SHA" ] && _build_is_current; then
+      if _site_online; then
+        echo "✅ $APP_NAME is already at $NEW_VERSION (${NEW_SHA:0:7}), nothing to do"
+        # Internal to `update all`, which sets it to learn that this site was
+        # unchanged. Not a setting for people to use.
+        if [ -n "${NGDP_UPDATE_RESULT_FILE:-}" ]; then
+          echo unchanged > "$NGDP_UPDATE_RESULT_FILE" 2>/dev/null || true
         fi
+        exit 0
+      fi
+      echo "ℹ️  $APP_NAME is already at $NEW_VERSION (${NEW_SHA:0:7}) but is not running. Starting it, no build needed."
+      BUILD_CURRENT=1
+    fi
+
+    FAILED=""
+    if [ "$BUILD_CURRENT" -eq 0 ]; then
+      echo "📦 Installing dependencies..."
+      if ! _npm_install; then
+        FAILED="npm install"
+      else
+        echo "🔨 Building..."
+        if ! _build; then
+          FAILED="npm run build"
+        fi
+      fi
+    fi
+    if [ -z "$FAILED" ]; then
+      echo "🚀 Restarting..."
+      if ! _restart; then
+        FAILED="server start"
+      elif ! _wait_ready; then
+        FAILED="readiness check"
       fi
     fi
 
     if [ -z "$FAILED" ]; then
-      echo "✅ Updated: $OLD_VERSION (${OLD_SHA:0:7}) → $NEW_VERSION (${NEW_SHA:0:7})"
+      if [ "$BUILD_CURRENT" -eq 1 ]; then
+        echo "✅ Started: $NEW_VERSION (${NEW_SHA:0:7})"
+      else
+        echo "✅ Updated: $OLD_VERSION (${OLD_SHA:0:7}) → $NEW_VERSION (${NEW_SHA:0:7})"
+      fi
       exit 0
     fi
 
     echo ""
     echo "❌ Update to $NEW_VERSION (${NEW_SHA:0:7}) failed at: $FAILED"
     echo "⏪ Rolling back to $OLD_VERSION (${OLD_SHA:0:7})..."
-    if _checkout_old && _npm_install && npm run build && _restart && _wait_ready; then
+    if _checkout_old && _npm_install && _build && _restart && _wait_ready; then
       echo "⏪ Rolled back: running $OLD_VERSION (${OLD_SHA:0:7}) again. The update did NOT happen."
       exit 1
     fi

@@ -273,6 +273,9 @@ ngdp_update_all_child_env() {
   # process has already exported its .env (set -a), including storage paths.
   local -a args
   args=(env -i "PATH=${PATH:-/usr/bin:/bin}" "HOME=${HOME:-}" "TMPDIR=${TMPDIR:-/tmp}" "NGDP_UPDATE_ALL_PARENT=1")
+  # Where the child reports that it had nothing to do (#2532). Internal to
+  # update all: server.sh writes "unchanged" there; it is not a user setting.
+  [ -n "${_UA_RESULT_FILE:-}" ] && args+=("NGDP_UPDATE_RESULT_FILE=${_UA_RESULT_FILE}")
   local key
   for key in USER LOGNAME SHELL LANG LC_ALL LC_CTYPE TERM PM2_HOME \
     SSH_AUTH_SOCK GIT_SSH_COMMAND GIT_SSH \
@@ -454,7 +457,7 @@ ngdp_update_all() {
     order+=("$self_index")
   fi
 
-  local updated=0 failed=0 skipped=0 held=0 number=0
+  local updated=0 unchanged=0 failed=0 skipped=0 held=0 number=0
   local -a cmd_show
   index=0
   while [ "$index" -lt "${#order[@]}" ]; do
@@ -496,8 +499,13 @@ ngdp_update_all() {
     fi
     echo "    running: ${cmd_show[*]}"
     local code=0
+    _UA_RESULT_FILE="$(ngdp_update_all_tmp result)"
+    rm -f "$_UA_RESULT_FILE"
     ngdp_update_all_run_one "$root" "$ref" "$envname" || code=$?
-    if [ "$code" -eq 0 ]; then
+    if [ "$code" -eq 0 ] && [ -f "$_UA_RESULT_FILE" ] && [ "$(head -c 20 "$_UA_RESULT_FILE")" = "unchanged" ]; then
+      echo "    result: unchanged"
+      unchanged=$((unchanged + 1))
+    elif [ "$code" -eq 0 ]; then
       echo "    result: updated"
       updated=$((updated + 1))
     else
@@ -512,6 +520,7 @@ ngdp_update_all() {
     echo "  would update  ${updated}"
   else
     echo "  updated       ${updated}"
+    echo "  unchanged     ${unchanged}"
   fi
   echo "  not online    ${skipped}"
   echo "  held by git   ${held}"
