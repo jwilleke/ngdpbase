@@ -83,10 +83,6 @@ function make(setup: Setup) {
   return { m, sink, order, destroyed };
 }
 
-/** The button's question, asked of the manager (the method lands with the code that answers it). */
-const mayDelete = (m: AttachmentManager, ctx: ActorContext, id: string) =>
-  (m as unknown as { mayDeleteAttachment(c: ActorContext, i: string): Promise<boolean> }).mayDeleteAttachment(ctx, id);
-
 const person = (username: string, extra: Record<string, unknown> = {}) =>
   ({ username, isAuthenticated: true, roles: ['reader'], ...extra }) as unknown as ActorContext;
 const identities = () => fakeIdentityManager({ jim: JIM, bob: BOB });
@@ -204,7 +200,7 @@ describe('#2534 the button asks the same question as the door', () => {
   ] as const)('%s', async (_n, user, files, assetDelete, expected) => {
     const { m, destroyed } = make({ files: { ...files }, assetDelete, identities: identities() });
     const ctx = person(user);
-    expect(await mayDelete(m, ctx, 'att-1')).toBe(expected);
+    expect(await m.mayDeleteAttachment(ctx, 'att-1')).toBe(expected);
     if (expected) {
       await expect(m.deleteAttachment('att-1', ctx)).resolves.toBe(true);
     } else {
@@ -215,7 +211,7 @@ describe('#2534 the button asks the same question as the door', () => {
 
   test('asking records nothing and destroys nothing', async () => {
     const { m, sink, destroyed } = make({ files: { 'att-1': JIM }, identities: identities() });
-    await mayDelete(m, person('jim'), 'att-1');
+    await m.mayDeleteAttachment(person('jim'), 'att-1');
     expect(sink).toEqual([]);
     expect(destroyed).toEqual([]);
   });
