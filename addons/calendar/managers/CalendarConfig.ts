@@ -13,7 +13,7 @@
  *
  * workflow:
  *   "reservation" — members submit requests; manager approves; CLASS: CONFIDENTIAL
- *   "managed"     — admin/clubhouse-manager create/edit/delete events
+ *   "managed"     — holders of the calendar's manage permission create/edit/delete events
  *
  * visibility:
  *   "public"        — anyone can view events
@@ -34,7 +34,7 @@ export interface CalendarConfig {
 
   /**
    * Reservation calendars accept member-submitted bookings (with conflict detection).
-   * Managed calendars are populated by admins/clubhouse-managers.
+   * Managed calendars are populated by holders of the calendar's manage permission.
    */
   workflow: 'reservation' | 'managed';
 
@@ -48,7 +48,8 @@ export interface CalendarConfig {
    * The permission that lets someone add, edit and delete this calendar's events.
    * Defaults to calendar-manage. A name the site has not declared leaves nobody
    * able to change the events. Cancelling a reservation and seeing private
-   * reservation details stay on calendar-manage (managers/calendarManage.ts).
+   * reservation details stay on calendar-manage, and so does every change to a
+   * reservation calendar (managers/calendarManage.ts).
    */
   'manage-permission'?: string;
 }

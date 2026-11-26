@@ -52,7 +52,9 @@ async function onlyVisible(events: CalendarEvent[], may: CalendarGate): Promise<
  * The write routes (create, edit, delete) ask policy for the permission the
  * event's calendar names in its `manage-permission` setting, `calendar-manage`
  * when it names none. A name the site has not declared is refused for everyone.
- * An edit that changes `calendarId` is checked against both calendars.
+ * An edit that changes `calendarId` is checked against both calendars. A
+ * reservation calendar, and any event that carries (or is given) a `_private`
+ * block, always asks `calendar-manage`.
  *
  * Endpoints:
  *   GET    /api/calendar/events                  — list / FullCalendar feed
@@ -89,6 +91,17 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     const permission = resolveManagePermission(currentCalendarConfig(engine, config), calendarId, declaredPermissionNames(engine));
     if (permission === null) throw new ApiError(ctx.isAuthenticated ? 403 : 401, 'Forbidden');
     await ctx.requirePermission(permission); // #2546: the calendar's own permission, policy not a role name
+  }
+
+  /**
+   * Private reservation details (the `_private` block) are not governed by a
+   * calendar's own manage permission: writing one, or changing or deleting an
+   * event that carries one, also needs `calendar-manage`, so a calendar's own
+   * manager cannot forge a requester or rewrite someone's reservation.
+   */
+  async function requirePrivateBlock(ctx: ApiContext, existing: CalendarEvent | undefined, body: unknown): Promise<void> {
+    const writes = !!body && typeof body === 'object' && Object.hasOwn(body, '_private');
+    if (writes || existing?._private !== undefined) await ctx.requirePermission(MANAGE_PERMISSION);
   }
 
   /**
@@ -183,6 +196,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       const viewer = await viewerOf(ctx, engine, host);
       // The calendar the event lands on: the manager files one with none on `default`.
       await requireManage(ctx, bodyCalendarId(req.body) ?? 'default');
+      await requirePrivateBlock(ctx, undefined, req.body);
       const event = await m.create(req.body as Parameters<typeof m.create>[0]);
       res.status(201).json(m.toFullCalendar(event, viewer));
     } catch (err) {
@@ -220,6 +234,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       const target = bodyCalendarId(req.body);
       // Moving an event is a change to two calendars: ask the one it goes to as well.
       if (existing && target !== undefined && target !== existing.calendarId) await requireManage(ctx, target);
+      await requirePrivateBlock(ctx, existing, req.body);
       stillOn(m, id, existing);
       const event = await m.update(id, req.body as Parameters<typeof m.update>[1]);
       res.json(m.toFullCalendar(event, viewer));
@@ -237,6 +252,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       const id = String(req.params['id']);
       const existing = m.getById(id);
       await (existing ? requireManage(ctx, existing.calendarId) : ctx.requirePermission(MANAGE_PERMISSION));
+      await requirePrivateBlock(ctx, existing, undefined);
       stillOn(m, id, existing);
       await m.delete(id);
       res.status(204).end();
