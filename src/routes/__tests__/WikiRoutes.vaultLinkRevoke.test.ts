@@ -38,8 +38,8 @@ function setup(granted: string[]) {
   return { routes, shareManager, pageManagerCalls };
 }
 
-const req = (id: string, userContext: unknown) => ({
-  params: { id }, query: {}, body: {}, session: { csrfToken: 'tok' },
+const req = (id: string, userContext: unknown, body: Record<string, string> = {}) => ({
+  params: { id }, query: {}, body, session: { csrfToken: 'tok' },
   path: `/my/vaults/links/${id}/revoke`, originalUrl: `/my/vaults/links/${id}/revoke`, protocol: 'http',
   get: vi.fn().mockReturnValue('localhost:3000'),
   userContext
@@ -109,6 +109,21 @@ describe('POST /my/vaults/links/:id/revoke (slice 3 of #2247)', () => {
     await routes.myVaultLinksRevoke(req('v1', MOLLY), r);
     expect(shareManager.revoke).toHaveBeenCalledWith('v1', expect.objectContaining({ username: 'molly' }));
     expect(shareManager.revoke.mock.calls[0]).toHaveLength(2);
+  });
+
+  test('slice 4: a manager stopping their own link from the all-users view stays in that view', async () => {
+    const { routes, shareManager } = setup(['share-manage-all']);
+    const r = res();
+    await routes.myVaultLinksRevoke(req('v1', MOLLY, { view: 'all' }), r);
+    expect(shareManager.revoke.mock.calls[0]).toHaveLength(2);
+    expect(r.redirect).toHaveBeenCalledWith('/my/shares?view=all&notice=revoked');
+  });
+
+  test('slice 4: a person without share-manage-all who posts view=all lands on their own list', async () => {
+    const { routes } = setup([]);
+    const r = res();
+    await routes.myVaultLinksRevoke(req('v1', MOLLY, { view: 'all' }), r);
+    expect(r.redirect).toHaveBeenCalledWith('/my/shares?notice=revoked');
   });
 
   test('admin-system, share-revoke and profile-manage together do not let anyone revoke another user\'s link', async () => {

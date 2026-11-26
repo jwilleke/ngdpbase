@@ -841,6 +841,26 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       expect(res.headers.location).toBe('/my/shares?revoked=1');
     });
 
+    test('slice 4: a manager stopping their own link from the all-users view stays in that view', async () => {
+      shareState.records = [{ id: 's2', token: 'e'.repeat(64), scope: SCOPE, createdBy: 'root', createdAt: '2026-07-01T00:00:00.000Z', expiresAt: null }];
+      mockUserContext = { ...adminUser };
+      const res = await request(app)
+        .post('/shares/s2/revoke')
+        .type('form')
+        .send({ ...csrfTestBodyField(), view: 'all' });
+      expect(res.headers.location).toBe('/my/shares?view=all&revoked=1');
+      expect(mockShareManager.revoke.mock.calls[0]).toHaveLength(2);
+    });
+
+    test('slice 4: a person without share-manage-all who posts view=all lands on their own list', async () => {
+      mockUserContext = { ...editorUser };
+      const res = await request(app)
+        .post('/shares/s1/revoke')
+        .type('form')
+        .send({ ...csrfTestBodyField(), view: 'all' });
+      expect(res.headers.location).toBe('/my/shares?revoked=1');
+    });
+
     test('#2521: a token acting for the maker revokes through the maker branch, with no asManager', async () => {
       mockUserContext = { ...editorUser, viaToken: { id: 't1' } };
       const res = await request(app)
