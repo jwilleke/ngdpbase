@@ -22,6 +22,7 @@
 import { randomBytes, timingSafeEqual } from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
 import logger from '../utils/logger.js';
+import { cameFrom, isFormPost } from './signedOutWriteGate.js';
 import { sessionCookieWithheld, SESSION_COOKIE_WITHHELD_MESSAGE } from '../utils/sessionSecurity.js';
 
 const TOKEN_BYTES = 32;
@@ -103,6 +104,13 @@ function continueAfterSave(req: Request, res: Response, next: NextFunction): voi
         `expected:${expectedState} submitted:${submittedState}` +
         (withheld ? ' (the session cookie is secure and this request is plain http, #2071)' : '')
     );
+    // A lost session (cookie cleared, or pruned from the store) has no token and no sign-in: a page form from a
+    // browser goes to sign-in and back to the page, as the signed-out write gate does. A withheld cookie is
+    // not sent there: signing in could not work until the cookie setting is fixed, so the 403 explains it.
+    if (!withheld && req.userContext?.isAuthenticated !== true && isFormPost(req)) {
+      res.redirect('/login?redirect=' + encodeURIComponent(cameFrom(req)));
+      return;
+    }
     res
       .status(403)
       .type('text/plain')
