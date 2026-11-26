@@ -16926,6 +16926,48 @@ ${panes}
   });
 
   /**
+   * What the picker needs to offer Delete on a local file row (#2534).
+   *
+   * `canDelete` is AttachmentManager's own answer, the one the delete door
+   * gives, asked with the request's context; it records nothing and decides
+   * nothing, since the door asks again when the button is pressed. `usedBy`
+   * is only built for a row the viewer may delete, since it feeds the confirm
+   * box: the pages that use the file, named only when the viewer may open
+   * them, at most {@link WikiRoutes.USED_BY_NAMES}; the rest are counted.
+   * A check that fails marks the row not deletable and names no page.
+   */
+  private static readonly USED_BY_NAMES = 10;
+
+  private async annotateFileDeletes(rows: Array<Record<string, unknown>>, wikiContext: WikiContext): Promise<void> {
+    const ctx = wikiContext.userContext;
+    const attachments = this.engine.getManager('AttachmentManager') as { mayDeleteAttachment?: (c: unknown, id: string) => Promise<boolean> } | null;
+    const pages = this.engine.getManager('PageManager') as { filterPagesFor?: (c: unknown, names: readonly string[], action: string) => Promise<string[]> } | null;
+    for (const row of rows) {
+      if (row.providerId !== 'local' || typeof row.id !== 'string') continue;
+      let canDelete = false;
+      try {
+        canDelete = Boolean(ctx && typeof attachments?.mayDeleteAttachment === 'function' && await attachments.mayDeleteAttachment(ctx, row.id));
+      } catch (err) {
+        logger.warn(`[AssetSearch] Delete check failed for a file row: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      row.canDelete = canDelete;
+      if (!canDelete) continue;
+      const mentioned = Array.isArray(row.mentions) ? row.mentions.filter((n): n is string => typeof n === 'string') : [];
+      let visible: string[] = [];
+      try {
+        visible = mentioned.length > 0 && typeof pages?.filterPagesFor === 'function' ? await pages.filterPagesFor(ctx, mentioned, 'view') : [];
+      } catch (err) {
+        logger.warn(`[AssetSearch] Page check failed for a file row: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      row.usedBy = {
+        pages: visible.slice(0, WikiRoutes.USED_BY_NAMES),
+        more: Math.max(0, visible.length - WikiRoutes.USED_BY_NAMES),
+        hidden: mentioned.length - visible.length
+      };
+    }
+  }
+
+  /**
    * GET /api/assets/search
    *
    * Unified search across AttachmentManager and MediaManager with pagination.
@@ -17109,6 +17151,7 @@ ${panes}
 
         const total = deduped.length;
         const results = deduped.slice(offset, offset + pageSize);
+        await this.annotateFileDeletes(results, wikiContext);
         return res.json({ success: true, results, total, hasMore: offset + pageSize < total, capped: anyCapped });
       }
 
@@ -17429,6 +17472,7 @@ ${panes}
         dateFrom, dateTo, dateField, includeHidden, pathPrefix, mime, extension
       }, wikiContext.userContext);
 
+      await this.annotateFileDeletes((page?.results ?? []) as unknown as Array<Record<string, unknown>>, wikiContext);
       return res.json({ success: true, ...page });
     } catch (err: unknown) {
       logger.error('[AssetService] Search error:', err);
