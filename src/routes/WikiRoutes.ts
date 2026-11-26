@@ -18325,7 +18325,15 @@ ${panes}
       // The one refusal written for the person: an earlier update is waiting for a restart.
       if (outcome.reason === FINISH_LAST_UPDATE) return back('error', `${slug} was not updated: ${FINISH_LAST_UPDATE}`);
       // The installer's own words hold a server path, the registry's reply or a setting's name: the log has them, the page does not (#2494).
-      logger.warn(`[route] add-on update of '${slug}' refused: ${outcome.reason ?? 'no reason given'}`);
+      // The kinds of refusal an administrator can act on get one plain sentence each; anything else gets the general one.
+      const reason = outcome.reason ?? '';
+      logger.warn(`[route] add-on update of '${slug}' refused: ${reason || 'no reason given'}`);
+      if (/ is not in ngdpbase\.addons\.install$|is not installed, so there is nothing to update/.test(reason)) {
+        return back('error', `${slug} is not on this site's list of installed add-ons, so it was not updated.`);
+      }
+      if (/ needs ngdpbase \S+ or later; this is /.test(reason)) return back('error', `${slug} was not updated: that version needs a newer ngdpbase than this site runs.`);
+      if (/ is outside the configured range /.test(reason)) return back('error', `${slug} was not updated: that version is outside the range this site allows.`);
+      if (/ is already downloaded; restart the site to use it$/.test(reason)) return back('error', `${slug} was not updated: that version is already downloaded; restart the site to use it.`);
       return back('error', `${slug} was not updated and stays on its current version.`);
     } catch (err: unknown) {
       return back('error', plainRouteError(req, err, 'The add-on was not updated. Try again in a moment.'));
