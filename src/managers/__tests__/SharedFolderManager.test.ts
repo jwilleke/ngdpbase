@@ -35,6 +35,7 @@ import SharedFolderManager, { SharedFolderRefusedError, SharedFoldersUnavailable
 import { SHARED_FOLDERS_KEY_ENV } from '../../utils/sharedFoldersKey';
 import { newRecoveryWords } from '../../utils/privateStoreCrypto';
 import { pdpOver } from '../../test-support/policyDecisionPoint';
+import logger from '../../utils/logger';
 
 const shipped = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
 
@@ -439,6 +440,17 @@ describe('SharedFolderManager (#2124)', () => {
       expect(restarted.unavailableReason()).toMatch(/not the key the shared folders were made under/);
       expect(restarted.getManagerStatus().state).toBe('degraded');
       await expect(restarted.openFolderKey(admin(), 'executive')).rejects.toBeInstanceOf(SharedFoldersUnavailableError);
+    });
+
+    test('keys that cannot be read: the reason shown is one plain sentence, the cause goes to the log', async () => {
+      const errorLog = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+      fs.writeFileSync(path.join(dir, 'keys.json'), 'NOTJSON-XYZ');
+      const m = await build();
+      expect(m.unavailableReason()).toMatch(/could not be read/);
+      expect(m.unavailableReason()).not.toMatch(/NOTJSON|JSON|Unexpected|token/i);
+      await expect(m.prepareRecoveryWords(admin())).rejects.toBeInstanceOf(SharedFoldersUnavailableError);
+      expect(JSON.stringify(errorLog.mock.calls)).toContain('NOTJSON-XYZ');
+      errorLog.mockRestore();
     });
 
     test('the same server key after a restart opens them', async () => {

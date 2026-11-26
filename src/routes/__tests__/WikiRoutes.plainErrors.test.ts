@@ -11,7 +11,7 @@
 import { Readable } from 'node:stream';
 import request from 'supertest';
 import WikiRoutes from '../WikiRoutes';
-import { PageContentValidationError, PageWriteRefusedError } from '../../managers/PageManager';
+import { PageContentValidationError, PageRuleRefusedError, PageWriteRefusedError, SHARED_CATEGORY_REFUSAL } from '../../managers/PageManager';
 import { PasskeyRefused, ProxyGrantRefused } from '../../managers/AuthManager';
 import { BackupKeyRefused } from '../../managers/BackupManager';
 import { ContactLinkRefused } from '../../managers/IdentityManager';
@@ -314,7 +314,9 @@ describe('an admin refusal written for the person is still shown, and is not a s
     ['adminBackupKeySaved', { body: { fingerprint: 'abc' } }, () => new BackupKeyRefused('That is not the fingerprint of the current backup key; reload Admin → Backup and check the key you saved'), 200],
     ['adminLinkContact', { body: { personId: 'p1', username: 'bob' } }, () => new ContactLinkRefused("There is no account 'bob'."), 200],
     ['apiJobEnqueue', { params: { jobId: 'nope' } }, () => new JobActionError("'nope' is not a job this site knows", 404), 404],
-    ['adminSaveRaw', { params: { page: 'Home' }, body: { rawContent: 'x' } }, () => new PageContentValidationError('Home', [{ message: 'The title is missing' }] as never), 400]
+    ['adminSaveRaw', { params: { page: 'Home' }, body: { rawContent: 'x' } }, () => new PageContentValidationError('Home', [{ message: 'The title is missing' }] as never), 400],
+    ['adminSaveRaw', { params: { page: 'Home' }, body: { rawContent: 'x' } }, () => new PageRuleRefusedError(SHARED_CATEGORY_REFUSAL), 400],
+    ['adminSaveRaw', { params: { page: 'Home' }, body: { rawContent: 'x' } }, () => new PageRuleRefusedError("You may not add, edit or delete pages in shared folder 'executive'"), 400]
   ];
 
   test.each(SHOWN)('%s shows the refusal as written', async (handler, extra, make, status) => {
@@ -339,6 +341,64 @@ describe('an admin refusal written for the person is still shown, and is not a s
 
     expect(messageOf(res)).toBe('Tick at least one thing they may do.');
     expect(errorLog).not.toHaveBeenCalled();
+  });
+});
+
+describe('review of the admin routes (#2494)', () => {
+  let errorLog: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    errorLog = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+  });
+
+  test.each([
+    'The end date must be a date in the future',
+    'Unlock your private store first: access to your encrypted vaults can only be given while it is open.',
+    'cat cannot be given access to your encrypted vaults yet: they need a private store of their own.',
+    'Only mom can give access to their vaults.'
+  ])('proxy access shows "%s" as written', async (message) => {
+    const am = { proxyAccessEnabled: () => true, grantProxy: () => { throw new ProxyGrantRefused(message); } };
+    for (const [handler, extra] of [['giveProxyAccess', {}], ['adminGiveProxyAccess', { params: { username: 'bob' } }]] as const) {
+      const res = makeRes();
+      await makeRoutes(failure, false, { AuthManager: am })[handler](makeReq({ ...extra, body: { proxy: 'alice', permissions: ['page-view'] } }), res);
+      expect(messageOf(res), handler).toBe(message);
+    }
+    expect(errorLog).not.toHaveBeenCalled();
+  });
+
+  test('a user whose invitation fails is reported as created, with no invitation sent', async () => {
+    const routes = makeRoutes(failure, false, {
+      UserManager: { createUser: async () => ({ username: 'bob' }) },
+      AuthManager: { inviteUser: async () => { throw failure(); } }
+    });
+    const res = makeRes();
+
+    await routes.adminCreateUser(makeReq({ body: { username: 'bob', invite: 'true' } }), res);
+
+    const shown = String(messageOf(res));
+    expect(shown).toMatch(/bob/);
+    expect(shown).toMatch(/was created/);
+    expect(shown).toMatch(/invitation was not sent/);
+    expect(shown).not.toMatch(/could not be created/);
+    expect(shown).not.toMatch(NODE_ERROR_TEXT);
+    expect(errorLog).toHaveBeenCalledTimes(1);
+  });
+
+  test('an add-on update the installer refuses shows one plain sentence, and the installer text goes to the log', async () => {
+    const reason = 'cannot write /srv/ngdpbase/addons/x (EACCES); config key ngdpbase.addons.install';
+    const routes = makeRoutes(failure, false, {
+      AddonsManager: { updateInstalledAddon: async () => ({ status: 'refused', reason }) }
+    });
+    const res = makeRes();
+
+    await routes.adminAddonUpdate(makeReq({ params: { name: 'forms' } }), res);
+
+    const shown = String(messageOf(res));
+    expect(shown).toMatch(/forms was not updated/);
+    expect(shown).not.toMatch(/\/srv\/|EACCES|ngdpbase\.addons/);
+    const logged = JSON.stringify([...errorLog.mock.calls, ...vi.mocked(logger.warn).mock.calls]);
+    expect(logged).toContain('/srv/ngdpbase/addons/x');
   });
 });
 
