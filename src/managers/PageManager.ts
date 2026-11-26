@@ -3863,6 +3863,13 @@ class PageManager extends BaseManager implements CatalogSource {
       await step('comments move', () => this.engine.getManager<CommentManager>('CommentManager')
         ?.movePageComments(uuid, previousName, name, change.ctx));
     }
+    // #2454: the footnote reverse index follows a page that was created, restored, deleted or renamed;
+    // a plain save changes no footnote file, so it needs no step.
+    if (change.uuid && (name === null || previousName === null || name !== previousName)) {
+      const uuid = change.uuid;
+      await step('footnote index', () => this.engine.getManager<FootnoteManager>('FootnoteManager')
+        ?.pageChanged({ uuid, name, previousName }));
+    }
     // #1842: and so do the files it uses — before the mention sync below, so a
     // page made public finds its files in the shared pool.
     if (name && previousName && name !== previousName && change.content !== undefined) {
@@ -4246,6 +4253,20 @@ class PageManager extends BaseManager implements CatalogSource {
       throw new Error('PageManager: Provider not initialized');
     }
     return this.provider.getAllPages();
+  }
+
+  /**
+   * Every public page with its uuid, by name: for the footnote reverse index
+   * (#2454, R6), which opens each page's footnote file by `{ name, uuid }`.
+   * No content, no metadata, and no vault page (a vault page's name is never
+   * listed). Says nothing about who may see a page: the caller asks
+   * `filterPagesFor` as the reader.
+   */
+  async listPageRefs(): Promise<Array<{ name: string; uuid: string }>> {
+    if (!this.provider) return [];
+    return (await this.provider.getAllPageInfo())
+      .filter((info) => info.uuid && !parsePrivatePageName(info.title))
+      .map((info) => ({ name: info.title, uuid: info.uuid }));
   }
 
   /**

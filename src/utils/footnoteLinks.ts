@@ -31,6 +31,22 @@ export function safeSourceUrl(url: unknown): string | null {
   return parseWebUrl(url) ? (url as string).trim() : null;
 }
 
+/**
+ * The address to save (Jim, 2026-11-23): an http or https link with a username
+ * or password in it is saved without them and never refused, so a password
+ * pasted into a link is not kept or shown. A link with neither is returned as
+ * entered, without the spaces around it; a value that is not an http or https
+ * link is returned as given, for the caller to refuse.
+ */
+export function stripUrlCredentials(url: string): string {
+  const trimmed = url.trim();
+  const parsed = parseWebUrl(trimmed);
+  if (!parsed || (!parsed.username && !parsed.password)) return trimmed;
+  parsed.username = '';
+  parsed.password = '';
+  return parsed.toString();
+}
+
 /** Query parameters that say where a visitor came from, not which page it is. */
 const TRACKING_PARAM = /^(utm_.*|fbclid|gclid)$/i;
 

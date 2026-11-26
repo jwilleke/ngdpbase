@@ -10,7 +10,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { FootnoteLinkError, safeSourceUrl, tidyUrl } from './footnoteLinks.js';
+import { FootnoteLinkError, safeSourceUrl, stripUrlCredentials, tidyUrl } from './footnoteLinks.js';
 
 export type SourceStatus = 'good' | 'needs-checking' | 'stale';
 
@@ -45,6 +45,14 @@ export class SourceMissingError extends Error {
   }
 }
 
+/** Someone without the `page-edit` permission asked to make a source. */
+export class SourceNotPermittedError extends Error {
+  constructor() {
+    super('You don\'t have permission to add sources.');
+    this.name = 'SourceNotPermittedError';
+  }
+}
+
 /** A footnote on a vault page was pointed at a source: sources are shared across the site, vault pages never use them (R6). */
 export class SourceOnPrivatePageError extends Error {
   constructor() {
@@ -52,6 +60,9 @@ export class SourceOnPrivatePageError extends Error {
     this.name = 'SourceOnPrivatePageError';
   }
 }
+
+/** The longest source title kept. */
+export const MAX_SOURCE_TITLE = 300;
 
 const SOURCE_FILE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/i;
 const SOURCE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -63,13 +74,18 @@ export class SourceStore {
     this.now = opts.now ?? (() => new Date());
   }
 
-  /** Makes a new source. A link that is not http or https is refused ({@link FootnoteLinkError}), and so is a title with nothing in it. */
+  /**
+   * Makes a new source. A link that is not http or https is refused ({@link FootnoteLinkError}), and so is a
+   * title with nothing in it or one over {@link MAX_SOURCE_TITLE} characters. A username or password in the link is
+   * removed, not refused (Jim, 2026-11-23).
+   */
   async create(data: { title: string; url: string; createdBy: string }): Promise<SourceRecord> {
-    const url = safeSourceUrl(data.url);
+    const url = safeSourceUrl(data.url) ? stripUrlCredentials(data.url) : null;
     const urlKey = tidyUrl(data.url);
     if (!url || !urlKey) throw new FootnoteLinkError();
     const title = data.title.trim();
     if (!title) throw new Error('A source needs a title.');
+    if (title.length > MAX_SOURCE_TITLE) throw new Error(`A source's title can be at most ${MAX_SOURCE_TITLE} characters.`);
     const at = this.now().toISOString();
     const record: SourceRecord = {
       id: randomUUID(),
@@ -100,20 +116,26 @@ export class SourceStore {
     }
   }
 
+  /** Every source record, oldest first (by `createdAt`, then id). Not filtered for any reader. */
+  async list(): Promise<SourceRecord[]> {
+    if (!await fs.pathExists(this.dir)) return [];
+    const found: SourceRecord[] = [];
+    for (const name of await fs.readdir(this.dir)) {
+      const match = SOURCE_FILE.exec(name);
+      if (!match) continue;
+      const record = await this.get(match[1]);
+      if (record) found.push(record);
+    }
+    return found.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  }
+
   /**
    * Every source with this tidy key, oldest first (by `createdAt`, then id). Not
    * filtered for any reader: whoever shows these to a person applies the
    * reader filter first (R4).
    */
   async findByKey(urlKey: string): Promise<SourceRecord[]> {
-    if (!urlKey || !await fs.pathExists(this.dir)) return [];
-    const found: SourceRecord[] = [];
-    for (const name of await fs.readdir(this.dir)) {
-      const match = SOURCE_FILE.exec(name);
-      if (!match) continue;
-      const record = await this.get(match[1]);
-      if (record?.urlKey === urlKey) found.push(record);
-    }
-    return found.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    if (!urlKey) return [];
+    return (await this.list()).filter((r) => r.urlKey === urlKey);
   }
 }
