@@ -90,14 +90,15 @@
         const heading = function (row) { return row.label || pageTitles[row.id] || ''; };
         const endsText = function (row) { return row.status === 'active' ? 'Active, ' + (row.expiresAt ? 'ends ' + row.expiresAt.slice(0, 10) : 'until cancelled') : statusText(row); };
     %>
-        <div class="table-responsive d-none d-md-block">
-            <table id="sharedLinksTable" class="table table-sm align-middle shared-links d-none d-md-table">
+        <div class="shared-links-wrap">
+        <div class="shared-links-table table-responsive">
+            <table id="sharedLinksTable" class="table table-sm align-middle shared-links">
                 <thead><tr><th>What</th><th>Status</th><th>Expires</th><th>Made</th><th>Link</th><th>Actions</th></tr></thead>
                 <tbody>
                 <% rows.forEach(function (row) { %>
                     <% const dim = row.status === 'active' ? '' : ' class="text-muted"'; %>
                     <tr data-share-id="<%= row.id %>" data-status="<%= row.status %>">
-                        <td<%- dim %>>
+                        <td class="shared-link-what<%= dim ? ' text-muted' : '' %>">
                             <% if (heading(row)) { %><strong><%= heading(row) %></strong><br><% } %>
                             <%= row.what %>
                         </td>
@@ -111,7 +112,7 @@
                 </tbody>
             </table>
         </div>
-        <div class="d-md-none">
+        <div class="shared-links-cards">
             <% rows.forEach(function (row) { %>
                 <div class="card mb-3" data-share-card="<%= row.id %>">
                     <div class="card-body">
@@ -125,6 +126,7 @@
                     </div>
                 </div>
             <% }); %>
+        </div>
         </div>
     <% } %>
 </div>

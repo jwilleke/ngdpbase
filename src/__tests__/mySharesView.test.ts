@@ -570,6 +570,6 @@ describe('the table fits its box and the layout switches by the box width (round
     expect(table.querySelector('table#sharedLinksTable')).not.toBeNull();
     expect(cascaded(css, table, 'display')).toBe('none');
     expect(cascaded(css, doc.querySelector('.shared-links-cards') as Element, 'display')).toBe('block');
-    expect(css).toMatch(/@container \(min-width: 840px\)\s*\{[^@]*\.shared-links-table\s*\{[^}]*display: block[^}]*\}[^@]*\.shared-links-cards\s*\{[^}]*display: none/);
+    expect(css).toMatch(/@container \(min-width: 856px\)\s*\{[^@]*\.shared-links-table\s*\{[^}]*display: block[^}]*\}[^@]*\.shared-links-cards\s*\{[^}]*display: none/);
   });
 });
