@@ -509,7 +509,8 @@ describe('an event\'s organizer and the .ics feed', () => {
       // None of the feed's lines is a property the stored text asked for.
       expect(lines.filter(l => /^(URL|ATTACH|ATTENDEE):/.test(l))).toEqual([]);
       expect(res.text).not.toMatch(/[\r\n](URL:javascript|ATTACH:|ATTENDEE:)/);
-      expect(res.text).not.toMatch(/[\r\n]\s*[\r\n]/);
+      expect(lines.slice(0, -1).filter(l => l === '')).toEqual([]);
+      expect(res.text).not.toMatch(/\n(?<!\r\n)/);
       expect(res.text).toContain('Evil');
       expect(res.text).toContain('line one');
       expect(res.text).toContain('line two');

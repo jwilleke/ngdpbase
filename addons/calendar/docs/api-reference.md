@@ -13,7 +13,7 @@ Authentication uses the ngdpbase session cookie (same as the wiki UI).
 
 Return events as a FullCalendar-compatible JSON array.
 
-__Auth__: none for `public` calendars. Events of an `authenticated` calendar are returned to holders of `calendar-read` (every signed-in account), and events of a `private` calendar to holders of `calendar-manage`. Events of a calendar the caller may not see are left out of the list, whatever `calendarId` asks for.
+__Auth__: none for `public` calendars. A `url` stored before the address rule (see POST) is left out of each event returned, and the event is kept. Events of an `authenticated` calendar are returned to holders of `calendar-read` (every signed-in account), and events of a `private` calendar to holders of `calendar-manage`. Events of a calendar the caller may not see are left out of the list, whatever `calendarId` asks for.
 
 #### Query parameters
 
@@ -58,16 +58,17 @@ __Auth__: the permission the event's calendar names in its `manage-permission` s
 |-------|----------|-------------|
 | `calendarId` | no | Target calendar ID, text (default: `default`). Anything that is not text is refused with `400` |
 | `title` | yes | Event title |
-| `start` | yes | ISO 8601 datetime |
-| `end` | no | ISO 8601 datetime |
+| `start` | yes | A date or ISO 8601 datetime the calendar can read (`2026-12-01`, `2026-12-01T10:00:00`); anything else is refused with `400` |
+| `end` | no | Same rule as `start` when sent; leave it out for none |
 | `allDay` | no | boolean |
 | `description` | no | Free text |
 | `location` | no | Venue |
 | `color` | no | CSS colour string |
 | `status` | no | `CONFIRMED` `TENTATIVE` `CANCELLED` (default: `CONFIRMED`) |
-| `url` | no | Link opened on event click. Must be empty, a relative address (`/wiki/Page`, `#top`), a protocol-relative one (`//host/page`, which takes the page's own http or https), or start with `http:`, `https:` or `mailto:` (any case); anything else, and anything with a control character such as a tab or newline, is refused with `400` |
+| `url` | no | Link opened on event click. Must be empty, a relative address (`/wiki/Page`, `#top`), a protocol-relative one (`//host/page`, which takes the page's own http or https), or start with `http:`, `https:` or `mailto:` (any case); anything else, and anything with a control character such as a tab or newline, is refused with `400`. A relative address with a colon before its first slash, such as `Page:Name`, reads as a scheme and is refused: write `./Page:Name`. `null` is refused too; send `""` to clear a url |
+| `organizer` | no | Text: an email address or a display name. A line break, NUL or other control character is refused with `400`, because the value is written into the `.ics` feed |
 
-__Response__ `201 Created` — full `FullCalendarEvent` object. A `url` stored before the rule above existed is left out of every event the API returns (list, single, search and the `.ics` feed).
+__Response__ `201 Created` — full `FullCalendarEvent` object. A `url` stored before the rule above existed is left out of every event the API returns (list, single, search and the `.ics` feed); the event itself is kept.
 
 #### Errors
 
@@ -75,7 +76,7 @@ __Response__ `201 Created` — full `FullCalendarEvent` object. A `url` stored b
 |------|--------|
 | `401` | Not authenticated |
 | `403` | Missing the permission the calendar names (or `calendar-manage`, for a body with a `_private` block) |
-| `400` | Missing `title` or `start`, a `calendarId` that is not text, or a `url` that is not allowed |
+| `400` | Missing `title` or `start`, a `start` or `end` that is not a date, a `calendarId` that is not text, a `url` that is not allowed, or an `organizer` that is not text or holds a control character |
 
 ---
 
@@ -83,7 +84,7 @@ __Response__ `201 Created` — full `FullCalendarEvent` object. A `url` stored b
 
 Keyword search across event titles and descriptions.
 
-__Auth__: none for `public` calendars. Results are limited to the calendars the caller may see, as for the list endpoint.
+__Auth__: none for `public` calendars. Results are limited to the calendars the caller may see, as for the list endpoint. A `url` stored before the address rule (see POST) is left out of each result, and the event is kept.
 
 #### Query parameters
 
@@ -102,7 +103,7 @@ Return a single event by UUID.
 
 __Auth__: same visibility rules as the list endpoint.
 
-__Response__ `200 OK` — single `FullCalendarEvent`.
+__Response__ `200 OK` — single `FullCalendarEvent`. A `url` stored before the address rule (see POST) is left out, and the event is kept.
 
 __Errors__: `404` if not found, or if the event's calendar is not visible to the caller (an `authenticated` calendar to a caller without `calendar-read`, a `private` one or one the configuration does not name without `calendar-manage`, and a disabled one to anyone).
 
@@ -117,7 +118,7 @@ __Auth__: the permission the event's calendar names in its `manage-permission` s
 
 __Response__ `200 OK` — updated `FullCalendarEvent`.
 
-__Errors__: `400` if `calendarId` is not text or `url` is not allowed (same rule as create), `401`, `403`, `404`, `409` if the event was moved by another request while the check ran.
+__Errors__: `400` if `calendarId` is not text, `url` is not allowed, `start` or `end` is not a date, or `organizer` is not text or holds a control character (same rules as create; send `url: ""` to clear a url, `null` is refused), `401`, `403`, `404`, `409` if the event was moved by another request while the check ran.
 
 ---
 
@@ -185,7 +186,7 @@ __Errors__: `401`, `403` (not allowed to reserve at all), `404`. A caller who is
 ### GET /api/calendar/:calendarId/feed.ics
 
 RFC 5545 iCalendar subscription feed for a single calendar. `CONFIDENTIAL` events
-are excluded. Subscribe from Apple Calendar, Google Calendar, or any CalDAV client.
+are excluded. An event whose start or end cannot be read as a date is left out, and the rest of the feed is still served. Control characters in an event's text, such as a stored line break in a title or organizer, are dropped, so no event's text can add a line to the feed; a line break in a description is written as an escaped `\n`. A `url` stored before the address rule is left out of its event. Subscribe from Apple Calendar, Google Calendar, or any CalDAV client.
 
 __Auth__: none for `public` calendars. An `authenticated` calendar's feed needs `calendar-read` (a signed-in account) and a `private` calendar's `calendar-manage`; for anyone else the feed answers `404`. A calendar app that cannot sign in to the site therefore cannot subscribe to a calendar that is not public.
 

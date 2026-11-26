@@ -8,6 +8,7 @@ import type { CalendarViewer } from '../managers/CalendarDataManager.js';
 import { MANAGE_PERMISSION, calendarGate, currentCalendarConfig } from '../managers/calendarVisibility.js';
 import { declaredPermissionNames, resolveManagePermission } from '../managers/calendarManage.js';
 import { isSafeEventUrl } from '../managers/eventUrl.js';
+import { hasControlCharacter, icsBlockText, icsLineText } from '../managers/eventText.js';
 import type { CalendarGate } from '../managers/calendarVisibility.js';
 import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
 
@@ -56,8 +57,12 @@ async function onlyVisible(events: CalendarEvent[], may: CalendarGate): Promise<
  * An edit that changes `calendarId` is checked against both calendars. A
  * reservation calendar, and any event that carries (or is given) a `_private`
  * block, always asks `calendar-manage`. An event's `url` must be empty, relative,
- * or start with `http:`, `https:` or `mailto:` (400 otherwise), and one stored
- * before that rule is left out of what is returned.
+ * or start with `http:`, `https:` or `mailto:` (400 otherwise; a relative address with
+ * a colon before its first slash, `Page:Name`, reads as a scheme and is written
+ * `./Page:Name`), and one stored before that rule is left out of what is returned.
+ * An `organizer` is text without a control character, and `start` and `end` are
+ * dates (400 otherwise). The .ics feed drops control characters from every text it
+ * writes and leaves out an event whose dates it cannot read.
  *
  * Endpoints:
  *   GET    /api/calendar/events                  — list / FullCalendar feed
@@ -141,6 +146,35 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
   }
 
   /**
+   * A body's `organizer`, when it has one, must be text without a control character:
+   * it is written into the .ics feed, where a line break would add a line of the
+   * writer's choosing.
+   */
+  function checkOrganizer(body: unknown): void {
+    if (!body || typeof body !== 'object' || !Object.hasOwn(body, 'organizer')) return;
+    const value = (body as Record<string, unknown>)['organizer'];
+    if (value === undefined) return;
+    if (typeof value !== 'string') throw new ApiError(400, 'organizer must be text');
+    if (hasControlCharacter(value)) throw new ApiError(400, 'organizer must not contain a line break or other control character');
+  }
+
+  /**
+   * A body's `start` and `end`, when it has them, must be dates the calendar can read.
+   * An event with a start that is not a date stops the calendar's .ics feed from being built.
+   */
+  function checkEventDates(body: unknown): void {
+    if (!body || typeof body !== 'object') return;
+    for (const field of ['start', 'end']) {
+      if (!Object.hasOwn(body, field)) continue;
+      const value = (body as Record<string, unknown>)[field];
+      if (value === undefined) continue;
+      if (typeof value !== 'string' || value.trim() === '' || Number.isNaN(new Date(value).getTime())) {
+        throw new ApiError(400, `${field} must be a date, such as 2026-12-01 or 2026-12-01T10:00:00`);
+      }
+    }
+  }
+
+  /**
    * What each answer holds depends on who asks, so a shared cache must not keep it.
    */
   function privateCache(res: Response): void {
@@ -212,6 +246,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       await requireManage(ctx, bodyCalendarId(req.body) ?? 'default');
       await requirePrivateBlock(ctx, undefined, req.body);
       checkEventUrl(req.body);
+      checkOrganizer(req.body);
+      checkEventDates(req.body);
       const event = await m.create(req.body as Parameters<typeof m.create>[0]);
       res.status(201).json(m.toFullCalendar(event, viewer));
     } catch (err) {
@@ -251,6 +287,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       if (existing && target !== undefined && target !== existing.calendarId) await requireManage(ctx, target);
       await requirePrivateBlock(ctx, existing, req.body);
       checkEventUrl(req.body);
+      checkOrganizer(req.body);
+      checkEventDates(req.body);
       stillOn(m, id, existing);
       const event = await m.update(id, req.body as Parameters<typeof m.update>[1]);
       res.json(m.toFullCalendar(event, viewer));
@@ -295,7 +333,15 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       const events = m.query({ calendarId })
         .filter(e => e.class !== 'CONFIDENTIAL');
 
-      const icsEvents: IcsEvent[] = events.map(e => toIcsEvent(e));
+      // An event that cannot be written as one (a start that is not a date) is left out, not the whole feed.
+      const icsEvents: IcsEvent[] = [];
+      for (const e of events) {
+        try {
+          icsEvents.push(toIcsEvent(e));
+        } catch {
+          continue;
+        }
+      }
 
       const feed = generateIcsCalendar({
         prodId: '-//ngdpbase//Calendar//EN',
@@ -314,34 +360,49 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
   return router;
 }
 
+/** A date from stored text, or undefined when it is not one. */
+function readDate(value: string | undefined): Date | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
 /**
  * Translate a CalendarEvent to a ts-ics IcsEvent object.
  * Used by the feed.ics endpoint.
  *
  * RFC 5545 requires either DTEND or DURATION. We always supply DTEND:
  * for events without an explicit end, fall back to start + 1 hour.
+ *
+ * Throws for an event whose start (or end) is not a date, so the caller can leave
+ * it out. Every text field has its control characters dropped (see eventText.ts):
+ * a stored line break cannot start a line of the feed.
  */
 function toIcsEvent(e: CalendarEvent): IcsEvent {
   const now = new Date();
-  const startDate = new Date(e.start);
+  const startDate = readDate(e.start);
+  if (!startDate) throw new Error(`Event ${e.id} has no readable start`);
   // RFC 5545 DTEND is required (or DURATION) — default to start + 1 hour
   const endDate = e.end
-    ? new Date(e.end)
+    ? readDate(e.end)
     : new Date(startDate.getTime() + 60 * 60 * 1000);
+  if (!endDate) throw new Error(`Event ${e.id} has no readable end`);
 
   const event: IcsEvent = {
-    uid:   e.id,
-    summary: e.title,
-    stamp: { date: e.dtstamp ? new Date(e.dtstamp) : now },
+    uid:   icsLineText(String(e.id)),
+    summary: icsLineText(String(e.title ?? '')),
+    stamp: { date: readDate(e.dtstamp) ?? now },
     start: { date: startDate },
     end:   { date: endDate }
   };
 
-  if (e.description)  event.description  = e.description;
-  if (e.location)     event.location     = e.location;
+  if (e.description)  event.description  = icsBlockText(String(e.description));
+  if (e.location)     event.location     = icsLineText(String(e.location));
   if (e.url && isSafeEventUrl(e.url)) event.url = e.url;
-  if (e.created)      event.created      = { date: new Date(e.created) };
-  if (e.updated)      event.lastModified = { date: new Date(e.updated) };
+  const created = readDate(e.created);
+  if (created)        event.created      = { date: created };
+  const updated = readDate(e.updated);
+  if (updated)        event.lastModified = { date: updated };
 
   // RFC 5545 CLASS
   if (e.class === 'PUBLIC' || e.class === 'PRIVATE' || e.class === 'CONFIDENTIAL') {
@@ -359,14 +420,14 @@ function toIcsEvent(e: CalendarEvent): IcsEvent {
   }
 
   // RFC 5545 ORGANIZER — ts-ics IcsOrganizer requires email
-  if (e.organizer) {
+  const organizer = typeof e.organizer === 'string' ? icsLineText(e.organizer) : '';
+  if (organizer) {
     // If organizer looks like an email use it; otherwise treat as display name
-    const isEmail = e.organizer.includes('@');
+    const isEmail = organizer.includes('@');
     event.organizer = isEmail
-      ? { email: e.organizer }
-      : { email: 'noreply@calendar', name: e.organizer };
+      ? { email: organizer }
+      : { email: 'noreply@calendar', name: organizer };
   }
 
   return event;
 }
-

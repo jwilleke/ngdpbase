@@ -7,6 +7,9 @@
  * `?q=1`), a protocol-relative one (`//host/x`, which takes the page's own http
  * or https), or one that starts with `http:`, `https:` or `mailto:`, in any case.
  *
+ * A relative address with a colon before its first slash (`Page:Name`) reads as a
+ * scheme and is refused; it is written `./Page:Name`, or `/wiki/Page:Name`.
+ *
  * Browsers drop tabs and newlines from inside an address and leading control
  * characters and spaces from the front, so `java\tscript:` is `javascript:`.
  * Rather than copy those rules, any control character is refused outright, and
