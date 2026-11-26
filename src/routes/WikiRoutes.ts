@@ -189,7 +189,8 @@ import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
 import { grantablePermissions, permissionLabel } from '../utils/permissionCatalog.js';
 import type PageManagerClass from '../managers/PageManager.js';
-import { PageAudienceRefusedError, PageContentValidationError, PageWriteRefusedError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport, type VaultRepairItem } from '../managers/PageManager.js';
+import { FINISH_LAST_UPDATE } from '../utils/addonInstaller.js';
+import { PageAudienceRefusedError, PageContentValidationError, PageRuleRefusedError, PageWriteRefusedError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport, type VaultRepairItem } from '../managers/PageManager.js';
 import { auditEventTypes } from '../utils/auditVocabulary.js';
 import { ThemeManager, getThemeManager } from '../managers/ThemeManager.js';
 import { registerDawarichCompatRoutes } from './DawarichCompatRoutes.js';
@@ -4675,7 +4676,7 @@ ${panes}
       // A front matter the YAML reader refused is the person's to fix, and the reader's own words (line, column, a quoted
       // snippet) mean nothing to them: one sentence says where to look. It is named by its class name, never by its text.
       let errorMessage: string;
-      if (err instanceof PageContentValidationError) {
+      if (err instanceof PageContentValidationError || err instanceof PageRuleRefusedError) {
         errorMessage = err.message;
       } else if (err instanceof Error && err.name === 'YAMLException') {
         refusedOnPurpose(req, 'raw page save (front matter is not valid)');
@@ -13656,7 +13657,14 @@ ${panes}
 
       if (success && inviting) {
         const created = String((success as { username?: unknown }).username ?? username);
-        const sent = await this.authManagerFor2Step().inviteUser(currentUser, created);
+        let sent: Awaited<ReturnType<AuthManager['inviteUser']>>;
+        try {
+          sent = await this.authManagerFor2Step().inviteUser(currentUser, created);
+        } catch (inviteErr) {
+          // The account exists by now: say so, or a retry meets "Username already exists" (#2494).
+          plainRouteError(req, inviteErr, 'The invitation was not sent.');
+          return res.redirect('/admin/users?error=' + encodeURIComponent(`${created} was created, but the invitation was not sent. You can set a password on the user's edit page instead.`));
+        }
         return res.redirect('/admin/users?' + (sent.outcome === 'sent'
           ? 'success=' + encodeURIComponent(`User created, and an invitation sent to ${created}.`)
           : 'error=' + encodeURIComponent(`User created, but no invitation was sent: ${sent.reason} You can set a password on the user's edit page instead.`)));
@@ -18314,7 +18322,11 @@ ${panes}
       if (outcome.registryUnreachable) {
         return back('error', `npm couldn't be reached, so ${slug} was not updated and stays on its current version. Try again later.`);
       }
-      return back('error', `${slug} was not updated: ${outcome.reason ?? 'refused'}`);
+      // The one refusal written for the person: an earlier update is waiting for a restart.
+      if (outcome.reason === FINISH_LAST_UPDATE) return back('error', `${slug} was not updated: ${FINISH_LAST_UPDATE}`);
+      // The installer's own words hold a server path, the registry's reply or a setting's name: the log has them, the page does not (#2494).
+      logger.warn(`[route] add-on update of '${slug}' refused: ${outcome.reason ?? 'no reason given'}`);
+      return back('error', `${slug} was not updated and stays on its current version.`);
     } catch (err: unknown) {
       return back('error', plainRouteError(req, err, 'The add-on was not updated. Try again in a moment.'));
     }

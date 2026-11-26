@@ -449,7 +449,7 @@ describe('SharedFolderManager (#2124)', () => {
       expect(m.unavailableReason()).toMatch(/could not be read/);
       expect(m.unavailableReason()).not.toMatch(/NOTJSON|JSON|Unexpected|token/i);
       await expect(m.prepareRecoveryWords(admin())).rejects.toBeInstanceOf(SharedFoldersUnavailableError);
-      expect(JSON.stringify(errorLog.mock.calls)).toContain('NOTJSON-XYZ');
+      expect(JSON.stringify(errorLog.mock.calls, (_k, v) => (v instanceof Error ? v.message : v))).toContain('NOTJSON-XYZ');
       errorLog.mockRestore();
     });
 

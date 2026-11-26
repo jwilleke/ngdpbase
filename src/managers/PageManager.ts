@@ -349,6 +349,19 @@ export class PageWriteRefusedError extends Error {
   }
 }
 
+/**
+ * A page rule's refusal, written for the person (#2494): the shared category
+ * given outside a shared folder, a write into a shared folder they may not file
+ * into, a name the title rule refuses. A route may show its message as written;
+ * every other failure of a save is the server's and is not shown.
+ */
+export class PageRuleRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PageRuleRefusedError';
+  }
+}
+
 export class PageContentValidationError extends Error {
   readonly validationErrors: FilterValidationError[];
 
@@ -2185,7 +2198,7 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!name || !isSharedFolderOwner(name.owner)) return;
     if (await permitsInSharedFolder(this.engine.getManager<VaultDecider>('PolicyDecisionPoint'), ctx, SHARED_FOLDER_FILE, name.store)) return;
     logger.warn(`[PageManager] write in shared folder '${name.store}' refused: ${actorOf(ctx).user} may not add, edit or delete there (#2125)`);
-    throw new Error(`You may not add, edit or delete pages in shared folder '${name.store}'`);
+    throw new PageRuleRefusedError(`You may not add, edit or delete pages in shared folder '${name.store}'`);
   }
 
   /**
@@ -2899,13 +2912,13 @@ class PageManager extends BaseManager implements CatalogSource {
     // would have to contain a `/`, which no title may. Refused rather than
     // read as a public title, which would write it to the public space.
     if (!privatePath && (pageName.startsWith(PRIVATE_PAGE_NAME_PREFIX) || pageName.startsWith(SHARED_PAGE_NAME_PREFIX))) {
-      throw new Error(`'${pageName}' is not a private page name: ${TITLE_RULE_MESSAGE}`);
+      throw new PageRuleRefusedError(`'${pageName}' is not a private page name: ${TITLE_RULE_MESSAGE}`);
     }
     const givenTitle = (metadata.title) ?? privatePath?.title ?? pageName;
     let normalisedTitleFrom: string | null = null;
     if (givenTitle && titleBreaksRule(givenTitle)) {
       const normalised = options.normaliseTitle ? normaliseTitle(givenTitle) : '';
-      if (!normalised) throw new Error(TITLE_RULE_MESSAGE);
+      if (!normalised) throw new PageRuleRefusedError(TITLE_RULE_MESSAGE);
       normalisedTitleFrom = givenTitle;
       metadata = {
         ...metadata,
@@ -2975,7 +2988,7 @@ class PageManager extends BaseManager implements CatalogSource {
     } else if (typeof savedCategory === 'string' && savedCategory.toLowerCase() === SHARED_CATEGORY
       && String(existingPage?.metadata?.['system-category'] ?? '').toLowerCase() !== SHARED_CATEGORY) {
       logger.warn(`[PageManager] save of ${nameForLog(pageName, enrichedMetadata)} refused: only a page created in a shared folder is '${SHARED_CATEGORY}' (#2255)`);
-      throw new Error(SHARED_CATEGORY_REFUSAL);
+      throw new PageRuleRefusedError(SHARED_CATEGORY_REFUSAL);
     }
 
     // #1815: the write door. Decided on the page as it is now and on where

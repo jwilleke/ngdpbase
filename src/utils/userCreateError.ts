@@ -41,9 +41,11 @@ export type UserCreateFailureReason =
 /**
  * A user-creation failure with a reason a caller can branch on.
  *
- * The `message` is for logs and may contain internal detail; it must never be
- * shown to a caller. `safeRegistrationMessage` is the only thing that decides
- * what a visitor sees.
+ * The `message` is written for an administrator (a name taken, a role that
+ * could not be given), so the admin create-user route shows it as written
+ * (#2494, CODE_STANDARDS.md). It must never reach a visitor:
+ * `safeRegistrationMessage` is the only thing that decides what someone
+ * registering sees.
  */
 export class UserCreateError extends Error {
   public readonly reason: UserCreateFailureReason;
