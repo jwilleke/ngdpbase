@@ -81,3 +81,39 @@ describe('declaredPermissionNames', () => {
     expect(declaredPermissionNames({ getManager: () => ({ getProperty: () => ['calendar-manage'] }) })).toBeNull();
   });
 });
+
+describe('reservation calendars and broadly granted names (#2546)', () => {
+  const config = {
+    calendars: {
+      resv: { workflow: 'reservation', 'manage-permission': 'association-event-post' },
+      managed: { workflow: 'managed', 'manage-permission': 'association-event-post' },
+      reads: { workflow: 'managed', 'manage-permission': 'calendar-read' },
+      reserves: { workflow: 'managed', 'manage-permission': 'calendar-reserve' },
+      readOnlyName: { workflow: 'managed', 'manage-permission': 'some-viewer' },
+      recordName: { workflow: 'managed', 'manage-permission': 'some-record' }
+    }
+  };
+  const declared = new Set(['calendar-manage', 'association-event-post', 'calendar-read', 'calendar-reserve']);
+
+  test('a reservation calendar always asks calendar-manage, whatever it names', () => {
+    expect(resolveManagePermission(config, 'resv', declared)).toBe('calendar-manage');
+    expect(resolveManagePermission(config, 'resv', null)).toBe('calendar-manage');
+    expect(resolveManagePermission(config, 'managed', declared)).toBe('association-event-post');
+  });
+
+  test.each(['reads', 'reserves'])('%s names a permission everyone holds: treated as not configured, so calendar-manage', (id) => {
+    expect(resolveManagePermission(config, id, declared)).toBe('calendar-manage');
+  });
+
+  test('declaredPermissionNames leaves out read-only and non-grantable entries', () => {
+    const defs = { a: {}, v: { 'read-only': true }, r: { grantable: false }, g: { grantable: true } };
+    const engine = { getManager: () => ({ getProperty: () => defs }) };
+    expect([...(declaredPermissionNames(engine) ?? [])].sort()).toEqual(['a', 'g']);
+  });
+
+  test('declaredPermissionNames returns null when reading the configuration throws', () => {
+    const engine = { getManager: () => ({ getProperty: () => { throw new Error('boom'); } }) };
+    expect(declaredPermissionNames(engine)).toBeNull();
+    expect(declaredPermissionNames({ getManager: () => { throw new Error('boom'); } })).toBeNull();
+  });
+});

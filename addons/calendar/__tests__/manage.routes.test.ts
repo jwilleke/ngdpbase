@@ -51,7 +51,9 @@ const CONFIG = {
     'association-events': { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' },
     'ghost-events':      { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 'never-declared' },
     'odd-events':        { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 42 },
-    plain:               { workflow: 'managed', visibility: 'authenticated', enabled: true }
+    plain:               { workflow: 'managed', visibility: 'authenticated', enabled: true },
+    'own-reservations':  { workflow: 'reservation', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' },
+    'notes-events':      { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' }
   }
 };
 
@@ -70,7 +72,9 @@ const EVENTS = [
   ev('e-club', 'clubhouse', { class: 'CONFIDENTIAL', _private: { requester: 'someone-else', notes: 'SECRET-NOTE' } }),
   ev('e-ghost', 'ghost-events'),
   ev('e-odd', 'odd-events'),
-  ev('e-plain', 'plain')
+  ev('e-plain', 'plain'),
+  ev('e-own-resv', 'own-reservations', { class: 'CONFIDENTIAL', _private: { requester: 'someone-else', notes: 'SECRET-NOTE-2' } }),
+  ev('e-notes', 'notes-events', { _private: { requester: 'someone-else', notes: 'SECRET-NOTE-3' } })
 ];
 
 let dir: string;
@@ -291,5 +295,59 @@ describe('a request that changes the event\'s calendar cannot get around the che
     const before = manager.count();
     expect((await request(app).post('/api/calendar/events').send({ ...newEvent(), calendarId: value })).status).toBe(400);
     expect(manager.count()).toBe(before);
+  });
+});
+
+describe('reservation workflow and private details stay on calendar-manage (#2546)', () => {
+  test('a reservation calendar that names its own permission is still managed by calendar-manage, not by that permission', async () => {
+    holds('association-event-post');
+    const before = manager.count();
+    expect((await request(app).post('/api/calendar/events').send(newEvent('own-reservations'))).status).toBe(403);
+    expect((await request(app).put('/api/calendar/events/e-own-resv').send({ title: 'Rewritten' })).status).toBe(403);
+    expect((await request(app).delete('/api/calendar/events/e-own-resv')).status).toBe(403);
+    expect(manager.count()).toBe(before);
+    expect(manager.getById('e-own-resv')?.title).toBe('Title e-own-resv');
+  });
+
+  test('a holder of calendar-manage manages that reservation calendar', async () => {
+    holds('calendar-manage');
+    expect((await request(app).put('/api/calendar/events/e-own-resv').send({ title: 'Renamed' })).status).toBe(200);
+    expect((await request(app).delete('/api/calendar/events/e-own-resv')).status).toBe(204);
+  });
+
+  test('an event with private details cannot be edited or deleted by the calendar\'s own manager alone', async () => {
+    holds('association-event-post');
+    expect((await request(app).put('/api/calendar/events/e-notes').send({ title: 'Rewritten' })).status).toBe(403);
+    expect((await request(app).delete('/api/calendar/events/e-notes')).status).toBe(403);
+    expect(manager.getById('e-notes')?.title).toBe('Title e-notes');
+  });
+
+  test('someone who holds both permissions may edit and delete an event with private details', async () => {
+    holds('association-event-post', 'calendar-manage');
+    expect((await request(app).put('/api/calendar/events/e-notes').send({ title: 'Renamed' })).status).toBe(200);
+    expect((await request(app).delete('/api/calendar/events/e-notes')).status).toBe(204);
+  });
+
+  test('a calendar\'s own manager cannot forge a requester when creating an event', async () => {
+    holds('association-event-post');
+    const before = manager.count();
+    const res = await request(app).post('/api/calendar/events')
+      .send({ ...newEvent('association-events'), _private: { requester: 'victim' } });
+    expect(res.status).toBe(403);
+    expect(manager.count()).toBe(before);
+  });
+
+  test('a calendar\'s own manager cannot write private details into an event by editing it', async () => {
+    holds('association-event-post');
+    const res = await request(app).put('/api/calendar/events/e-assoc').send({ _private: { requester: 'victim' } });
+    expect(res.status).toBe(403);
+    expect(manager.getById('e-assoc')?._private).toBeUndefined();
+  });
+
+  test('a holder of both permissions may create an event with private details', async () => {
+    holds('association-event-post', 'calendar-manage');
+    const res = await request(app).post('/api/calendar/events')
+      .send({ ...newEvent('association-events'), _private: { requester: 'someone' } });
+    expect(res.status).toBe(201);
   });
 });
