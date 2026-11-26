@@ -81,3 +81,50 @@ describe('sharedLinkRows label and page (round 5)', () => {
     expect(sharedLinkCounts([labelled, TAG, WHOLE], ALL, NOW)).toEqual({ active: 3, total: 3 });
   });
 });
+
+describe('sharedLinkRows, the all-users view (slice 4 of #2247, R13, R14)', () => {
+  const SAM_TAG = { ...base, id: 's1', createdBy: 'sam', createdAt: '2026-11-04T00:00:00.000Z', label: 'Garden for Lee', scope: { kind: 'keyword', keyword: 'Garden' } } as unknown as ShareRecord;
+  const SAM_CHOSEN = { ...base, id: 's2', createdBy: 'sam', createdAt: '2026-11-05T00:00:00.000Z', label: 'Secret trip plan', scope: { kind: 'vault', owner: 'sam', vault: 'Journal', pages: ['u1', 'u2', 'u3'] } } as unknown as ShareRecord;
+  const SAM_WHOLE = { ...base, id: 's3', createdBy: 'sam', createdAt: '2026-11-06T00:00:00.000Z', scope: { kind: 'vault', owner: 'sam', vault: 'Medical', pages: null } } as unknown as ShareRecord;
+  const NONE = { tag: false, vault: false };
+  const VIEW = { viewer: 'molly' };
+
+  test('lists every user\'s links, of kinds the viewer may not make too, with the owner named', () => {
+    const rows = sharedLinkRows([TAG, CHOSEN, SAM_TAG, SAM_CHOSEN, SAM_WHOLE], NONE, NOW, VIEW);
+    expect(rows).toHaveLength(5);
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+    expect(byId.s1.what).toBe('Everything tagged Garden');
+    expect(byId.s2.what).toBe("3 pages in sam's Journal vault");
+    expect(byId.s3.what).toBe("All of sam's Medical vault");
+    expect(byId.r2.what).toBe('3 pages in your Journal vault');
+    expect(rows.map((r) => r.madeBy).sort()).toEqual(['molly', 'molly', 'sam', 'sam', 'sam']);
+  });
+
+  test('another user\'s link has no label, no page, and only a revoke action', () => {
+    const rows = sharedLinkRows([SAM_TAG, SAM_CHOSEN, SAM_WHOLE], NONE, NOW, VIEW);
+    for (const row of rows) {
+      expect(row.label).toBe('');
+      expect(row.pageUuid).toBeNull();
+      expect(row.actions).toEqual(['revoke']);
+    }
+    expect(JSON.stringify(rows)).not.toContain('Secret trip plan');
+    expect(JSON.stringify(rows)).not.toContain('a'.repeat(64));
+  });
+
+  test('the viewer\'s own private-area link keeps its extend and visits actions', () => {
+    const [row] = sharedLinkRows([CHOSEN], NONE, NOW, VIEW);
+    expect(row.actions).toEqual(['extend', 'visits', 'revoke']);
+  });
+
+  test('a link a manager revoked reads "revoked" here, whoever revoked it', () => {
+    const rows = sharedLinkRows([{ ...SAM_TAG, revokedAt: '2026-11-10T00:00:00.000Z', revokedByManager: true }], NONE, NOW, VIEW);
+    expect(rows[0].status).toBe('revoked');
+    expect(rows[0].actions).toEqual([]);
+  });
+
+  test('the own view is unchanged: it names the maker and still hides a kind the person may not make', () => {
+    const rows = sharedLinkRows([TAG, CHOSEN], { tag: true, vault: false }, NOW);
+    expect(rows.map((r) => r.id)).toEqual(['r1']);
+    expect(rows[0].madeBy).toBe('molly');
+  });
+});

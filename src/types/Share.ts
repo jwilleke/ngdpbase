@@ -22,7 +22,7 @@ export interface KeywordShareScope {
  */
 export interface VaultShareScope {
   kind: 'vault';
-  /** The vault's owner — the only one who may issue, extend or revoke it. */
+  /** The vault's owner: the only one who may issue or extend it. Revoking it is theirs, or a holder of share-manage-all's (recorded as a manager revoke). */
   owner: string;
   /** The vault id: `pages/vaults/{owner}/{vault}/`. */
   vault: string;
