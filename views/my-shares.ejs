@@ -105,7 +105,7 @@
                         <td class="text-nowrap<%= dim ? ' text-muted' : '' %>"><%= row.expiresAt ? row.expiresAt.slice(0, 10) : 'Until cancelled' %></td>
                         <td class="text-nowrap<%= dim ? ' text-muted' : '' %>" data-made><%= row.createdAt.slice(0, 10) %></td>
                         <td class="shared-link-cell<%= dim ? ' text-muted' : '' %>"><%- include('_shared-link-address', { row: row, addresses: addresses }) %></td>
-                        <td<%- dim %>><%- include('_shared-link-actions', { row: row }) %></td>
+                        <td class="text-nowrap<%= dim ? ' text-muted' : '' %>"><%- include('_shared-link-actions', { row: row }) %></td>
                     </tr>
                 <% }); %>
                 </tbody>
