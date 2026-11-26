@@ -17916,7 +17916,7 @@ ${panes}
       // page-door-ignore: converting is an edit (#1127) — the page-edit door decides below.
       const page = await pageManager.getPage(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       if (!page) {
-        return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
+        return await this.convertAbsentPage(req, res, pageName);
       }
       // #1127: converting IS an edit — anyone who may edit the page could
       // paste the converted text by hand — so the gate is the page's own
@@ -17975,7 +17975,7 @@ ${panes}
       // page-door-ignore: converting is an edit (#1127) — the page-edit door decides below.
       const page = await pageManager.getPage(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       if (!page) {
-        return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
+        return await this.convertAbsentPage(req, res, pageName);
       }
       // #1127: page-edit ACL, same reasoning as the preview gate.
       const wikiContext = await this.convertEditContext(req, pageName, page);
@@ -18019,6 +18019,22 @@ ${panes}
     } catch (err: unknown) {
       return res.status(500).json({ success: false, error: plainRouteError(req, err, 'The page could not be converted. Try again in a moment.') });
     }
+  }
+
+  /**
+   * The answer for a convert request naming a page that is not there (#2359). Someone who may not edit gets
+   * the same 403 as for a page that exists, so the answer does not say which it is; someone who may edit
+   * still gets the 404.
+   */
+  private async convertAbsentPage(req: Request, res: Response, pageName: string): Promise<Response> {
+    const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.EDIT, pageName });
+    const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
+    const canEdit = wikiContext.userContext
+      ? await policyInformationPoint?.checkPagePermissionWithContext?.(wikiContext, 'edit')
+      : false;
+    return canEdit
+      ? res.status(404).json({ success: false, error: `Page not found: ${pageName}` })
+      : res.status(403).json({ success: false, error: 'You do not have permission to convert this page' });
   }
 
   /**
