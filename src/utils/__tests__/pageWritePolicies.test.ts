@@ -4,7 +4,7 @@
  * category policies do not give on general pages only; other policies are
  * reported, never rewritten.
  */
-import { migrateStoredPageWritePolicies, narrowedRoleWrites, withoutNarrowedWrites, readNarrowedWrites, restoreNarrowedWrites, clip, pageWritePoliciesToReview, pageWritePolicyFindings, policyFingerprint } from '../pageWritePolicies';
+import { openWriteRules, migrateStoredPageWritePolicies, narrowedRoleWrites, withoutNarrowedWrites, readNarrowedWrites, restoreNarrowedWrites, clip, pageWritePoliciesToReview, pageWritePolicyFindings, policyFingerprint } from '../pageWritePolicies';
 import type { Policy } from '../../types/Policy';
 
 const role = (value: string) => [{ type: 'role', value }];
@@ -516,5 +516,30 @@ describe('restoreNarrowedWrites: a role piece folds onto the base piece only whe
   test('a change of the rule id is not folded: the base is a new rule and the editor piece stays as shown', () => {
     const posted = editBase({ id: 'cat-write-renamed' });
     expect(stored(posted)).toEqual(posted);
+  });
+});
+
+describe('read-only actions are not more than reading', () => {
+  const rule = (actions: string[]) => ({ id: 'r', effect: 'allow', subjects: [{ type: 'authenticated' }], resources: everyPage, actions }) as Policy;
+
+  test('page-read alone is not listed; an action named as read-only is not either', () => {
+    expect(openWriteRules([rule(['page-read'])])).toEqual([]);
+    expect(openWriteRules([rule(['calendar-read'])])).toHaveLength(1);
+    expect(openWriteRules([rule(['calendar-read'])], ['calendar-read'])).toEqual([]);
+    expect(openWriteRules([rule(['page-read', 'calendar-read'])], new Set(['calendar-read']))).toEqual([]);
+  });
+
+  test('a write beside a read-only action is listed, without the read-only one', () => {
+    expect(openWriteRules([rule(['calendar-read', 'page-edit'])], ['calendar-read']).map((r) => r.actions)).toEqual([['page-edit']]);
+  });
+
+  test('no actions still means everything, and a deny is still left out', () => {
+    expect(openWriteRules([rule([])], ['calendar-read'])).toHaveLength(1);
+    expect(openWriteRules([{ ...rule(['page-edit']), effect: 'deny' } as Policy], ['calendar-read'])).toEqual([]);
+  });
+
+  test('the review findings follow the same list', () => {
+    expect(pageWritePolicyFindings([rule(['calendar-read'])])).toHaveLength(1);
+    expect(pageWritePolicyFindings([rule(['calendar-read'])], {}, ['calendar-read'])).toEqual([]);
   });
 });

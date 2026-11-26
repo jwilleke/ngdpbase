@@ -11,7 +11,8 @@ import micromatch from 'micromatch';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
-import { CHECKED_DENIES_KEY, DENY_CHECKED_ACTION, pageWritePolicyFindings, policyFingerprint } from '../utils/pageWritePolicies.js';
+import { CHECKED_DENIES_KEY, DENY_CHECKED_ACTION, clipNames, pageWritePolicyFindings, policyFingerprint } from '../utils/pageWritePolicies.js';
+import { readOnlyPermissionNames } from '../utils/permissionCatalog.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import { SENSITIVE_USER_FIELDS } from '../types/User.js';
 import { systemContext } from '../context/bootActions.js';
@@ -564,8 +565,9 @@ class PolicyEvaluator extends BaseManager {
     // An open allow rule is the upgrade notice's to-do (`upgradeChecks/openWriteRules.ts`), so the box leaves it out and the log keeps it.
     // #2355: a deny an administrator marked as checked, with the content it has now, is left out of the box and logged quietly.
     const checkedDenies = (config.getProperty(CHECKED_DENIES_KEY, {}) ?? {}) as Record<string, string>;
+    const readOnly = readOnlyPermissionNames(config.getProperty('ngdpbase.permissions.definitions', {}));
     const buttons: NonNullable<ManagerStatus['buttons']> = [];
-    for (const finding of pageWritePolicyFindings(this.policies(), checkedDenies)) {
+    for (const finding of pageWritePolicyFindings(this.policies(), checkedDenies, readOnly)) {
       if (finding.coveredByUpgradeNotice) logOnly.push(finding.log);
       else if (finding.deny?.checked) checkedLog.push(finding.log);
       else {
@@ -596,6 +598,7 @@ class PolicyEvaluator extends BaseManager {
     environmentAttributesFindings(readDeclaredAsWritten(config, ENVIRONMENT_ATTRIBUTES_KEY)).forEach(add);
     this.scheduleProblems().forEach(add);
     if (log) {
+      if (readOnly.length > 0) logger.info(`[POLICY] Permissions marked read-only, so a rule that gives them to everyone is not listed as letting many people change things: ${clipNames(readOnly)}`);
       for (const line of [...lines, ...logOnly]) logger.warn(`[POLICY] ${line}`);
       for (const line of checkedLog) logger.info(`[POLICY] ${line}; an administrator marked it as checked`);
     }
