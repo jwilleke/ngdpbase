@@ -74,7 +74,10 @@ const EVENTS = [
   ev('e-odd', 'odd-events'),
   ev('e-plain', 'plain'),
   ev('e-own-resv', 'own-reservations', { class: 'CONFIDENTIAL', _private: { requester: 'someone-else', notes: 'SECRET-NOTE-2' } }),
-  ev('e-notes', 'notes-events', { _private: { requester: 'someone-else', notes: 'SECRET-NOTE-3' } })
+  ev('e-notes', 'notes-events', { _private: { requester: 'someone-else', notes: 'SECRET-NOTE-3' } }),
+  // Stored before the address rule: the feed must not hand it on.
+  ev('e-badurl', 'association-events', { url: 'javascript:alert(document.domain)' }),
+  ev('e-goodurl', 'association-events', { url: 'https://example.org/agenda' })
 ];
 
 let dir: string;
@@ -349,5 +352,98 @@ describe('reservation workflow and private details stay on calendar-manage (#254
     const res = await request(app).post('/api/calendar/events')
       .send({ ...newEvent('association-events'), _private: { requester: 'someone' } });
     expect(res.status).toBe(201);
+  });
+});
+
+// An event's `url` is opened by the calendar block when the event is clicked, so a
+// calendar's own manager must not be able to store a script address there.
+describe('an event\'s url', () => {
+  const BAD = [
+    'javascript:alert(1)', 'JaVaScRiPt:alert(1)', ' javascript:alert(1)', '\tjavascript:alert(1)',
+    '\u0001javascript:alert(1)', 'java\tscript:alert(1)', 'java\nscript:alert(1)', 'java\rscript:alert(1)',
+    'data:text/html,<script>alert(1)</script>', 'vbscript:msgbox(1)', 'file:///etc/passwd', 'ftp://example.org/x',
+    'blob:https://example.org/x', 'foo:bar'
+  ];
+  const GOOD = ['', '/wiki/StandupNotes', 'relative/page', 'https://example.org/a?b=c', 'http://example.org', 'HTTPS://EXAMPLE.ORG', 'mailto:a@example.org', '//example.org/x', '#top', '?q=a:b'];
+
+  describe('written by a holder of only the calendar\'s own permission', () => {
+    beforeEach(() => holds('association-event-post'));
+
+    test.each(BAD)('POST refuses %j with 400 and stores nothing', async (url) => {
+      const before = manager.count();
+      const res = await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), url });
+      expect(res.status).toBe(400);
+      expect(typeof res.body.error).toBe('string');
+      expect(manager.count()).toBe(before);
+    });
+
+    test.each(BAD)('PUT refuses %j with 400 and leaves the event alone', async (url) => {
+      const res = await request(app).put('/api/calendar/events/e-assoc').send({ url });
+      expect(res.status).toBe(400);
+      expect(manager.getById('e-assoc')?.url).toBeUndefined();
+    });
+
+    test.each([123, null, ['https://example.org'], { href: 'https://example.org' }])('refuses a url that is not text: %j', async (url) => {
+      expect((await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), url })).status).toBe(400);
+      expect((await request(app).put('/api/calendar/events/e-assoc').send({ url })).status).toBe(400);
+      expect(manager.getById('e-assoc')?.url).toBeUndefined();
+    });
+
+    test.each(GOOD)('accepts %j on POST and PUT', async (url) => {
+      const created = await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), url });
+      expect(created.status).toBe(201);
+      expect(manager.getById(created.body.id)?.url ?? '').toBe(url);
+      const edited = await request(app).put('/api/calendar/events/e-assoc').send({ url });
+      expect(edited.status).toBe(200);
+      expect(manager.getById('e-assoc')?.url ?? '').toBe(url);
+    });
+
+    test('a body with no url is still accepted', async () => {
+      expect((await request(app).post('/api/calendar/events').send(newEvent('association-events'))).status).toBe(201);
+    });
+  });
+
+  describe('written by a holder of calendar-manage', () => {
+    beforeEach(() => holds('calendar-manage'));
+
+    test('the same rule applies', async () => {
+      const before = manager.count();
+      expect((await request(app).post('/api/calendar/events').send({ ...newEvent('plain'), url: 'javascript:alert(1)' })).status).toBe(400);
+      expect((await request(app).put('/api/calendar/events/e-plain').send({ url: 'JaVaScRiPt:alert(1)' })).status).toBe(400);
+      expect(manager.count()).toBe(before);
+      expect(manager.getById('e-plain')?.url).toBeUndefined();
+      expect((await request(app).post('/api/calendar/events').send({ ...newEvent('plain'), url: 'https://example.org' })).status).toBe(201);
+    });
+  });
+
+  describe('already stored', () => {
+    beforeEach(() => holds());
+
+    test('the list leaves a script address out and keeps a good one', async () => {
+      const res = await request(app).get('/api/calendar/events?calendarId=association-events');
+      expect(res.status).toBe(200);
+      expect(JSON.stringify(res.body)).not.toContain('javascript:');
+      const bad = res.body.find((e: { id: string }) => e.id === 'e-badurl');
+      const good = res.body.find((e: { id: string }) => e.id === 'e-goodurl');
+      expect(bad.title).toBe('Title e-badurl');
+      expect(bad.url).toBeUndefined();
+      expect(good.url).toBe('https://example.org/agenda');
+    });
+
+    test('a single event and a search leave it out too', async () => {
+      const one = await request(app).get('/api/calendar/events/e-badurl');
+      expect(one.status).toBe(200);
+      expect(one.body.url).toBeUndefined();
+      const found = await request(app).get('/api/calendar/events/search?q=e-badurl');
+      expect(found.status).toBe(200);
+      expect(JSON.stringify(found.body)).not.toContain('javascript:');
+    });
+
+    test('the .ics feed leaves it out', async () => {
+      const res = await request(app).get('/api/calendar/association-events/feed.ics');
+      expect(res.status).toBe(200);
+      expect(res.text).not.toContain('javascript:');
+      expect(res.text).toContain('https://example.org/agenda');
+    });
   });
 });
