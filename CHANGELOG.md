@@ -9,11 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+
+- Future enhancements
+
+## [5.48.0] - 2026-11-25
+
+### Upgrade notes
+
+- __#2519__ — a site that is already held by git needs this once, in its folder, before its first update: `git checkout -- package-lock.json`. After that, `update all` keeps the lockfile clean.
+
 ### Added
 
 - __#2468__ — new admin page "Page building speed" at `/admin/parser-performance` (a button next to Logs on the dashboard, for holders of `admin-read` or `admin-system`). It sums the kept checks for the last hour, 24 hours, 7 days and 30 days: typical, slowest 1 in 20, slowest and average, with the number of checks in each column heading, for the time to build a page, the share served from stored copies and the share that failed. In the stored-copies table of those sums, the slowest 1 in 20 and slowest rows show the lowest values, so in all three sums tables they mean the worst builds. The stored-copies column of the earlier warnings does the same, and that card's note says so. At start-up the parser copies the numbers from the old "MarkupParser Performance Alert: ..." notifications to `legacy-alerts.json` in the history folder, shown on the page as earlier warnings, and then deletes those notifications; a restart in between loses nothing and imports nothing twice. The recovery line for the share served from stored copies now says "below the lowest allowed". A check with no usable date (or one that cannot exist, such as 9999-99-99) is dropped with a warning, and a check after a half-written last line starts on a new line. Only the three old alert titles, matched whole, are copied and deleted, with the new `NotificationManager.removeByTitles`, which no route can reach. The page reuses its sums for a minute, so many page views read the files once. A site with no folder for the checks, or whose folder could not be made, gets a notice with the step to take and no tables. This replaces the 5.47.0 line that said notifications an earlier version saved are left as they are: from this release they are copied and then deleted.
 
 - __#2521__ — a new permission, `share-manage-all` ("See and revoke everyone's shared links"), held by administrators through the policy `admin-share-manage-all`. It is a separate policy, not an edit to `admin-full-access`, so a site holding a stored copy of `admin-full-access` still receives it. A site with a custom policy for administrators grants it to whoever it chooses; the Roles and Permissions page shows it as held by administrators and no one else. It needs no fresh sign-in and does not depend on "admins can enter private areas". Nothing uses it for a screen yet. When an administrator revokes another user's tag link at `POST /shares/:id/revoke`, the `share-revoke` audit record now carries `byManager: true` and the stored link gets a `revokedByManager` flag naming nobody. The `share-revoke` permission is unchanged and stays grantable, because a token or proxy acting for a link's maker still needs it. Nothing for you to do.
+
+- __#2483__ — Admin → Backup now shows six collapsible status cards, with Auto Backup first, so you can see what the backup is doing and fold away the parts you do not need.
 
 ### Changed
 
@@ -24,10 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - __#2514__ — the upgrade clean-up of old `access:` limits now reaches pages in a person's vault. The start-up scan and the sign-in pass listed pages with the page provider's list, which leaves the vaults folder out, so a vault page with an old limit such as `edit: [admin]` was never counted in Admin → needs attention, never given an Author Lock, and had no copy made in `upgrade-backups`. The start-up scan now counts every vault page it can read (never named), and the sign-in pass converts the signed-in person's own vault pages, with a copy first. Another person's vault is still never looked at, and a closed (encrypted) vault is not listed until it is open. A person with a vault that could not be opened at sign-in is not marked as done, so the pass runs again at their next sign-in and when they unlock the vault. The copy made first of an encrypted page is its stored bytes, so it stays encrypted and restores the page, and no page name or file path is written to the log. A damaged vault is skipped alone. Nothing for you to do.
-
-### Planned
-
-- Future enhancements
+- __#2528__ — in Admin, the calendar read rule is no longer flagged as letting everyone use every page. The rule only covers calendars, so the warning was wrong and is gone.
+- __#2519 (#2527)__ — updating a site no longer leaves `package-lock.json` changed. `update all` keeps the file as committed, so a site held by git stays clean after an update (see the upgrade notes for the one-time step).
 
 ## [5.47.0] - 2026-11-25
 
