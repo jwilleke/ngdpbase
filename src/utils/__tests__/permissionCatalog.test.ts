@@ -98,6 +98,15 @@ describe('#2521 share-manage-all', () => {
     expect(grantingRevoke).toEqual(['admin-full-access', 'editor-permissions', 'vault-owner-permissions']);
   });
 
+  test('share-revoke says what it now does: a person needs none for their own link, another user\'s link needs share-manage-all (slice 4 of #2247)', () => {
+    const entry = catalog['share-revoke'] as unknown as { description: string; label: string };
+    expect(entry.description).not.toMatch(/admin-system/);
+    expect(entry.description).toContain('share-manage-all');
+    expect(entry.description).toMatch(/token|proxy/);
+    expect(entry.label).not.toMatch(/your own/i);
+    expect(catalog['share-manage-all'] as unknown as { description: string }).toMatchObject({ description: expect.stringContaining('share-revoke') });
+  });
+
   test('the revoke reuses the share-revoke event: no second share event is declared', () => {
     const events = Object.entries(catalog).filter(([n, e]) => e.audit && /^share-/.test(n)).map(([n]) => n).sort();
     expect(events).toEqual(['share-access', 'share-create', 'share-extend', 'share-revoke']);
