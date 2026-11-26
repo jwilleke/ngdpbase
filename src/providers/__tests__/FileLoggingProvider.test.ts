@@ -106,6 +106,38 @@ describe('FileLoggingProvider', () => {
       expect(lines.filter((l) => /^\s*at /.test(l))).toEqual(frames);
     });
 
+    // #2359: only a real stack's frames keep their own lines. A line inside the Error's message that is
+    // shaped like a frame is message text and stays on the line before it.
+    describe('a message line shaped like a stack frame (#2359)', () => {
+      const forged = '    at forged (evil.ts:6:6)';
+      const realFrames = (err: Error): string[] => (err.stack ?? '').split('\n').filter((l) => /^\s*at /.test(l)).filter((l) => l !== forged);
+      const ownLines = (line: string): string[] => line.split('\n');
+
+      test('the Error is passed with its message, as many call sites do', () => {
+        const err = new Error(`bad entry\n${forged}`);
+        const lines = ownLines(render({ message: 'boom', error: err.message, stack: err.stack }));
+        expect(lines).not.toContain(forged);
+        expect(lines[1]).toBe(`Error: bad entry\\n${forged}`);
+        expect(lines.slice(2)).toEqual(realFrames(err));
+      });
+
+      test('the Error is passed to winston itself', () => {
+        const err = new Error(`bad entry\n${forged}\nmore text`);
+        const lines = ownLines(render({ message: 'boom', stack: err.stack, [Symbol.for('splat')]: [err] }));
+        expect(lines).not.toContain(forged);
+        expect(lines[0]).toContain(`Error: bad entry\\n${forged}\\nmore text`);
+        expect(lines.slice(1)).toEqual(realFrames(err));
+      });
+
+      test('a real stack with no forged line keeps every frame on its own line', () => {
+        const err = new Error('plain');
+        const lines = ownLines(render({ message: 'boom', error: err.message, stack: err.stack }));
+        expect(lines[1]).toBe('Error: plain');
+        expect(lines.slice(2)).toEqual(realFrames(err));
+        expect(lines.length).toBeGreaterThan(2);
+      });
+    });
+
     test('a CR or LF in a metadata key is escaped (#2294)', () => {
       expect(render({ message: 'x', 'k\nFAKE': 'v' })).not.toMatch(/\nFAKE/);
     });
