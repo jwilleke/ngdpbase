@@ -159,10 +159,10 @@ describe('my-shares.ejs rows (round 5)', () => {
     expect(doc.querySelector('tr[data-share-id="r2"]')?.textContent).toContain('Address was shown once, when you made it');
   });
 
-  test('a manager-revoked link reads "Page no longer available"', async () => {
+  test('a manager-revoked link reads "Page not available (404)"', async () => {
     const doc = await render({ rows: [{ ...ROW, label: '', pageUuid: null, status: 'page not available', actions: [] }] });
-    expect(doc.body.textContent).toContain('Page no longer available');
-    expect(doc.body.textContent).not.toContain('(404)');
+    expect(doc.body.textContent).toContain('Page not available (404)');
+    expect(doc.body.textContent).not.toContain('no longer available');
   });
 
   test('the table is for wide screens and has its own class; dates do not wrap', async () => {
