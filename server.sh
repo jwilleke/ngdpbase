@@ -475,6 +475,20 @@ case "${1:-}" in
       fi
     }
 
+    # dist/.built-from holds the commit the current dist/ was built from. It is
+    # written only after a build succeeds and cleared before one starts, so a
+    # failed build, a missing dist/ or a build of another commit never matches
+    # (#2532). Without a match, update always installs and builds.
+    BUILD_STAMP="$SCRIPT_DIR/dist/.built-from"
+    _build() {
+      rm -f "$BUILD_STAMP"
+      npm run build || return 1
+      mkdir -p "$SCRIPT_DIR/dist" && git rev-parse HEAD > "$BUILD_STAMP"
+    }
+    _build_is_current() {
+      [ -f "$BUILD_STAMP" ] && [ "$(cat "$BUILD_STAMP" 2>/dev/null)" = "$(git rev-parse HEAD)" ]
+    }
+
     _restart() {
       "$0" stop || return 1
       sleep 2
@@ -527,13 +541,23 @@ case "${1:-}" in
     NEW_SHA=$(git rev-parse HEAD)
     NEW_VERSION=$(_version)
 
+    # Nothing was pulled and the built files are from this commit: there is
+    # nothing to install, build or restart (#2532).
+    if [ "$NEW_SHA" = "$OLD_SHA" ] && _build_is_current; then
+      echo "✅ $APP_NAME is already at $NEW_VERSION (${NEW_SHA:0:7}), nothing to do"
+      if [ -n "${NGDP_UPDATE_RESULT_FILE:-}" ]; then
+        echo unchanged > "$NGDP_UPDATE_RESULT_FILE" 2>/dev/null || true
+      fi
+      exit 0
+    fi
+
     FAILED=""
     echo "📦 Installing dependencies..."
     if ! _npm_install; then
       FAILED="npm install"
     else
       echo "🔨 Building..."
-      if ! npm run build; then
+      if ! _build; then
         FAILED="npm run build"
       else
         echo "🚀 Restarting..."
@@ -553,7 +577,7 @@ case "${1:-}" in
     echo ""
     echo "❌ Update to $NEW_VERSION (${NEW_SHA:0:7}) failed at: $FAILED"
     echo "⏪ Rolling back to $OLD_VERSION (${OLD_SHA:0:7})..."
-    if _checkout_old && _npm_install && npm run build && _restart && _wait_ready; then
+    if _checkout_old && _npm_install && _build && _restart && _wait_ready; then
       echo "⏪ Rolled back: running $OLD_VERSION (${OLD_SHA:0:7}) again. The update did NOT happen."
       exit 1
     fi

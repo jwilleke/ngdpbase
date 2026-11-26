@@ -330,6 +330,14 @@ In order, it:
 2. Notes the current commit and the version in `package.json`.
 3. Runs `git fetch --tags origin`, then `git pull --ff-only origin master` (no ref) or
    `git checkout <ref>`. A pull that is not a fast-forward is refused; nothing is ever forced.
+   If nothing was pulled (the commit is the one it started from) and `dist/.built-from` holds
+   that same commit, it prints `<app> is already at <version> (<sha>), nothing to do`, runs
+   no install, build or restart, and exits 0
+   ([#2532](https://github.com/jwilleke/ngdpbase/issues/2532)). A successful build writes
+   `dist/.built-from` with the commit it built; a build starts by deleting it, so a failed
+   build, a missing `dist/` or a build of another commit never matches and the update does the
+   full job. A site built before this existed has no such file, so its next update builds once.
+   A different `<ref>`, or a pull that brought new commits, always does the full job below.
 4. Runs `npm install`, every time (see `.claude/commands/othersites.md` step 2 for why).
    Then it puts the committed `package-lock.json` back (`git checkout -- package-lock.json`),
    because `npm install` rewrites a lockfile that disagrees with `package.json` and the next
@@ -421,13 +429,15 @@ is the holder's pid, and the second run exits and updates nothing. A lock that h
 never taken over; remove it by hand once you know nothing is running. A dead holder's lock is
 replaced. `--dry-run` shows the same plan with no `update` run, and takes no lock.
 
-The command ends with a summary: updated (or would update), not online, held by git (any of the
-other skip reasons), and failed. A checkout is recognised only when the PM2 working directory
+The command ends with a summary: updated (or would update), unchanged (already at that commit
+with a matching build, so nothing was installed, built or restarted; not shown in a dry run),
+not online, held by git (any of the other skip reasons), and failed. An unchanged checkout is
+still checked for uncommitted changes first, so a held checkout is never counted as unchanged. A checkout is recognised only when the PM2 working directory
 itself holds its `server.sh`. Exit codes:
 
 | Code | When |
 | --- | --- |
-| 0 | Every online checkout was updated (or would be, in a dry run), or PM2 runs no processes at all. |
+| 0 | Every online checkout was updated or unchanged (or would be updated, in a dry run), or PM2 runs no processes at all. |
 | 1 | A checkout was held by git, or its update failed. |
 | 2 | Nothing was updated because: an unknown option, more than two arguments, `all` given as the ref, a ref or env that starts with `-` or holds a space, a recursive `update all`, a `GIT_*` variable set read-only, it was run as root, no temporary directory could be made, another `update all` holds the lock (or the lock holds no pid), `node` or `scripts/update-all-scan.mjs` is missing, or the PM2 list could not be read or was not usable. |
 | 3 | PM2 lists processes but none is an ngdpbase checkout. |
