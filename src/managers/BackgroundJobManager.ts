@@ -1218,7 +1218,7 @@ class BackgroundJobManager extends BaseManager {
 
     const def = this.jobs.get(jobId);
     if (!def) {
-      throw new Error(`BackgroundJobManager: unknown job '${jobId}'`);
+      throw new JobActionError(`There is no job named '${jobId}'.`, 404);
     }
 
     return this.startHandRun(def, requestedBy, null);

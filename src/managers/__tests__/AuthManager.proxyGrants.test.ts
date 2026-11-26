@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import AuthManager, { PROXY_ACCESS_ENABLED_KEY } from '../AuthManager';
+import AuthManager, { PROXY_ACCESS_ENABLED_KEY, ProxyGrantRefused } from '../AuthManager';
 import { CREDENTIALS_KEY_ENV } from '../../providers/BaseCredentialsProvider';
 
 // Generated per run: no literal after a key-shaped name.
@@ -162,6 +162,7 @@ describe('AuthManager — proxy grants, slice 1 (#1762)', () => {
     const now = Date.now();
     await expect(am.grantProxy(subject('ann'), { owner: 'ann', proxy: 'bob', permissions: ['page-read'], expiresAt: new Date(now - 1000).toISOString() })).rejects.toThrow(/in the future/);
     await expect(am.grantProxy(subject('ann'), { owner: 'ann', proxy: 'bob', permissions: ['page-read'], expiresAt: 'next tuesday' })).rejects.toThrow(/in the future/);
+    await expect(am.grantProxy(subject('ann'), { owner: 'ann', proxy: 'bob', permissions: ['page-read'], expiresAt: new Date(now - 1000).toISOString() })).rejects.toBeInstanceOf(ProxyGrantRefused);
 
     const ends = new Date(now + 60_000).toISOString();
     const made = await am.grantProxy(subject('ann'), { owner: 'ann', proxy: 'bob', permissions: ['page-read'], expiresAt: ends });

@@ -59,7 +59,7 @@ describe('admin diff and raw save — vault and path checks (#2413)', () => {
       'ngdpbase.vaults.admin-access': false
     };
     getRawPageContent = vi.fn(async () => ({ filePath: '/srv/data/vaults/alice/Diary.md', content: 'alice text' }));
-    saveRaw = vi.fn(async () => { throw new Error('bad YAML in front matter'); });
+    saveRaw = vi.fn(async () => { throw Object.assign(new Error('bad indentation of a mapping entry at line 2, column 3'), { name: 'YAMLException' }); });
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
         getProperty: (key: string, def: unknown) => (key in config ? config[key] : def),
@@ -182,7 +182,7 @@ describe('admin diff and raw save — vault and path checks (#2413)', () => {
   test('a public page with invalid front matter is still a 400 error view', async () => {
     const res = await save(admin, 'Main');
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.render).toHaveBeenCalledWith('admin-edit-raw', expect.objectContaining({ errorMessage: 'bad YAML in front matter' }));
+    expect(res.render).toHaveBeenCalledWith('admin-edit-raw', expect.objectContaining({ errorMessage: expect.stringContaining('the front matter at the top') }));
   });
 
   // ── the vault check cannot run ──────────────────────────────────────────
