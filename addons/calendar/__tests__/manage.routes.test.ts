@@ -55,7 +55,9 @@ const CONFIG = {
     'own-reservations':  { workflow: 'reservation', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' },
     'notes-events':      { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' },
     'evil-events':       { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' },
-    'broken-events':     { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' }
+    'broken-events':     { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' },
+    'far-events':        { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' },
+    'quote-events':      { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' }
   }
 };
 
@@ -89,7 +91,19 @@ const EVENTS = [
   ev('e-evil-id\r\nURL:javascript:alert(5)', 'evil-events'),
   // An unreadable start must not take the whole feed down.
   ev('e-nodate', 'broken-events', { start: 'not-a-date' }),
-  ev('e-fine', 'broken-events')
+  ev('e-fine', 'broken-events'),
+  // Dates the feed cannot write (years outside 0..9999): each is left out, the rest stays.
+  ev('e-far-start', 'far-events', { title: 'SECRET-FAR-TITLE', start: '+275760-09-13T00:00:00.000Z', end: undefined }),
+  ev('e-far-end', 'far-events', { title: 'SECRET-FAR-TITLE', end: '+275760-09-13T00:00:00.000Z' }),
+  ev('e-neg-start', 'far-events', { title: 'SECRET-FAR-TITLE', start: '-000001-01-01T00:00:00.000Z', end: '2026-12-01T11:00:00' }),
+  ev('e-edge-fallback', 'far-events', { title: 'SECRET-FAR-TITLE', start: '9999-12-31T23:30:00.000Z', end: undefined }),
+  ev('e-far-fine', 'far-events'),
+  // An address with a Unicode line separator (stored before the rule): the feed must not hand it on.
+  ev('e-lsurl', 'association-events', { url: 'https://example.org/ls\u2028URL:https://evil.example/x' }),
+  // Organizer names that need quoting in the feed.
+  ev('e-quote-inject', 'quote-events', { organizer: 'Bob"; ROLE=CHAIR;CN="x' }),
+  ev('e-quote-readable', 'quote-events', { organizer: 'Zoë O\'Neil, Esq.' }),
+  ev('e-quote-colon', 'quote-events', { organizer: 'Dept: Ops; Lead' })
 ];
 
 let dir: string;
@@ -374,7 +388,9 @@ describe('an event\'s url', () => {
     'javascript:alert(1)', 'JaVaScRiPt:alert(1)', ' javascript:alert(1)', '\tjavascript:alert(1)',
     '\u0001javascript:alert(1)', 'java\tscript:alert(1)', 'java\nscript:alert(1)', 'java\rscript:alert(1)',
     'data:text/html,<script>alert(1)</script>', 'vbscript:msgbox(1)', 'file:///etc/passwd', 'ftp://example.org/x',
-    'blob:https://example.org/x', 'foo:bar'
+    'blob:https://example.org/x', 'foo:bar',
+    // Unicode line separators and the next-line character: refused like any control character.
+    'https://example.org/a\u2028b', 'https://example.org/a\u2029b', 'https://example.org/a\u0085b', '\u2028https://example.org/', '/wiki/Page\u2029'
   ];
   const GOOD = ['', '/wiki/StandupNotes', 'relative/page', 'https://example.org/a?b=c', 'http://example.org', 'HTTPS://EXAMPLE.ORG', 'mailto:a@example.org', '//example.org/x', '#top', '?q=a:b'];
 
@@ -456,6 +472,16 @@ describe('an event\'s url', () => {
       expect(res.status).toBe(200);
       expect(res.text).not.toContain('javascript:');
       expect(res.text).toContain('https://example.org/agenda');
+    });
+
+    test('the .ics feed leaves out an address with a line separator, and keeps the event', async () => {
+      const res = await request(app).get('/api/calendar/association-events/feed.ics');
+      expect(res.status).toBe(200);
+      const unfolded = res.text.replace(/\r\n /g, '');
+      expect(unfolded).toContain('UID:e-lsurl');
+      expect(unfolded).not.toContain('evil.example');
+      expect(unfolded).not.toContain('example.org/ls');
+      expect(unfolded.split('\r\n').filter(l => l.startsWith('URL:') && l.includes('evil'))).toEqual([]);
     });
   });
 });
@@ -569,5 +595,167 @@ describe('an event\'s dates', () => {
       expect(res.text).not.toContain('e-nodate');
       expect(res.text).toContain('UID:e-fine');
     });
+  });
+});
+
+// The feed writes dates as four-digit years. A date outside 0..9999 (JavaScript reads dates up to
+// the year 275760) would be written as a malformed one and the whole feed would be refused.
+describe('an event\'s dates outside the years 0 to 9999', () => {
+  const OUT_OF_RANGE = ['+275760-09-13T00:00:00.000Z', '-000001-01-01T00:00:00.000Z', '+010000-01-01T00:00:00.000Z', '-271821-04-20T00:00:00.000Z'];
+
+  describe('written by a holder of only the calendar\'s own permission', () => {
+    beforeEach(() => holds('association-event-post'));
+
+    test.each(OUT_OF_RANGE)('POST refuses a start of %s with 400 and stores nothing', async (start) => {
+      const before = manager.count();
+      const res = await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), start });
+      expect(res.status).toBe(400);
+      expect(manager.count()).toBe(before);
+    });
+
+    test.each(OUT_OF_RANGE)('POST refuses an end of %s with 400', async (end) => {
+      const before = manager.count();
+      const res = await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), end });
+      expect(res.status).toBe(400);
+      expect(manager.count()).toBe(before);
+    });
+
+    test.each(OUT_OF_RANGE)('PUT refuses a start of %s with 400 and leaves the event alone', async (start) => {
+      const res = await request(app).put('/api/calendar/events/e-assoc').send({ start });
+      expect(res.status).toBe(400);
+      expect(manager.getById('e-assoc')?.start).toBe('2026-12-01T10:00:00');
+    });
+
+    test.each(OUT_OF_RANGE)('PUT refuses an end of %s with 400 and leaves the event alone', async (end) => {
+      const res = await request(app).put('/api/calendar/events/e-assoc').send({ end });
+      expect(res.status).toBe(400);
+      expect(manager.getById('e-assoc')?.end).toBe('2026-12-01T11:00:00');
+    });
+
+    test('a start with no end whose "start plus one hour" would pass the year 9999 is refused', async () => {
+      const before = manager.count();
+      const res = await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), start: '9999-12-31T23:30:00.000Z' });
+      expect(res.status).toBe(400);
+      expect(manager.count()).toBe(before);
+      expect((await request(app).put('/api/calendar/events/e-assoc').send({ start: '9999-12-31T23:30:00.000Z', end: undefined })).status).toBe(400);
+    });
+
+    test('PUT with end "" or end null answers 400 and leaves the event alone', async () => {
+      for (const end of ['', null]) {
+        const res = await request(app).put('/api/calendar/events/e-assoc').send({ end });
+        expect(res.status).toBe(400);
+      }
+      expect(manager.getById('e-assoc')?.end).toBe('2026-12-01T11:00:00');
+    });
+
+    test('the first and last years are accepted, and the feed still builds', async () => {
+      for (const [start, end] of [['0001-01-01T00:00:00.000Z', '0001-01-01T01:00:00.000Z'], ['9999-12-31T21:00:00.000Z', '9999-12-31T23:00:00.000Z'], ['9999-12-31T22:00:00.000Z', undefined]]) {
+        const res = await request(app).post('/api/calendar/events').send({ ...newEvent('far-events'), start, ...(end ? { end } : {}) });
+        expect(res.status).toBe(201);
+      }
+      const feed = await request(app).get('/api/calendar/far-events/feed.ics');
+      expect(feed.status).toBe(200);
+      expect(feed.text).toContain('DTSTART:00010101T000000Z');
+      expect(feed.text).toContain('DTEND:99991231T230000Z');
+    });
+  });
+
+  describe('an event already stored with one', () => {
+    beforeEach(() => holds());
+
+    test('the .ics feed leaves each out and lists the rest', async () => {
+      const res = await request(app).get('/api/calendar/far-events/feed.ics');
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('UID:e-far-fine');
+      for (const id of ['e-far-start', 'e-far-end', 'e-neg-start', 'e-edge-fallback']) expect(res.text).not.toContain(id);
+      expect(res.text).not.toMatch(/\+\d{3}/);
+      expect(res.text).not.toMatch(/DT(START|END)[^\r\n]*:-/);
+    });
+
+    test('an out-of-range created, updated or stamp date is dropped without losing the event', async () => {
+      holds('association-event-post');
+      const created = await request(app).post('/api/calendar/events').send({ ...newEvent('far-events'), title: 'Stamped' });
+      expect(created.status).toBe(201);
+      // A stored event whose bookkeeping dates are past the range.
+      await manager.update(created.body.id, { created: '+275760-09-13T00:00:00.000Z', updated: '-000001-01-01T00:00:00.000Z', dtstamp: '+010000-01-01T00:00:00.000Z' });
+      const feed = await request(app).get('/api/calendar/far-events/feed.ics');
+      expect(feed.status).toBe(200);
+      expect(feed.text).toContain(`UID:${created.body.id}`);
+      expect(feed.text).not.toMatch(/\+\d{3}/);
+    });
+
+    test('leaves one log line per skipped event, naming the calendar and the event but not its text', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        const res = await request(app).get('/api/calendar/far-events/feed.ics');
+        expect(res.status).toBe(200);
+        const lines = warn.mock.calls.map(c => c.map(String).join(' '));
+        for (const id of ['e-far-start', 'e-far-end', 'e-neg-start', 'e-edge-fallback']) {
+          const mine = lines.filter(l => l.includes(id));
+          expect(mine).toHaveLength(1);
+          expect(mine[0]).toContain('far-events');
+        }
+        expect(lines.some(l => l.includes('e-far-fine'))).toBe(false);
+        expect(lines.join('\n')).not.toContain('SECRET-FAR-TITLE');
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    test('an unreadable start leaves a log line too, and an id with a line break cannot add a log line', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        await request(app).get('/api/calendar/broken-events/feed.ics');
+        await request(app).get('/api/calendar/evil-events/feed.ics');
+        const lines = warn.mock.calls.map(c => c.map(String).join(' '));
+        expect(lines.some(l => l.includes('e-nodate') && l.includes('broken-events'))).toBe(true);
+        for (const l of lines) expect(l).not.toMatch(/[\r\n]/);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  });
+});
+
+// RFC 5545: a parameter value that holds a colon, semicolon or comma must be a quoted string, and a
+// quoted string cannot hold a double quote. The organizer's display name is the CN parameter.
+describe('an organizer name in the .ics feed', () => {
+  const organizerLines = (text: string, id: string) => {
+    const unfolded = text.replace(/\r\n /g, '');
+    const block = unfolded.split('BEGIN:VEVENT').find(b => b.includes(`UID:${id}\r\n`)) ?? '';
+    return block.split('\r\n').filter(l => l.startsWith('ORGANIZER'));
+  };
+  // A well-formed ORGANIZER line: one quoted CN parameter, then the address.
+  const WELL_FORMED = /^ORGANIZER;CN="[^"]*":MAILTO:noreply@calendar$/;
+
+  beforeEach(() => holds());
+
+  test('a name with a quote cannot add a parameter', async () => {
+    const res = await request(app).get('/api/calendar/quote-events/feed.ics');
+    expect(res.status).toBe(200);
+    const lines = organizerLines(res.text, 'e-quote-inject');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(WELL_FORMED);
+    // Parameters outside the quoted string: only CN.
+    const outside = lines[0].replace(/"[^"]*"/g, '""');
+    expect(outside.split(':')[0].split(';').slice(1)).toEqual(['CN=""']);
+    expect(lines[0]).toContain('Bob');
+  });
+
+  test('a name with a comma, colon or semicolon is written as a quoted string and reads as written', async () => {
+    const res = await request(app).get('/api/calendar/quote-events/feed.ics');
+    const readable = organizerLines(res.text, 'e-quote-readable');
+    expect(readable).toEqual(['ORGANIZER;CN="Zoë O\'Neil, Esq.":MAILTO:noreply@calendar']);
+    const colon = organizerLines(res.text, 'e-quote-colon');
+    expect(colon).toEqual(['ORGANIZER;CN="Dept: Ops; Lead":MAILTO:noreply@calendar']);
+  });
+
+  test('a plain name is quoted too, and an address stays an address', async () => {
+    holds('association-event-post');
+    const plain = await request(app).post('/api/calendar/events').send({ ...newEvent('quote-events'), organizer: 'Bob Smith' });
+    const mail = await request(app).post('/api/calendar/events').send({ ...newEvent('quote-events'), organizer: 'bob@example.org' });
+    const res = await request(app).get('/api/calendar/quote-events/feed.ics');
+    expect(organizerLines(res.text, plain.body.id)).toEqual(['ORGANIZER;CN="Bob Smith":MAILTO:noreply@calendar']);
+    expect(organizerLines(res.text, mail.body.id)).toEqual(['ORGANIZER:MAILTO:bob@example.org']);
   });
 });
