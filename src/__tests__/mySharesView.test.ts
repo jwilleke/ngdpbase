@@ -320,7 +320,7 @@ describe('the rules are in a stylesheet the page loads (round 7)', () => {
   test('the pages link their own stylesheets from disk; the shared-links rules are in one of them', async () => {
     for (const doc of [await render({ rows: [LABELLED] }), await renderAdmin()]) {
       const hrefs = localStylesheets(doc);
-      expect(hrefs).toContain('/themes/core.css?v=3.0.7');
+      expect(hrefs.map(h => h.split('?')[0])).toContain('/themes/core.css');
       for (const href of hrefs) expect(readFileSync(stylesheetFile(href), 'utf8').length).toBeGreaterThan(0);
       expect(loadedCss(doc)).toMatch(/\.table\.shared-links td:first-child\s*\{/);
       expect(loadedCss(doc)).toMatch(/\.table\.shared-links \.input-group > input\s*\{/);
@@ -454,5 +454,71 @@ describe('the Copy button in a browser (round 6 L2, item 6)', () => {
     works = true;
     p.button.click();
     expect(p.help?.hidden).toBe(true);
+  });
+});
+
+// ---- round 8 ----
+
+describe('the link actions read as a link and Revoke (round 8 items 1 and 2)', () => {
+  test('Extend or see who visited is a text link with an arrow, centred in a 44px target, beside Revoke in a nowrap group', async () => {
+    const doc = await render({ rows: [LABELLED] });
+    for (const scope of ['tr[data-share-id="r2"]', '[data-share-card="r2"]']) {
+      const link = doc.querySelector(`${scope} a[href="/my/vaults/links"]`) as Element;
+      expect(link.textContent?.replace(/\s+/g, ' ').trim()).toBe('Extend or see who visited');
+      for (const name of ['btn', 'btn-sm', 'btn-link', 'px-0', 'text-start', 'd-inline-flex', 'align-items-center']) {
+        expect(link.classList.contains(name)).toBe(true);
+      }
+      expect(link.classList.contains('btn-outline-secondary')).toBe(false);
+      expect(link.querySelector('i.fas.fa-arrow-right')).not.toBeNull();
+      expect(link.getAttribute('style')).toContain('min-height: 44px');
+      const group = link.parentElement as Element;
+      for (const name of ['d-flex', 'gap-3', 'align-items-center', 'flex-nowrap']) expect(group.classList.contains(name)).toBe(true);
+      expect(group.querySelector('form[action$="/revoke"]')).not.toBeNull();
+    }
+  });
+
+  test('Revoke asks before it stops the link, on the person page as on the admin page', async () => {
+    const doc = await render({ rows: [LABELLED] });
+    for (const scope of ['tr[data-share-id="r2"]', '[data-share-card="r2"]']) {
+      const form = doc.querySelector(`${scope} form[action$="/revoke"]`) as Element;
+      expect(form.getAttribute('onsubmit')).toBe("return confirm('Stop this link? It stops working immediately.')");
+    }
+  });
+});
+
+describe('the Link column, inactive rows, phone cards and the empty state (round 8 items 3 to 6)', () => {
+  test('the Link column takes the width the other columns leave', async () => {
+    const doc = await render({ rows: [ROW], addresses: { r1: 'https://wiki.example.com/share/abc' } });
+    const css = loadedCss(doc);
+    const cell = doc.querySelector('table#sharedLinksTable td.shared-link-cell') as Element;
+    expect(cascaded(css, cell, 'width')).toBe('100%');
+    expect(cascaded(css, cell, 'min-width')).toBe('280px');
+  });
+
+  test.each(['expired', 'revoked', 'page not available'])('a %s row is muted and an active row is not', async (status) => {
+    const doc = await render({ rows: [{ ...ROW, id: 'a1', status: 'active' }, { ...ROW, id: 'x1', status }], addresses: { a1: 'https://wiki.example.com/share/abc' } });
+    const dead = [...doc.querySelectorAll('tr[data-share-id="x1"] td')];
+    expect(dead.length).toBe(6);
+    for (const td of dead) expect(td.classList.contains('text-muted')).toBe(true);
+    for (const td of doc.querySelectorAll('tr[data-share-id="a1"] td')) expect(td.classList.contains('text-muted')).toBe(false);
+  });
+
+  test('a revoked phone card does not end in a lone dash, but the table cell still says there is no link', async () => {
+    const doc = await render({ rows: [{ ...ROW, status: 'revoked', actions: [] }] });
+    const card = doc.querySelector('[data-share-card="r1"]') as Element;
+    expect(card.textContent?.replace(/\s+/g, ' ').trim()).not.toMatch(/(^|\s)-$/);
+    expect(card.querySelector('.mb-2:empty')).toBeNull();
+    expect(doc.querySelector('tr[data-share-id="r1"] td.shared-link-cell')?.textContent?.trim()).toBe('-');
+  });
+
+  test('an active card with no stored address still says it was shown once', async () => {
+    const doc = await render({ rows: [ROW] });
+    expect(doc.querySelector('[data-share-card="r1"]')?.textContent).toContain('Address was shown once, when you made it');
+  });
+
+  test('owner-only does not break at its hyphen in the tag form text', async () => {
+    const doc = await render({ shareChoice: 'tag' });
+    const code = [...doc.querySelectorAll('#share-new code')].find(c => c.textContent === 'owner-only') as Element;
+    expect(code.classList.contains('text-nowrap')).toBe(true);
   });
 });
