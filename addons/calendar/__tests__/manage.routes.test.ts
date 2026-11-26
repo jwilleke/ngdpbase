@@ -53,7 +53,9 @@ const CONFIG = {
     'odd-events':        { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 42 },
     plain:               { workflow: 'managed', visibility: 'authenticated', enabled: true },
     'own-reservations':  { workflow: 'reservation', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' },
-    'notes-events':      { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' }
+    'notes-events':      { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' },
+    'evil-events':       { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' },
+    'broken-events':     { workflow: 'managed', visibility: 'authenticated', enabled: true, 'manage-permission': 'association-event-post' }
   }
 };
 
@@ -77,7 +79,17 @@ const EVENTS = [
   ev('e-notes', 'notes-events', { _private: { requester: 'someone-else', notes: 'SECRET-NOTE-3' } }),
   // Stored before the address rule: the feed must not hand it on.
   ev('e-badurl', 'association-events', { url: 'javascript:alert(document.domain)' }),
-  ev('e-goodurl', 'association-events', { url: 'https://example.org/agenda' })
+  ev('e-goodurl', 'association-events', { url: 'https://example.org/agenda' }),
+  // Stored with line breaks in text fields (before the organizer rule): the feed must not let them add lines.
+  ev('e-evil', 'evil-events', {
+    title: 'Evil\r\nURL:javascript:alert(1)', location: 'Room\r\nATTACH:https://evil.example/x', organizer: 'a@b.c\r\nURL:javascript:alert(2)',
+    description: 'line one\r\nURL:javascript:alert(3)\nline two'
+  }),
+  ev('e-evil-name', 'evil-events', { organizer: 'Bob\r\nATTENDEE:mailto:x@y.z' }),
+  ev('e-evil-id\r\nURL:javascript:alert(5)', 'evil-events'),
+  // An unreadable start must not take the whole feed down.
+  ev('e-nodate', 'broken-events', { start: 'not-a-date' }),
+  ev('e-fine', 'broken-events')
 ];
 
 let dir: string;
@@ -444,6 +456,117 @@ describe('an event\'s url', () => {
       expect(res.status).toBe(200);
       expect(res.text).not.toContain('javascript:');
       expect(res.text).toContain('https://example.org/agenda');
+    });
+  });
+});
+
+// An organizer is written into the .ics feed, so a line break in it would add a line of
+// the writer's choosing (a URL:, ATTACH: or ATTENDEE: line) for every subscriber.
+describe('an event\'s organizer and the .ics feed', () => {
+  const BAD_ORGANIZERS = ['a@b.c\r\nURL:javascript:alert(1)', 'Bob\r\nURL:javascript:alert(2)', 'Bob\nATTACH:https://evil.example/x', 'Bob\rATTENDEE:mailto:x@y.z', 'Bob\u0000', 'Bob\u0007', 'Bob\u007f'];
+
+  describe('written by a holder of only the calendar\'s own permission', () => {
+    beforeEach(() => holds('association-event-post'));
+
+    test.each(BAD_ORGANIZERS)('POST refuses %j with 400 and stores nothing', async (organizer) => {
+      const before = manager.count();
+      const res = await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), organizer });
+      expect(res.status).toBe(400);
+      expect(manager.count()).toBe(before);
+    });
+
+    test.each(BAD_ORGANIZERS)('PUT refuses %j with 400 and leaves the event alone', async (organizer) => {
+      const res = await request(app).put('/api/calendar/events/e-assoc').send({ organizer });
+      expect(res.status).toBe(400);
+      expect(manager.getById('e-assoc')?.organizer).toBeUndefined();
+    });
+
+    test.each([5, ['a@b.c'], { name: 'x' }])('refuses an organizer that is not text: %j', async (organizer) => {
+      expect((await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), organizer })).status).toBe(400);
+      expect((await request(app).put('/api/calendar/events/e-assoc').send({ organizer })).status).toBe(400);
+    });
+
+    test('accepts an address and a plain name', async () => {
+      for (const organizer of ['a@b.c', 'Bob Smith', 'Zoë O\'Neil, Esq.']) {
+        expect((await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), organizer })).status).toBe(201);
+        expect((await request(app).put('/api/calendar/events/e-assoc').send({ organizer })).status).toBe(200);
+      }
+    });
+
+    test('a caller without the permission still gets 403 first', async () => {
+      holds();
+      expect((await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), organizer: 'a\r\nb' })).status).toBe(403);
+    });
+  });
+
+  describe('a value already stored', () => {
+    beforeEach(() => holds());
+
+    test('adds no line to the feed, whichever field carries it', async () => {
+      const res = await request(app).get('/api/calendar/evil-events/feed.ics');
+      expect(res.status).toBe(200);
+      const lines = res.text.split(/\r\n/);
+      // None of the feed's lines is a property the stored text asked for.
+      expect(lines.filter(l => /^(URL|ATTACH|ATTENDEE):/.test(l))).toEqual([]);
+      expect(res.text).not.toMatch(/[\r\n](URL:javascript|ATTACH:|ATTENDEE:)/);
+      expect(res.text).not.toMatch(/[\r\n]\s*[\r\n]/);
+      expect(res.text).toContain('Evil');
+      expect(res.text).toContain('line one');
+      expect(res.text).toContain('line two');
+    });
+  });
+});
+
+// A start that is not a date makes the whole calendar's .ics feed fail, for everyone.
+describe('an event\'s dates', () => {
+  describe('written by a holder of only the calendar\'s own permission', () => {
+    beforeEach(() => holds('association-event-post'));
+
+    test.each(['not-a-date', '2026-13-45', 'tomorrow-ish', '  '])('POST refuses a start of %j with 400', async (start) => {
+      const before = manager.count();
+      const res = await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), start });
+      expect(res.status).toBe(400);
+      expect(manager.count()).toBe(before);
+    });
+
+    test.each(['not-a-date', '', 5, null])('POST refuses an end of %j with 400', async (end) => {
+      const res = await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), end });
+      expect(res.status).toBe(400);
+    });
+
+    test.each(['not-a-date', '', 5, null, ['2026-12-01']])('PUT refuses a start of %j with 400 and leaves the event alone', async (start) => {
+      const res = await request(app).put('/api/calendar/events/e-assoc').send({ start });
+      expect(res.status).toBe(400);
+      expect(manager.getById('e-assoc')?.start).toBe('2026-12-01T10:00:00');
+    });
+
+    test.each(['not-a-date', 5, ['2026-12-01']])('PUT refuses an end of %j with 400 and leaves the event alone', async (end) => {
+      const res = await request(app).put('/api/calendar/events/e-assoc').send({ end });
+      expect(res.status).toBe(400);
+      expect(manager.getById('e-assoc')?.end).toBe('2026-12-01T11:00:00');
+    });
+
+    test('accepts a date, a date and time, and no end', async () => {
+      for (const start of ['2026-12-05', '2026-12-05T09:30:00', '2026-12-05T09:30:00.000Z', '2026-12-05T09:30:00+02:00']) {
+        expect((await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), start })).status).toBe(201);
+      }
+      const put = await request(app).put('/api/calendar/events/e-assoc').send({ start: '2026-12-06T10:00:00', end: '2026-12-06T11:00:00' });
+      expect(put.status).toBe(200);
+    });
+
+    test('a caller without the permission still gets 403 first', async () => {
+      holds();
+      expect((await request(app).post('/api/calendar/events').send({ ...newEvent('association-events'), start: 'not-a-date' })).status).toBe(403);
+    });
+  });
+
+  describe('an event already stored with an unreadable start', () => {
+    test('the .ics feed leaves that event out and lists the rest', async () => {
+      holds();
+      const res = await request(app).get('/api/calendar/broken-events/feed.ics');
+      expect(res.status).toBe(200);
+      expect(res.text).not.toContain('e-nodate');
+      expect(res.text).toContain('UID:e-fine');
     });
   });
 });
