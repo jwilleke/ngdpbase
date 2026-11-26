@@ -13,7 +13,16 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import FootnoteManager from '../FootnoteManager';
-import { SourceMissingError } from '../../utils/footnoteSources';
+import { randomUUID } from 'crypto';
+import logger from '../../utils/logger';
+import {
+  SourceMissingError,
+  SourceTitleTooLongError,
+  SourceLinkTooLongError,
+  SourceLimitError,
+  MAX_SOURCES,
+  MAX_SOURCE_LINK
+} from '../../utils/footnoteSources';
 import { FOOTNOTE_DATA_TOPIC } from '../../cache/CacheDependencies';
 import { movePageNotes, pageNotesPlace } from '../../utils/pageNotes';
 import { PLAIN_FILE_IO } from '../../utils/privateStoreFiles';
@@ -380,6 +389,180 @@ describe('FootnoteManager reverse index and reader filter (#2454 S3)', () => {
       vi.spyOn(PLAIN_FILE_IO, 'writeText').mockRejectedValueOnce(new Error('disk full'));
       await expect(fm.movePageFootnotes('v-uuid', 'Plain', 'vaults/alice/personal/Plain', EDITOR)).rejects.toThrow(/disk full/);
       expect(mockCache.bump).toHaveBeenCalledWith(FOOTNOTE_DATA_TOPIC);
+    });
+  });
+
+  describe('typed refusals and limits in createSource (round 2)', () => {
+    test('a title over 300 characters is refused with a typed error, so a route can tell it apart', async () => {
+      const err = await fm.createSource({ title: 'x'.repeat(301), url: LINK }, EDITOR).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(SourceTitleTooLongError);
+      expect((err as Error).name).toBe('SourceTitleTooLongError');
+      expect((err as Error).message).toMatch(/at most 300 characters/);
+      expect(fs.readdirSync(srcDir)).toEqual([]);
+    });
+
+    test('a link over the length limit is refused with a typed error and nothing is saved', async () => {
+      const long = `https://example.com/${'a'.repeat(MAX_SOURCE_LINK)}`;
+      const err = await fm.createSource({ title: 'T', url: long }, EDITOR).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(SourceLinkTooLongError);
+      expect((err as Error).message).toMatch(/2048/);
+      expect(fs.readdirSync(srcDir)).toEqual([]);
+    });
+
+    test('a link of exactly the limit is accepted', async () => {
+      const prefix = 'https://example.com/';
+      const ok = prefix + 'a'.repeat(MAX_SOURCE_LINK - prefix.length);
+      expect(ok.length).toBe(MAX_SOURCE_LINK);
+      await expect(fm.createSource({ title: 'T', url: ok }, EDITOR)).resolves.toMatchObject({ title: 'T' });
+    });
+
+    test('once the site holds the most sources it allows, another is refused, plainly, and nothing is saved or announced', async () => {
+      fs.mkdirSync(srcDir, { recursive: true });
+      for (let i = 0; i < MAX_SOURCES; i++) fs.writeFileSync(path.join(srcDir, `${randomUUID()}.json`), '{}');
+      mockCache.bump.mockClear();
+      const err = await fm.createSource({ title: 'One more', url: LINK }, EDITOR).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(SourceLimitError);
+      expect((err as Error).message).toMatch(new RegExp(String(MAX_SOURCES)));
+      expect((err as Error).message).not.toMatch(/#\d|github/i);
+      expect(fs.readdirSync(srcDir)).toHaveLength(MAX_SOURCES);
+      expect(mockCache.bump).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a page whose footnote file cannot be read is not "cites nothing" (round 2)', () => {
+    let warn: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+      vi.useFakeTimers({ toFake: ['Date'] });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+    /** A directory where the file should be: pathExists is true, reading it fails with EISDIR, not "no such file". */
+    const makeUnreadable = (uuid: string) => fs.mkdirSync(path.join(tmpDir, `${uuid}.json`));
+    const makeReadable = (uuid: string) => fs.rmdirSync(path.join(tmpDir, `${uuid}.json`));
+
+    test('at rebuild: the failure is logged by page, and a source nobody is known to cite is not shown as unused to a page editor', async () => {
+      const s1 = await makeSource('Cited by the page that cannot be read');
+      const unused = await makeSource('Cited by nobody', 'https://example.org/none');
+      makeUnreadable('uuid-a');
+      await fm.rebuildSourceIndex();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Alpha'));
+      expect(await fm.getSource(s1.id, EDITOR)).toBeNull();
+      expect(await fm.getSource(unused.id, EDITOR)).toBeNull();
+      expect(await fm.listSourcesFor(EDITOR)).toEqual([]);
+    });
+
+    test('pages that did read keep working while one cannot be read', async () => {
+      const s2 = await makeSource('Cited by Beta', 'https://example.org/b');
+      writeNotes('uuid-b', { '1': s2.id });
+      makeUnreadable('uuid-a');
+      await fm.rebuildSourceIndex();
+      expect((await fm.getSource(s2.id, READER))?.title).toBe('Cited by Beta');
+    });
+
+    test('the read is tried again later, and once it works the source shows with its citing page', async () => {
+      const s1 = await makeSource();
+      makeUnreadable('uuid-a');
+      await fm.rebuildSourceIndex();
+      expect(await fm.getSource(s1.id, EDITOR)).toBeNull();
+      makeReadable('uuid-a');
+      writeNotes('uuid-a', { '1': s1.id });
+      vi.setSystemTime(Date.now() + 60_000);
+      expect((await fm.getSource(s1.id, READER))?.id).toBe(s1.id);
+      expect((await fm.citingPages(s1.id)).map((p) => p.name)).toEqual(['Alpha']);
+    });
+
+    test('a write to the page that could not be read puts it right at once', async () => {
+      const s1 = await makeSource();
+      makeUnreadable('uuid-a');
+      await fm.rebuildSourceIndex();
+      makeReadable('uuid-a');
+      await fm.addFootnote(page('Alpha', 'uuid-a'), { note: 'n', sourceId: s1.id }, EDITOR);
+      expect(await fm.citationCount(s1.id)).toBe(1);
+      const unused = await makeSource('Cited by nobody', 'https://example.org/none');
+      writeNotes('uuid-b', {});
+      expect((await fm.getSource(unused.id, EDITOR))?.id).toBe(unused.id);
+    });
+
+    test('a failed re-read after a page change leaves the old entry in place and logs it', async () => {
+      const s1 = await makeSource();
+      writeNotes('uuid-a', { '1': s1.id });
+      await fm.rebuildSourceIndex();
+      warn.mockClear();
+      fs.rmSync(path.join(tmpDir, 'uuid-a.json'));
+      makeUnreadable('uuid-a');
+      await fm.pageChanged({ uuid: 'uuid-a', name: 'Alpha', previousName: null });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Alpha'));
+      expect((await fm.citingPages(s1.id)).map((p) => p.name)).toEqual(['Alpha']);
+    });
+
+    test('a page with no footnote file at all still cites nothing: an unused source is shown to a page editor', async () => {
+      const unused = await makeSource();
+      await fm.rebuildSourceIndex();
+      expect(warn).not.toHaveBeenCalled();
+      expect((await fm.getSource(unused.id, EDITOR))?.id).toBe(unused.id);
+    });
+
+    test('an empty page list at rebuild is treated as unknown, not as "no page cites anything"', async () => {
+      const s1 = await makeSource();
+      writeNotes('uuid-a', { '1': s1.id });
+      pageRefs = [];
+      await fm.rebuildSourceIndex();
+      expect(warn).toHaveBeenCalled();
+      expect(await fm.getSource(s1.id, EDITOR)).toBeNull();
+      pageRefs = [page('Alpha', 'uuid-a')];
+      vi.setSystemTime(Date.now() + 60_000);
+      expect((await fm.getSource(s1.id, READER))?.id).toBe(s1.id);
+    });
+  });
+
+  describe('one page-list read per call, and a short-circuit (round 2)', () => {
+    test('listSourcesFor reads the public page list once however many sources there are', async () => {
+      for (let i = 0; i < 40; i++) {
+        const s = await makeSource(`Source ${i}`, `https://example.com/${i}`);
+        writeNotes(`uuid-${i % 3 === 0 ? 'a' : i % 3 === 1 ? 'b' : 'c'}`, { [String(i)]: s.id });
+      }
+      await fm.rebuildSourceIndex();
+      mockPages.listPageRefs.mockClear();
+      await fm.listSourcesFor(READER);
+      expect(mockPages.listPageRefs).toHaveBeenCalledTimes(1);
+      mockPages.listPageRefs.mockClear();
+      await fm.findSourcesFor((await fm.listSourcesFor(EDITOR))[0].source.urlKey, READER);
+      expect(mockPages.listPageRefs).toHaveBeenCalledTimes(2);
+    });
+
+    test('canSeeSource reads the page list once, and stops asking about pages after the first one the reader may view', async () => {
+      const s1 = await makeSource();
+      const many: Array<{ name: string; uuid: string }> = [];
+      for (let i = 0; i < 60; i++) {
+        many.push(page(`P${String(i).padStart(2, '0')}`, `uuid-p${i}`));
+        writeNotes(`uuid-p${i}`, { '1': s1.id });
+      }
+      pageRefs = many;
+      await fm.rebuildSourceIndex();
+      mockPages.listPageRefs.mockClear();
+      mockPages.filterPagesFor.mockClear();
+      expect(await fm.canSeeSource(s1.id, READER)).toBe(true);
+      expect(mockPages.listPageRefs).toHaveBeenCalledTimes(1);
+      expect(mockPages.filterPagesFor).toHaveBeenCalledTimes(1);
+      expect(mockPages.filterPagesFor.mock.calls[0][1].length).toBeLessThan(60);
+    });
+
+    test('canSeeSource still goes on to later pages when the first ones are hidden, and says no when all are', async () => {
+      const s1 = await makeSource();
+      const many: Array<{ name: string; uuid: string }> = [];
+      hiddenFrom = {};
+      for (let i = 0; i < 60; i++) {
+        many.push(page(`P${String(i).padStart(2, '0')}`, `uuid-p${i}`));
+        writeNotes(`uuid-p${i}`, { '1': s1.id });
+        if (i < 59) hiddenFrom[`P${String(i).padStart(2, '0')}`] = ['rita'];
+      }
+      pageRefs = many;
+      await fm.rebuildSourceIndex();
+      expect(await fm.canSeeSource(s1.id, READER)).toBe(true);
+      hiddenFrom['P59'] = ['rita'];
+      expect(await fm.canSeeSource(s1.id, READER)).toBe(false);
     });
   });
 
