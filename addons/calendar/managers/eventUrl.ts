@@ -12,19 +12,21 @@
  *
  * Browsers drop tabs and newlines from inside an address and leading control
  * characters and spaces from the front, so `java\tscript:` is `javascript:`.
- * Rather than copy those rules, any control character is refused outright, and
- * the scheme is read after leading white space.
+ * Rather than copy those rules, any control character is refused outright (the C0 and
+ * C1 ranges, including the next-line character U+0085, and the line and paragraph
+ * separators U+2028 and U+2029; see eventText.ts), and the scheme is read after
+ * leading white space.
  */
+import { hasControlCharacter } from './eventText.js';
+
 const ALLOWED_SCHEMES = new Set(['http', 'https', 'mailto']);
 
-// eslint-disable-next-line no-control-regex
-const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/;
 const SCHEME = /^([a-z][a-z0-9+.-]*):/i;
 
 /** Whether `url` may be stored on an event and shown to viewers. */
 export function isSafeEventUrl(url: unknown): url is string {
   if (typeof url !== 'string') return false;
-  if (CONTROL_CHARACTER.test(url)) return false;
+  if (hasControlCharacter(url)) return false;
   const scheme = SCHEME.exec(url.trimStart());
   return scheme === null || ALLOWED_SCHEMES.has(scheme[1].toLowerCase());
 }

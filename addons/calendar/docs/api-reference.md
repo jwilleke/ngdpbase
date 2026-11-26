@@ -58,7 +58,7 @@ __Auth__: the permission the event's calendar names in its `manage-permission` s
 |-------|----------|-------------|
 | `calendarId` | no | Target calendar ID, text (default: `default`). Anything that is not text is refused with `400` |
 | `title` | yes | Event title |
-| `start` | yes | A date or ISO 8601 datetime the calendar can read (`2026-12-01`, `2026-12-01T10:00:00`); anything else is refused with `400` |
+| `start` | yes | A date or ISO 8601 datetime the calendar can read (`2026-12-01`, `2026-12-01T10:00:00`): any text JavaScript's `Date` reads, in the years 0 to 9999 (read in UTC, as the `.ics` feed writes it). Anything else, a year outside that range included, is refused with `400`. With no `end`, the `.ics` feed ends the event an hour after its start, so a `start` in the last hour of the year 9999 needs an `end` |
 | `end` | no | Same rule as `start` when sent; leave it out for none |
 | `allDay` | no | boolean |
 | `description` | no | Free text |
@@ -66,7 +66,7 @@ __Auth__: the permission the event's calendar names in its `manage-permission` s
 | `color` | no | CSS colour string |
 | `status` | no | `CONFIRMED` `TENTATIVE` `CANCELLED` (default: `CONFIRMED`) |
 | `url` | no | Link opened on event click. Must be empty, a relative address (`/wiki/Page`, `#top`), a protocol-relative one (`//host/page`, which takes the page's own http or https), or start with `http:`, `https:` or `mailto:` (any case); anything else, and anything with a control character such as a tab or newline, is refused with `400`. A relative address with a colon before its first slash, such as `Page:Name`, reads as a scheme and is refused: write `./Page:Name`. `null` is refused too; send `""` to clear a url |
-| `organizer` | no | Text: an email address or a display name. A line break, NUL or other control character is refused with `400`, because the value is written into the `.ics` feed |
+| `organizer` | no | Text: an email address or a display name. A line break, NUL or other control character is refused with `400`, because the value is written into the `.ics` feed, where a display name is written as a quoted string (its double quotes dropped) |
 
 __Response__ `201 Created` — full `FullCalendarEvent` object. A `url` stored before the rule above existed is left out of every event the API returns (list, single, search and the `.ics` feed); the event itself is kept.
 
@@ -76,7 +76,7 @@ __Response__ `201 Created` — full `FullCalendarEvent` object. A `url` stored b
 |------|--------|
 | `401` | Not authenticated |
 | `403` | Missing the permission the calendar names (or `calendar-manage`, for a body with a `_private` block) |
-| `400` | Missing `title` or `start`, a `start` or `end` that is not a date, a `calendarId` that is not text, a `url` that is not allowed, or an `organizer` that is not text or holds a control character |
+| `400` | Missing `title` or `start`, a `start` or `end` that is not a date or is outside the years 0 to 9999, an `end` that is `""` or `null`, a `calendarId` that is not text, a `url` that is not allowed, or an `organizer` that is not text or holds a control character |
 
 ---
 
@@ -118,7 +118,7 @@ __Auth__: the permission the event's calendar names in its `manage-permission` s
 
 __Response__ `200 OK` — updated `FullCalendarEvent`.
 
-__Errors__: `400` if `calendarId` is not text, `url` is not allowed, `start` or `end` is not a date, or `organizer` is not text or holds a control character (same rules as create; send `url: ""` to clear a url, `null` is refused), `401`, `403`, `404`, `409` if the event was moved by another request while the check ran.
+__Errors__: `400` if `calendarId` is not text, `url` is not allowed, `start` or `end` is not a date or is outside the years 0 to 9999 (an `end` of `""` or `null` is refused too: to change an end, send a date, and the same date rules as create apply), or `organizer` is not text or holds a control character (same rules as create; send `url: ""` to clear a url, `null` is refused), `401`, `403`, `404`, `409` if the event was moved by another request while the check ran.
 
 ---
 
@@ -186,7 +186,7 @@ __Errors__: `401`, `403` (not allowed to reserve at all), `404`. A caller who is
 ### GET /api/calendar/:calendarId/feed.ics
 
 RFC 5545 iCalendar subscription feed for a single calendar. `CONFIDENTIAL` events
-are excluded. An event whose start or end cannot be read as a date is left out, and the rest of the feed is still served. Control characters in an event's text, such as a stored line break in a title or organizer, are dropped, so no event's text can add a line to the feed; a line break in a description is written as an escaped `\n`. A `url` stored before the address rule is left out of its event. Subscribe from Apple Calendar, Google Calendar, or any CalDAV client.
+are excluded. An event whose start or end cannot be written as a date (not a date, or a year outside 0 to 9999, an end an hour after the start included) is left out, with a line in the server log naming the calendar and the event id but none of its text, and the rest of the feed is still served. An organizer's display name is written as a quoted string, its double quotes dropped, so a name cannot add a parameter. Control characters in an event's text, such as a stored line break in a title or organizer, are dropped, so no event's text can add a line to the feed; a line break in a description is written as an escaped `\n`. A `url` stored before the address rule is left out of its event, and so is one with a line or paragraph separator (U+2028, U+2029) or the next-line character (U+0085), which a `url` is now refused with. Subscribe from Apple Calendar, Google Calendar, or any CalDAV client.
 
 __Auth__: none for `public` calendars. An `authenticated` calendar's feed needs `calendar-read` (a signed-in account) and a `private` calendar's `calendar-manage`; for anyone else the feed answers `404`. A calendar app that cannot sign in to the site therefore cannot subscribe to a calendar that is not public.
 

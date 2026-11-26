@@ -109,6 +109,7 @@ const EVENTS = [
 let dir: string;
 let app: express.Application;
 let manager: CalendarDataManager;
+let addonHost: ReturnType<typeof host>;
 let declared: Record<string, unknown> | undefined;
 
 beforeEach(async () => {
@@ -131,8 +132,9 @@ beforeEach(async () => {
   };
   app = express();
   app.use(express.json());
-  app.use('/api/calendar', apiRoutes(engine as never, CONFIG, host()));
-  app.use('/api/calendar', reservationRoutes(engine as never, CONFIG, host()));
+  addonHost = host();
+  app.use('/api/calendar', apiRoutes(engine as never, CONFIG, addonHost));
+  app.use('/api/calendar', reservationRoutes(engine as never, CONFIG, addonHost));
 });
 
 afterEach(async () => { await fsp.rm(dir, { recursive: true, force: true }); });
@@ -685,7 +687,7 @@ describe('an event\'s dates outside the years 0 to 9999', () => {
     });
 
     test('leaves one log line per skipped event, naming the calendar and the event but not its text', async () => {
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const warn = vi.spyOn(addonHost.logger, 'warn').mockImplementation(() => addonHost.logger);
       try {
         const res = await request(app).get('/api/calendar/far-events/feed.ics');
         expect(res.status).toBe(200);
@@ -703,7 +705,7 @@ describe('an event\'s dates outside the years 0 to 9999', () => {
     });
 
     test('an unreadable start leaves a log line too, and an id with a line break cannot add a log line', async () => {
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const warn = vi.spyOn(addonHost.logger, 'warn').mockImplementation(() => addonHost.logger);
       try {
         await request(app).get('/api/calendar/broken-events/feed.ics');
         await request(app).get('/api/calendar/evil-events/feed.ics');

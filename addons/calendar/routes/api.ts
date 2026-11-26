@@ -9,6 +9,7 @@ import { MANAGE_PERMISSION, calendarGate, currentCalendarConfig } from '../manag
 import { declaredPermissionNames, resolveManagePermission } from '../managers/calendarManage.js';
 import { isSafeEventUrl } from '../managers/eventUrl.js';
 import { hasControlCharacter, icsBlockText, icsLineText } from '../managers/eventText.js';
+import { defaultEnd, isWritableDate, readWritableDate } from '../managers/eventDates.js';
 import type { CalendarGate } from '../managers/calendarVisibility.js';
 import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
 
@@ -61,8 +62,9 @@ async function onlyVisible(events: CalendarEvent[], may: CalendarGate): Promise<
  * a colon before its first slash, `Page:Name`, reads as a scheme and is written
  * `./Page:Name`), and one stored before that rule is left out of what is returned.
  * An `organizer` is text without a control character, and `start` and `end` are
- * dates (400 otherwise). The .ics feed drops control characters from every text it
- * writes and leaves out an event whose dates it cannot read.
+ * dates in the years 0 to 9999 (400 otherwise). The .ics feed drops control characters
+ * from every text it writes, quotes the organizer's name, and leaves out (with a log
+ * line) an event whose dates it cannot write.
  *
  * Endpoints:
  *   GET    /api/calendar/events                  — list / FullCalendar feed
@@ -159,18 +161,28 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
   }
 
   /**
-   * A body's `start` and `end`, when it has them, must be dates the calendar can read.
-   * An event with a start that is not a date stops the calendar's .ics feed from being built.
+   * A body's `start` and `end`, when it has them, must be dates the calendar can read,
+   * in the years 0 to 9999 (see eventDates.ts). An event whose dates the feed cannot
+   * write would stop the calendar's .ics feed from being built. A start with no end
+   * gets an end an hour later in the feed, and that must be in range as well. An
+   * empty or null `end` is refused, on PUT as on POST.
    */
   function checkEventDates(body: unknown): void {
     if (!body || typeof body !== 'object') return;
-    for (const field of ['start', 'end']) {
+    const dates: Partial<Record<'start' | 'end', Date>> = {};
+    for (const field of ['start', 'end'] as const) {
       if (!Object.hasOwn(body, field)) continue;
       const value = (body as Record<string, unknown>)[field];
       if (value === undefined) continue;
-      if (typeof value !== 'string' || value.trim() === '' || Number.isNaN(new Date(value).getTime())) {
+      const date = typeof value === 'string' && value.trim() !== '' ? new Date(value) : undefined;
+      if (!date || Number.isNaN(date.getTime())) {
         throw new ApiError(400, `${field} must be a date, such as 2026-12-01 or 2026-12-01T10:00:00`);
       }
+      if (!isWritableDate(date)) throw new ApiError(400, `${field} must be in the years 0 to 9999`);
+      dates[field] = date;
+    }
+    if (dates.start && !dates.end && !isWritableDate(defaultEnd(dates.start))) {
+      throw new ApiError(400, 'start must be at least an hour before the end of the year 9999, or the event needs an end');
     }
   }
 
@@ -333,13 +345,15 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
       const events = m.query({ calendarId })
         .filter(e => e.class !== 'CONFIDENTIAL');
 
-      // An event that cannot be written as one (a start that is not a date) is left out, not the whole feed.
+      // An event that cannot be written as one (a date that is not a date, or is outside the years 0 to 9999)
+      // is left out, not the whole feed. The log line names the calendar and the event, never its text.
       const icsEvents: IcsEvent[] = [];
       for (const e of events) {
         try {
           icsEvents.push(toIcsEvent(e));
-        } catch {
-          continue;
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : 'it cannot be written';
+          host.logger.warn(`[calendar] .ics feed for calendar ${JSON.stringify(calendarId)} left out event ${JSON.stringify(String(e.id))}: ${reason}`);
         }
       }
 
@@ -360,11 +374,17 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
   return router;
 }
 
-/** A date from stored text, or undefined when it is not one. */
-function readDate(value: string | undefined): Date | undefined {
-  if (!value) return undefined;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date;
+/** A date from stored text, or undefined when it is not one the feed can write (see eventDates.ts). */
+const readDate = readWritableDate;
+
+/**
+ * An organizer's display name as the feed's CN parameter value. RFC 5545 allows a colon,
+ * semicolon or comma in a parameter value only inside a quoted string, and a quoted string
+ * cannot hold a double quote: so the name is always quoted and its double quotes are dropped.
+ * A name cannot then end the parameter or add one of its own.
+ */
+function quotedParameterValue(name: string): string {
+  return `"${name.replace(/"/g, '')}"`;
 }
 
 /**
@@ -374,19 +394,19 @@ function readDate(value: string | undefined): Date | undefined {
  * RFC 5545 requires either DTEND or DURATION. We always supply DTEND:
  * for events without an explicit end, fall back to start + 1 hour.
  *
- * Throws for an event whose start (or end) is not a date, so the caller can leave
- * it out. Every text field has its control characters dropped (see eventText.ts):
+ * Throws, with a reason that holds none of the event's text, for an event whose start
+ * or end is not a date the feed can write, so the caller can leave it out. Every text field has its control characters dropped (see eventText.ts):
  * a stored line break cannot start a line of the feed.
  */
 function toIcsEvent(e: CalendarEvent): IcsEvent {
   const now = new Date();
   const startDate = readDate(e.start);
-  if (!startDate) throw new Error(`Event ${e.id} has no readable start`);
+  if (!startDate) throw new Error('its start is not a date the feed can write');
   // RFC 5545 DTEND is required (or DURATION) — default to start + 1 hour
   const endDate = e.end
     ? readDate(e.end)
-    : new Date(startDate.getTime() + 60 * 60 * 1000);
-  if (!endDate) throw new Error(`Event ${e.id} has no readable end`);
+    : defaultEnd(startDate);
+  if (!endDate || !isWritableDate(endDate)) throw new Error('its end is not a date the feed can write');
 
   const event: IcsEvent = {
     uid:   icsLineText(String(e.id)),
@@ -426,7 +446,7 @@ function toIcsEvent(e: CalendarEvent): IcsEvent {
     const isEmail = organizer.includes('@');
     event.organizer = isEmail
       ? { email: organizer }
-      : { email: 'noreply@calendar', name: organizer };
+      : { email: 'noreply@calendar', name: quotedParameterValue(organizer) };
   }
 
   return event;
