@@ -10055,7 +10055,7 @@ ${panes}
       if (carriesCeiling(subject) && !(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
       // The request's own subject, forwarded (#2521): the audit row names who clicked.
       await shareManager.revoke(record.id, subject);
-      return res.redirect('/my/shares?notice=revoked');
+      return res.redirect((await this.postedFromAllUsers(wikiContext, req)) ? '/my/shares?view=all&notice=revoked' : '/my/shares?notice=revoked');
     } catch (err: unknown) {
       logger.error('[vault-links] Error revoking a vault link:', err);
       return res.status(500).send('Internal server error');
@@ -23218,9 +23218,20 @@ ${description}
    */
   private async afterTagRevokeUrl(
     wikiContext: WikiContext,
-    subject: NonNullable<WikiContext['userContext']>
+    subject: NonNullable<WikiContext['userContext']>,
+    stayInAllUsers = false
   ): Promise<string> {
-    return (await this.sharedLinksAccess(wikiContext, subject)).mayOpen ? '/my/shares?revoked=1' : '/';
+    if (!(await this.sharedLinksAccess(wikiContext, subject)).mayOpen) return '/';
+    return stayInAllUsers ? '/my/shares?view=all&revoked=1' : '/my/shares?revoked=1';
+  }
+
+  /**
+   * True when a revoke form was posted from the all-users view and the person
+   * may use that view. The field is only a hint about where to land: a person
+   * without share-manage-all who posts it is sent to their own list.
+   */
+  private async postedFromAllUsers(wikiContext: WikiContext, req: Request): Promise<boolean> {
+    return (req.body as { view?: unknown } | undefined)?.view === 'all' && (await wikiContext.hasPermission('share-manage-all'));
   }
 
   /**
@@ -23398,7 +23409,7 @@ ${description}
           return res.status(403).send('Access denied');
         }
         await shareManager.revoke(record.id, subject);
-        return res.redirect(await this.afterTagRevokeUrl(wikiContext, subject));
+        return res.redirect(await this.afterTagRevokeUrl(wikiContext, subject, await this.postedFromAllUsers(wikiContext, req)));
       }
       // Another user's link (Q-B, Q-C): share-manage-all alone, no share-revoke
       // and no admin-system. Recorded as a manager's revoke (R14).

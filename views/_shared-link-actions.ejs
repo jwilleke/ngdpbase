@@ -21,6 +21,7 @@ const revokeAction = row.kind === 'tag' ? '/shares/' + row.id + '/revoke' : '/my
     <form method="post" action="<%= revokeAction %>" class="d-inline" onsubmit="return confirm('Stop this link? It stops working immediately.')">
     <% } %>
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <% if (locals.allUsers) { %><input type="hidden" name="view" value="all"><% } %>
         <button type="submit" class="btn btn-sm btn-outline-danger" style="min-height: 44px;"><i class="fas fa-ban"></i> Revoke</button>
     </form>
 <% } %>
