@@ -12,10 +12,10 @@ const RECORDS = [
   { ...base, id: 'r3', scope: { kind: 'vault', owner: 'molly', vault: 'Family', pages: null } }
 ];
 
-function setup(granted: string[]) {
+function setup(granted: string[], vaultPages: { uuid: string; title: string }[] = [], records: unknown[] = RECORDS) {
   const shareManager = {
     isEnabled: vi.fn(() => true),
-    list: vi.fn(() => RECORDS),
+    list: vi.fn(() => records),
     get: vi.fn(),
     revoke: vi.fn(),
     linkBaseUrl: vi.fn(() => 'https://wiki.example.com'),
@@ -27,7 +27,7 @@ function setup(granted: string[]) {
       if (name === 'PluginManager') return TEST_PLUGIN_MANAGER;
       if (name === 'ShareManager') return shareManager;
       if (name === 'PolicyDecisionPoint') return { permits: vi.fn(async (_u: string, action: string) => granted.includes(action)) };
-      if (name === 'PageManager') return { listOwnStoreIds: vi.fn(async () => ['Journal', 'Family']), listVaultPages: vi.fn(async () => []) };
+      if (name === 'PageManager') return { listOwnStoreIds: vi.fn(async () => ['Journal', 'Family']), listVaultPages: vi.fn(async () => vaultPages) };
       return null;
     })
   };
@@ -180,5 +180,17 @@ describe('GET /my/shares sign-in and caching (round 4)', () => {
     await routes.mySharesPage(req('/my/shares', {}, MOLLY), r);
     expect(r.render).toHaveBeenCalled();
     expect(r.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+  });
+});
+
+describe('GET /my/shares names a one-page link by its page (round 5)', () => {
+  test('pageTitles holds the title of the single page, by row id, and nothing for other links', async () => {
+    const one = { ...base, id: 'r7', scope: { kind: 'vault', owner: 'molly', vault: 'Journal', pages: ['u1'] } };
+    const { routes } = setup(['profile-manage', 'share-create'], [{ uuid: 'u1', title: 'Day one' }], [one, RECORDS[0], RECORDS[2]]);
+    const r = res();
+    await routes.mySharesPage(req('/my/shares', {}, MOLLY), r);
+    const view = r.render.mock.calls[0][1] as { pageTitles: Record<string, string>; rows: { id: string; label: string }[] };
+    expect(view.pageTitles).toEqual({ r7: 'Day one' });
+    expect(view.rows.every((x) => typeof x.label === 'string')).toBe(true);
   });
 });

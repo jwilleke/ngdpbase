@@ -59,3 +59,25 @@ describe('sharedLinkRows (slice 3 of #2247)', () => {
     expect(sharedLinkCounts(records, ALL, NOW)).toEqual({ active: rows.filter((r) => r.status === 'active').length, total: rows.length });
   });
 });
+
+describe('sharedLinkRows label and page (round 5)', () => {
+  test('a row carries the label the person typed, and an empty one when there is none', () => {
+    const rows = sharedLinkRows([{ ...CHOSEN, label: 'For Dr Smith' } as ShareRecord, TAG], ALL, NOW);
+    expect(rows.find((r) => r.id === 'r2')?.label).toBe('For Dr Smith');
+    expect(rows.find((r) => r.id === 'r1')?.label).toBe('');
+  });
+
+  test('a link to one page names that page, so the page can show its title', () => {
+    const one = { ...CHOSEN, id: 'r5', scope: { kind: 'vault', owner: 'molly', vault: 'Journal', pages: ['u9'] } } as unknown as ShareRecord;
+    const rows = sharedLinkRows([one, CHOSEN, TAG], ALL, NOW);
+    expect(rows.find((r) => r.id === 'r5')?.pageUuid).toBe('u9');
+    expect(rows.find((r) => r.id === 'r2')?.pageUuid).toBeNull();
+    expect(rows.find((r) => r.id === 'r1')?.pageUuid).toBeNull();
+  });
+
+  test('the label never brings the token with it, and the Profile card counts stay the same', () => {
+    const labelled = { ...CHOSEN, label: 'x' } as ShareRecord;
+    expect(JSON.stringify(sharedLinkRows([labelled, TAG, WHOLE], ALL, NOW))).not.toContain('a'.repeat(64));
+    expect(sharedLinkCounts([labelled, TAG, WHOLE], ALL, NOW)).toEqual({ active: 3, total: 3 });
+  });
+});
