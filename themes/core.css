@@ -476,6 +476,77 @@ main[role="main"] {
     width: 40%;
 }
 
+/* The Shared links tables (/my/shares and the admin list) are not system-info tables: the first
+   column is the link's name. `.table.shared-links` outranks `.table-sm td:first-child` above. */
+.table.shared-links td:first-child {
+    font-weight: normal;
+    color: inherit;
+    width: auto;
+}
+
+/* The Link column holds the address box, so it keeps some room; the box shrinks inside it. The
+   column does not claim the whole row: that left the other columns at their narrowest. */
+.table.shared-links td.shared-link-cell {
+    min-width: 180px;
+}
+
+/* On /my/shares the first column is the link's name, so it keeps room to read. */
+.table.shared-links td.shared-link-what {
+    min-width: 10rem;
+}
+
+/* A link's buttons sit side by side and wrap, as on a phone card. The group carries no Bootstrap
+   utility classes: they are !important and would beat the table rule below. */
+.shared-link-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+}
+
+/* In the table the Extend link sits above Revoke, so the Actions column is one button wide. */
+.table.shared-links .shared-link-actions {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 0;
+}
+
+.table.shared-links .input-group {
+    display: flex;
+    flex-wrap: nowrap;
+}
+
+.table.shared-links .input-group > input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* /my/shares shows cards, and shows the table only when the space beside the left menu holds all
+   six columns (about 856px). The box is measured, not the screen, because the left menu takes a
+   different share of it on each screen. */
+.shared-links-wrap {
+    container-type: inline-size;
+}
+
+.shared-links-wrap .shared-links-table {
+    display: none;
+}
+
+.shared-links-wrap .shared-links-cards {
+    display: block;
+}
+
+@container (min-width: 856px) {
+    .shared-links-wrap .shared-links-table {
+        display: block;
+    }
+
+    .shared-links-wrap .shared-links-cards {
+        display: none;
+    }
+}
+
 /* Mobile responsive rules moved to @media (max-width: 767.98px) block below */
 
 .sidebar .nav-link {

@@ -1,0 +1,18 @@
+<%# One link's buttons: the page with its visits, and Revoke. Only a link that still works has any. %>
+<%
+const mayExtend = row.status === 'active' && (row.actions.indexOf('extend') !== -1 || row.actions.indexOf('visits') !== -1);
+const mayRevoke = row.status === 'active' && row.actions.indexOf('revoke') !== -1;
+%>
+<% if (mayExtend || mayRevoke) { %>
+<div class="shared-link-actions">
+<% if (mayExtend) { %>
+    <a class="btn btn-sm btn-link px-0 text-start d-inline-flex align-items-center" href="/my/vaults/links" style="min-height: 44px;">Extend or see who visited&nbsp;<i class="fas fa-arrow-right"></i></a>
+<% } %>
+<% if (mayRevoke) { %>
+    <form method="post" action="<%= row.kind === 'tag' ? '/shares/' + row.id + '/revoke' : '/my/vaults/links/' + row.id + '/revoke' %>" class="d-inline" onsubmit="return confirm('Stop this link? It stops working immediately.')">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="btn btn-sm btn-outline-danger" style="min-height: 44px;"><i class="fas fa-ban"></i> Revoke</button>
+    </form>
+<% } %>
+</div>
+<% } %>

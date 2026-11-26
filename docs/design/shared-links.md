@@ -229,7 +229,7 @@ A user who has live links of a kind they may no longer make does not see them on
 
 ### The manager's revoke
 
-`revoke(id, revokedBy: string)` becomes `revoke(id, subject: PermissionSubject, opts?: { asManager?: boolean })`, taking the request's own subject the way `extend` takes `by: PermissionSubject`, never a username string (the security guide forwards the subject positionally, because under a proxy the username is the user represented). The audit actor is built with `actorOf(subject)`, so a token or proxy that clicked is named in the row with the user it acted for. The audit metadata already carries `createdBy` and the scope; it gains `byManager: true` when the actor is not the creator, so a reader of the log never has to infer it. The record gets the optional flag `revokedByManager: true` for the owner's list ([answer D](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080256567)); no name is stored in it. The event is still `share-revoke`, with on-failure `refuse`. No new audit event is added, and opening the all-users view is not recorded ([answer C](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080212680)).
+`revoke(id, revokedBy: string)` becomes `revoke(id, subject: PermissionSubject, opts?: { asManager?: boolean })`, taking the request's own subject the way `extend` takes `by: PermissionSubject`, never a username string (the security guide forwards the subject positionally, because under a proxy the username is the user represented). The audit actor is built with `actorOf(subject)`, so a token or proxy that clicked is named in the row with the user it acted for. The audit metadata already carries `createdBy` and the scope; it gains `byManager: true` only when the manager path made the revoke (`asManager: true`), never because the actor is not the creator, so a reader of the log never has to infer it. A test pins that a token or proxy acting for the maker, whose actor differs from the creator, is recorded without `byManager`. The record gets the optional flag `revokedByManager: true` for the owner's list ([answer D](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080256567)); no name is stored in it. The event is still `share-revoke`, with on-failure `refuse`. No new audit event is added, and opening the all-users view is not recorded ([answer C](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080212680)).
 
 A manager's revoke does not depend on the "admins can enter private areas" setting. With the setting off, a holder of the permission can still revoke a link to a private-area page, because revoking shows no page ([answer F](https://github.com/jwilleke/ngdpbase/issues/2247#issuecomment-7080272999)).
 
@@ -261,9 +261,11 @@ __Private-area route, `POST /my/vaults/links/:id/revoke` (`myVaultLinksRevoke`).
 2. Share links are switched off: 404.
 3. The record is missing or is a tag record: 404, so the id does not confirm that a link exists.
 4. The subject carries no ceiling and made the link: revoked. No permission check (Q-D, Q-G).
-5. Anyone else. Slice 4: a holder of `share-manage-all` revokes it (recorded as a manager's revoke); a token, proxy or share acting for the maker revokes it if its ceiling grants `profile-manage` and `createdBy` matches (Q-G, as today); everyone else gets 404. Slice 3: the same, without the manager. A manager needs no `profile-manage` here, because the manager touches no area.
+5. Anyone else. Slice 4: a holder of `share-manage-all` revokes it (recorded as a manager's revoke); a token, proxy or share acting for the maker revokes it if its ceiling grants `profile-manage` and `createdBy` matches, and gets 403 when its ceiling does not grant `profile-manage` (Q-G, as today); everyone else gets 404. Slice 3: the same, without the manager. A manager needs no `profile-manage` here, because the manager touches no area.
 
 Before slice 3 the route keeps today's order (`profile-manage` first, then switched off, then the record).
+
+A token or proxy acting for the maker needs no `mayActInPrivateContainer` check on this route. Revoking reads no page and enters no container, so the container rule has nothing to guard; the ceiling check on `profile-manage` and the match on `createdBy` are the gate.
 
 __What each caller gets, from slice 4.__ The changes against today are marked.
 

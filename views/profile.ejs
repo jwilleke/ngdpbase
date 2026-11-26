@@ -178,12 +178,12 @@
                             <div class="card">
                                 <div class="card-body py-2">
                                     <details id="profile-share-links">
-                                        <%- include('_card-summary', { icon: 'fa-share-nodes', title: 'Share Links', helpSlug: 'share-links', helpLabel: 'Share Links' }) %>
+                                        <%- include('_card-summary', { icon: 'fa-share-nodes', title: 'Shared links', helpSlug: 'share-links', helpLabel: 'Shared links' }) %>
                                         <div class="mt-3">
                                     <ul class="list-group list-group-flush">
                                         <li class="list-group-item d-flex align-items-center justify-content-between">
-                                            <a href="/shares" class="text-decoration-none">
-                                                <i class="fas fa-share-nodes"></i> Manage My Share Links
+                                            <a href="/my/shares" class="text-decoration-none">
+                                                <i class="fas fa-share-nodes"></i> Manage my shared links
                                             </a>
                                             <span>
                                                 <span class="badge bg-success" title="Active"><%= myShares.active %> active</span>
@@ -241,7 +241,7 @@
                                         <li class="list-group-item small" data-consent-app="<%= a.grantId %>">App or device <strong><%= a.name %></strong> may see <%= a.scopes.join(', ') %><% if (a.approvedAt) { %>, approved <time datetime="<%= a.approvedAt %>" data-local-time><%= a.approvedAt.slice(0, 16).replace('T', ' ') %> UTC</time><% } %> <span class="text-muted">(revoke it under My tokens and devices)</span></li>
                                         <% }) %>
                                         <% if (typeof myShares !== 'undefined' && myShares) { %>
-                                        <li class="list-group-item small">Share links: <%= myShares.active %> active <a href="/shares" class="ms-1">Manage</a></li>
+                                        <li class="list-group-item small">Shared links: <%= myShares.active %> active <a href="/my/shares" class="ms-1">Manage</a></li>
                                         <% } %>
                                     </ul>
                                     <% } %>

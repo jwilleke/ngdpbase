@@ -56,7 +56,10 @@ const AUTH_FLAG_ALLOWED: Record<string, string> = {
   getCommonTemplateData: 'login-vs-profile chrome',
   loginPage: 'sends a signed-in visitor away from the login page',
   adminLoginPage: 'sends a signed-in visitor away from the login page',
-  sweepAnonymousSessions: 'reads the flag off session files on disk to decide which to sweep'
+  sweepAnonymousSessions: 'reads the flag off session files on disk to decide which to sweep',
+  myVaultLinksRevoke: 'refuses the signed-out name before the maker comparison, because every signed-out visitor is named Anonymous',
+  mySharesPage: 'refuses the signed-out name before policy is asked, because every signed-out visitor is named Anonymous',
+  sharesRevoke: 'refuses the signed-out name before the maker comparison, because every signed-out visitor is named Anonymous'
 };
 
 // #1399: the optional-call form and a capitalised/prefixed roles array both

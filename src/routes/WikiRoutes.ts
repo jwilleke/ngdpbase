@@ -30,6 +30,8 @@ import { jobContextFromRequest, jobContextFromRequestWithReason } from '../conte
 import { actorOf, type ActorAttribution, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
+import { carriesCeiling } from '../utils/proxyClaim.js';
+import { sharedLinkRows, sharedLinkCounts } from '../utils/sharedLinkRows.js';
 import { mayEnterVaultAtDoor, type VaultDecider } from '../utils/privateStoreAccess.js';
 import { hideDeclaredPaths, keepHiddenValues, NO_SECRETS, secretKeys, valueLevels } from '../utils/sensitiveValues.js';
 import { createPatch, diffLines } from 'diff';
@@ -9536,17 +9538,18 @@ ${panes}
         ? await (addonsManager as { getProfileSections: (u: unknown, ctx: ActorContext) => Promise<unknown[]> }).getProfileSections(freshUser, currentUser)
         : [];
 
-      // #842: "Share Links" profile section for users who may create shares.
+      // #842: the "Shared links" profile section. Slice 3 of #2247: its numbers
+      // come from the same row function as the page, so the two agree.
       let myShares: { active: number; total: number } | null = null;
       try {
         const shareManager = this.engine.getManager('ShareManager');
-        if (shareManager?.isEnabled() && (await wikiContext.hasPermission('share-create'))) {
-          const own = shareManager.list(currentUser.username ?? '');
-          const now = Date.now();
-          myShares = {
-            total: own.length,
-            active: own.filter(r => !r.revokedAt && !(r.expiresAt && now > Date.parse(r.expiresAt))).length
-          };
+        if (shareManager?.isEnabled() && currentUser.username) {
+          const mayTag = await wikiContext.hasPermission('share-create');
+          const mayVault = (await wikiContext.hasPermission('profile-manage'))
+            && (await this.engine.getManager('PageManager').listOwnStoreIds(currentUser)).length > 0;
+          if (mayTag || mayVault) {
+            myShares = sharedLinkCounts(shareManager.list(currentUser.username), { tag: mayTag, vault: mayVault }, Date.now());
+          }
         }
       } catch {
         // non-fatal — section just won't show
@@ -9825,7 +9828,7 @@ ${panes}
         listKind: 'vaults',
         emptyMessage: 'You don\'t have any private pages yet.',
         // #1388: the links the owner has made to their vaults.
-        listAction: { href: '/my/vaults/links', label: 'Links you\'ve shared', icon: 'fa-link' }
+        listAction: { href: '/my/shares', label: 'Shared links', icon: 'fa-link' }
       });
     } catch (err) {
       logger.error('Error rendering My Private Pages:', err);
@@ -9866,21 +9869,37 @@ ${panes}
   }
 
   /**
+   * A page named in the query (`?page=`) picks its vault; its siblings are
+   * offered too, and the page itself is ticked.
+   */
+  private async pickedVaultPage(
+    req: Request,
+    owner: NonNullable<WikiContext['userContext']> & { username: string },
+    vaults: string[]
+  ): Promise<{ pickVault: string | null; pickPages: { uuid: string; title: string }[]; preselected: string | null }> {
+    const asked = typeof req.query.page === 'string' ? parsePrivatePageName(req.query.page) : null;
+    const pickVault = asked && asked.owner === owner.username && vaults.includes(asked.store) ? asked.store : null;
+    const pickPages = pickVault ? await this.engine.getManager('PageManager').listVaultPages(owner, owner.username, pickVault) : [];
+    const preselected = asked ? pickPages.find((p) => p.title === asked.title)?.uuid ?? null : null;
+    return { pickVault, pickPages, preselected };
+  }
+
+  /**
    * GET /my/vaults/links — the owner's vault links, and the forms that make
    * them: a whole vault, or chosen pages of one (`?page=` preselects a page).
    */
   async myVaultLinksPage(req: Request, res: Response) {
     try {
+      // Slice 3 of #2247: choosing pages to share lives in the Share... chooser.
+      if (typeof req.query.page === 'string' && req.query.page) {
+        return res.redirect(302, `/my/shares?share=vault&page=${encodeURIComponent(req.query.page)}`);
+      }
       const request = await this.vaultLinkRequest(req, res);
       if (!request) return;
       const { owner, vaults, shareManager } = request;
       const pageManager = this.engine.getManager('PageManager');
 
-      // A page named in the query picks its vault; its siblings are offered too.
-      const asked = typeof req.query.page === 'string' ? parsePrivatePageName(req.query.page) : null;
-      const pickVault = asked && asked.owner === owner.username && vaults.includes(asked.store) ? asked.store : null;
-      const pickPages = pickVault ? await pageManager.listVaultPages(owner, owner.username, pickVault) : [];
-      const preselected = asked ? pickPages.find((p) => p.title === asked.title)?.uuid ?? null : null;
+      const { pickVault, pickPages, preselected } = await this.pickedVaultPage(req, owner, vaults);
 
       const now = Date.now();
       const links = shareManager.list(owner.username)
@@ -9927,7 +9946,7 @@ ${panes}
     // sends the public half of the link's key as JSON and builds the link itself;
     // every other link comes from the plain form.
     const asJson = req.is('application/json') === 'application/json';
-    const fail = (error: string, status = 400) => (asJson ? res.status(status).json({ error }) : res.redirect(`/my/vaults/links?error=${error}`));
+    const fail = (error: string, status = 400) => (asJson ? res.status(status).json({ error }) : res.redirect(`/my/shares?error=${error}`));
     try {
       const request = await this.vaultLinkRequest(req, res);
       if (!request) return;
@@ -9972,7 +9991,7 @@ ${panes}
       if (record.lockedFor) await shareManager.prepareLockboxes(record, owner);
       // The token is the path of the link; the key after `#` never came here.
       if (asJson) return res.json({ id: record.id, token: record.token });
-      return res.redirect(`/my/vaults/links?created=${encodeURIComponent(record.id)}`);
+      return res.redirect(`/my/shares?created=${encodeURIComponent(record.id)}`);
     } catch (err: unknown) {
       logger.error('[vault-links] Error creating a vault link:', err);
       return asJson ? res.status(500).json({ error: 'server' }) : res.status(500).send('Internal server error');
@@ -9990,26 +10009,42 @@ ${panes}
         return res.status(404).send('Not Found');
       }
       const extended = await request.shareManager.extend(record.id, hours, request.owner);
-      return res.redirect(`/my/vaults/links?notice=${extended ? 'extended' : 'not-extended'}`);
+      return res.redirect(`/my/shares?notice=${extended ? 'extended' : 'not-extended'}`);
     } catch (err: unknown) {
       logger.error('[vault-links] Error extending a vault link:', err);
-      return res.redirect('/my/vaults/links?error=hours');
+      return res.redirect('/my/shares?error=hours');
     }
   }
 
   /** POST /my/vaults/links/:id/revoke — the owner ends one of their links, at once. */
   async myVaultLinksRevoke(req: Request, res: Response) {
     try {
-      const request = await this.vaultLinkRequest(req, res);
-      if (!request) return;
-      const { shareManager } = request;
+      const wikiContext = this.createWikiContext(req);
+      const subject = wikiContext.userContext;
+      // This step only classifies the refusal; the ownership comparison below
+      // is the gate (slice 3 of #2247).
+      // A signed-out subject carries the name 'Anonymous', so check the sign-in too.
+      if (!subject?.username || !subject.isAuthenticated) {
+        await this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+        return;
+      }
+      const shareManager = this.engine.getManager('ShareManager');
+      if (!shareManager?.isEnabled()) {
+        await this.renderError(req, res, 404, 'Not Found', 'Share links are switched off on this site.');
+        return;
+      }
       const record = shareManager.get(req.params.id);
-      if (!record || record.scope.kind !== 'vault' || record.createdBy !== request.owner.username) {
+      if (!record || record.scope.kind !== 'vault' || record.createdBy !== subject.username) {
         return res.status(404).send('Not Found');
       }
+      // Q-D: the person who made the link always revokes it at their own
+      // session. Q-G: a token, proxy or share acting for them keeps its
+      // profile-manage check. Revoking reads no page and enters no container,
+      // so no private-area check applies either way.
+      if (carriesCeiling(subject) && !(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
       // The request's own subject, forwarded (#2521): the audit row names who clicked.
-      await shareManager.revoke(record.id, request.owner);
-      return res.redirect('/my/vaults/links?notice=revoked');
+      await shareManager.revoke(record.id, subject);
+      return res.redirect('/my/shares?notice=revoked');
     } catch (err: unknown) {
       logger.error('[vault-links] Error revoking a vault link:', err);
       return res.status(500).send('Internal server error');
@@ -19159,8 +19194,11 @@ ${panes}
     app.get('/my/vaults', (req: Request, res: Response) => this.myPrivatePagesPage(req, res));
     // #1388: the owner's links to their vaults.
     app.get('/my/vaults/links', (req: Request, res: Response) => void this.myVaultLinksPage(req, res));
-    app.post('/my/vaults/links', (req: Request, res: Response) => void this.myVaultLinksCreate(req, res));
-    app.post('/my/vaults/links/:id/extend', (req: Request, res: Response) => void this.myVaultLinksExtend(req, res));
+    app.post('/my/shares/vault-links', (req: Request, res: Response) => void this.myVaultLinksCreate(req, res));
+    app.post('/my/shares/:id/extend', (req: Request, res: Response) => void this.myVaultLinksExtend(req, res));
+    // Slice 3 of #2247: the old addresses send the request on, body and all.
+    app.post('/my/vaults/links', (_req: Request, res: Response) => res.redirect(307, '/my/shares/vault-links'));
+    app.post('/my/vaults/links/:id/extend', (req: Request, res: Response) => res.redirect(307, `/my/shares/${encodeURIComponent(req.params.id)}/extend`));
     app.post('/my/vaults/links/:id/revoke', (req: Request, res: Response) => void this.myVaultLinksRevoke(req, res));
     // #1414: the store door — core owns it; an addon links to it.
     // #1448: registered before `/stores/:kind` and under its own prefix, so no
@@ -19611,6 +19649,8 @@ ${panes}
     app.get('/share/:token/lockbox/files/:key', (req: Request, res: Response) => void this.shareLockbox(req, res, 'files'));
 
     // Share management routes (#854) — admin/editor (epic #842 slice 3)
+    // Slice 3 of #2247: the user's own links, both kinds, in one list.
+    app.get('/my/shares', (req: Request, res: Response) => void this.mySharesPage(req, res));
     app.get('/shares', (req: Request, res: Response) => void this.sharesList(req, res));
     app.post('/shares/create', (req: Request, res: Response) => void this.sharesCreate(req, res));
     app.post('/shares/:id/revoke', (req: Request, res: Response) => void this.sharesRevoke(req, res));
@@ -23138,6 +23178,19 @@ ${description}
   async sharesList(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
+      // Slice 3 of #2247: `keyword` only fills in the create form, so it
+      // redirects for everyone. A bare /shares redirects too, except for a
+      // holder of admin-system, who keeps the list of every user's tag links
+      // until the all-users view replaces it.
+      if (typeof req.query.keyword === 'string' && req.query.keyword) {
+        return res.redirect(302, `/my/shares?share=tag&tag=${encodeURIComponent(req.query.keyword)}`);
+      }
+      if (!(await wikiContext.hasPermission('admin-system'))) {
+        const kept = ['created', 'revoked', 'error']
+          .filter((k) => typeof req.query[k] === 'string')
+          .map((k) => `${k}=${encodeURIComponent(req.query[k] as string)}`);
+        return res.redirect(302, '/my/shares' + (kept.length ? `?${kept.join('&')}` : ''));
+      }
       if (!(await wikiContext.hasPermission('share-create'))) {
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to manage shares.');
       }
@@ -23199,10 +23252,126 @@ ${description}
         revoked: req.query.revoked === '1',
         error: typeof req.query.error === 'string' ? req.query.error : null,
         keywordPrefill: typeof req.query.keyword === 'string' ? req.query.keyword : '',
-        title: 'Share Links'
+        title: 'All shared links (admin)'
       });
     } catch (err: unknown) {
       logger.error('[share] Error rendering shares list:', err);
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  /** What the Shared links page offers this person, and whether it opens for them at all. */
+  private async sharedLinksAccess(
+    wikiContext: WikiContext,
+    subject: NonNullable<WikiContext['userContext']>
+  ): Promise<{ mayTag: boolean; vaults: string[]; mayVault: boolean; mayOpen: boolean }> {
+    const mayTag = await wikiContext.hasPermission('share-create');
+    const vaults = (await wikiContext.hasPermission('profile-manage'))
+      ? await this.engine.getManager('PageManager').listOwnStoreIds(subject)
+      : [];
+    const mayVault = vaults.length > 0;
+    const mayOpen = mayTag || mayVault || (await wikiContext.hasPermission('share-manage-all'));
+    return { mayTag, vaults, mayVault, mayOpen };
+  }
+
+  /**
+   * Where a person lands after revoking a tag link: an administrator on the
+   * full list, anyone who may open the Shared links page there, and everyone
+   * else on the front page, which opens for all.
+   */
+  private async afterTagRevokeUrl(
+    wikiContext: WikiContext,
+    subject: NonNullable<WikiContext['userContext']>
+  ): Promise<string> {
+    if (await wikiContext.hasPermission('admin-system')) return '/shares?revoked=1';
+    return (await this.sharedLinksAccess(wikiContext, subject)).mayOpen ? '/my/shares?revoked=1' : '/';
+  }
+
+  /**
+   * GET /my/shares: the signed-in user's own shared links, both kinds, in one
+   * list (slice 3 of #2247). The page opens for anyone who may make either
+   * kind, or who holds share-manage-all. It lists only the kinds the user may
+   * make now. It reads no page. Only this route reads a record's token, to show
+   * the address; `sharedLinkRows` carries none. The page is never cached.
+   */
+  async mySharesPage(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const subject = wikiContext.userContext;
+      // A signed-out visitor is named Anonymous, so check the sign-in too.
+      if (!subject?.username || !subject.isAuthenticated) {
+        await this.refuse(wikiContext, req, res, 'page', 'share-create');
+        return;
+      }
+      // It shows working addresses, so no cache may keep it.
+      res.setHeader('Cache-Control', 'private, no-store');
+      const shareManager = this.engine.getManager('ShareManager');
+      if (!shareManager?.isEnabled()) {
+        await this.renderError(req, res, 404, 'Not Found', 'Share links are switched off on this site.');
+        return;
+      }
+      const { mayTag, vaults, mayVault, mayOpen } = await this.sharedLinksAccess(wikiContext, subject);
+      if (!mayOpen) {
+        await this.refuse(wikiContext, req, res, 'page', 'share-create');
+        return;
+      }
+      // Only the signed-in person's own links, whatever the list returns.
+      const own = shareManager.list(subject.username).filter((r) => r.createdBy === subject.username);
+      const rows = sharedLinkRows(own, { tag: mayTag, vault: mayVault }, Date.now());
+      // The address comes from the record here, never from the row function, so
+      // the rows and the Profile card hold no token. A link to an encrypted
+      // vault has no address to show: its key is in the browser that made it.
+      const baseUrl = this.shareLinkBase(req);
+      const addresses: Record<string, string> = {};
+      for (const row of rows) {
+        const record = own.find((r) => r.id === row.id);
+        if (record && row.status === 'active' && !record.lockedFor) addresses[row.id] = `${baseUrl}/share/${record.token}`;
+      }
+      // A one-page link with no label is named by its page's title, read as the owner.
+      const pageTitles: Record<string, string> = {};
+      const singles = rows.filter((row) => row.pageUuid);
+      for (const vault of new Set(singles.map((row) => { const sc = own.find((r) => r.id === row.id)?.scope; return sc && sc.kind === 'vault' ? sc.vault : ''; }))) {
+        if (!vault || !vaults.includes(vault)) continue;
+        const known = new Map((await this.engine.getManager('PageManager').listVaultPages(subject, subject.username, vault)).map((p) => [p.uuid, p.title]));
+        for (const row of singles) {
+          const sc = own.find((r) => r.id === row.id)?.scope;
+          const title = row.pageUuid ? known.get(row.pageUuid) : undefined;
+          if (sc && sc.kind === 'vault' && sc.vault === vault && title) pageTitles[row.id] = title;
+        }
+      }
+      const query = (k: string) => (typeof req.query[k] === 'string' ? String(req.query[k]) : '');
+      const picked = mayVault
+        ? await this.pickedVaultPage(req, subject, vaults)
+        : { pickVault: null, pickPages: [], preselected: null };
+      const vaultChoices = mayVault
+        ? await Promise.all(vaults.map(async (v) => ({
+          id: v,
+          maxDays: shareManager.maxShareDays(v),
+          encrypted: await shareManager.isEncryptedVault(subject.username, v)
+        })))
+        : [];
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('my-shares', {
+        ...commonData,
+        title: 'Shared links',
+        rows,
+        mayTag,
+        mayVault,
+        vaults: vaultChoices,
+        ...picked,
+        baseUrl,
+        addresses,
+        pageTitles,
+        notice: query('notice') || null,
+        shareChoice: query('share'),
+        tagPrefill: query('tag'),
+        pagePrefill: query('page'),
+        createdId: query('created'),
+        revoked: query('revoked') === '1',
+        error: query('error') || null
+      });
+    } catch (err: unknown) {
+      logger.error('[share] Error rendering the shared links page:', err);
       return res.status(500).send('Internal server error');
     }
   }
@@ -23257,7 +23426,11 @@ ${description}
   async sharesRevoke(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!(await wikiContext.hasPermission('share-revoke'))) {
+      const subject = wikiContext.userContext;
+      // This step only classifies the refusal; the ownership comparison below
+      // is the gate (slice 3 of #2247).
+      // A signed-out subject carries the name 'Anonymous', so check the sign-in too.
+      if (!subject?.username || !subject.isAuthenticated) {
         return res.status(403).send('Access denied');
       }
       const shareManager = this.engine.getManager('ShareManager');
@@ -23270,23 +23443,31 @@ ${description}
       if (!record || record.scope.kind === 'vault') {
         return res.status(404).send('Not Found');
       }
-      const username = wikiContext.userContext?.username ?? '';
-      const isMaker = record.createdBy === username;
-      const isManager = !isMaker && (await wikiContext.hasPermission('admin-system'));
+      const isMaker = record.createdBy === subject.username;
+      // Q-D: a person who made the link always revokes it at their own session.
+      // Q-G: a token, proxy or share acting for the maker keeps its ceiling.
+      if (isMaker && !carriesCeiling(subject)) {
+        await shareManager.revoke(record.id, subject);
+        // The full list is the administrator's; everyone else has the Shared links page.
+        return res.redirect(await this.afterTagRevokeUrl(wikiContext, subject));
+      }
+      if (isMaker && !(await wikiContext.hasPermission('share-revoke'))) {
+        return res.status(403).send('Access denied');
+      }
+      // Another user's link, until slice 4: share-revoke and admin-system, as
+      // today. #2521: the manager records it as a manager's revoke.
+      const isManager = !isMaker
+        && (await wikiContext.hasPermission('share-revoke'))
+        && (await wikiContext.hasPermission('admin-system'));
       if (!isMaker && !isManager) {
         return res.status(403).send('Access denied');
       }
-
-      // #2521: the request's own subject, forwarded, never a name. Someone
-      // other than the maker who got past the check above is a manager's
-      // revoke, and the manager records it as one (slice 2 of #2247).
-      const subject = wikiContext.userContext;
       if (isManager) {
         await shareManager.revoke(record.id, subject, { asManager: true });
       } else {
         await shareManager.revoke(record.id, subject);
       }
-      return res.redirect('/shares?revoked=1');
+      return res.redirect(isManager ? '/shares?revoked=1' : await this.afterTagRevokeUrl(wikiContext, subject));
     } catch (err: unknown) {
       logger.error('[share] Error revoking share:', err);
       return res.status(500).send('Internal server error');
