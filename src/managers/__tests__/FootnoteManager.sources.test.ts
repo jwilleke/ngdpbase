@@ -52,6 +52,9 @@ const mockEngine = {
     if (name === 'ConfigurationManager') return mockConfigManager;
     if (name === 'CacheManager') return mockCache;
     if (name === 'AuditManager') return mockAudit;
+    // S3: who may create and read sources is decided through these two.
+    if (name === 'PolicyDecisionPoint') return { permits: async () => true, holds: async () => true };
+    if (name === 'PageManager') return { invalidatePageCache: () => undefined, listPageRefs: async () => [], filterPagesFor: async (_ctx: unknown, names: string[]) => names };
     return null;
   })
 };
@@ -106,7 +109,7 @@ describe('FootnoteManager shared sources (#2454 S2)', () => {
     test('keeps the source in its own folder, announces it to the cache once, and records it with no page', async () => {
       const src = await fm.createSource({ title: 'A book', url: LINK }, WHO);
       expect(fs.readdirSync(srcDir)).toEqual([`${src.id}.json`]);
-      expect(await fm.getSource(src.id)).toEqual(src);
+      expect(await fm.getSource(src.id, WHO)).toEqual(src);
       expect(src).toMatchObject({ title: 'A book', url: LINK, status: 'good', createdBy: 'alice' });
 
       expect(mockCache.bump).toHaveBeenCalledTimes(1);
@@ -136,7 +139,7 @@ describe('FootnoteManager shared sources (#2454 S2)', () => {
     });
 
     test('getSource answers null for an id nobody made', async () => {
-      expect(await fm.getSource('11111111-1111-4111-8111-111111111111')).toBeNull();
+      expect(await fm.getSource('11111111-1111-4111-8111-111111111111', WHO)).toBeNull();
     });
   });
 
