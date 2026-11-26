@@ -19478,6 +19478,9 @@ ${panes}
     // #2149: the Upload file dialog — FileManager's places, and its one upload door.
     app.get('/files/places', (req: Request, res: Response) => void this.uploadFilePlaces(req, res));
     app.post('/files/upload', (req: Request, res: Response) => {
+      // #2359: sign-in is asked before multer reads the body, so a signed-out caller's file is never buffered.
+      const uploadContext = this.createWikiContext(req);
+      if (this.isSignedOut(uploadContext)) { void this.refuse(uploadContext, req, res, 'json', 'asset-upload'); return; }
       attachmentUpload.single('file')(req, res, (err: unknown) => {
         if (err) {
           const tooLarge = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE';
