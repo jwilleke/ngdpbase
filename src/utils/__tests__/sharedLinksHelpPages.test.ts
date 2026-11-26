@@ -18,7 +18,17 @@ describe('shared links help pages (slice 3 of #2247)', () => {
     expect(links).toMatch(/^title: Shared links$/m);
     expect(links).toMatch(/^slug: share-links$/m);
     expect(links).toMatch(/formerTitles:\n {2}- Share Links/);
-    expect(links).toMatch(/^lastModified: '2026-11-25/m);
+    expect(links).toMatch(/^lastModified: '2026-11-26/m);
+  });
+
+  test('"Shared links" says who may stop anyone\'s link, by permission, not on the old /shares page (slice 4)', () => {
+    expect(links).not.toContain('A system administrator can revoke anyone');
+    expect(links).not.toContain('on `/shares`');
+    expect(links).toContain("See and revoke everyone's shared links");
+    expect(links).toMatch(/## All users/);
+    expect(links).toMatch(/administrators by default/);
+    expect(links).toMatch(/Page not available \(404\)/);
+    expect(links).not.toMatch(/—/);
   });
 
   test('"Shared links" describes the one page, its kinds and the maker\'s revoke', () => {
