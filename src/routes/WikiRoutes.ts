@@ -18022,9 +18022,10 @@ ${panes}
   }
 
   /**
-   * The answer for a convert request naming a page that is not there (#2359). Someone who may not edit gets
-   * the same 403 as for a page that exists, so the answer does not say which it is; someone who may edit
-   * still gets the 404.
+   * The answer for a convert request naming a page that is not there (#2359). Someone the permission check
+   * refuses gets the same 403 as for a page that exists, so the answer does not say which it is. Only a
+   * check that allows the edit gets the 404; for a page that is not there the policies refuse everyone, so
+   * in practice an editor gets the 403 too.
    */
   private async convertAbsentPage(req: Request, res: Response, pageName: string): Promise<Response> {
     const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.EDIT, pageName });

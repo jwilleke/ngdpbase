@@ -112,7 +112,7 @@ describe('#2359 a signed-in caller without edit rights gets one answer, whether 
     expect(answers[1]).toEqual(answers[0]);
   });
 
-  test.each(verbs)('%s: a caller with edit rights still gets 404 for an absent page', async (verb) => {
+  test.each(verbs)('%s: a caller the permission check allows to edit gets 404 for an absent page (the policies refuse everyone in practice)', async (verb) => {
     const { routes, pageManager } = makeRoutes(true);
     pageManager.getPage.mockResolvedValue(null);
     const res = makeRes();
