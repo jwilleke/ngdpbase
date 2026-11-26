@@ -164,13 +164,13 @@ describe('my-shares.ejs rows (round 5)', () => {
     const doc = await render({ rows: [LABELLED] });
     const table = doc.querySelector('table#sharedLinksTable') as HTMLElement;
     expect(table.classList.contains('shared-links')).toBe(true);
-    expect(table.classList.contains('d-none') && table.classList.contains('d-md-table')).toBe(true);
+    expect(table.classList.contains('d-none')).toBe(false);
     expect(doc.querySelectorAll('tr[data-share-id="r2"] td.text-nowrap').length).toBeGreaterThanOrEqual(2);
   });
 
   test('each link also has a card for phones, with its address, both buttons and the same wording', async () => {
     const doc = await render({ rows: [LABELLED], addresses: { r2: 'https://wiki.example.com/share/abc' } });
-    const card = doc.querySelector('.d-md-none [data-share-card="r2"]') as HTMLElement;
+    const card = doc.querySelector('.shared-links-cards [data-share-card="r2"]') as HTMLElement;
     expect(card).not.toBeNull();
     expect(card.querySelector('strong')?.textContent).toBe('For Dr Smith');
     expect(card.textContent).toContain('Active, ends 2026-12-03');
@@ -233,7 +233,7 @@ describe('the admin list and the style (round 5)', () => {
     const rule = css.match(/\.shared-links td:first-child\s*\{[^}]*\}/)?.[0] ?? '';
     expect(rule).toContain('width: auto');
     expect(rule).toContain('font-weight: normal');
-    expect(css).toMatch(/\.shared-link-cell[^{]*\{[^}]*min-width: 280px/);
+    expect(css).toMatch(/\.shared-link-cell[^{]*\{[^}]*min-width: 180px/);
   });
 });
 
@@ -303,11 +303,11 @@ describe('the shared-links table style wins the cascade (round 6 M1, item 4)', (
     expect(cascaded(css, cell, 'color')).toBe('inherit');
   });
 
-  test('the Link column is at least 280px wide and its address box can grow and shrink', async () => {
+  test('the Link column is at least 180px wide and its address box can grow and shrink', async () => {
     const doc = await render({ rows: [ROW], addresses: { r1: 'https://wiki.example.com/share/abc' } });
     const css = loadedCss(doc);
     const linkCell = doc.querySelector('table#sharedLinksTable td.shared-link-cell') as Element;
-    expect(cascaded(css, linkCell, 'min-width')).toBe('280px');
+    expect(cascaded(css, linkCell, 'min-width')).toBe('180px');
     const group = doc.querySelector('table#sharedLinksTable .input-group') as Element;
     expect(cascaded(css, group, 'display')).toBe('flex');
     const input = group.querySelector('input') as Element;
@@ -336,7 +336,7 @@ describe('the rules are in a stylesheet the page loads (round 7)', () => {
     expect(cascaded(css, first, 'font-weight')).toBe('normal');
     expect(cascaded(css, first, 'color')).toBe('inherit');
     const cell = doc.querySelector('table#sharesTable td.shared-link-cell') as Element;
-    expect(cascaded(css, cell, 'min-width')).toBe('280px');
+    expect(cascaded(css, cell, 'min-width')).toBe('180px');
     const input = doc.querySelector('table#sharesTable .input-group > input') as Element;
     expect(cascaded(css, input, 'flex')).toBe('1 1 auto');
     expect(cascaded(css, input, 'min-width')).toBe('0');
@@ -460,7 +460,7 @@ describe('the Copy button in a browser (round 6 L2, item 6)', () => {
 // ---- round 8 ----
 
 describe('the link actions read as a link and Revoke (round 8 items 1 and 2)', () => {
-  test('Extend or see who visited is a text link with an arrow, centred in a 44px target, beside Revoke in a nowrap group', async () => {
+  test('Extend or see who visited is a text link with an arrow, centred in a 44px target, beside Revoke in a wrapping group', async () => {
     const doc = await render({ rows: [LABELLED] });
     for (const scope of ['tr[data-share-id="r2"]', '[data-share-card="r2"]']) {
       const link = doc.querySelector(`${scope} a[href="/my/vaults/links"]`) as Element;
@@ -472,7 +472,7 @@ describe('the link actions read as a link and Revoke (round 8 items 1 and 2)', (
       expect(link.querySelector('i.fas.fa-arrow-right')).not.toBeNull();
       expect(link.getAttribute('style')).toContain('min-height: 44px');
       const group = link.parentElement as Element;
-      for (const name of ['d-flex', 'gap-3', 'align-items-center', 'flex-nowrap']) expect(group.classList.contains(name)).toBe(true);
+      for (const name of ['shared-link-actions', 'd-flex', 'gap-2', 'align-items-center', 'flex-wrap']) expect(group.classList.contains(name)).toBe(true);
       expect(group.querySelector('form[action$="/revoke"]')).not.toBeNull();
     }
   });
@@ -487,12 +487,12 @@ describe('the link actions read as a link and Revoke (round 8 items 1 and 2)', (
 });
 
 describe('the Link column, inactive rows, phone cards and the empty state (round 8 items 3 to 6)', () => {
-  test('the Link column takes the width the other columns leave', async () => {
+  test('the Link column does not claim the whole row, so the other columns keep room (round 9)', async () => {
     const doc = await render({ rows: [ROW], addresses: { r1: 'https://wiki.example.com/share/abc' } });
     const css = loadedCss(doc);
     const cell = doc.querySelector('table#sharedLinksTable td.shared-link-cell') as Element;
-    expect(cascaded(css, cell, 'width')).toBe('100%');
-    expect(cascaded(css, cell, 'min-width')).toBe('280px');
+    expect(cascaded(css, cell, 'width')).toBeNull();
+    expect(cascaded(css, cell, 'min-width')).toBe('180px');
   });
 
   test.each(['expired', 'revoked', 'page not available'])('a %s row is muted and an active row is not', async (status) => {
@@ -529,5 +529,47 @@ describe('the Actions column keeps both actions on one line each (round 8 measur
     const cell = doc.querySelector('tr[data-share-id="r2"] td:last-child') as Element;
     expect(cell.querySelector('a[href="/my/vaults/links"]')).not.toBeNull();
     expect(cell.classList.contains('text-nowrap')).toBe(true);
+  });
+});
+
+// ---- round 9: the table fits its box ----
+
+describe('the table fits its box and the layout switches by the box width (round 9)', () => {
+  const RULE = (css: string, selector: string): string => css.match(new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}'))?.[1] ?? '';
+
+  test('the What column has room to read, on the person page only', async () => {
+    const doc = await render({ rows: [LABELLED] });
+    const css = loadedCss(doc);
+    const what = doc.querySelector('table#sharedLinksTable td:first-child') as Element;
+    expect(what.classList.contains('shared-link-what')).toBe(true);
+    expect(cascaded(css, what, 'min-width')).toBe('10rem');
+    const admin = await renderAdmin();
+    expect(cascaded(css, admin.querySelector('table#sharesTable td:first-child') as Element, 'min-width')).toBeNull();
+  });
+
+  test('in the table the Extend link sits above Revoke; on a card they sit side by side and wrap', async () => {
+    const doc = await render({ rows: [LABELLED] });
+    const css = loadedCss(doc);
+    const inTable = doc.querySelector('table#sharedLinksTable .shared-link-actions') as Element;
+    expect(cascaded(css, inTable, 'flex-direction')).toBe('column');
+    expect(cascaded(css, inTable, 'align-items')).toBe('flex-start');
+    expect(cascaded(css, inTable, 'flex-wrap')).toBe('nowrap');
+    const onCard = doc.querySelector('[data-share-card="r2"] .shared-link-actions') as Element;
+    expect(cascaded(css, onCard, 'flex-direction')).toBeNull();
+    expect(onCard.classList.contains('flex-wrap')).toBe(true);
+  });
+
+  test('cards are the default and the table appears only when its box is wide enough for every column', async () => {
+    const doc = await render({ rows: [LABELLED] });
+    const css = loadedCss(doc);
+    const wrap = doc.querySelector('.shared-links-wrap') as Element;
+    expect(wrap.querySelector('table#sharedLinksTable')).not.toBeNull();
+    expect(wrap.querySelector('.shared-links-cards [data-share-card="r2"]')).not.toBeNull();
+    expect(RULE(css, '.shared-links-wrap')).toContain('container-type: inline-size');
+    const table = doc.querySelector('.shared-links-table') as Element;
+    expect(table.querySelector('table#sharedLinksTable')).not.toBeNull();
+    expect(cascaded(css, table, 'display')).toBe('none');
+    expect(cascaded(css, doc.querySelector('.shared-links-cards') as Element, 'display')).toBe('block');
+    expect(css).toMatch(/@container \(min-width: 840px\)\s*\{[^@]*\.shared-links-table\s*\{[^}]*display: block[^}]*\}[^@]*\.shared-links-cards\s*\{[^}]*display: none/);
   });
 });
