@@ -105,7 +105,7 @@ const viewer = locals.viewer || '';
             <% } %>
         </div>
     <% } else {
-        const statusText = function (row) { return row.status === 'page not available' ? 'Page no longer available' : row.status.charAt(0).toUpperCase() + row.status.slice(1); };
+        const statusText = function (row) { return row.status === 'page not available' ? 'Page not available (404)' : row.status.charAt(0).toUpperCase() + row.status.slice(1); };
         const heading = function (row) { return row.label || pageTitles[row.id] || ''; };
         const endsText = function (row) { return row.status === 'active' ? 'Active, ' + (row.expiresAt ? 'ends ' + row.expiresAt.slice(0, 10) : 'until cancelled') : statusText(row); };
     %>
