@@ -115,7 +115,7 @@ __Response:__
 }
 ```
 
-A row for a local file (`providerId: "local"`) also carries `canDelete` (may this viewer delete it; the same answer `DELETE /attachments/:id` gives) and, when `canDelete` is true, `usedBy`: `{ "pages": [...], "more": 0, "hidden": 0 }` — up to 10 page names the viewer may open, how many further such pages there are, and how many pages they may not open (counted, never named). The `/search` picker shows a Delete button on those rows ([#2534](https://github.com/jwilleke/ngdpbase/issues/2534)).
+A row for a local file (`providerId: "local"`) also carries `canDelete` (may this viewer delete it; the same answer `DELETE /attachments/:id` gives) and, when `canDelete` is true, `usedBy`: `{ "pages": [...], "more": 0, "hidden": 0 }`, meaning up to 10 page names the viewer may open, how many further such pages there are, and how many pages they may not open (counted, never named). The `/search` picker shows a Delete button on those rows ([#2534](https://github.com/jwilleke/ngdpbase/issues/2534)).
 
 ## Editor Integration
 
