@@ -20,15 +20,16 @@ const OVER_THE_LIMIT = Buffer.alloc(11 * 1024 * 1024, 'a');
 
 function appFor(userContext: { username: string; isAuthenticated: boolean }) {
   const app = buildTestApp({ withCsrf: true, userContext });
-  const seen: Request[] = [];
-  app.use((req: Request, _res: Response, next: NextFunction) => { seen.push(req); next(); });
+  // multer reads the body by piping the request into its parser; nothing else here does.
+  const piped: Array<ReturnType<typeof vi.spyOn>> = [];
+  app.use((req: Request, _res: Response, next: NextFunction) => { piped.push(vi.spyOn(req, 'pipe')); next(); });
   new WikiRoutes(mockEngine).registerRoutes(app);
-  return { app, seen };
+  return { app, piped };
 }
 
 describe('POST /files/upload checks sign-in before the body is read (#2359)', () => {
   test('a signed-out upload over the limit is refused and none of the body is read', async () => {
-    const { app, seen } = appFor({ username: 'Anonymous', isAuthenticated: false });
+    const { app, piped } = appFor({ username: 'Anonymous', isAuthenticated: false });
     const res = await request(app)
       .post('/files/upload')
       .set(csrfTestHeaders())
@@ -37,13 +38,12 @@ describe('POST /files/upload checks sign-in before the body is read (#2359)', ()
       .attach('file', OVER_THE_LIMIT, 'big.bin')
       .ok(() => true);
     expect(res.status).toBe(401);
-    expect(seen).toHaveLength(1);
-    expect(seen[0].readableDidRead).toBe(false);
-    expect((seen[0] as Request & { file?: unknown }).file).toBeUndefined();
+    expect(piped).toHaveLength(1);
+    expect(piped[0]).not.toHaveBeenCalled();
   });
 
   test('a signed-in upload over the limit still reaches multer and is refused as too large', async () => {
-    const { app, seen } = appFor({ username: 'ed', isAuthenticated: true });
+    const { app, piped } = appFor({ username: 'ed', isAuthenticated: true });
     const res = await request(app)
       .post('/files/upload')
       .set(csrfTestHeaders())
@@ -53,6 +53,6 @@ describe('POST /files/upload checks sign-in before the body is read (#2359)', ()
       .ok(() => true);
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/larger/);
-    expect(seen[0].readableDidRead).toBe(true);
+    expect(piped[0]).toHaveBeenCalled();
   });
 });
