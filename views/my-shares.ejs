@@ -37,7 +37,7 @@
     <% if (mayTag || mayVault) {
         const choice = shareChoice === 'tag' && mayTag ? 'tag' : shareChoice === 'vault' && mayVault ? 'vault' : (mayTag && !mayVault ? 'tag' : (mayVault && !mayTag ? 'vault' : ''));
     %>
-    <details class="card mb-4" id="share-new" <%= (shareChoice || createdId) ? 'open' : '' %>>
+    <details class="card mb-4" id="share-new" <%= (shareChoice || createdId || rows.length === 0) ? 'open' : '' %>>
         <summary class="card-body py-2"><strong>Share&hellip;</strong> <span class="text-muted small">Choose what to share.</span></summary>
         <div class="card-body pt-0">
             <% if (mayTag && mayVault) { %>
@@ -67,8 +67,11 @@
                 <div class="col-auto"><button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-plus"></i> Make link</button></div>
             </form>
             <% } else if (choice === 'vault') { %>
-            <%- include('_vault-link-explanation') %>
-            <%- include('_vault-link-forms') %>
+            <details class="mb-3">
+                <summary class="small">How shared links work</summary>
+                <%- include('_vault-link-explanation') %>
+            </details>
+            <%- include('_vault-link-forms', { plainWholeVault: true }) %>
             <% } %>
         </div>
     </details>
@@ -77,53 +80,69 @@
     <% if (rows.length === 0) { %>
         <div class="alert alert-info">
             <% if (mayTag || mayVault) { %>
-                You haven't shared anything yet. A shared link lets someone read pages without signing in.
+                You haven't shared anything yet. Choose what to share above and press Make link.
             <% } else { %>
                 You have no shared links, and you may not make any.
             <% } %>
         </div>
-    <% } else { %>
-        <div class="table-responsive">
-            <table id="sharedLinksTable" class="table table-sm align-middle">
-                <thead><tr><th>What</th><th>Status</th><th>Expires</th><th>Link</th><th>Actions</th></tr></thead>
+    <% } else {
+        const statusText = function (row) { return row.status === 'page not available' ? 'Page no longer available' : row.status.charAt(0).toUpperCase() + row.status.slice(1); };
+        const heading = function (row) { return row.label || pageTitles[row.id] || ''; };
+        const endsText = function (row) { return row.status === 'active' ? 'Active, ' + (row.expiresAt ? 'ends ' + row.expiresAt.slice(0, 10) : 'until cancelled') : statusText(row); };
+    %>
+        <div class="table-responsive d-none d-md-block">
+            <table id="sharedLinksTable" class="table table-sm align-middle shared-links d-none d-md-table">
+                <thead><tr><th>What</th><th>Status</th><th>Expires</th><th>Made</th><th>Link</th><th>Actions</th></tr></thead>
                 <tbody>
                 <% rows.forEach(function (row) { %>
                     <tr data-share-id="<%= row.id %>" data-status="<%= row.status %>">
-                        <td><%= row.what %></td>
-                        <td><%= row.status === 'page not available' ? 'Page not available (404)' : row.status.charAt(0).toUpperCase() + row.status.slice(1) %></td>
-                        <td><%= row.expiresAt ? row.expiresAt.slice(0, 10) : 'Until cancelled' %></td>
                         <td>
-                            <% if (addresses[row.id]) { %>
-                                <div class="input-group input-group-sm" style="max-width: 360px;">
-                                    <input type="text" class="form-control" value="<%= addresses[row.id] %>" readonly onclick="this.select()">
-                                    <button type="button" class="btn btn-outline-secondary" title="Copy link"
-                                            onclick="navigator.clipboard.writeText(this.previousElementSibling.value).then(() => { this.innerHTML = '<i class=&quot;fas fa-check&quot;></i>'; })">
-                                        <i class="fas fa-copy"></i>
-                                    </button>
-                                </div>
-                            <% } else { %>
-                                <span class="text-muted">-</span>
-                            <% } %>
+                            <% if (heading(row)) { %><strong><%= heading(row) %></strong><br><% } %>
+                            <%= row.what %>
                         </td>
-                        <td>
-                            <% if (row.actions.indexOf('extend') !== -1 || row.actions.indexOf('visits') !== -1) { %>
-                                <a class="btn btn-sm btn-outline-secondary" href="/my/vaults/links">Extend or see visits</a>
-                            <% } %>
-                            <% if (row.actions.indexOf('revoke') !== -1) { %>
-                                <form method="post" action="<%= row.kind === 'tag' ? '/shares/' + row.id + '/revoke' : '/my/vaults/links/' + row.id + '/revoke' %>" class="d-inline">
-                                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-ban"></i> Revoke</button>
-                                </form>
-                            <% } %>
-                        </td>
+                        <td><%= statusText(row) %></td>
+                        <td class="text-nowrap"><%= row.expiresAt ? row.expiresAt.slice(0, 10) : 'Until cancelled' %></td>
+                        <td class="text-nowrap" data-made><%= row.createdAt.slice(0, 10) %></td>
+                        <td><%- include('_shared-link-address', { row: row, addresses: addresses }) %></td>
+                        <td><%- include('_shared-link-actions', { row: row }) %></td>
                     </tr>
                 <% }); %>
                 </tbody>
             </table>
         </div>
+        <div class="d-md-none">
+            <% rows.forEach(function (row) { %>
+                <div class="card mb-3" data-share-card="<%= row.id %>">
+                    <div class="card-body">
+                        <% if (heading(row)) { %><div><strong><%= heading(row) %></strong></div><% } %>
+                        <div><%= row.what %></div>
+                        <div class="small text-muted mb-2"><%= endsText(row) %>. Made <%= row.createdAt.slice(0, 10) %></div>
+                        <div class="mb-2"><%- include('_shared-link-address', { row: row, addresses: addresses }) %></div>
+                        <div class="d-flex gap-2 flex-wrap"><%- include('_shared-link-actions', { row: row }) %></div>
+                    </div>
+                </div>
+            <% }); %>
+        </div>
     <% } %>
 </div>
 
 <%- include('_vault-link-scripts') %>
+<script nonce="<%= locals.cspNonce %>">
+    // Copy: the browser clipboard when there is one, else select the address and copy it.
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest ? event.target.closest('[data-copy-link]') : null;
+        if (!button) return;
+        var input = button.parentNode.querySelector('input');
+        var done = function () {
+            button.innerHTML = '<i class="fas fa-check"></i>';
+            setTimeout(function () { button.innerHTML = '<i class="fas fa-copy"></i>'; }, 2000);
+        };
+        var fallback = function () {
+            try { input.select(); if (document.execCommand('copy')) done(); } catch (e) { /* the address stays selected */ }
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(input.value).then(done, fallback);
+        else fallback();
+    });
+</script>
 
 <%- include('footer') %>

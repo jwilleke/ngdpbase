@@ -23327,6 +23327,18 @@ ${description}
         const record = own.find((r) => r.id === row.id);
         if (record && row.status === 'active' && !record.lockedFor) addresses[row.id] = `${baseUrl}/share/${record.token}`;
       }
+      // A one-page link with no label is named by its page's title, read as the owner.
+      const pageTitles: Record<string, string> = {};
+      const singles = rows.filter((row) => row.pageUuid);
+      for (const vault of new Set(singles.map((row) => { const sc = own.find((r) => r.id === row.id)?.scope; return sc && sc.kind === 'vault' ? sc.vault : ''; }))) {
+        if (!vault || !vaults.includes(vault)) continue;
+        const known = new Map((await this.engine.getManager('PageManager').listVaultPages(subject, subject.username, vault)).map((p) => [p.uuid, p.title]));
+        for (const row of singles) {
+          const sc = own.find((r) => r.id === row.id)?.scope;
+          const title = row.pageUuid ? known.get(row.pageUuid) : undefined;
+          if (sc && sc.kind === 'vault' && sc.vault === vault && title) pageTitles[row.id] = title;
+        }
+      }
       const query = (k: string) => (typeof req.query[k] === 'string' ? String(req.query[k]) : '');
       const picked = mayVault
         ? await this.pickedVaultPage(req, subject, vaults)
@@ -23349,6 +23361,7 @@ ${description}
         ...picked,
         baseUrl,
         addresses,
+        pageTitles,
         notice: query('notice') || null,
         shareChoice: query('share'),
         tagPrefill: query('tag'),

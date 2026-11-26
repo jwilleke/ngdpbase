@@ -300,6 +300,17 @@ body {
     color: #6c757d;
 }
 
+/* The Shared links table is not a system-info table: its first column is the link's name. */
+.shared-links td:first-child {
+    font-weight: normal;
+    color: inherit;
+    width: auto;
+}
+
+.shared-links td:nth-child(5) {
+    min-width: 280px;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .jspwiki-header .col-md-6 form {

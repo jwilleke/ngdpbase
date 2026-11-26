@@ -5,7 +5,7 @@ import type { ShareRecord } from '../types/Share.js';
  *
  * One function, used by the page and by the Profile card, so the two cannot
  * disagree. It reads no page and holds no token: a row is built from the
- * record's scope and dates alone.
+ * record's scope, label and dates alone.
  */
 
 export type SharedLinkKind = 'tag' | 'chosen-pages' | 'whole-area';
@@ -17,6 +17,10 @@ export interface SharedLinkRow {
   id: string;
   kind: SharedLinkKind;
   what: string;
+  /** What the person typed when they made the link; empty when they typed nothing. */
+  label: string;
+  /** The one page a single-page link covers, so the page can show its title; null otherwise. */
+  pageUuid: string | null;
   status: SharedLinkStatus;
   /** ISO date, or null for "until cancelled". */
   expiresAt: string | null;
@@ -49,6 +53,7 @@ export function sharedLinkRows(records: readonly ShareRecord[], may: MakeableKin
     let kind: SharedLinkKind;
     let what: string;
     let actions: SharedLinkAction[];
+    let pageUuid: string | null = null;
     if (scope.kind === 'keyword') {
       kind = 'tag';
       what = `Everything tagged ${scope.keyword}`;
@@ -61,8 +66,9 @@ export function sharedLinkRows(records: readonly ShareRecord[], may: MakeableKin
       kind = 'chosen-pages';
       what = `${scope.pages.length} ${scope.pages.length === 1 ? 'page' : 'pages'} in your ${scope.vault} vault`;
       actions = live ? ['extend', 'visits', 'revoke'] : [];
+      if (scope.pages.length === 1) pageUuid = scope.pages[0];
     }
-    rows.push({ id: record.id, kind, what, status, expiresAt: record.expiresAt ?? null, createdAt: record.createdAt, actions });
+    rows.push({ id: record.id, kind, what, label: record.label ?? '', pageUuid, status, expiresAt: record.expiresAt ?? null, createdAt: record.createdAt, actions });
   }
   return rows.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
