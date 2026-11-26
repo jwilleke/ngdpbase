@@ -25,6 +25,8 @@ export interface SharedLinkRow {
   /** ISO date, or null for "until cancelled". */
   expiresAt: string | null;
   createdAt: string;
+  /** Who made the link. Shown in the all-users view only. */
+  madeBy: string;
   actions: SharedLinkAction[];
 }
 
@@ -42,13 +44,28 @@ function statusOf(record: ShareRecord, now: number): SharedLinkStatus {
   return 'active';
 }
 
-/** The user's own links of the kinds they may make, newest first. */
-export function sharedLinkRows(records: readonly ShareRecord[], may: MakeableKinds, now: number): SharedLinkRow[] {
+/**
+ * The user's own links of the kinds they may make, newest first. With
+ * `allUsers` (slice 4 of #2247, R13): every link whatever its kind, each
+ * naming its maker. Another user's private-area link then shows the area name
+ * and the page count and nothing else: no label, no page, no extend or visits.
+ */
+export function sharedLinkRows(
+  records: readonly ShareRecord[],
+  may: MakeableKinds,
+  now: number,
+  allUsers?: { viewer: string }
+): SharedLinkRow[] {
   const rows: SharedLinkRow[] = [];
   for (const record of records) {
     const scope = record.scope;
-    if (scope.kind === 'keyword' ? !may.tag : !may.vault) continue;
-    const status = statusOf(record, now);
+    if (!allUsers && (scope.kind === 'keyword' ? !may.tag : !may.vault)) continue;
+    const others = allUsers !== undefined && record.createdBy !== allUsers.viewer;
+    const owner = others ? `${record.createdBy}'s` : 'your';
+    let status = statusOf(record, now);
+    // R14, answer D: the owner reads a manager's revoke as a missing page; a
+    // manager reads it as revoked.
+    if (allUsers && status === 'page not available') status = 'revoked';
     const live = status === 'active';
     let kind: SharedLinkKind;
     let what: string;
@@ -60,15 +77,15 @@ export function sharedLinkRows(records: readonly ShareRecord[], may: MakeableKin
       actions = live ? ['revoke'] : [];
     } else if (scope.pages === null) {
       kind = 'whole-area';
-      what = `All of your ${scope.vault} vault`;
-      actions = live ? ['extend', 'visits', 'revoke'] : [];
+      what = `All of ${owner} ${scope.vault} vault`;
+      actions = live ? (others ? ['revoke'] : ['extend', 'visits', 'revoke']) : [];
     } else {
       kind = 'chosen-pages';
-      what = `${scope.pages.length} ${scope.pages.length === 1 ? 'page' : 'pages'} in your ${scope.vault} vault`;
-      actions = live ? ['extend', 'visits', 'revoke'] : [];
-      if (scope.pages.length === 1) pageUuid = scope.pages[0];
+      what = `${scope.pages.length} ${scope.pages.length === 1 ? 'page' : 'pages'} in ${owner} ${scope.vault} vault`;
+      actions = live ? (others ? ['revoke'] : ['extend', 'visits', 'revoke']) : [];
+      if (scope.pages.length === 1 && !others) pageUuid = scope.pages[0];
     }
-    rows.push({ id: record.id, kind, what, label: record.label ?? '', pageUuid, status, expiresAt: record.expiresAt ?? null, createdAt: record.createdAt, actions });
+    rows.push({ id: record.id, kind, what, label: others ? '' : record.label ?? '', pageUuid, status, expiresAt: record.expiresAt ?? null, createdAt: record.createdAt, madeBy: record.createdBy, actions });
   }
   return rows.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
