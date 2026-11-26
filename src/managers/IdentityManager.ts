@@ -627,10 +627,10 @@ class IdentityManager extends BaseManager {
   private async join(ctx: ActorContext, personId: string, username: string, via: 'admin' | 'email'): Promise<Person> {
     const provider = this.requireProvider();
     const target = withOrganizationRoles(await provider.getById(personId));
-    if (!target) throw new Error('IdentityManager: no such person');
-    if (!IdentityManager.isAccountless(target)) throw new Error('IdentityManager: that person already has an account');
+    if (!target) throw new ContactLinkRefused('There is no such person.');
+    if (!IdentityManager.isAccountless(target)) throw new ContactLinkRefused('That person already has an account.');
     const user = await this.engine.getManager<UserManagerLike>('UserManager')?.getUser(username);
-    if (!user) throw new Error(`IdentityManager: no account '${username}'`);
+    if (!user) throw new ContactLinkRefused(`There is no account '${username}'.`);
     const accountPerson = withOrganizationRoles(await provider.getByIdentifier(user.username));
 
     const joined: Person = { ...target, identifier: user.username };
@@ -1128,6 +1128,18 @@ function webAddress(value: unknown, part: string): string {
     throw new ContactDetailsInvalidError(part, 'url', part === 'sameAs' ? 'has a line that is not a web address: start each with https://' : 'is not a web address: start it with https://');
   }
   return url.href;
+}
+
+/**
+ * A person could not be joined to an account, with a reason written for the
+ * administrator who asked (#2494): the person is gone, already has an account,
+ * or the account does not exist. Nothing was changed.
+ */
+export class ContactLinkRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ContactLinkRefused';
+  }
 }
 
 /**

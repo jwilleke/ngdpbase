@@ -49,3 +49,18 @@ export function plainRouteError(req: RouteErrorRequest, err: unknown, message: s
   });
   return message;
 }
+
+/**
+ * Leave one info line in the server log for a refusal a route made on purpose: a
+ * 403 the person was meant to get, a name that is taken, a form left blank. It is
+ * not a failure, so it is not an error line, but without any line an
+ * administrator asking "why was that refused?" has nothing to look at.
+ *
+ * @param req - the request that was refused
+ * @param why - a short phrase for the log: what was refused and why, no error text
+ */
+export function refusedOnPurpose(req: RouteErrorRequest, why: string): void {
+  const where = `${req.method ?? 'GET'} ${(req.originalUrl ?? req.path ?? '').split('?')[0]}`;
+  const who = req.userContext?.username ?? 'anonymous';
+  logger.info(`[route] ${where} by ${who} refused: ${why}`);
+}

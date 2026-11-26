@@ -297,7 +297,9 @@ export type UrlImportRefusal =
   /** The site answered 404 or 403: the page is not there, or not open to us. */
   | 'not-found'
   /** The address answered with something that is not a web page, such as an image. */
-  | 'not-a-page';
+  | 'not-a-page'
+  /** The site answered 5xx, 410 or 429: it is down, gone or too busy; nothing wrong with the address. */
+  | 'site-unavailable';
 
 /**
  * An import from a web address that failed for a reason the person can act
@@ -2772,8 +2774,11 @@ class ImportManager extends BaseManager {
 
     if (response.status < 200 || response.status >= 300) {
       const message = `Failed to fetch URL: HTTP ${response.status}`;
-      // 404 and 403 are the site's answer about this address; any other status is not the person's to fix.
-      throw response.status === 404 || response.status === 403 ? new UrlImportRefused('not-found', message) : new Error(message);
+      // 404 and 403 are the site's answer about this address. A site that is down, gone or too busy (5xx, 410, 429) is
+      // not something to fix in the address either. Any other status is not one of these and gets the general sentence.
+      if (response.status === 404 || response.status === 403) throw new UrlImportRefused('not-found', message);
+      if (response.status >= 500 || response.status === 410 || response.status === 429) throw new UrlImportRefused('site-unavailable', message);
+      throw new Error(message);
     }
 
     const contentTypeHeader = response.headers['content-type'];

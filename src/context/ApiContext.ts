@@ -9,6 +9,7 @@
  *
  * Usage:
  *   import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
+ *   import { plainRouteError } from '../../../dist/src/utils/plainRouteError.js';
  *
  *   router.post('/reservations', async (req, res) => {
  *     try {
@@ -18,7 +19,8 @@
  *       // ...
  *     } catch (err) {
  *       if (err instanceof ApiError) return sendApiError(res, err);
- *       res.status(500).json({ error: String(err) });
+ *       // A plain sentence for the person; the full error goes to the server log (#2494).
+ *       res.status(500).json({ error: plainRouteError(req, err, 'The reservation could not be made. Try again in a moment.') });
  *     }
  *   });
  */

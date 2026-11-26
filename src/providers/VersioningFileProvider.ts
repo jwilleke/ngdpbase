@@ -2758,7 +2758,7 @@ class VersioningFileProvider extends FileSystemProvider {
 
     if (!(await fs.pathExists(trashPath))) {
       logger.error(`[VersioningFileProvider] Tombstone for ${uuid} has no file at ${trashPath}`);
-      return { ok: false, reason: 'file-missing', detail: trashPath };
+      return { ok: false, reason: 'file-missing', detail: 'The deleted copy of this page is no longer in the trash, so it cannot be restored.' };
     }
 
     // #1506: a page deleted while vaults lived in `pages/private/` goes back into `pages/vaults/`.
@@ -2800,9 +2800,10 @@ class VersioningFileProvider extends FileSystemProvider {
       logger.info(`[VersioningFileProvider] Restored page ${logName} with version history`);
       return { ok: true, title: entry.title };
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      logger.error(`[VersioningFileProvider] Failed to restore ${uuid}`, { error: detail });
-      return { ok: false, reason: 'error', detail };
+      const why = error instanceof Error ? error.message : String(error);
+      logger.error(`[VersioningFileProvider] Failed to restore ${uuid}`, { error: why });
+      // #2494: the reason stays in the log; the person is told what to do, not the file system's words.
+      return { ok: false, reason: 'error', detail: 'The page could not be put back. Try again in a moment.' };
     }
   }
 

@@ -54,7 +54,7 @@ import { adminMessage } from '../utils/backupFolder.js';
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
-import { plainRouteError } from '../utils/plainRouteError.js';
+import { plainRouteError, refusedOnPurpose } from '../utils/plainRouteError.js';
 import { asLineLength, resolveLineLength, LINE_LENGTH_PREF_KEY, LINE_LENGTH_SITE_KEY, type LineLength } from '../utils/lineLength.js';
 import { PageTitleConflictError, pageTitleConflictLink, pageTitleConflictText, type ConflictingPage } from '../utils/pageTitleConflict.js';
 import { DENY_OVERRIDES_EXPLANATION, RULE_COMBINING_ALGORITHM_KEY, readDeclaredAsWritten, unenforcedConditionsNotice } from '../utils/policyAttributes.js';
@@ -86,10 +86,10 @@ import { DENY_CHECKED_ACTION, NARROWED_WRITES_KEY } from '../utils/pageWritePoli
 import type UpgradeCheckManager from '../managers/UpgradeCheckManager.js';
 import type { OpenUpgradeItem } from '../managers/UpgradeCheckManager.js';
 import { UPGRADE_INTRO, UPGRADE_LIST_HEADING, UPGRADE_READ_ONLY, upgradeEmpty, upgradeHeading, upgradeListLead, upgradeNotice, upgradeResult, type UpgradeResultKey } from '../upgradeChecks/wording.js';
-import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
+import { SharedFolderRefusedError, SharedFoldersUnavailableError, SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
 import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
-import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, PasskeyRefused, INVITATION_PATH, STEP_UP_CONTINUE_PATH, stepUpModeFor, stepUpPromptId, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
+import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, PasskeyRefused, ProxyGrantRefused, INVITATION_PATH, STEP_UP_CONTINUE_PATH, stepUpModeFor, stepUpPromptId, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
 import { VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
@@ -206,7 +206,7 @@ import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import { JobActionError, type JobLastRun } from '../managers/BackgroundJobManager.js';
 import { automaticReindexLabel, latestReindex, type ReindexLine } from '../utils/reindexLines.js';
 import type BackupManager from '../managers/BackupManager.js';
-import { formatBytes, type BackupHealth } from '../managers/BackupManager.js';
+import { BackupKeyRefused, formatBytes, type BackupHealth } from '../managers/BackupManager.js';
 import type CacheManager from '../managers/CacheManager.js';
 import type CatalogManager from '../managers/CatalogManager.js';
 import type RoleManager from '../managers/RoleManager.js';
@@ -218,7 +218,7 @@ import type { ReviewRequest } from '../types/Review.js';
 
 /** A request id as ReviewManager makes them (a UUID); anything else is never put in a URL (#2072). */
 const REVIEW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-import { ContactDetailsInvalidError } from '../managers/IdentityManager.js';
+import { ContactDetailsInvalidError, ContactLinkRefused } from '../managers/IdentityManager.js';
 import { contactDetailLabel, contactDetailsCard, contactDetailsFromForm, type ContactDetailsCard } from './profileContactDetails.js';
 import { isEmail, isUuid } from '../types/guards.js';
 import { ACCOUNTLESS_PERSON_PREFIX } from '../utils/username.js';
@@ -4583,9 +4583,7 @@ ${panes}
         await this.renderError(req, res, 403, 'Access Denied', err.message);
         return;
       }
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      logger.error('adminEditRaw failed:', err);
-      await this.renderError(req, res, 500, 'Error', `Failed to load raw editor: ${errorMessage}`);
+      await this.renderError(req, res, 500, 'Error', plainRouteError(req, err, 'The raw editor could not be opened. Try again in a moment.'));
     }
   }
 
@@ -4673,8 +4671,18 @@ ${panes}
         await this.renderError(req, res, 403, 'Access Denied', err.message);
         return;
       }
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      logger.warn(`adminSaveRaw('${pageName}') failed: ${errorMessage}`);
+      // The page's own rules, written for the person (#2494); anything else is the server's failure, logged in full.
+      // A front matter the YAML reader refused is the person's to fix, and the reader's own words (line, column, a quoted
+      // snippet) mean nothing to them: one sentence says where to look. It is named by its class name, never by its text.
+      let errorMessage: string;
+      if (err instanceof PageContentValidationError) {
+        errorMessage = err.message;
+      } else if (err instanceof Error && err.name === 'YAMLException') {
+        refusedOnPurpose(req, 'raw page save (front matter is not valid)');
+        errorMessage = 'The page was not saved: the front matter at the top (between the two --- lines) is not valid. What you typed is still in the box; fix it and save again.';
+      } else {
+        errorMessage = plainRouteError(req, err, 'The page could not be saved. What you typed is still in the box. Try again in a moment.');
+      }
       const templateData = await this.getCommonTemplateData(req);
       res.status(400).render('admin-edit-raw', {
         ...templateData,
@@ -4931,6 +4939,7 @@ ${panes}
     } catch (error: unknown) {
       // #2494: the write door's refusal is written for the person; it is not a server failure.
       if (error instanceof PageWriteRefusedError) {
+        refusedOnPurpose(req, 'page delete (not allowed)');
         return res.status(403).json({ error: 'Access denied', message: error.message });
       }
       return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be deleted. Try again in a moment.') });
@@ -5073,9 +5082,11 @@ ${panes}
     } catch (error: unknown) {
       // #2494: both are written for the person, and trying again cannot fix either.
       if (error instanceof PageTitleConflictError) {
+        refusedOnPurpose(req, 'page rename (title taken)');
         return res.status(409).json({ error: 'Title already in use', message: pageTitleConflictText(error) });
       }
       if (error instanceof PageWriteRefusedError) {
+        refusedOnPurpose(req, 'page rename (not allowed)');
         return res.status(403).json({ error: 'Access denied', message: error.message });
       }
       return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be renamed. Try again in a moment.') });
@@ -7075,6 +7086,7 @@ ${panes}
     } catch (err) {
       // #2494: why a passkey can not be added here is written for the person; trying again would not change it.
       if (err instanceof PasskeyRefused) {
+        refusedOnPurpose(req, 'adding a passkey');
         res.status(400).json({ error: err.message });
         return;
       }
@@ -8576,7 +8588,8 @@ ${panes}
       await authManager.grantProxy(user, input);
       res.redirect(`/profile?success=${encodeURIComponent(`${input.proxy} can now act for you.`)}#proxy-access`);
     } catch (err) {
-      res.redirect(`/profile?error=${encodeURIComponent((err as Error).message)}#proxy-access`);
+      const why = err instanceof ProxyGrantRefused ? err.message : plainRouteError(req, err, 'Access could not be given. Try again in a moment.');
+      res.redirect(`/profile?error=${encodeURIComponent(why)}#proxy-access`);
     }
   }
 
@@ -8610,7 +8623,8 @@ ${panes}
       await authManager.grantProxy(wikiContext.userContext, input);
       res.redirect(`${back}?success=${encodeURIComponent(`${input.proxy} can now act for ${username}.`)}#proxy-access`);
     } catch (err) {
-      res.redirect(`${back}?error=${encodeURIComponent((err as Error).message)}#proxy-access`);
+      const why = err instanceof ProxyGrantRefused ? err.message : plainRouteError(req, err, 'Access could not be given. Try again in a moment.');
+      res.redirect(`${back}?error=${encodeURIComponent(why)}#proxy-access`);
     }
   }
 
@@ -10686,8 +10700,16 @@ ${panes}
         csrfToken: req.session.csrfToken || ''
       });
     } catch (err: unknown) {
-      return this.renderError(req, res, 500, 'Error', getErrorMessage(err));
+      return this.renderError(req, res, 500, 'Error', this.sharedFolderMessage(req, err, 'The shared folders could not be loaded. Try again in a moment.'));
     }
+  }
+
+  /**
+   * What a shared-folders route tells the person when it failed (#2494): a refusal from the shared folders (written for the
+   * administrator, and not a server failure) as it is, anything else as `plain`, with the full error in the server log.
+   */
+  private sharedFolderMessage(req: Request, err: unknown, plain: string): string {
+    return err instanceof SharedFolderRefusedError || err instanceof SharedFoldersUnavailableError ? err.message : plainRouteError(req, err, plain);
   }
 
   /** POST /admin/shared-folders — make a shared folder from the Shared folders screen (#2126); as Admin → Backup's form. */
@@ -10718,7 +10740,7 @@ ${panes}
       const changed = await folders.setFolderAccess(wikiContext.userContext, name, { read: roles(body.read), file: roles(body.file) });
       return back('success', changed ? `Who may read and file in /shared/${name} is saved.` : `Nothing changed in /shared/${name}.`);
     } catch (err: unknown) {
-      return back('error', getErrorMessage(err));
+      return back('error', this.sharedFolderMessage(req, err, 'Who may use that shared folder could not be saved. Try again in a moment.'));
     }
   }
 
@@ -10735,7 +10757,7 @@ ${panes}
       await folders.createFolder(wikiContext.userContext, name);
       return back('success', `Shared folder '${name}' is made, at /shared/${name}.`);
     } catch (err: unknown) {
-      return back('error', getErrorMessage(err));
+      return back('error', this.sharedFolderMessage(req, err, 'The shared folder could not be made. Try again in a moment.'));
     }
   }
 
@@ -13628,9 +13650,11 @@ ${panes}
         return res.redirect('/admin/users?error=Failed to create user');
       }
     } catch (err: unknown) {
-      logger.error('Error creating user:', err);
-      const errorMessage = encodeURIComponent(getErrorMessage(err) || 'Error creating user');
-      return res.redirect(`/admin/users?error=${errorMessage}`);
+      // #2494: a refusal written for the administrator (a name taken, a role that could not be given) is shown as it is.
+      const shown = err instanceof UserCreateError || err instanceof RoleChangeError
+        ? err.message
+        : plainRouteError(req, err, 'The user could not be created. Try again in a moment.');
+      return res.redirect(`/admin/users?error=${encodeURIComponent(shown)}`);
     }
   }
 
@@ -13952,7 +13976,8 @@ ${panes}
         ? 'Thank you: the backup key is recorded as saved off the server.'
         : 'Thank you: .env is recorded as saved off the server.'));
     } catch (err: unknown) {
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
+      const shown = err instanceof BackupKeyRefused ? err.message : plainRouteError(req, err, 'The backup key could not be recorded as saved. Try again in a moment.');
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(shown));
     }
   }
 
@@ -13992,7 +14017,7 @@ ${panes}
         : await folders.prepareRecoveryWords(wikiContext.userContext);
       return await this.renderSharedFoldersWords(req, res, { step: 'words', replacing, words, token });
     } catch (err: unknown) {
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)) + '#shared-folders-key');
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(this.sharedFolderMessage(req, err, 'The recovery words could not be made. Try again in a moment.')) + '#shared-folders-key');
     }
   }
 
@@ -14021,7 +14046,7 @@ ${panes}
       if (!waiting) return res.redirect('/admin/backup?error=' + encodeURIComponent('No recovery words are waiting to be confirmed. Make a new set.') + '#shared-folders-key');
       return await this.renderSharedFoldersWords(req, res, { step: 'confirm', ...waiting });
     } catch (err: unknown) {
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)) + '#shared-folders-key');
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(this.sharedFolderMessage(req, err, 'The recovery words page could not be opened. Try again in a moment.')) + '#shared-folders-key');
     }
   }
 
@@ -14049,7 +14074,7 @@ ${panes}
       const waiting = await folders.pendingRecoveryWords(wikiContext.userContext, token, how);
       return await this.sendRecoveryWords(req, res, how, 'shared-folders', waiting);
     } catch (err: unknown) {
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)) + '#shared-folders-key');
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(this.sharedFolderMessage(req, err, 'The recovery words could not be sent. Try again in a moment.')) + '#shared-folders-key');
     }
   }
 
@@ -14105,7 +14130,7 @@ ${panes}
       const madeNote = made.length > 0 ? ` The shared folder${made.length > 1 ? 's' : ''} ${made.map((n) => `/shared/${n}`).join(' and ')} ${made.length > 1 ? 'are' : 'is'} made.` : '';
       return back('success', `The shared folders' recovery words are saved. Keep them off this server, with the organization's important papers.${madeNote}`);
     } catch (err: unknown) {
-      return back('error', getErrorMessage(err));
+      return back('error', this.sharedFolderMessage(req, err, 'The recovery words could not be saved. Try again in a moment.'));
     }
   }
 
@@ -14127,7 +14152,7 @@ ${panes}
       await folders.discardUnconfirmedWords(wikiContext.userContext);
       return back('success', 'The unconfirmed recovery words are discarded. Make a new set, and confirm you have saved it.');
     } catch (err: unknown) {
-      return back('error', getErrorMessage(err));
+      return back('error', this.sharedFolderMessage(req, err, 'The recovery words could not be discarded. Try again in a moment.'));
     }
   }
 
@@ -15535,7 +15560,7 @@ ${panes}
       if (all) {
         const total = await pageManager.repairAllVaultPages(currentUser, { ownOnly: back === '/profile' });
         const skipped = total.refused + total.failed > 0
-          ? ` ${total.refused} left for their owner or refused${total.failed ? `, ${total.failed} failed (see the log)` : ''}.`
+          ? ` ${total.refused} left for their owner or refused${total.failed ? `, ${total.failed} failed` : ''}.`
           : '';
         return answer(total.failed > 0 ? 'error' : 'success', `Repaired ${total.repaired} item(s): ${describe(total)}${skipped}`);
       }
@@ -15551,8 +15576,7 @@ ${panes}
       if (!result.ok) return answer('error', result.message);
       return answer('success', describe(result));
     } catch (err: unknown) {
-      logger.error('[vault-repair] The repair did not complete (#1842):', err);
-      return answer('error', `The repair did not complete: ${getErrorMessage(err)}. Anything not moved is still where it was.`);
+      return answer('error', plainRouteError(req, err, 'The repair did not complete. Anything not moved is still where it was. Try again in a moment.'));
     }
   }
 
@@ -17464,9 +17488,7 @@ ${panes}
 
       return res.json({ success: true, message: 'Attachment deleted successfully' });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      logger.error('Error deleting attachment from browser:', err);
-      return res.status(500).json({ success: false, error: message });
+      return res.status(500).json({ success: false, error: plainRouteError(req, err, 'The attachment could not be deleted. Try again in a moment.') });
     }
   }
 
@@ -17670,10 +17692,10 @@ ${panes}
       res.end();
       return;
     } catch (err: unknown) {
-      logger.error('Error in streaming import:', err);
+      const plain = plainRouteError(req, err, 'The import could not be completed. Check the folder and format, then try again.');
       // Try to send error event if connection still open
       try {
-        res.write(`data: ${JSON.stringify({ type: 'error', error: getErrorMessage(err) })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'error', error: plain })}\n\n`);
         res.end();
       } catch {
         // Connection already closed
@@ -17693,7 +17715,8 @@ ${panes}
       'invalid-address': { status: 400, message: 'That is not a web address. Check that you typed or pasted all of it.' },
       'not-web-address': { status: 400, message: 'Only web addresses that start with http:// or https:// can be imported.' },
       'not-found': { status: 422, message: 'That page was not found, or the site does not let us read it. Check the address and try again.' },
-      'not-a-page': { status: 422, message: 'That address is not a web page (it may be an image or a file). Use the address of a page.' }
+      'not-a-page': { status: 422, message: 'That address is not a web page (it may be an image or a file). Use the address of a page.' },
+      'site-unavailable': { status: 502, message: "That site isn't answering right now; try again later." }
     };
     return answers[err.reason];
   }
@@ -17740,7 +17763,10 @@ ${panes}
       });
     } catch (err: unknown) {
       const refusal = this.urlImportRefusal(err);
-      if (refusal) return res.status(refusal.status).json({ success: false, error: refusal.message });
+      if (refusal) {
+        refusedOnPurpose(req, `web address import (${err instanceof UrlImportRefused ? err.reason : 'refused'})`);
+        return res.status(refusal.status).json({ success: false, error: refusal.message });
+      }
       return res.status(500).json({
         success: false,
         error: plainRouteError(req, err, 'The preview of that web address could not be made. Check the address and try again.')
@@ -17800,7 +17826,10 @@ ${panes}
         });
       }
       const refusal = this.urlImportRefusal(err);
-      if (refusal) return res.status(refusal.status).json({ success: false, error: refusal.message });
+      if (refusal) {
+        refusedOnPurpose(req, `web address import (${err instanceof UrlImportRefused ? err.reason : 'refused'})`);
+        return res.status(refusal.status).json({ success: false, error: refusal.message });
+      }
       return res.status(500).json({
         success: false,
         error: plainRouteError(req, err, 'The page could not be imported from that web address. Check the address and try again.')
@@ -18268,8 +18297,7 @@ ${panes}
       }
       return back('error', `${slug} was not updated: ${outcome.reason ?? 'refused'}`);
     } catch (err: unknown) {
-      logger.error('Error updating add-on:', err);
-      return back('error', `The add-on was not updated: ${getErrorMessage(err)}`);
+      return back('error', plainRouteError(req, err, 'The add-on was not updated. Try again in a moment.'));
     }
   }
 
@@ -18447,8 +18475,8 @@ ${panes}
       res.redirect('/admin/contacts?success=' + encodeURIComponent(`Linked to the account ${username}.`));
     } catch (err: unknown) {
       if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
-      logger.warn(`[contacts] Linking ${personId} to ${username} failed: ${getErrorMessage(err)}`);
-      res.redirect('/admin/contacts?accountless=1&error=' + encodeURIComponent(getErrorMessage(err).replace(/^IdentityManager:\s*/, '')));
+      const shown = err instanceof ContactLinkRefused ? err.message : plainRouteError(req, err, 'The person could not be linked to that account. Try again in a moment.');
+      res.redirect('/admin/contacts?accountless=1&error=' + encodeURIComponent(shown));
     }
   }
 
@@ -18713,6 +18741,7 @@ ${panes}
       // #2494: a name is the one thing an organization needs; say so rather than "try again".
       if (typeof organizationData.name !== 'string' || !organizationData.name.trim()) {
         const needsName = 'Give the organization a name.';
+        refusedOnPurpose(req, 'organization without a name');
         return req.headers.accept?.includes('application/json')
           ? res.status(400).json({ error: needsName })
           : res.redirect('/admin/organizations?error=' + encodeURIComponent(needsName));
@@ -20784,7 +20813,7 @@ ${panes}
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page not found',
-          message: getErrorMessage(error)
+          message: 'That page was not found.'
         });
       }
 
@@ -20846,14 +20875,14 @@ ${panes}
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page or version not found',
-          message: getErrorMessage(error)
+          message: 'That page or version was not found.'
         });
       }
 
       if (getErrorMessage(error).includes('does not exist')) {
         return res.status(404).json({
           error: 'Version not found',
-          message: getErrorMessage(error)
+          message: 'That version was not found.'
         });
       }
 
@@ -20914,7 +20943,7 @@ ${panes}
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page or version not found',
-          message: getErrorMessage(error)
+          message: 'That page or version was not found.'
         });
       }
 
@@ -21000,7 +21029,7 @@ ${panes}
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page or version not found',
-          message: getErrorMessage(error)
+          message: 'That page or version was not found.'
         });
       }
 
@@ -21188,6 +21217,7 @@ ${panes}
     } catch (error: unknown) {
       // #1815: the write door refused the restore — a create there.
       if (error instanceof PageWriteRefusedError) {
+        refusedOnPurpose(req, 'restore of a deleted page (not allowed)');
         return res.status(403).json({ success: false, error: 'forbidden', detail: error.message });
       }
       return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be restored. Try again in a moment.') });
@@ -23731,10 +23761,9 @@ ${description}
       const runId = await jobManager.enqueue(jobId, jobContextFromRequest(req.userContext));
       return res.status(202).json({ runId });
     } catch (err: unknown) {
-      const msg = getErrorMessage(err);
-      logger.error('[jobs] Error enqueueing job:', err);
-      const status = msg.includes('unknown job') ? 404 : 500;
-      return res.status(status).json({ error: msg });
+      // #2494: a job this site does not know is the caller's mistake, said as the job manager wrote it; anything else is logged in full.
+      if (err instanceof JobActionError) return res.status(err.status).json({ error: err.message });
+      return res.status(500).json({ error: plainRouteError(req, err, 'The job could not be started. Try again in a moment.') });
     }
   }
 
