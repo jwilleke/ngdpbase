@@ -300,4 +300,127 @@ describe('./server.sh update (#2208)', () => {
     expect(r.out).toContain('Rolled back');
     expect(git(instance, 'rev-parse', 'HEAD')).toBe(oldSha);
   }, 60000);
+
+  describe('when the commit and the build are unchanged (#2532)', () => {
+    const stampFile = (): string => path.join(instance, 'dist', '.built-from');
+    const curlCalls = (): string => (fs.existsSync(curlLog) ? fs.readFileSync(curlLog, 'utf8') : '');
+
+    it('does nothing on the second run at the same commit', () => {
+      const sha = publish('1.1.0');
+      const first = update();
+      expect(first.status, first.out).toBe(0);
+      expect(first.out).toContain('Updated:');
+      fs.rmSync(npmLog, { force: true });
+      fs.rmSync(curlLog, { force: true });
+
+      const second = update();
+
+      expect(second.status, second.out).toBe(0);
+      expect(second.out).toContain(`already at 1.1.0 (${sha.slice(0, 7)}), nothing to do`);
+      expect(npmCalls()).toEqual([]);
+      expect(curlCalls()).toBe('');
+      expect(second.out).not.toContain('Restarting');
+      expect(second.out).not.toContain('Server started');
+      expect(git(instance, 'status', '--porcelain')).toBe('');
+    }, 60000);
+
+    it('builds again when the build record is missing', () => {
+      publish('1.1.0');
+      expect(update().status).toBe(0);
+      fs.rmSync(stampFile(), { force: true });
+      fs.rmSync(npmLog, { force: true });
+
+      const r = update();
+
+      expect(r.status, r.out).toBe(0);
+      expect(r.out).not.toContain('nothing to do');
+      expect(npmCalls()).toEqual(['install', 'run build']);
+    }, 60000);
+
+    it('builds again when the build record is for another commit', () => {
+      publish('1.1.0');
+      expect(update().status).toBe(0);
+      fs.writeFileSync(stampFile(), `${'0'.repeat(40)}\n`);
+      fs.rmSync(npmLog, { force: true });
+
+      const r = update();
+
+      expect(r.status, r.out).toBe(0);
+      expect(r.out).not.toContain('nothing to do');
+      expect(npmCalls()).toEqual(['install', 'run build']);
+    }, 60000);
+
+    it('builds again when the built files are gone', () => {
+      publish('1.1.0');
+      expect(update().status).toBe(0);
+      fs.rmSync(path.join(instance, 'dist'), { recursive: true, force: true });
+      fs.rmSync(npmLog, { force: true });
+
+      const r = update();
+
+      expect(r.status, r.out).toBe(0);
+      expect(r.out).not.toContain('nothing to do');
+      expect(npmCalls()).toEqual(['install', 'run build']);
+    }, 60000);
+
+    it('still does the full job for a different ref, then skips that ref the next time', () => {
+      const v11 = publish('1.1.0');
+      publish('1.2.0');
+      expect(update().status).toBe(0);
+      fs.rmSync(npmLog, { force: true });
+
+      const back = update('v1.1.0');
+
+      expect(back.status, back.out).toBe(0);
+      expect(git(instance, 'rev-parse', 'HEAD')).toBe(v11);
+      expect(back.out).toContain('Updated:');
+      expect(npmCalls()).toEqual(['install', 'run build']);
+      fs.rmSync(npmLog, { force: true });
+
+      const again = update('v1.1.0');
+
+      expect(again.status, again.out).toBe(0);
+      expect(again.out).toContain('nothing to do');
+      expect(npmCalls()).toEqual([]);
+    }, 60000);
+
+    it('does not build the new commit as unchanged after a failed build', () => {
+      publish('1.1.0');
+      expect(update().status).toBe(0);
+      publish('1.2.0', 'BREAK_BUILD');
+      expect(update().status).not.toBe(0);
+      fs.rmSync(npmLog, { force: true });
+
+      const r = update();
+
+      // The broken commit is tried again, never skipped as "already built".
+      expect(r.status).not.toBe(0);
+      expect(r.out).not.toContain('nothing to do');
+      expect(npmCalls()).toContain('run build');
+    }, 60000);
+
+    it('records the rolled-back commit as built, so the next run on it does nothing', () => {
+      const oldSha = git(instance, 'rev-parse', 'HEAD');
+      publish('1.1.0', 'BREAK_BUILD');
+      expect(update().status).not.toBe(0);
+
+      expect(fs.readFileSync(stampFile(), 'utf8').trim()).toBe(oldSha);
+      const r = update(oldSha);
+      expect(r.status, r.out).toBe(0);
+      expect(r.out).toContain('nothing to do');
+    }, 60000);
+
+    it('still refuses a dirty tree when the commit is unchanged', () => {
+      publish('1.1.0');
+      expect(update().status).toBe(0);
+      fs.writeFileSync(path.join(instance, 'local-notes.txt'), 'work in progress');
+      fs.rmSync(npmLog, { force: true });
+
+      const r = update();
+
+      expect(r.status).not.toBe(0);
+      expect(r.out).toContain('uncommitted changes');
+      expect(r.out).not.toContain('nothing to do');
+    }, 60000);
+  });
 });
