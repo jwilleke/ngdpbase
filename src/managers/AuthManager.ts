@@ -2438,7 +2438,7 @@ class AuthManager extends BaseManager {
     let expiresAt: string | null = null;
     if (input.expiresAt !== undefined && input.expiresAt !== null) {
       const end = typeof input.expiresAt === 'string' ? Date.parse(input.expiresAt) : NaN;
-      if (!Number.isFinite(end) || end <= now) throw new Error('The end date must be a date in the future');
+      if (!Number.isFinite(end) || end <= now) throw new ProxyGrantRefused('The end date must be a date in the future');
       expiresAt = new Date(end).toISOString();
     }
 
@@ -2488,15 +2488,15 @@ class AuthManager extends BaseManager {
    */
   private async sealVaultCopy(ctx: PermissionSubject, owner: string, proxy: string): Promise<Lockbox | null> {
     const blocked = await this.vaultGrantBlocked(ctx, owner);
-    if (blocked) throw new Error(blocked);
+    if (blocked) throw new ProxyGrantRefused(blocked);
     const pagesDirectory = this.pagesDirectory();
     if (!pagesDirectory || !(await hasUserKeys(pagesDirectory, owner))) return null;
     const proxyKey = await personKeyOf(pagesDirectory, proxy);
     if (!proxyKey) {
-      throw new Error(`${proxy} cannot be given access to your encrypted vaults yet: they need a private store of their own, unlocked at least once. Give access without vaults, or ask them to set one up first.`);
+      throw new ProxyGrantRefused(`${proxy} cannot be given access to your encrypted vaults yet: they need a private store of their own, unlocked at least once. Give access without vaults, or ask them to set one up first.`);
     }
     const copy = await sealKekCopyFor(ctx, proxyKey);
-    if (!copy) throw new Error('Unlock your private store first: access to your encrypted vaults can only be given while it is open.');
+    if (!copy) throw new ProxyGrantRefused('Unlock your private store first: access to your encrypted vaults can only be given while it is open.');
     return copy;
   }
 
