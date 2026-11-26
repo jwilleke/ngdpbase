@@ -96,6 +96,31 @@ describe('#1127 convert-to-NCM is gated on the page edit ACL', () => {
   });
 });
 
+describe('#2359 a signed-in caller without edit rights gets one answer, whether the page exists or not', () => {
+  const verbs = ['adminConvertPreview', 'adminConvertExecute'] as const;
+
+  test.each(verbs)('%s: 403 for an existing page and for an absent page', async (verb) => {
+    const answers: unknown[] = [];
+    for (const exists of [true, false]) {
+      const { routes, pageManager } = makeRoutes(false);
+      if (!exists) pageManager.getPage.mockResolvedValue(null);
+      const res = makeRes();
+      await routes[verb](makeReq({ page: 'Target' }), res);
+      answers.push([(res.status as ReturnType<typeof vi.fn>).mock.calls, (res.json as ReturnType<typeof vi.fn>).mock.calls]);
+    }
+    expect(answers[0]).toEqual([[[403]], [[{ success: false, error: 'You do not have permission to convert this page' }]]]);
+    expect(answers[1]).toEqual(answers[0]);
+  });
+
+  test.each(verbs)('%s: a caller with edit rights still gets 404 for an absent page', async (verb) => {
+    const { routes, pageManager } = makeRoutes(true);
+    pageManager.getPage.mockResolvedValue(null);
+    const res = makeRes();
+    await routes[verb](makeReq({ page: 'Nope' }), res);
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+});
+
 describe('#1125 convert transfers footnote definitions to the sidecar list', () => {
   function makeFootnoteRoutes() {
     // #1126: the route delegates to FootnoteManager.transferFromContent —
