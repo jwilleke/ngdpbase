@@ -26,12 +26,17 @@ import type IdentityManager from './IdentityManager.js';
 import { systemContext } from '../context/bootActions.js';
 import { IDENTITY_ID_PREFIX, ORPHAN_PREFIX } from '../utils/username.js';
 import { FootnoteLinkError, safeSourceUrl, stripUrlCredentials } from '../utils/footnoteLinks.js';
-import { SourceStore, SourceMissingError, SourceNotPermittedError, SourceOnPrivatePageError, type SourceRecord } from '../utils/footnoteSources.js';
+import { SourceStore, SourceMissingError, SourceNotPermittedError, SourceOnPrivatePageError, SourceLimitError, MAX_SOURCES, type SourceRecord } from '../utils/footnoteSources.js';
 import { SourceIndex, sourcesCitedIn, type PageCitations } from '../utils/footnoteSourceIndex.js';
 import { subjectMayDo } from '../utils/subjectMayDo.js';
 import type PageManager from './PageManager.js';
 import { parsePrivatePageName } from '../utils/privateStorePath.js';
 import { FOOTNOTE_DATA_TOPIC } from '../cache/CacheDependencies.js';
+
+/** How many citing pages `canSeeSource` asks the page filter about at once. */
+const CAN_SEE_BATCH = 10;
+/** How soon an index that could not be completed (a page unreadable, no page list) is built again, at most. */
+const INDEX_RETRY_MS = 30_000;
 
 /** Legacy `createdBy` written when footnotes were migrated out of page markup (#128): "no recorded creator", not a username. */
 const LEGACY_NO_CREATOR = 'migrated';
@@ -78,6 +83,8 @@ export default class FootnoteManager extends BaseManager {
   /** Which pages cite which source (#2454, R6): in memory only, built from the page list by name. */
   private readonly index = new SourceIndex();
   private rebuilding: Promise<void> | null = null;
+  /** When the last rebuild started, so an index that could not be completed is tried again at most this often. */
+  private lastRebuildAt = 0;
   /** Vault pages whose footnotes are still in the public folder (#1839), and the repair's re-check (#1842). */
   private readonly outsideCheck = new VaultPageNotesCheck(this.engine, () => this.roots(), {
     markNeedsAttention: (reason) => this.markNeedsAttention(reason),
@@ -235,10 +242,14 @@ export default class FootnoteManager extends BaseManager {
    *
    * @throws SourceNotPermittedError when `ctx` does not hold `page-edit`
    * @throws FootnoteLinkError when the link is not http or https
+   * @throws SourceLinkTooLongError when the link is over 2048 characters
+   * @throws SourceTitleTooLongError when the title is over 300 characters
+   * @throws SourceLimitError when the site already holds the most sources it keeps
    */
   async createSource(data: { title: string; url: string }, ctx: ActorContext): Promise<SourceRecord> {
     if (!this.enabled) throw new Error('Footnotes are turned off on this site, so a source can\'t be added.');
     if (!await subjectMayDo(this.engine, ctx, 'page-edit')) throw new SourceNotPermittedError();
+    if (await this.sources().count() >= MAX_SOURCES) throw new SourceLimitError();
     const createdBy = (await this.engine.getManager<IdentityManager>('IdentityManager')
       ?.identityIdOf(systemContext(this.engine, 'store a footnote source creator: identity @id (#2454)'), ctx.username)) ?? ctx.username;
     const source = await this.sources().create({ title: data.title, url: data.url, createdBy });
@@ -260,12 +271,16 @@ export default class FootnoteManager extends BaseManager {
   /**
    * The reader filter (R4, Jim's decisions 2, 10 and 12): `ctx` sees a source when at
    * least one page that cites it passes `filterPagesFor` with their own context, or
-   * when no page cites it and they hold the `page-edit` permission.
+   * when no page cites it and they hold the `page-edit` permission. The citing pages
+   * are asked about a few at a time and the first one the reader may view settles it.
    */
   async canSeeSource(sourceId: string, ctx: ActorContext): Promise<boolean> {
-    const citing = await this.citingPages(sourceId);
-    if (citing.length === 0) return this.holdsPageEdit(ctx);
-    return (await this.viewable(citing.map((p) => p.name), ctx)).length > 0;
+    const names = (await this.citingPagesIn([sourceId])).get(sourceId) ?? [];
+    if (names.length === 0) return this.mayBeShownUnused(ctx);
+    for (let i = 0; i < names.length; i += CAN_SEE_BATCH) {
+      if ((await this.viewable(names.slice(i, i + CAN_SEE_BATCH), ctx)).length > 0) return true;
+    }
+    return false;
   }
 
   /** The names of the citing pages `ctx` may view, in page-name order; those pages only, never the rest. */
@@ -276,7 +291,7 @@ export default class FootnoteManager extends BaseManager {
   /**
    * Every source `ctx` may see, oldest first, with the citing pages they may view
    * and whether no page cites it ("Not used"). One `filterPagesFor` call decides
-   * all the citing pages.
+   * all the citing pages, and the page list is read once however many sources there are.
    */
   async listSourcesFor(ctx: ActorContext): Promise<Array<{ source: SourceRecord; citedBy: string[]; used: boolean }>> {
     return this.visibleOf(await this.sources().list(), ctx);
@@ -289,10 +304,9 @@ export default class FootnoteManager extends BaseManager {
 
   private async visibleOf(records: SourceRecord[], ctx: ActorContext): Promise<Array<{ source: SourceRecord; citedBy: string[]; used: boolean }>> {
     if (records.length === 0) return [];
-    const citing = new Map<string, string[]>();
-    for (const r of records) citing.set(r.id, (await this.citingPages(r.id)).map((p) => p.name));
+    const citing = await this.citingPagesIn(records.map((r) => r.id));
     const viewable = new Set(await this.viewable([...new Set([...citing.values()].flat())], ctx));
-    const editor = [...citing.values()].some((names) => names.length === 0) ? await this.holdsPageEdit(ctx) : false;
+    const editor = [...citing.values()].some((names) => names.length === 0) ? await this.mayBeShownUnused(ctx) : false;
     const shown: Array<{ source: SourceRecord; citedBy: string[]; used: boolean }> = [];
     for (const source of records) {
       const names = citing.get(source.id) ?? [];
@@ -316,13 +330,39 @@ export default class FootnoteManager extends BaseManager {
     return subjectMayDo(this.engine, ctx, 'page-edit');
   }
 
+  /**
+   * Whether a source no page is known to cite may be shown to `ctx`: only to a
+   * `page-edit` holder, and only while the index holds every page. When a page's
+   * footnotes could not be read, that page may cite the source, so it is not shown
+   * as unused to anyone (it would show its title and link to every page editor).
+   */
+  private async mayBeShownUnused(ctx: ActorContext): Promise<boolean> {
+    return this.index.complete && await this.holdsPageEdit(ctx);
+  }
+
+  /**
+   * The names of the public pages that cite each of `sourceIds` now, in page-name
+   * order. Reads the page list once for all of them: the cost is the pages plus
+   * the sources, never their product.
+   */
+  private async citingPagesIn(sourceIds: string[]): Promise<Map<string, string[]>> {
+    await this.ensureIndex();
+    const found = new Map<string, string[]>();
+    const wanted = sourceIds.filter((id) => this.index.pagesFor(id).length > 0);
+    const byUuid = wanted.length > 0 ? new Map((await this.publicPages()).map((p) => [p.uuid, p.name])) : new Map<string, string>();
+    for (const id of sourceIds) {
+      const names = this.index.pagesFor(id).map((u) => byUuid.get(u)).filter((n): n is string => Boolean(n));
+      found.set(id, names.sort((a, b) => a.localeCompare(b)));
+    }
+    return found;
+  }
+
   /** The public pages that cite `sourceId` now, by name. Not filtered for any reader: for counts and for the filter itself. */
   async citingPages(sourceId: string): Promise<PageRef[]> {
     await this.ensureIndex();
-    const uuids = this.index.pagesFor(sourceId);
-    if (uuids.length === 0) return [];
-    const byUuid = new Map((await this.publicPages()).map((p) => [p.uuid, p]));
-    return uuids.map((u) => byUuid.get(u)).filter((p): p is PageRef => Boolean(p)).sort((a, b) => a.name.localeCompare(b.name));
+    const uuids = new Set(this.index.pagesFor(sourceId));
+    if (uuids.size === 0) return [];
+    return (await this.publicPages()).filter((p) => uuids.has(p.uuid)).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** How many public pages cite `sourceId`, every one counted, a number only (R7 "Used on N pages"; the delete re-check). */
@@ -336,14 +376,21 @@ export default class FootnoteManager extends BaseManager {
     return refs.filter((p) => !parsePrivatePageName(p.name));
   }
 
-  /** What a public page's footnote file cites, read by `{ name, uuid }`; null for a page with no readable file. */
-  private async readCitations(page: PageRef): Promise<PageCitations | null> {
+  /**
+   * What a public page's footnote file cites, read by `{ name, uuid }`. A page with
+   * no file cites nothing. A file that cannot be read (any failure but "no such
+   * file", or text that is not a footnote list) is `'unreadable'`: that is not
+   * "cites nothing", so the caller must not treat it so (a source cited only by that page
+   * would read as unused and be shown to every page editor). Logged with the page name.
+   */
+  private async readCitations(page: PageRef): Promise<PageCitations | 'unreadable'> {
     try {
       const file = pageNotesPath(page, this.roots()).path;
-      if (!await fs.pathExists(file)) return null;
+      if (!await fs.pathExists(file)) return {};
       return sourcesCitedIn(JSON.parse(await fs.readFile(file, 'utf8')));
-    } catch {
-      return null;
+    } catch (error) {
+      logger.warn(`[FootnoteManager] Could not read the footnotes of page "${page.name}", so which sources it cites is unknown for now; sources no other page cites are hidden until it can be read: ${error instanceof Error ? error.message : String(error)}`);
+      return 'unreadable';
     }
   }
 
@@ -354,18 +401,34 @@ export default class FootnoteManager extends BaseManager {
    * footnote file in the public folder is never read. Run at start-up, and on first
    * use if nobody has yet. A write that lands while it runs can be missed until that
    * page changes again or the next start.
+   *
+   * A page whose file cannot be read keeps what the index held for it (nothing, on
+   * a first build) and is marked unknown, and an empty page list marks every page
+   * unknown: while any is, a source no page is known to cite is shown to nobody,
+   * and the build is tried again on a later read, at most every 30 seconds.
    */
   async rebuildSourceIndex(): Promise<void> {
+    this.lastRebuildAt = Date.now();
     const pages = new Map<string, PageCitations>();
-    for (const page of await this.publicPages()) {
+    const unknown: string[] = [];
+    const list = await this.publicPages();
+    if (list.length === 0) logger.warn('[FootnoteManager] The page list was empty when the footnote source index was built, so sources no page is known to cite are hidden until it is built again');
+    for (const page of list) {
       const found = await this.readCitations(page);
-      if (found && Object.keys(found).length > 0) pages.set(page.uuid, found);
+      if (found === 'unreadable') {
+        unknown.push(page.uuid);
+        const old = this.index.citationsOf(page.uuid);
+        if (old) pages.set(page.uuid, old);
+      } else if (Object.keys(found).length > 0) {
+        pages.set(page.uuid, found);
+      }
     }
-    this.index.replaceAll(pages);
+    this.index.replaceAll(pages, { unknown, noPages: list.length === 0 });
   }
 
   private async ensureIndex(): Promise<void> {
-    if (this.index.built) return;
+    const stale = this.index.built && !this.index.complete && Date.now() - this.lastRebuildAt >= INDEX_RETRY_MS;
+    if (this.index.built && !stale) return;
     this.rebuilding ??= this.rebuildSourceIndex().finally(() => { this.rebuilding = null; });
     await this.rebuilding;
   }
@@ -383,7 +446,10 @@ export default class FootnoteManager extends BaseManager {
       this.index.removePage(uuid);
       return;
     }
-    this.index.setPage(uuid, (await this.readCitations({ name, uuid })) ?? {});
+    const found = await this.readCitations({ name, uuid });
+    // Unreadable is not "cites nothing": the old entry stays and the page counts as unknown until it is read or written again.
+    if (found === 'unreadable') this.index.markUnknown(uuid);
+    else this.index.setPage(uuid, found);
   }
 
   /**

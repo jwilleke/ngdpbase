@@ -1,5 +1,5 @@
 /**
- * #2454 S3 — the reverse index (which pages cite a source) and the reader
+ * #2454 S3: the reverse index (which pages cite a source) and the reader
  * filter. docs/design/shared-footnote-sources.md: R6 (index by name, never a
  * vault page, kept current, rebuilt at start) and R4 (a reader sees a source
  * only when they may view a citing page; a source no page cites is seen only by
@@ -474,14 +474,12 @@ describe('FootnoteManager reverse index and reader filter (#2454 S3)', () => {
     });
 
     test('a write to the page that could not be read puts it right at once', async () => {
-      const s1 = await makeSource();
+      const unused = await makeSource('Cited by nobody', 'https://example.org/none');
       makeUnreadable('uuid-a');
       await fm.rebuildSourceIndex();
+      expect(await fm.getSource(unused.id, EDITOR)).toBeNull();
       makeReadable('uuid-a');
-      await fm.addFootnote(page('Alpha', 'uuid-a'), { note: 'n', sourceId: s1.id }, EDITOR);
-      expect(await fm.citationCount(s1.id)).toBe(1);
-      const unused = await makeSource('Cited by nobody', 'https://example.org/none');
-      writeNotes('uuid-b', {});
+      await fm.addFootnote(page('Alpha', 'uuid-a'), { display: 'mine', url: LINK, note: 'n' }, EDITOR);
       expect((await fm.getSource(unused.id, EDITOR))?.id).toBe(unused.id);
     });
 
@@ -519,10 +517,14 @@ describe('FootnoteManager reverse index and reader filter (#2454 S3)', () => {
 
   describe('one page-list read per call, and a short-circuit (round 2)', () => {
     test('listSourcesFor reads the public page list once however many sources there are', async () => {
+      const notes: Array<Record<string, string>> = [{}, {}, {}];
       for (let i = 0; i < 40; i++) {
         const s = await makeSource(`Source ${i}`, `https://example.com/${i}`);
-        writeNotes(`uuid-${i % 3 === 0 ? 'a' : i % 3 === 1 ? 'b' : 'c'}`, { [String(i)]: s.id });
+        notes[i % 3] = { ...notes[i % 3], [String(i)]: s.id };
       }
+      writeNotes('uuid-a', notes[0]);
+      writeNotes('uuid-b', notes[1]);
+      writeNotes('uuid-c', notes[2]);
       await fm.rebuildSourceIndex();
       mockPages.listPageRefs.mockClear();
       await fm.listSourcesFor(READER);

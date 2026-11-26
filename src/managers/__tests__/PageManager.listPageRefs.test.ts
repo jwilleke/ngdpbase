@@ -1,5 +1,5 @@
 /**
- * #2454 S3 — PageManager gives the reverse index the public page list with
+ * #2454 S3: PageManager gives the reverse index the public page list with
  * uuids: a name and a uuid per page, no content, no vault page.
  *
  * @jest-environment node

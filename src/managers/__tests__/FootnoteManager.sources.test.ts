@@ -54,7 +54,7 @@ const mockEngine = {
     if (name === 'AuditManager') return mockAudit;
     // S3: who may create and read sources is decided through these two.
     if (name === 'PolicyDecisionPoint') return { permits: async () => true, holds: async () => true };
-    if (name === 'PageManager') return { invalidatePageCache: () => undefined, listPageRefs: async () => [], filterPagesFor: async (_ctx: unknown, names: string[]) => names };
+    if (name === 'PageManager') return { invalidatePageCache: () => undefined, listPageRefs: async () => [{ name: 'Home', uuid: 'uuid-home' }], filterPagesFor: async (_ctx: unknown, names: string[]) => names };
     return null;
   })
 };

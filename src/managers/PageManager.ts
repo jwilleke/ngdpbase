@@ -447,6 +447,8 @@ export type VaultRepairResult =
 
 /** Pages named in the needs-attention list of leftover `access:` limits before the rest are only counted (#2269). */
 const LEGACY_ACCESS_LIST_MAX = 50;
+/** How many pages `filterPagesFor` reads metadata for at once. */
+const FILTER_PAGES_BATCH = 50;
 
 /**
  * A page as the upgrade clean-up's log lines name it: by uuid when it is
@@ -4329,10 +4331,14 @@ class PageManager extends BaseManager implements CatalogSource {
     }
     const provider = this.provider;
     const asReader = subject ?? ANONYMOUS_SUBJECT;
-    const candidates = await Promise.all(names.map(async (title) => ({
-      title,
-      metadata: await provider.getPageMetadata(title, asReader).catch(() => null)
-    })));
+    // A few reads at a time: a long list of names must not open every page at once.
+    const candidates: Array<{ title: string; metadata: PageFrontmatter | null }> = [];
+    for (let i = 0; i < names.length; i += FILTER_PAGES_BATCH) {
+      candidates.push(...await Promise.all(names.slice(i, i + FILTER_PAGES_BATCH).map(async (title) => ({
+        title,
+        metadata: await provider.getPageMetadata(title, asReader).catch(() => null)
+      }))));
+    }
     return acl.filterAccessiblePages(subject as PermissionSubject | null | undefined, action, candidates);
   }
 

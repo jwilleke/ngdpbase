@@ -1,5 +1,5 @@
 /**
- * #2454 S3 — the in-memory reverse index (docs/design/shared-footnote-sources.md,
+ * #2454 S3: the in-memory reverse index (docs/design/shared-footnote-sources.md,
  * R6): which pages cite which source. Built from footnote files, never stored.
  */
 
