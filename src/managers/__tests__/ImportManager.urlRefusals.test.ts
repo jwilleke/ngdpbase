@@ -56,8 +56,19 @@ describe('ImportManager.importFromUrl refusals (#2494)', () => {
     await manager.shutdown();
   });
 
-  test('a server error is not one of the four: the route gives it the general sentence', async () => {
-    answer(500, 'text/html');
+  test.each([500, 502, 503, 410, 429])('a site that answers %i is site-unavailable', async (status) => {
+    answer(status, 'text/html');
+    const manager = await makeManager();
+
+    const error = await manager.importFromUrl('https://example.org/a', { actorContext: IMPORTER, dryRun: true }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(UrlImportRefused);
+    expect(error).toMatchObject({ reason: 'site-unavailable', message: `Failed to fetch URL: HTTP ${status}` });
+    await manager.shutdown();
+  });
+
+  test('any other failure is not one of the five: the route gives it the general sentence', async () => {
+    guardedFetch.mockRejectedValueOnce(new Error('connect ECONNREFUSED 10.0.0.1:443'));
     const manager = await makeManager();
 
     const error = await manager.importFromUrl('https://example.org/a', { actorContext: IMPORTER, dryRun: true }).catch((e: unknown) => e);

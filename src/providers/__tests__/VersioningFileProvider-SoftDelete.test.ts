@@ -239,6 +239,32 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     expect((await provider.getPage(title)).content).toContain('a different page now');
   });
 
+  // #2494: the answer is shown in the browser, so it carries no server path and no Node error text.
+  test('restore with its deleted copy gone says so plainly, without the server path', async () => {
+    const { uuid, title } = await seedPage();
+    await provider.deletePage(title, actor('jim'));
+    await fs.remove(path.join(testDir, 'pages', 'deleted', `${uuid}.md`));
+
+    const result = await provider.restoreDeletedPage(uuid);
+
+    expect(result).toMatchObject({ ok: false, reason: 'file-missing' });
+    expect(JSON.stringify(result)).not.toContain(testDir);
+    expect(result.detail).toBe('The deleted copy of this page is no longer in the trash, so it cannot be restored.');
+  });
+
+  test('restore that fails on the disk says so plainly, without the Node error', async () => {
+    const { uuid, title } = await seedPage();
+    await provider.deletePage(title, actor('jim'));
+    const move = vi.spyOn(fs, 'move').mockRejectedValueOnce(Object.assign(new Error("EACCES: permission denied, rename '/data/pages/deleted/x.md'"), { code: 'EACCES' }));
+
+    const result = await provider.restoreDeletedPage(uuid);
+    move.mockRestore();
+
+    expect(result).toMatchObject({ ok: false, reason: 'error' });
+    expect(JSON.stringify(result)).not.toMatch(/EACCES|permission denied|\/data\/pages/);
+    expect(result.detail).toBe('The page could not be put back. Try again in a moment.');
+  });
+
   // #1815 (security review L5): PageManager decides a restore as a create
   // where the page goes back, so the provider says where that is.
   test('deletedPageForRestore names where a trashed page goes back, with its frontmatter', async () => {
