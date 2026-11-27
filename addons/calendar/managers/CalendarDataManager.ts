@@ -9,6 +9,7 @@ import type IdentityManager from '../../../dist/src/managers/IdentityManager.js'
 import type { ManagerStatus } from '../../../dist/src/managers/BaseManager.js';
 import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 import type { CalendarGate } from './calendarVisibility.js';
+import { isSafeEventUrl } from './eventUrl.js';
 
 /**
  * CalendarEvent — internal storage shape.
@@ -340,7 +341,7 @@ class CalendarDataManager {
 
     if (safe.end)                    fc.end = safe.end;
     if (safe.allDay !== undefined)   fc.allDay = safe.allDay;
-    if (safe.url)                    fc.url = safe.url;
+    if (safe.url && isSafeEventUrl(safe.url)) fc.url = safe.url; // an address stored before the rule is not handed on
     if (safe.color)                  fc.color = safe.color;
 
     const ext: Record<string, unknown> = { calendarId: safe.calendarId };
