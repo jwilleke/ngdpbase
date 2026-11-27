@@ -225,7 +225,9 @@ const InsertPlugin: SimplePlugin = {
     // legitimately contains `caption=` (only `?section=`/`#Heading`), so
     // this is unambiguously a malformed Insert. Surface it instead of
     // quietly inserting the wrong thing (the #748 reporter hit this).
-    if (/\bcaption\s*=/i.test(target)) {
+    // The same holds for `denied=` (#2550): swallowed into the page value it
+    // would turn a refusal into a note naming the page.
+    if (/\b(?:caption|denied)\s*=/i.test(target)) {
       return renderPlaceholder(
         context.formatters,
         target,
@@ -235,7 +237,10 @@ const InsertPlugin: SimplePlugin = {
 
     // #2550: before the page is read, a note that names it tells a viewer the
     // page exists, so with `denied` set every refusal up to the read is silent.
-    const showNothing = typeof params.denied === 'string' && SUPPRESS_TOKEN.test(params.denied.trim());
+    // The shared parser reads `denied=false` as a boolean, and an empty value
+    // (`denied=''`) reaches here as the two quote characters.
+    const showNothing = params.denied === false
+      || (typeof params.denied === 'string' && SUPPRESS_TOKEN.test(params.denied.trim().replace(/^(['"])\1$/, '')));
     const refuse = (reason: string): string => (showNothing ? '' : renderPlaceholder(context.formatters, pageName, reason));
 
     const { pageName, sectionIndex, sectionHeading } = parseTarget(target);
