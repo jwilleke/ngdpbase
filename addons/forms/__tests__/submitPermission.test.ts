@@ -274,6 +274,70 @@ describe('POST /api/forms/submit/:formId — a form with submitPermission', () =
   });
 });
 
+describe('GET /api/forms/schema/:formId — a form with submitPermission', () => {
+  function app(opts: { definitions?: unknown; forms?: Record<string, object> } = {}) {
+    const forms: Record<string, object> = opts.forms ?? { [gatedForm.id]: gatedForm, [openForm.id]: openForm };
+    const managers: Record<string, unknown> = {
+      FormsDataManager: { getDefinition: (id: string) => forms[id] },
+      ConfigurationManager: { getProperty: (key: string, fallback: unknown) => (key === 'ngdpbase.permissions.definitions' ? ('definitions' in opts ? opts.definitions : DECLARED) : fallback) }
+    };
+    const engine = { getManager: (name: string) => managers[name], createRouter: () => express.Router() };
+    const a = express();
+    a.use('/api/forms', apiRoutes(engine as never, { callHandler: async () => ({ ok: true }) }, host()));
+    return a;
+  }
+
+  test('a signed-out caller gets the same 404 as for a form that does not exist', async () => {
+    caller.signedIn = false;
+    const unknown = await request(app()).get('/api/forms/schema/no-such-form');
+    const res = await request(app()).get('/api/forms/schema/post-notice');
+    expect(res.status).toBe(404);
+    expect(res.status).toBe(unknown.status);
+    expect(res.body).toEqual(unknown.body);
+    expect(JSON.stringify(res.body)).not.toContain('association-notice-post');
+  });
+
+  test('a signed-in person without the permission gets the same 404 as for a form that does not exist', async () => {
+    caller.held = new Set(['form-submit']);
+    const unknown = await request(app()).get('/api/forms/schema/no-such-form');
+    const res = await request(app()).get('/api/forms/schema/post-notice');
+    expect(res.status).toBe(404);
+    expect(res.status).toBe(unknown.status);
+    expect(res.body).toEqual(unknown.body);
+    expect(caller.asked).toContain('association-notice-post');
+    expect(caller.asked).not.toContain('form-submit');
+  });
+
+  test('a person who holds the permission gets the definition', async () => {
+    caller.held = new Set(['association-notice-post']);
+    const res = await request(app()).get('/api/forms/schema/post-notice');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(gatedForm);
+  });
+
+  test('a form with no submitPermission is unchanged: open, and nothing is asked', async () => {
+    caller.signedIn = false;
+    const res = await request(app()).get('/api/forms/schema/open-form');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(openForm);
+    expect(caller.asked).toEqual([]);
+  });
+
+  test('a name the site has not declared is a 404, even for someone holding it', async () => {
+    const forms = { 'post-notice': { ...gatedForm, submitPermission: 'never-declared' } };
+    caller.held = new Set(['form-submit', 'never-declared']);
+    const res = await request(app({ forms })).get('/api/forms/schema/post-notice');
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: 'Form not found' });
+  });
+
+  test('a site whose permissions cannot be read is a 404 for a gated form, and open forms still answer', async () => {
+    caller.held = new Set(['form-submit', 'association-notice-post']);
+    expect((await request(app({ definitions: undefined })).get('/api/forms/schema/post-notice')).status).toBe(404);
+    expect((await request(app({ definitions: undefined })).get('/api/forms/schema/open-form')).status).toBe(200);
+  });
+});
+
 describe('Form plugin — a form with submitPermission', () => {
   type PluginType = { name: string; execute: (ctx: unknown, params: unknown) => Promise<string> };
   let FormsPlugin: PluginType;
