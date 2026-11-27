@@ -447,6 +447,8 @@ export type VaultRepairResult =
 
 /** Pages named in the needs-attention list of leftover `access:` limits before the rest are only counted (#2269). */
 const LEGACY_ACCESS_LIST_MAX = 50;
+/** How many pages `filterPagesFor` reads metadata for at once. */
+const FILTER_PAGES_BATCH = 50;
 
 /**
  * A page as the upgrade clean-up's log lines name it: by uuid when it is
@@ -3863,6 +3865,13 @@ class PageManager extends BaseManager implements CatalogSource {
       await step('comments move', () => this.engine.getManager<CommentManager>('CommentManager')
         ?.movePageComments(uuid, previousName, name, change.ctx));
     }
+    // #2454: the footnote reverse index follows a page that was created, restored, deleted or renamed;
+    // a plain save changes no footnote file, so it needs no step.
+    if (change.uuid && (name === null || previousName === null || name !== previousName)) {
+      const uuid = change.uuid;
+      await step('footnote index', () => this.engine.getManager<FootnoteManager>('FootnoteManager')
+        ?.pageChanged({ uuid, name, previousName }));
+    }
     // #1842: and so do the files it uses — before the mention sync below, so a
     // page made public finds its files in the shared pool.
     if (name && previousName && name !== previousName && change.content !== undefined) {
@@ -4249,6 +4258,20 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Every public page with its uuid, by name: for the footnote reverse index
+   * (#2454, R6), which opens each page's footnote file by `{ name, uuid }`.
+   * No content, no metadata, and no vault page (a vault page's name is never
+   * listed). Says nothing about who may see a page: the caller asks
+   * `filterPagesFor` as the reader.
+   */
+  async listPageRefs(): Promise<Array<{ name: string; uuid: string }>> {
+    if (!this.provider) return [];
+    return (await this.provider.getAllPageInfo())
+      .filter((info) => info.uuid && !parsePrivatePageName(info.title))
+      .map((info) => ({ name: info.title, uuid: info.uuid }));
+  }
+
+  /**
    * The pages `subject` may perform `action` on — the door for anything that
    * lists pages to a reader (#1219, guiding-framework rule 10).
    *
@@ -4308,10 +4331,14 @@ class PageManager extends BaseManager implements CatalogSource {
     }
     const provider = this.provider;
     const asReader = subject ?? ANONYMOUS_SUBJECT;
-    const candidates = await Promise.all(names.map(async (title) => ({
-      title,
-      metadata: await provider.getPageMetadata(title, asReader).catch(() => null)
-    })));
+    // A few reads at a time: a long list of names must not open every page at once.
+    const candidates: Array<{ title: string; metadata: PageFrontmatter | null }> = [];
+    for (let i = 0; i < names.length; i += FILTER_PAGES_BATCH) {
+      candidates.push(...await Promise.all(names.slice(i, i + FILTER_PAGES_BATCH).map(async (title) => ({
+        title,
+        metadata: await provider.getPageMetadata(title, asReader).catch(() => null)
+      }))));
+    }
     return acl.filterAccessiblePages(subject as PermissionSubject | null | undefined, action, candidates);
   }
 
