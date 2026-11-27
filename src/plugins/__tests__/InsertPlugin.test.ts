@@ -612,4 +612,39 @@ describe('InsertPlugin', () => {
       expect(result).not.toContain('## Src');
     });
   });
+
+  describe('denied=\'none\' shows nothing when the viewer may not read the page (#2550)', () => {
+    const secret = () => ({
+      getPage: vi.fn().mockResolvedValue({ content: 'secret stuff', metadata: { private: true, author: 'bob' } })
+    });
+
+    test.each(['none', 'off', 'false', 'no', '', 'NONE'])('denied=%j → empty string, no note, no page name', async (token) => {
+      const ctx = makeContext({ pageManager: secret() });
+      const result = await InsertPlugin.execute!(ctx, { page: 'SecretPage', denied: token });
+      expect(result).toBe('');
+    });
+
+    test('a page that is not found shows nothing too', async () => {
+      const ctx = makeContext({ pageManager: { getPage: vi.fn().mockResolvedValue(null) } });
+      expect(await InsertPlugin.execute!(ctx, { page: 'Missing', denied: 'none' })).toBe('');
+    });
+
+    test('a failed lookup shows nothing, and is still logged', async () => {
+      const ctx = makeContext({ pageManager: { readPage: vi.fn().mockRejectedValue(new Error('boom')) } });
+      expect(await InsertPlugin.execute!(ctx, { page: 'SecretPage', denied: 'none' })).toBe('');
+      expect(ctx.engine.logger.error).toHaveBeenCalled();
+    });
+
+    test('a viewer who may read the page still gets it', async () => {
+      const ctx = makeContext({ pageManager: secret(), userContext: { username: 'bob', roles: ['reader'] } });
+      const result = await InsertPlugin.execute!(ctx, { page: 'SecretPage', denied: 'none' }) as string;
+      expect(result).toContain('secret stuff');
+    });
+
+    test('any other value leaves the note in place', async () => {
+      const ctx = makeContext({ pageManager: secret() });
+      const result = await InsertPlugin.execute!(ctx, { page: 'SecretPage', denied: 'note' }) as string;
+      expect(result).toContain('page not visible');
+    });
+  });
 });
