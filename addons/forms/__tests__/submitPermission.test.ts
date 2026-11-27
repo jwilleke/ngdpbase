@@ -21,6 +21,7 @@ import FormsDataManager, { FormDefinitionSchema } from '../managers/FormsDataMan
 import { buildAddonHost } from '../../../dist/src/utils/addonHost.js';
 import { asExecuted, TEST_PLUGIN_MANAGER } from '../../../dist/src/test-support/plugins.js';
 import { resolveSubmitPermission, declaredPermissionNames } from '../managers/submitPermission';
+import formsAddon from '../index';
 
 const host = () => buildAddonHost('forms', {});
 
@@ -425,5 +426,42 @@ describe('Form plugin — a form with submitPermission', () => {
     expect(html).toContain('data-ngdp-form="open-form"');
     expect(held.asked).toEqual([]);
     expect(ctx.markVolatile).not.toHaveBeenCalled();
+  });
+});
+
+describe('Form plugin — the warning for an undeclared submitPermission', () => {
+  // No core code gives the engine a `logger`, so the plugin reaches the add-on's own, the one
+  // register() was handed (#1813). The plugin is registered the way core's PluginManager receives it.
+  test('goes to the host logger the add-on was registered with', async () => {
+    const dataPath = await fsp.mkdtemp(path.join(os.tmpdir(), 'forms-submitperm-warn-'));
+    try {
+      const addonHost = buildAddonHost('forms', {});
+      const warn = vi.spyOn(addonHost.logger, 'warn').mockImplementation(() => undefined);
+      const managers: Record<string, unknown> = {
+        ConfigurationManager: {
+          resolveDataPath: () => dataPath,
+          getProperty: (key: string, fallback: unknown) => (key === 'ngdpbase.permissions.definitions' ? DECLARED : fallback)
+        }
+      };
+      const registered = new Map<string, { execute: (ctx: unknown, params: unknown) => Promise<string> }>();
+      managers['PluginManager'] = { registerPlugin: async (name: string, plugin: never) => { registered.set(name, plugin); } };
+      const engine = {
+        getManager: (name: string) => managers[name],
+        registerManager: (name: string, manager: unknown) => { managers[name] = manager; },
+        setCapability: () => undefined
+      };
+      await formsAddon.register(engine, { dataPath }, addonHost);
+
+      const form = { ...gatedForm, submitPermission: 'never-declared' };
+      (managers['FormsDataManager'] as { getDefinition: unknown }).getDefinition = () => form;
+      const html = await registered.get('Form').execute({ engine, userContext: null, pageName: 'Home', markVolatile: vi.fn(), formatters: {} }, { id: 'post-notice' });
+
+      expect(html).toBe('');
+      const messages = warn.mock.calls.map(([message]) => String(message));
+      expect(messages.filter((message) => message.includes("'post-notice' names a submitPermission the site has not declared"))).toHaveLength(1);
+    } finally {
+      await formsAddon.shutdown();
+      await fsp.rm(dataPath, { recursive: true, force: true });
+    }
   });
 });
