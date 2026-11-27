@@ -282,7 +282,7 @@ const FormsPlugin = {
       context.markVolatile?.();
       const permission = resolveSubmitPermission(form, declaredPermissionNames(context.engine));
       if (permission === null) {
-        console.warn(`[FormsPlugin] '${formId}' names a submitPermission the site has not declared, so it is not drawn`);
+        context.engine?.logger?.warn?.(`[FormsPlugin] '${formId}' names a submitPermission the site has not declared, so it is not drawn`);
         return '';
       }
       const pdp = context.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');

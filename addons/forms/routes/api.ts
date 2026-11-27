@@ -261,12 +261,28 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
 
   // ── GET /api/forms/schema/:formId ─────────────────────────────────────────
   router.get('/schema/:formId', (req: Request, res: Response) => {
-    const m = fdm();
-    if (!m) { res.status(503).json({ error: 'FormsDataManager not available' }); return; }
-    const form = m.getDefinition(String(req.params['formId']));
-    if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
-    // Strip optionsSource from response; resolved options are server-side only
-    res.json(form);
+    void (async () => {
+      const m = fdm();
+      if (!m) { res.status(503).json({ error: 'FormsDataManager not available' }); return; }
+      const form = m.getDefinition(String(req.params['formId']));
+      if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
+      // #2548: a form that names its own submitPermission is given only to a caller who holds it,
+      // and anyone else gets the answer for a form that does not exist. A name the site has not
+      // declared, or one that cannot be checked, is a form that does not exist too.
+      if (form.submitPermission !== undefined) {
+        const permission = resolveSubmitPermission(form, declaredPermissionNames(engine));
+        try {
+          if (permission === null) throw new ApiError(403, 'Forbidden');
+          await ApiContext.from(req, engine).requirePermission(permission);
+        } catch (err) {
+          if (!(err instanceof ApiError)) logger.error(`[forms] the schema permission check for '${form.id}' failed: ${(err as Error).message}`);
+          res.status(404).json({ error: 'Form not found' });
+          return;
+        }
+      }
+      // Strip optionsSource from response; resolved options are server-side only
+      res.json(form);
+    })();
   });
 
   return router;

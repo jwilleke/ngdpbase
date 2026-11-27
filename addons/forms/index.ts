@@ -176,7 +176,7 @@ const formsAddon = {
     host.allowSignedOutWrite({
       method: 'POST',
       path: '/api/forms/submit/:formId',
-      reason: 'the public form submit; the route asks form-submit, which policy may grant to anonymous'
+      reason: 'the public form submit; the route asks form-submit, which policy may grant to anonymous, or, for a form with submitPermission, asks that permission instead'
     });
 
     // ── 7. Mount routes ──────────────────────────────────────────────────────
