@@ -18,6 +18,7 @@ import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import RegionCache from '../../cache/RegionCache';
 import NodeCacheAdapter from '../../cache/NodeCacheAdapter';
 import InsertPlugin from '../InsertPlugin';
+import { parsePluginParameters } from '../../utils/pluginCalls';
 
 type Meta = Record<string, unknown>;
 
@@ -38,6 +39,7 @@ const member = { username: 'bob', roles: ['reader', 'Authenticated', 'All'], isA
 describe('Insert and a page\'s audience (#2550)', () => {
   let adapter: NodeCacheAdapter;
   let parser: MarkupParser;
+  let engine: ConstructorParameters<typeof PageManager>[0];
 
   beforeEach(async () => {
     adapter = new NodeCacheAdapter({ stdTTL: 300, checkperiod: 0, maxKeys: 100 });
@@ -58,7 +60,7 @@ describe('Insert and a page\'s audience (#2550)', () => {
         evaluateAccess: async () => ({ hasDecision: true, allowed: true, policyName: 'everyone-reads', reason: 'test' })
       }
     };
-    const engine = {
+    engine = {
       getManager: (name: string) => managers[name] ?? null,
       logger: { info() {}, warn() {}, debug() {}, error() {} }
     };
@@ -138,6 +140,44 @@ describe('Insert and a page\'s audience (#2550)', () => {
     const html = await parser.parse('[{Insert page=\'OccupantsSecret\'}]', as(anonymous));
     expect(html).toContain('Insert: page not visible');
     expect(html).not.toContain('MEMBERS-ONLY-TEXT');
+  });
+
+  test.each([
+    ['denied=\'\''],
+    ['denied=""'],
+    ['denied=\'false\''],
+    ['denied=false'],
+    ['denied=\'none\''],
+    ['denied=\'off\''],
+    ['denied=\'no\'']
+  ])('%s shows a signed-out viewer nothing, and a member still gets the text', async (option) => {
+    const markup = `[{Insert page='OccupantsSecret', ${option}}]`;
+    const signedOut = await parser.parse(markup, as(anonymous));
+    expect(signedOut).not.toContain('MEMBERS-ONLY-TEXT');
+    expect(signedOut).not.toContain('OccupantsSecret');
+    expect(signedOut).not.toContain('insert-plugin-placeholder');
+    expect(signedOut).not.toMatch(/not visible|not found|malformed/i);
+    const signedIn = await parser.parse(markup, as(member));
+    expect(signedIn).toContain('MEMBERS-ONLY-TEXT');
+  });
+
+  // The renderer's DOM handler keeps every value a string; the shared parser
+  // (PluginSyntaxHandler, required-pages reading) turns 'false' into a boolean.
+  test.each([['denied=\'false\''], ['denied=false']])(
+    'parameters from the shared parser (%s) also show a signed-out viewer nothing',
+    async (option) => {
+      const params = parsePluginParameters(`page='OccupantsSecret', ${option}`);
+      const context = { pageName: 'Home', userContext: anonymous, engine, formatters: { escapeHtml: (t: string) => t } };
+      const html = await InsertPlugin.execute!(context, params as never);
+      expect(html).toBe('');
+    }
+  );
+
+  test('a misquoted page value that swallows denied= is reported, not read as a page name', async () => {
+    const html = await parser.parse('[{Insert page=\'OccupantsSecret, denied=\'none\'}]', as(anonymous));
+    expect(html).toContain('malformed parameters');
+    expect(html).not.toContain('MEMBERS-ONLY-TEXT');
+    expect(html).not.toContain('page not found');
   });
 
   test('a page that does not exist shows nothing too, so absence and refusal look alike', async () => {
