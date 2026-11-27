@@ -45,7 +45,9 @@
  * every add-on route (#1749), so refusals, step-up and audit come from core. A
  * handler's own manager still asks its own permission; an ApiError it throws is
  * sent the same way. This add-on's default policy grants `form-submit` to
- * everyone, as before.
+ * everyone, as before. A form that names a `submitPermission` (#2548) asks that
+ * permission instead, in the route and when the form is drawn; a name the site has
+ * not declared refuses everyone.
  */
 
 import path from 'path';
