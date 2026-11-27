@@ -76,7 +76,10 @@ export const FormDefinitionSchema = z.object({
   // "Needs review" (#2072): each submission is filed with core's reviews for
   // the holders of decidePermission; the form's handler runs only when one of
   // them approves it. The submission is kept until then, so store must not be false.
-  review:          z.object({ decidePermission: z.string().min(1) }).optional()
+  review:          z.object({ decidePermission: z.string().min(1) }).optional(),
+  // The permission that submits this form, asked instead of form-submit (#2548);
+  // the form is drawn only for those who hold it. A name the site has not declared refuses everyone.
+  submitPermission: z.string().refine(name => name.trim() !== '', 'submitPermission must name a permission').optional()
 }).refine(form => !(form.review && form.store === false), {
   message: 'a form that needs review keeps its submissions until they are decided, so store cannot be false',
   path: ['store']

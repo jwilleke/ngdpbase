@@ -11,6 +11,7 @@ import { buildSubmissionValidator, fieldErrors } from '../managers/FormsDataMana
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormSubmission } from '../managers/FormsDataManager.js';
 import { resolveChoiceOptions, choiceValues } from '../managers/fieldOptions.js';
+import { resolveSubmitPermission, declaredPermissionNames } from '../managers/submitPermission.js';
 import { submissionAnswers, submissionDetails } from '../managers/submissionText.js';
 import type { FormDefinition } from '../managers/FormsDataManager.js';
 import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
@@ -80,12 +81,20 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
         const form = m.getDefinition(formId);
         if (!form) { res.status(404).json({ ok: false, error: `Form '${formId}' not found` }); return; }
 
+        // ── 1. Who may submit: asked like every add-on route (#1749). The form's
+        // own submitPermission (#2548) is read from the stored definition, never from the
+        // request, and is asked before the body is looked at. A name the site has not
+        // declared refuses everyone; it never falls back to form-submit.
+        const ctx = ApiContext.from(req, engine);
+        const permission = resolveSubmitPermission(form, declaredPermissionNames(engine));
+        if (permission === null) {
+          logger.warn(`[forms] '${formId}' names a submitPermission the site has not declared, so nobody may submit it`);
+          throw new ApiError(ctx.isAuthenticated ? 403 : 401, 'Forbidden');
+        }
+        await ctx.requirePermission(permission);
+
         const body = req.body as Record<string, unknown>;
         const userContext = (req as Request & { userContext?: unknown }).userContext;
-
-        // ── 1. Who may submit: asked like every add-on route (#1749) ───────
-        const ctx = ApiContext.from(req, engine);
-        await ctx.requirePermission('form-submit');
 
         // ── 2. Validate fields; a dropdown value must be one it offered ────
         const choiceOptions = await resolveChoiceOptions(engine, form.fields, userContext);

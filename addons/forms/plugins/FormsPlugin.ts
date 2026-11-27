@@ -15,6 +15,9 @@ import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormDefinition, FormField } from '../managers/FormsDataManager.js';
 import { FORMS_CURRENCY } from '../managers/FormsDataManager.js';
 import { resolveFieldOptions } from '../managers/fieldOptions.js';
+import { resolveSubmitPermission, declaredPermissionNames } from '../managers/submitPermission.js';
+import type PolicyDecisionPoint from '../../../dist/src/security/PolicyDecisionPoint.js';
+import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 
 type ResolvedField = FormField & { resolvedOptions?: FormOption[]; prefillValue?: string; resolvedFields?: ResolvedField[] };
 
@@ -268,6 +271,23 @@ const FormsPlugin = {
     const form = fdm.getDefinition(formId);
     if (!form) {
       return `<div class="alert alert-warning">Form: no form found with id <code>${escHtml(formId)}</code></div>`;
+    }
+
+    // #2548: a form that names its own submit permission is drawn only for a viewer who holds it.
+    // The submit route asks again; this only keeps the form from showing. Drawing what the viewer
+    // holds is an affordance, so it asks `holds`, which leaves out the step-up freshness rule the
+    // route applies. A viewer who cannot be asked about, or a name the site has not declared, sees nothing.
+    if (form.submitPermission !== undefined) {
+      // One viewer's answer is not another's: this page is not kept for reuse.
+      context.markVolatile?.();
+      const permission = resolveSubmitPermission(form, declaredPermissionNames(context.engine));
+      if (permission === null) {
+        console.warn(`[FormsPlugin] '${formId}' names a submitPermission the site has not declared, so it is not drawn`);
+        return '';
+      }
+      const pdp = context.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+      const viewer = context.userContext;
+      if (!pdp || !viewer || !(await pdp.holds(viewer as ActorContext, permission))) return '';
     }
 
     const cm = context.engine.getManager<ConfigurationManager>('ConfigurationManager');
