@@ -11,6 +11,7 @@ import { buildSubmissionValidator, fieldErrors } from '../managers/FormsDataMana
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormSubmission } from '../managers/FormsDataManager.js';
 import { resolveChoiceOptions, choiceValues } from '../managers/fieldOptions.js';
+import { resolveSubmitPermission, declaredPermissionNames } from '../managers/submitPermission.js';
 import { submissionAnswers, submissionDetails } from '../managers/submissionText.js';
 import type { FormDefinition } from '../managers/FormsDataManager.js';
 import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
@@ -80,12 +81,20 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
         const form = m.getDefinition(formId);
         if (!form) { res.status(404).json({ ok: false, error: `Form '${formId}' not found` }); return; }
 
+        // ── 1. Who may submit: asked like every add-on route (#1749). The form's
+        // own submitPermission (#2548) is read from the stored definition, never from the
+        // request, and is asked before the body is looked at. A name the site has not
+        // declared refuses everyone; it never falls back to form-submit.
+        const ctx = ApiContext.from(req, engine);
+        const permission = resolveSubmitPermission(form, declaredPermissionNames(engine));
+        if (permission === null) {
+          logger.warn(`[forms] '${formId}' names a submitPermission the site has not declared, so nobody may submit it`);
+          throw new ApiError(ctx.isAuthenticated ? 403 : 401, 'Forbidden');
+        }
+        await ctx.requirePermission(permission);
+
         const body = req.body as Record<string, unknown>;
         const userContext = (req as Request & { userContext?: unknown }).userContext;
-
-        // ── 1. Who may submit: asked like every add-on route (#1749) ───────
-        const ctx = ApiContext.from(req, engine);
-        await ctx.requirePermission('form-submit');
 
         // ── 2. Validate fields; a dropdown value must be one it offered ────
         const choiceOptions = await resolveChoiceOptions(engine, form.fields, userContext);
@@ -252,12 +261,28 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef, host: Add
 
   // ── GET /api/forms/schema/:formId ─────────────────────────────────────────
   router.get('/schema/:formId', (req: Request, res: Response) => {
-    const m = fdm();
-    if (!m) { res.status(503).json({ error: 'FormsDataManager not available' }); return; }
-    const form = m.getDefinition(String(req.params['formId']));
-    if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
-    // Strip optionsSource from response; resolved options are server-side only
-    res.json(form);
+    void (async () => {
+      const m = fdm();
+      if (!m) { res.status(503).json({ error: 'FormsDataManager not available' }); return; }
+      const form = m.getDefinition(String(req.params['formId']));
+      if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
+      // #2548: a form that names its own submitPermission is given only to a caller who holds it,
+      // and anyone else gets the answer for a form that does not exist. A name the site has not
+      // declared, or one that cannot be checked, is a form that does not exist too.
+      if (form.submitPermission !== undefined) {
+        const permission = resolveSubmitPermission(form, declaredPermissionNames(engine));
+        try {
+          if (permission === null) throw new ApiError(403, 'Forbidden');
+          await ApiContext.from(req, engine).requirePermission(permission);
+        } catch (err) {
+          if (!(err instanceof ApiError)) logger.error(`[forms] the schema permission check for '${form.id}' failed: ${(err as Error).message}`);
+          res.status(404).json({ error: 'Form not found' });
+          return;
+        }
+      }
+      // Strip optionsSource from response; resolved options are server-side only
+      res.json(form);
+    })();
   });
 
   return router;
