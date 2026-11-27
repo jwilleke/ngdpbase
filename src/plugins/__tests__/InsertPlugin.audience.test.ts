@@ -180,6 +180,47 @@ describe('Insert and a page\'s audience (#2550)', () => {
     expect(html).not.toContain('page not found');
   });
 
+  // The shared parameter pattern cannot match an empty quoted value, so it runs
+  // to the next quote and takes whatever lies between into the value.
+  const quoteMishaps = [
+    ['denied=\'\' caption=\'x\'', 'page=\'PAGE\', denied=\'\' caption=\'x\''],
+    ['denied="" caption="x"', 'page=\'PAGE\', denied="" caption="x"'],
+    ['denied=\'\', caption=\'x\'', 'page=\'PAGE\', denied=\'\', caption=\'x\''],
+    ['denied=\'\', caption=\'none\'', 'page=\'PAGE\', denied=\'\', caption=\'none\''],
+    ['denied=\'\' class=\'a\'', 'page=\'PAGE\', denied=\'\' class=\'a\''],
+    ['denied swallowed into caption', 'page=\'PAGE\', caption=\'x, denied=\'none\'']
+  ];
+
+  test.each(quoteMishaps)('%s: a signed-out viewer gets nothing, and the page name stays out', async (_label, options) => {
+    const secret = await parser.parse(`[{Insert ${options.replace('PAGE', 'OccupantsSecret')}}]`, as(anonymous));
+    expect(secret).not.toContain('MEMBERS-ONLY-TEXT');
+    expect(secret).not.toContain('OccupantsSecret');
+    expect(secret).not.toMatch(/not visible|not found|malformed/i);
+    expect(secret).not.toContain('insert-plugin-placeholder');
+    const missing = await parser.parse(`[{Insert ${options.replace('PAGE', 'Nowhere')}}]`, as(anonymous));
+    expect(missing).toBe(secret);
+    expect(missing).not.toContain('Nowhere');
+  });
+
+  test.each([
+    ['denied=\'\' caption=\'x\''],
+    ['denied="" caption="x"'],
+    ['denied=\'\', caption=\'x\'']
+  ])('%s: a member of the audience still gets the text', async (option) => {
+    const html = await parser.parse(`[{Insert page='OccupantsSecret', ${option}}]`, as(member));
+    expect(html).toContain('MEMBERS-ONLY-TEXT');
+  });
+
+  test.each([
+    ['[{Insert page=\'OccupantsSecret, denied=\'none\'}]'],
+    ['[{Insert pagesection=\'OccupantsSecret?section=1, denied=\'none\'}]']
+  ])('%s: the malformed note does not name the page', async (markup) => {
+    const html = await parser.parse(markup, as(anonymous));
+    expect(html).toContain('malformed parameters');
+    expect(html).not.toContain('OccupantsSecret');
+    expect(html).not.toContain('MEMBERS-ONLY-TEXT');
+  });
+
   test('a page that does not exist shows nothing too, so absence and refusal look alike', async () => {
     const html = await parser.parse('[{Insert page=\'Nowhere\', denied=\'none\'}]', as(anonymous));
     expect(html).not.toContain('Nowhere');
