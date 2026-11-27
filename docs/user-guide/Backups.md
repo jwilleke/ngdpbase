@@ -36,7 +36,7 @@ A backup is one document, `<timestamp>-ngdpbase-backup.json.gz.enc`, and the fil
 | Attachment files in the shared pool | `<stem>.attachments.tar` |
 | Vault files (attachments on vault pages), as stored — never decrypted | `<stem>.vault-attachments.tar` |
 | Attachment metadata | the document |
-| Footnotes and comments on public pages | `<stem>.footnotes.tar`, `<stem>.comments.tar` |
+| Footnotes and comments on public pages, and the shared footnote sources | `<stem>.footnotes.tar`, `<stem>.footnote-sources.tar`, `<stem>.comments.tar` |
 | Users (accounts, password hashes, preferences) | the document |
 | Role membership (who holds which role), identity records (users and contacts), organizations | `<stem>.roles.tar`, `<stem>.persons.tar`, `<stem>.organizations.tar` |
 | Settings (`app-custom-config.json`, secrets included) | the document |

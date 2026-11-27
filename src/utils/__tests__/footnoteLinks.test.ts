@@ -3,7 +3,7 @@
  * "Links: http and https only" (safeSourceUrl) and "R2. One rule for 'the same link'" (tidyUrl).
  */
 
-import { safeSourceUrl, tidyUrl } from '../footnoteLinks';
+import { safeSourceUrl, stripUrlCredentials, tidyUrl } from '../footnoteLinks';
 
 describe('safeSourceUrl', () => {
   test.each([
@@ -128,5 +128,36 @@ describe('tidyUrl', () => {
     const key = tidyUrl('https://www.example.com/a/?utm_campaign=x#top');
     expect(key).toBe('https://example.com/a#top');
     expect(tidyUrl(key as string)).toBe(key);
+  });
+});
+
+describe('stripUrlCredentials (Jim, 2026-11-23: save the link without a username or password, never refuse it)', () => {
+  test.each([
+    ['https://bob:secret@example.com/a?x=1#top', 'https://example.com/a?x=1#top'],
+    ['http://bob@example.com/a', 'http://example.com/a'],
+    ['https://:secret@example.com/a', 'https://example.com/a'],
+    ['  https://bob:secret@example.com/a  ', 'https://example.com/a']
+  ])('%s is saved as %s', (given, saved) => {
+    expect(stripUrlCredentials(given)).toBe(saved);
+  });
+
+  test('an address with no username or password is returned exactly as entered, spaces around it removed', () => {
+    expect(stripUrlCredentials('HTTPS://Example.com/Path?b=2&a=1')).toBe('HTTPS://Example.com/Path?b=2&a=1');
+    expect(stripUrlCredentials('  https://example.com  ')).toBe('https://example.com');
+    expect(stripUrlCredentials('https://example.com/a@b')).toBe('https://example.com/a@b');
+  });
+
+  test('the result never holds the password, and still passes the http and https check', () => {
+    const saved = stripUrlCredentials('https://bob:hunter2@example.com:8443/a');
+    expect(saved).not.toContain('hunter2');
+    expect(saved).not.toContain('bob');
+    expect(safeSourceUrl(saved)).toBe(saved);
+    expect(saved).toBe('https://example.com:8443/a');
+  });
+
+  test('a value that is not an http or https link is returned as given, for the caller to refuse', () => {
+    expect(stripUrlCredentials('javascript:alert(1)')).toBe('javascript:alert(1)');
+    expect(stripUrlCredentials('')).toBe('');
+    expect(stripUrlCredentials('ftp://bob:secret@example.com/')).toBe('ftp://bob:secret@example.com/');
   });
 });

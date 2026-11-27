@@ -10,7 +10,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { FootnoteLinkError, safeSourceUrl, tidyUrl } from './footnoteLinks.js';
+import { FootnoteLinkError, safeSourceUrl, stripUrlCredentials, tidyUrl } from './footnoteLinks.js';
 
 export type SourceStatus = 'good' | 'needs-checking' | 'stale';
 
@@ -45,11 +45,50 @@ export class SourceMissingError extends Error {
   }
 }
 
+/** Someone without the `page-edit` permission asked to make a source. */
+export class SourceNotPermittedError extends Error {
+  constructor() {
+    super('You don\'t have permission to add sources.');
+    this.name = 'SourceNotPermittedError';
+  }
+}
+
 /** A footnote on a vault page was pointed at a source: sources are shared across the site, vault pages never use them (R6). */
 export class SourceOnPrivatePageError extends Error {
   constructor() {
     super('Sources are shared across the site, so they can\'t be used on private pages. Add the link as a note on this page instead.');
     this.name = 'SourceOnPrivatePageError';
+  }
+}
+
+/** The longest source title accepted: a longer one is refused, never cut. */
+export const MAX_SOURCE_TITLE = 300;
+/** The longest source link accepted, in characters. */
+export const MAX_SOURCE_LINK = 2048;
+/** The most sources one site keeps. Reading the list costs time in step with it. */
+export const MAX_SOURCES = 2000;
+
+/** A source's title was over {@link MAX_SOURCE_TITLE} characters. Nothing was saved. */
+export class SourceTitleTooLongError extends Error {
+  constructor() {
+    super(`A source's title can be at most ${MAX_SOURCE_TITLE} characters. Shorten it and try again.`);
+    this.name = 'SourceTitleTooLongError';
+  }
+}
+
+/** A source's link was over {@link MAX_SOURCE_LINK} characters. Nothing was saved. */
+export class SourceLinkTooLongError extends Error {
+  constructor() {
+    super(`A source's link can be at most ${MAX_SOURCE_LINK} characters. Use a shorter link and try again.`);
+    this.name = 'SourceLinkTooLongError';
+  }
+}
+
+/** The site already holds {@link MAX_SOURCES} sources. Nothing was saved. */
+export class SourceLimitError extends Error {
+  constructor() {
+    super(`This site already has ${MAX_SOURCES} sources, the most it keeps. Use an existing source, or ask an administrator to remove ones that are no longer needed.`);
+    this.name = 'SourceLimitError';
   }
 }
 
@@ -63,13 +102,20 @@ export class SourceStore {
     this.now = opts.now ?? (() => new Date());
   }
 
-  /** Makes a new source. A link that is not http or https is refused ({@link FootnoteLinkError}), and so is a title with nothing in it. */
+  /**
+   * Makes a new source. A link that is not http or https is refused ({@link FootnoteLinkError}), and so is a
+   * link over {@link MAX_SOURCE_LINK} characters ({@link SourceLinkTooLongError}), a title with nothing in it, or one over
+   * {@link MAX_SOURCE_TITLE} characters ({@link SourceTitleTooLongError}). A username or password in the link is
+   * removed, not refused (Jim, 2026-11-23).
+   */
   async create(data: { title: string; url: string; createdBy: string }): Promise<SourceRecord> {
-    const url = safeSourceUrl(data.url);
+    if (typeof data.url === 'string' && data.url.length > MAX_SOURCE_LINK) throw new SourceLinkTooLongError();
+    const url = safeSourceUrl(data.url) ? stripUrlCredentials(data.url) : null;
     const urlKey = tidyUrl(data.url);
     if (!url || !urlKey) throw new FootnoteLinkError();
     const title = data.title.trim();
     if (!title) throw new Error('A source needs a title.');
+    if (title.length > MAX_SOURCE_TITLE) throw new SourceTitleTooLongError();
     const at = this.now().toISOString();
     const record: SourceRecord = {
       id: randomUUID(),
@@ -100,20 +146,32 @@ export class SourceStore {
     }
   }
 
+  /** How many source files the folder holds: a directory read, no file opened. */
+  async count(): Promise<number> {
+    if (!await fs.pathExists(this.dir)) return 0;
+    return (await fs.readdir(this.dir)).filter((name) => SOURCE_FILE.test(name)).length;
+  }
+
+  /** Every source record, oldest first (by `createdAt`, then id). Not filtered for any reader. */
+  async list(): Promise<SourceRecord[]> {
+    if (!await fs.pathExists(this.dir)) return [];
+    const found: SourceRecord[] = [];
+    for (const name of await fs.readdir(this.dir)) {
+      const match = SOURCE_FILE.exec(name);
+      if (!match) continue;
+      const record = await this.get(match[1]);
+      if (record) found.push(record);
+    }
+    return found.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  }
+
   /**
    * Every source with this tidy key, oldest first (by `createdAt`, then id). Not
    * filtered for any reader: whoever shows these to a person applies the
    * reader filter first (R4).
    */
   async findByKey(urlKey: string): Promise<SourceRecord[]> {
-    if (!urlKey || !await fs.pathExists(this.dir)) return [];
-    const found: SourceRecord[] = [];
-    for (const name of await fs.readdir(this.dir)) {
-      const match = SOURCE_FILE.exec(name);
-      if (!match) continue;
-      const record = await this.get(match[1]);
-      if (record?.urlKey === urlKey) found.push(record);
-    }
-    return found.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    if (!urlKey) return [];
+    return (await this.list()).filter((r) => r.urlKey === urlKey);
   }
 }
