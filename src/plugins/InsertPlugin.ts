@@ -227,10 +227,12 @@ const InsertPlugin: SimplePlugin = {
     // quietly inserting the wrong thing (the #748 reporter hit this).
     // The same holds for `denied=` (#2550): swallowed into the page value it
     // would turn a refusal into a note naming the page.
+    // A `denied=` swallowed into the value is reported without the page name,
+    // which would otherwise tell the viewer the page exists.
     if (/\b(?:caption|denied)\s*=/i.test(target)) {
       return renderPlaceholder(
         context.formatters,
-        target,
+        /\bdenied\s*=/i.test(target) ? '' : target,
         'Insert: malformed parameters — check the quotes (use [{Insert page=\'X\' caption=\'Y\'}], a single quoted value per parameter)'
       );
     }
@@ -239,8 +241,14 @@ const InsertPlugin: SimplePlugin = {
     // page exists, so with `denied` set every refusal up to the read is silent.
     // The shared parser reads `denied=false` as a boolean, and an empty value
     // (`denied=''`) reaches here as the two quote characters.
+    // The shared pattern cannot match an empty quoted value, so a `denied` that
+    // is set but holds a quote or `=` was garbled by the next parameter, and a
+    // `denied=` inside another parameter's value was swallowed by it. Either
+    // way the author meant to set `denied`, so show nothing.
+    const deniedText = typeof params.denied === 'string' ? params.denied.trim().replace(/^(['"])\1$/, '') : undefined;
     const showNothing = params.denied === false
-      || (typeof params.denied === 'string' && SUPPRESS_TOKEN.test(params.denied.trim().replace(/^(['"])\1$/, '')));
+      || (deniedText !== undefined && (SUPPRESS_TOKEN.test(deniedText) || /['"=]/.test(deniedText)))
+      || Object.values(params).some((value) => typeof value === 'string' && /\bdenied\s*=/i.test(value));
     const refuse = (reason: string): string => (showNothing ? '' : renderPlaceholder(context.formatters, pageName, reason));
 
     const { pageName, sectionIndex, sectionHeading } = parseTarget(target);
