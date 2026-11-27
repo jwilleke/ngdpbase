@@ -11,6 +11,10 @@
  *   [{Insert pagesection='Pagename?section=1', caption='none'}]
  *                                                       drop the imported
  *                                                       heading entirely
+ *   [{Insert page='Pagename', denied='none'}]
+ *                                                       show nothing, not even a
+ *                                                       note, when the viewer may
+ *                                                       not read the page
  *
  * `caption` (#741): with no `caption` param the inserted slice keeps the
  * source page's own heading (back-compat). `caption='Text'` replaces that
@@ -18,8 +22,11 @@
  * removes the leading heading so only the body transcludes.
  *
  * Behaviour:
- *   - Viewer's ACL gates the read. Private pages render a "[Insert: page not visible]"
- *     placeholder for viewers who are not the page author or an admin.
+ *   - Viewer's ACL gates the read: private, audience and policy, decided by the
+ *     same door every page read uses. A refused read renders a "[Insert: page not
+ *     visible]" placeholder.
+ *   - `denied='none'` (#2550) shows nothing at all instead of that placeholder, so a
+ *     viewer who may not read the page sees no text, no note and no page name.
  *   - No recursion. Any `[{Insert ...}]` syntax inside an inserted page is stripped
  *     before render, so nested Insert calls do not evaluate. Other plugins (Image,
  *     MediaPlugin, etc.) inside the inserted content DO render.
@@ -173,6 +180,9 @@ function applyCaption(sectionMarkdown: string, caption: string): string {
   return suppress ? sectionMarkdown : `## ${trimmed}\n\n${sectionMarkdown}`;
 }
 
+// #2550: the same tokens `caption` uses to mean "nothing" (#741).
+const SUPPRESS_TOKEN = /^(none|off|false|no)?$/i;
+
 const NO_RECURSION_PATTERN = /\[\{Insert(?:\s+[^}]*)?\}\]/g;
 
 function renderPlaceholder(f: PluginFormatters, pageName: string, reason: string): string {
@@ -223,13 +233,18 @@ const InsertPlugin: SimplePlugin = {
       );
     }
 
+    // #2550: before the page is read, a note that names it tells a viewer the
+    // page exists, so with `denied` set every refusal up to the read is silent.
+    const showNothing = typeof params.denied === 'string' && SUPPRESS_TOKEN.test(params.denied.trim());
+    const refuse = (reason: string): string => (showNothing ? '' : renderPlaceholder(context.formatters, pageName, reason));
+
     const { pageName, sectionIndex, sectionHeading } = parseTarget(target);
 
     if (!pageName) return '';
 
     const pageManager = ctx.engine?.getManager('PageManager') as PageManagerLike | undefined;
     if (!pageManager?.readPage) {
-      return renderPlaceholder(context.formatters, pageName, 'Insert: PageManager unavailable');
+      return refuse('Insert: PageManager unavailable');
     }
 
     // The viewer this parse is running for — forwarded, never rebuilt. No
@@ -240,13 +255,13 @@ const InsertPlugin: SimplePlugin = {
       read = await pageManager.readPage(pageName, viewer);
     } catch (err) {
       ctx.engine?.logger?.error?.('[InsertPlugin] readPage failed:', err);
-      return renderPlaceholder(context.formatters, pageName, 'Insert: page lookup failed');
+      return refuse('Insert: page lookup failed');
     }
 
     // #1198 / rule 10, #1622: the door decides whether the viewer may read the
     // inserted page — private, audience, access lists and policy alike.
     if (!read.ok) {
-      return renderPlaceholder(context.formatters, pageName, read.refusal === 'denied' ? 'Insert: page not visible' : 'Insert: page not found');
+      return refuse(read.refusal === 'denied' ? 'Insert: page not visible' : 'Insert: page not found');
     }
     const page = read.value;
     const metadata = page.metadata ?? {};
