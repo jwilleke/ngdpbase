@@ -60,7 +60,7 @@ import type { AddonHost } from '../../dist/src/utils/addonHost.js';
 import type { ActorContext } from '../../dist/src/context/ActorContext.js';
 import FormsDataManager from './managers/FormsDataManager.js';
 import type { FormSubmission } from './managers/FormsDataManager.js';
-import FormsPlugin from './plugins/FormsPlugin.js';
+import FormsPlugin, { setFormsPluginLogger } from './plugins/FormsPlugin.js';
 import { FORMS_REVIEW_HANDLER, formsReviewHandler } from './managers/review.js';
 import apiRoutes from './routes/api.js';
 import adminRoutes from './routes/admin.js';
@@ -149,6 +149,7 @@ const formsAddon = {
     // ── 3. Register markup plugin ────────────────────────────────────────────
     const pluginManager = engine.getManager<PluginManager>('PluginManager');
     if (pluginManager) {
+      setFormsPluginLogger(host.logger);
       await pluginManager.registerPlugin('Form', FormsPlugin);
     }
 
@@ -213,6 +214,7 @@ const formsAddon = {
   async shutdown(): Promise<void> {
     dataManager = null;
     this._host = null;
+    setFormsPluginLogger(null);
     this._handlers.clear();
   }
 };

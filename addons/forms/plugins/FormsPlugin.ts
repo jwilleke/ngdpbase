@@ -16,6 +16,7 @@ import type { FormDefinition, FormField } from '../managers/FormsDataManager.js'
 import { FORMS_CURRENCY } from '../managers/FormsDataManager.js';
 import { resolveFieldOptions } from '../managers/fieldOptions.js';
 import { resolveSubmitPermission, declaredPermissionNames } from '../managers/submitPermission.js';
+import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type PolicyDecisionPoint from '../../../dist/src/security/PolicyDecisionPoint.js';
 import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 
@@ -253,6 +254,13 @@ function renderForm(f: PluginFormatters, form: FormDefinition, resolvedFields: R
 <script src="/addons/forms/js/forms-submit.js" defer></script>`;
 }
 
+/** The add-on's own logger, handed over at register (#1813); the engine has none to reach. */
+let hostLogger: AddonHost['logger'] | null = null;
+
+export function setFormsPluginLogger(logger: AddonHost['logger'] | null): void {
+  hostLogger = logger;
+}
+
 const FormsPlugin = {
   name: 'Form',
 
@@ -282,7 +290,7 @@ const FormsPlugin = {
       context.markVolatile?.();
       const permission = resolveSubmitPermission(form, declaredPermissionNames(context.engine));
       if (permission === null) {
-        context.engine?.logger?.warn?.(`[FormsPlugin] '${formId}' names a submitPermission the site has not declared, so it is not drawn`);
+        hostLogger?.warn(`[FormsPlugin] '${formId}' names a submitPermission the site has not declared, so it is not drawn`);
         return '';
       }
       const pdp = context.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
