@@ -234,7 +234,7 @@ beforeEach(() => {
     '  exit 0',
     'fi',
     'case "$cmd" in',
-    '  show) printf "%s\\n" "status online" ;;',
+    '  show) if [ -f "$(dirname "$0")/pm2-show.txt" ]; then cat "$(dirname "$0")/pm2-show.txt"; else printf "%s\\n" "status online"; fi ;;',
     '  pid) printf "%s\\n" "$STUB_PID" ;;',
     'esac',
     'exit 0'
@@ -529,6 +529,39 @@ describe('./server.sh update all', () => {
     expect(second.out).toContain('updated       0');
     expect(second.out).toContain('result: unchanged');
     expect(second.out).not.toContain('result: updated');
+    expect(npmLines()).toEqual([]);
+    expect(fs.existsSync(curlLog)).toBe(false);
+    expect(second.out).not.toContain('Server started');
+  }, 60000);
+
+  it('reads the status row of the box-drawn pm2 7 table, so a second run restarts nothing (#2552)', () => {
+    const one = cloneFrom(primary(), 'one');
+    const two = cloneFrom(primary(), 'two');
+    publish(primary(), '1.1.0');
+    writeJlist([
+      { name: 'one', cwd: one },
+      { name: 'two', cwd: two }
+    ]);
+    const box = [
+      '\x1b[1m Describing process with id 0 - name one \x1b[22m',
+      '┌───────────────────┬──────────────────────────────┐',
+      '│ \x1b[1mstatus\x1b[22m            │ \x1b[32monline\x1b[39m                       │',
+      '│ name              │ one                          │',
+      '└───────────────────┴──────────────────────────────┘'
+    ].join('\n');
+    const first = run(['update', 'all']);
+    expect(first.status, first.out).toBe(0);
+    expect(first.out).toContain('updated       2');
+    fs.rmSync(npmLog, { force: true });
+    fs.rmSync(curlLog, { force: true });
+    fs.writeFileSync(path.join(stubBin, 'pm2-show.txt'), `${box}\n`);
+
+    const second = run(['update', 'all']);
+
+    expect(second.status, second.out).toBe(0);
+    expect(second.out).toContain('unchanged     2');
+    expect(second.out).toContain('updated       0');
+    expect(second.out).not.toContain('is not running');
     expect(npmLines()).toEqual([]);
     expect(fs.existsSync(curlLog)).toBe(false);
     expect(second.out).not.toContain('Server started');
