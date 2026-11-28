@@ -240,3 +240,26 @@ describe('#2269 Engine.getDegradedManagers also carries a manager\'s live attent
     expect(engine.getDegradedManagers().map((x) => x.reason)).toEqual(['vault closed']);
   });
 });
+
+describe('#2553 a detail line can link to the page it names', () => {
+  const item = (details: string[], detailLinks?: unknown[]) => ({ manager: 'PageManager', state: 'degraded', kind: 'attention', reason: 'Pages need a look', details, detailLinks });
+
+  test('a line with a link is drawn as a link, its text escaped; a line without one stays plain', async () => {
+    const doc = await render([], [item(['A & B <i>x</i>: limited who could change it', 'and 3 more pages'], ['/view/A%20%26%20B', undefined])]);
+    const [first, second] = [...doc.querySelectorAll('#subsystems-attention li li')];
+    const a = first.querySelector('a');
+    expect(a?.getAttribute('href')).toBe('/view/A%20%26%20B');
+    expect(first.textContent).toContain('A & B <i>x</i>: limited who could change it');
+    expect(first.querySelector('i')).toBeNull();
+    expect(second.querySelector('a')).toBeNull();
+    expect(second.textContent).toBe('and 3 more pages');
+  });
+
+  test('a link that does not start with a single "/" is drawn as text', async () => {
+    for (const link of ['//evil.example/x', '/\\evil.example/x', 'https://evil.example/', 'javascript:alert(1)', 'view/x', 42, '']) {
+      const doc = await render([], [item(['Some page: limited'], [link])]);
+      expect(doc.querySelectorAll('#subsystems-attention li li a')).toHaveLength(0);
+      expect(doc.querySelector('#subsystems-attention li li')?.textContent).toBe('Some page: limited');
+    }
+  });
+});

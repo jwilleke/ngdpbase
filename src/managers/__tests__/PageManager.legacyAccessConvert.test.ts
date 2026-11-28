@@ -16,7 +16,7 @@ import { ALLOWING_PDP, withWriteDoorAllowing } from '../../__tests__/__fixtures_
 
 type Meta = Record<string, unknown>;
 interface Info { title: string; uuid: string; filePath: string; metadata: Meta }
-type Item = { state: string; kind?: string; reason?: string; details?: string[] };
+type Item = { state: string; kind?: string; reason?: string; details?: string[]; detailLinks?: Array<string | undefined> };
 interface ConvertResult { converted: number; left: number }
 interface TestManager {
   provider: unknown;
@@ -287,6 +287,16 @@ describe('PageManager converts old access: limits that have an exact replacement
     expect(left.details?.[0]).toContain('Read Limit');
     const text = bannerText(m);
     expect(text).not.toMatch(/#\d|docs\/|github|\.md\b|\blog\b|frontmatter|access:|urn:uuid/i);
+  });
+
+  test('#2553 each converted page is named as a link to that page', async () => {
+    await add('A & B', { access: { edit: ['admin'] }, author: ADMIN_ID });
+    await add('Team Plan', { access: { edit: ['admin'] } });
+    const m = manager();
+    await start(m);
+    const [changed] = m.getAttentionItems();
+    expect(changed.details).toHaveLength(2);
+    expect(changed.detailLinks).toEqual(['/view/A%20%26%20B', '/view/Team%20Plan']);
   });
 
   test('R4: one converted page reads in the singular, and says the update changed who can edit it', async () => {
