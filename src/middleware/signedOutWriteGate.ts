@@ -25,7 +25,7 @@ type EngineLike = { getManager: (name: string) => unknown };
 const accepts = (req: Request, type: string): boolean => (req.get('accept') ?? '').includes(type);
 
 /** A form the browser sent from a page: wants a page back, not JSON. */
-function isFormPost(req: Request): boolean {
+export function isFormPost(req: Request): boolean {
   return accepts(req, 'text/html')
     && /^(application\/x-www-form-urlencoded|multipart\/form-data)/i.test(req.get('content-type') ?? '');
 }
@@ -35,7 +35,7 @@ function isFormPost(req: Request): boolean {
  * browser says so and it is this site's own. Read from the caller's own
  * Referer, so it depends on nothing about the target.
  */
-function cameFrom(req: Request): string {
+export function cameFrom(req: Request): string {
   const referer = req.get('referer');
   if (!referer) return '/';
   try {

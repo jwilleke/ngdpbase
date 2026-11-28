@@ -5,6 +5,12 @@ import type { IcsEvent } from 'ts-ics';
 import type { ApiContext } from '../../../dist/src/context/ApiContext.js';
 import type { AddonHost } from '../../../dist/src/utils/addonHost.js';
 import type { CalendarViewer } from '../managers/CalendarDataManager.js';
+import { MANAGE_PERMISSION, calendarGate, currentCalendarConfig } from '../managers/calendarVisibility.js';
+import { declaredPermissionNames, resolveManagePermission } from '../managers/calendarManage.js';
+import { isSafeEventUrl } from '../managers/eventUrl.js';
+import { hasControlCharacter, icsBlockText, icsLineText } from '../managers/eventText.js';
+import { defaultEnd, isWritableDate, readWritableDate } from '../managers/eventDates.js';
+import type { CalendarGate } from '../managers/calendarVisibility.js';
 import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
 
 /**
@@ -30,25 +36,161 @@ import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type CalendarDataManager from '../managers/CalendarDataManager.js';
 import type { CalendarEvent } from '../managers/CalendarDataManager.js';
 
+/** The events of the calendars the request may see. */
+async function onlyVisible(events: CalendarEvent[], may: CalendarGate): Promise<CalendarEvent[]> {
+  const kept: CalendarEvent[] = [];
+  for (const e of events) if (await may(e.calendarId)) kept.push(e);
+  return kept;
+}
+
 /**
  * API routes for the calendar add-on.
  * Mounted at /api/calendar in register().
  *
+ * The read routes (list, search, single event, .ics feed) honour each calendar's
+ * `visibility` setting: public, authenticated or private. A calendar the
+ * configuration does not name is read as private, and one set to
+ * `enabled: false` is left out.
+ *
+ * The write routes (create, edit, delete) ask policy for the permission the
+ * event's calendar names in its `manage-permission` setting, `calendar-manage`
+ * when it names none. A name the site has not declared is refused for everyone.
+ * An edit that changes `calendarId` is checked against both calendars. A
+ * reservation calendar, and any event that carries (or is given) a `_private`
+ * block, always asks `calendar-manage`. An event's `url` must be empty, relative,
+ * or start with `http:`, `https:` or `mailto:` (400 otherwise; a relative address with
+ * a colon before its first slash, `Page:Name`, reads as a scheme and is written
+ * `./Page:Name`), and one stored before that rule is left out of what is returned.
+ * An `organizer` is text without a control character, and `start` and `end` are
+ * dates in the years 0 to 9999 (400 otherwise). The .ics feed drops control characters
+ * from every text it writes, quotes the organizer's name, and leaves out (with a log
+ * line) an event whose dates it cannot write.
+ *
  * Endpoints:
  *   GET    /api/calendar/events                  — list / FullCalendar feed
- *   POST   /api/calendar/events                  — create event (admin/clubhouse-manager)
+ *   POST   /api/calendar/events                  - create event (the calendar's manage permission)
  *   GET    /api/calendar/events/search            — keyword search
  *   GET    /api/calendar/events/:id               — get single event
- *   PUT    /api/calendar/events/:id               — update event (admin/clubhouse-manager)
- *   DELETE /api/calendar/events/:id               — delete event (admin/clubhouse-manager)
+ *   PUT    /api/calendar/events/:id               - update event (the calendar's manage permission)
+ *   DELETE /api/calendar/events/:id               - delete event (the calendar's manage permission)
  *   GET    /api/calendar/:calendarId/feed.ics     — RFC 5545 .ics feed
  */
-export default function apiRoutes(engine: WikiEngine, _config: Record<string, unknown>, host: AddonHost): Router {
+export default function apiRoutes(engine: WikiEngine, config: Record<string, unknown>, host: AddonHost): Router {
   const { ApiContext, ApiError, sendApiError } = host;
   const router = engine.createRouter();
 
   function mgr(): CalendarDataManager | undefined {
     return engine.getManager<CalendarDataManager>('CalendarDataManager');
+  }
+
+  /**
+   * The gate for this request: the add-on's configuration as it is now, so a
+   * changed `visibility` or `enabled` applies on the next request.
+   */
+  function gateFor(ctx: ApiContext): CalendarGate {
+    return calendarGate(p => ctx.hasPermission(p), currentCalendarConfig(engine, config));
+  }
+
+  /**
+   * Refuse unless the request holds the permission `calendarId` names for managing
+   * its events, read from the configuration as it is now. The permission is asked
+   * through `requirePermission`, so the refusal and the step-up rule are the usual
+   * ones. A calendar whose permission nobody can hold is refused the same way.
+   */
+  async function requireManage(ctx: ApiContext, calendarId: string): Promise<void> {
+    const permission = resolveManagePermission(currentCalendarConfig(engine, config), calendarId, declaredPermissionNames(engine));
+    if (permission === null) throw new ApiError(ctx.isAuthenticated ? 403 : 401, 'Forbidden');
+    await ctx.requirePermission(permission); // #2546: the calendar's own permission, policy not a role name
+  }
+
+  /**
+   * Private reservation details (the `_private` block) are not governed by a
+   * calendar's own manage permission: writing one, or changing or deleting an
+   * event that carries one, also needs `calendar-manage`, so a calendar's own
+   * manager cannot forge a requester or rewrite someone's reservation.
+   */
+  async function requirePrivateBlock(ctx: ApiContext, existing: CalendarEvent | undefined, body: unknown): Promise<void> {
+    const writes = !!body && typeof body === 'object' && Object.hasOwn(body, '_private');
+    if (writes || existing?._private !== undefined) await ctx.requirePermission(MANAGE_PERMISSION);
+  }
+
+  /**
+   * The permission answers above take a moment, and another request may move the event
+   * meanwhile. Called right before the change, with no wait between: an event that is
+   * now on another calendar than the one that was checked is refused.
+   */
+  function stillOn(m: CalendarDataManager, id: string, checked: CalendarEvent | undefined): void {
+    if (m.getById(id)?.calendarId !== checked?.calendarId) throw new ApiError(409, 'The event changed while it was being checked. Try again.');
+  }
+
+  /**
+   * The `calendarId` a request body names: undefined when it names none. Throws a
+   * 400 for a value that is not text, so a body cannot slip past the check as a
+   * number, list or null that the manager would store as it is.
+   */
+  function bodyCalendarId(body: unknown): string | undefined {
+    if (!body || typeof body !== 'object' || !Object.hasOwn(body, 'calendarId')) return undefined;
+    const value = (body as Record<string, unknown>)['calendarId'];
+    if (typeof value === 'string') return value;
+    if (value === undefined) return undefined;
+    throw new ApiError(400, 'calendarId must be text');
+  }
+
+  /**
+   * A body's `url`, when it has one, must be an address the calendar block may open
+   * (see `isSafeEventUrl`): a 400 otherwise, so a script address is never stored.
+   */
+  function checkEventUrl(body: unknown): void {
+    if (!body || typeof body !== 'object' || !Object.hasOwn(body, 'url')) return;
+    const value = (body as Record<string, unknown>)['url'];
+    if (value === undefined) return;
+    if (!isSafeEventUrl(value)) throw new ApiError(400, 'url must be empty, a relative address, or start with http:, https: or mailto:');
+  }
+
+  /**
+   * A body's `organizer`, when it has one, must be text without a control character:
+   * it is written into the .ics feed, where a line break would add a line of the
+   * writer's choosing.
+   */
+  function checkOrganizer(body: unknown): void {
+    if (!body || typeof body !== 'object' || !Object.hasOwn(body, 'organizer')) return;
+    const value = (body as Record<string, unknown>)['organizer'];
+    if (value === undefined) return;
+    if (typeof value !== 'string') throw new ApiError(400, 'organizer must be text');
+    if (hasControlCharacter(value)) throw new ApiError(400, 'organizer must not contain a line break or other control character');
+  }
+
+  /**
+   * A body's `start` and `end`, when it has them, must be dates the calendar can read,
+   * in the years 0 to 9999 (see eventDates.ts). An event whose dates the feed cannot
+   * write would stop the calendar's .ics feed from being built. A start with no end
+   * gets an end an hour later in the feed, and that must be in range as well. An
+   * empty or null `end` is refused, on PUT as on POST.
+   */
+  function checkEventDates(body: unknown): void {
+    if (!body || typeof body !== 'object') return;
+    const dates: Partial<Record<'start' | 'end', Date>> = {};
+    for (const field of ['start', 'end'] as const) {
+      if (!Object.hasOwn(body, field)) continue;
+      const value = (body as Record<string, unknown>)[field];
+      if (value === undefined) continue;
+      const date = typeof value === 'string' && value.trim() !== '' ? new Date(value) : undefined;
+      if (!date || Number.isNaN(date.getTime())) {
+        throw new ApiError(400, `${field} must be a date, such as 2026-12-01 or 2026-12-01T10:00:00`);
+      }
+      if (!isWritableDate(date)) throw new ApiError(400, `${field} must be in the years 0 to 9999`);
+      dates[field] = date;
+    }
+    if (dates.start && !dates.end && !isWritableDate(defaultEnd(dates.start))) {
+      throw new ApiError(400, 'start must be at least an hour before the end of the year 9999, or the event needs an end');
+    }
+  }
+
+  /**
+   * What each answer holds depends on who asks, so a shared cache must not keep it.
+   */
+  function privateCache(res: Response): void {
+    res.setHeader('Cache-Control', 'private');
   }
 
   /** Safely extract a scalar string from req.query — discards arrays/objects. */
@@ -76,11 +218,12 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
       const viewer = await viewerOf(ctx, engine, host);
-      const events = m.query({
+      const events = await onlyVisible(m.query({
         start:      qs(req.query['start']),
         end:        qs(req.query['end']),
         calendarId: qs(req.query['calendarId'])
-      });
+      }), gateFor(ctx));
+      privateCache(res);
       res.json(events.map(e => m.toFullCalendar(e, viewer)));
     } catch (err) {
       handleError(err, res);
@@ -94,7 +237,10 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const ctx = ApiContext.from(req, engine);
       const viewer = await viewerOf(ctx, engine, host);
       const q = qs(req.query['q']) ?? '';
-      const results = m ? m.search(q).map(e => m.toFullCalendar(e, viewer)) : [];
+      const results = m
+        ? (await onlyVisible(m.search(q), gateFor(ctx))).map(e => m.toFullCalendar(e, viewer))
+        : [];
+      privateCache(res);
       res.json({ results });
     } catch (err) {
       handleError(err, res);
@@ -108,7 +254,12 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
       const viewer = await viewerOf(ctx, engine, host);
-      await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
+      // The calendar the event lands on: the manager files one with none on `default`.
+      await requireManage(ctx, bodyCalendarId(req.body) ?? 'default');
+      await requirePrivateBlock(ctx, undefined, req.body);
+      checkEventUrl(req.body);
+      checkOrganizer(req.body);
+      checkEventDates(req.body);
       const event = await m.create(req.body as Parameters<typeof m.create>[0]);
       res.status(201).json(m.toFullCalendar(event, viewer));
     } catch (err) {
@@ -124,7 +275,8 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const ctx = ApiContext.from(req, engine);
       const viewer = await viewerOf(ctx, engine, host);
       const event = m.getById(String(req.params['id']));
-      if (!event) { res.status(404).json({ error: 'Event not found' }); return; }
+      privateCache(res);
+      if (!event || !(await gateFor(ctx)(event.calendarId))) { res.status(404).json({ error: 'Event not found' }); return; }
       res.json(m.toFullCalendar(event, viewer));
     } catch (err) {
       handleError(err, res);
@@ -138,8 +290,19 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
       const viewer = await viewerOf(ctx, engine, host);
-      await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
-      const event = await m.update(String(req.params['id']), req.body as Parameters<typeof m.update>[1]);
+      const id = String(req.params['id']);
+      const existing = m.getById(id);
+      // An event that is not there is asked about the way it always was.
+      await (existing ? requireManage(ctx, existing.calendarId) : ctx.requirePermission(MANAGE_PERMISSION));
+      const target = bodyCalendarId(req.body);
+      // Moving an event is a change to two calendars: ask the one it goes to as well.
+      if (existing && target !== undefined && target !== existing.calendarId) await requireManage(ctx, target);
+      await requirePrivateBlock(ctx, existing, req.body);
+      checkEventUrl(req.body);
+      checkOrganizer(req.body);
+      checkEventDates(req.body);
+      stillOn(m, id, existing);
+      const event = await m.update(id, req.body as Parameters<typeof m.update>[1]);
       res.json(m.toFullCalendar(event, viewer));
     } catch (err) {
       handleError(err, res);
@@ -152,8 +315,12 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
-      await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
-      await m.delete(String(req.params['id']));
+      const id = String(req.params['id']);
+      const existing = m.getById(id);
+      await (existing ? requireManage(ctx, existing.calendarId) : ctx.requirePermission(MANAGE_PERMISSION));
+      await requirePrivateBlock(ctx, existing, undefined);
+      stillOn(m, id, existing);
+      await m.delete(id);
       res.status(204).end();
     } catch (err) {
       handleError(err, res);
@@ -163,17 +330,32 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
   // ── GET /api/calendar/:calendarId/feed.ics ────────────────────────────────
   //
   // RFC 5545 iCalendar feed. Subscribable from Apple Calendar, Google Calendar, etc.
-  // PUBLIC events only — CONFIDENTIAL events are never exported.
+  // PUBLIC events only — CONFIDENTIAL events are never exported. A calendar the
+  // request may not see, under its `visibility`, answers as not found, and so does
+  // one the configuration does not name, with the same answer.
   router.get('/:calendarId/feed.ics', async (req: Request, res: Response) => {
     try {
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
 
+      const ctx = ApiContext.from(req, engine);
       const calendarId = String(req.params['calendarId']);
+      privateCache(res);
+      if (!(await gateFor(ctx)(calendarId))) { res.status(404).json({ error: 'Calendar not found' }); return; }
       const events = m.query({ calendarId })
         .filter(e => e.class !== 'CONFIDENTIAL');
 
-      const icsEvents: IcsEvent[] = events.map(e => toIcsEvent(e));
+      // An event that cannot be written as one (a date that is not a date, or is outside the years 0 to 9999)
+      // is left out, not the whole feed. The log line names the calendar and the event, never its text.
+      const icsEvents: IcsEvent[] = [];
+      for (const e of events) {
+        try {
+          icsEvents.push(toIcsEvent(e));
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : 'it cannot be written';
+          host.logger.warn(`[calendar] .ics feed for calendar ${JSON.stringify(calendarId)} left out event ${JSON.stringify(String(e.id))}: ${reason}`);
+        }
+      }
 
       const feed = generateIcsCalendar({
         prodId: '-//ngdpbase//Calendar//EN',
@@ -192,34 +374,55 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
   return router;
 }
 
+/** A date from stored text, or undefined when it is not one the feed can write (see eventDates.ts). */
+const readDate = readWritableDate;
+
+/**
+ * An organizer's display name as the feed's CN parameter value. RFC 5545 allows a colon,
+ * semicolon or comma in a parameter value only inside a quoted string, and a quoted string
+ * cannot hold a double quote: so the name is always quoted and its double quotes are dropped.
+ * A name cannot then end the parameter or add one of its own.
+ */
+function quotedParameterValue(name: string): string {
+  return `"${name.replace(/"/g, '')}"`;
+}
+
 /**
  * Translate a CalendarEvent to a ts-ics IcsEvent object.
  * Used by the feed.ics endpoint.
  *
  * RFC 5545 requires either DTEND or DURATION. We always supply DTEND:
  * for events without an explicit end, fall back to start + 1 hour.
+ *
+ * Throws, with a reason that holds none of the event's text, for an event whose start
+ * or end is not a date the feed can write, so the caller can leave it out. Every text field has its control characters dropped (see eventText.ts):
+ * a stored line break cannot start a line of the feed.
  */
 function toIcsEvent(e: CalendarEvent): IcsEvent {
   const now = new Date();
-  const startDate = new Date(e.start);
+  const startDate = readDate(e.start);
+  if (!startDate) throw new Error('its start is not a date the feed can write');
   // RFC 5545 DTEND is required (or DURATION) — default to start + 1 hour
   const endDate = e.end
-    ? new Date(e.end)
-    : new Date(startDate.getTime() + 60 * 60 * 1000);
+    ? readDate(e.end)
+    : defaultEnd(startDate);
+  if (!endDate || !isWritableDate(endDate)) throw new Error('its end is not a date the feed can write');
 
   const event: IcsEvent = {
-    uid:   e.id,
-    summary: e.title,
-    stamp: { date: e.dtstamp ? new Date(e.dtstamp) : now },
+    uid:   icsLineText(String(e.id)),
+    summary: icsLineText(String(e.title ?? '')),
+    stamp: { date: readDate(e.dtstamp) ?? now },
     start: { date: startDate },
     end:   { date: endDate }
   };
 
-  if (e.description)  event.description  = e.description;
-  if (e.location)     event.location     = e.location;
-  if (e.url)          event.url          = e.url;
-  if (e.created)      event.created      = { date: new Date(e.created) };
-  if (e.updated)      event.lastModified = { date: new Date(e.updated) };
+  if (e.description)  event.description  = icsBlockText(String(e.description));
+  if (e.location)     event.location     = icsLineText(String(e.location));
+  if (e.url && isSafeEventUrl(e.url)) event.url = e.url;
+  const created = readDate(e.created);
+  if (created)        event.created      = { date: created };
+  const updated = readDate(e.updated);
+  if (updated)        event.lastModified = { date: updated };
 
   // RFC 5545 CLASS
   if (e.class === 'PUBLIC' || e.class === 'PRIVATE' || e.class === 'CONFIDENTIAL') {
@@ -237,14 +440,14 @@ function toIcsEvent(e: CalendarEvent): IcsEvent {
   }
 
   // RFC 5545 ORGANIZER — ts-ics IcsOrganizer requires email
-  if (e.organizer) {
+  const organizer = typeof e.organizer === 'string' ? icsLineText(e.organizer) : '';
+  if (organizer) {
     // If organizer looks like an email use it; otherwise treat as display name
-    const isEmail = e.organizer.includes('@');
+    const isEmail = organizer.includes('@');
     event.organizer = isEmail
-      ? { email: e.organizer }
-      : { email: 'noreply@calendar', name: e.organizer };
+      ? { email: organizer }
+      : { email: 'noreply@calendar', name: quotedParameterValue(organizer) };
   }
 
   return event;
 }
-

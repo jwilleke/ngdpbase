@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
     <meta name="current-user" content="<%= typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated ? currentUser.username : '' %>">
-    <title><% if (typeof pageName !== 'undefined' && pageName) { %><%= pageName %> | <% } %><%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %></title>
+    <title><% if (typeof tabTitle !== 'undefined' && tabTitle) { %><%= tabTitle %> | <% } else if (typeof pageName !== 'undefined' && pageName) { %><%= pageName %> | <% } %><%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %></title>
     <%# #886 — OpenGraph / Twitter card tags. Built by
         src/utils/buildSocialMeta.ts and populated by viewPage(); absent on
         every other route, and empty unless ngdpbase.seo.enabled is on.
@@ -68,6 +68,9 @@
 
     <!-- Pagination helper -->
     <script src="/js/wiki-pagination.js"></script>
+
+    <!-- Delete-a-file wording for the search picker (#2534) -->
+    <script src="/js/asset-delete.js"></script>
 
     <!-- Summary-stat filter bar helper (#1303) -->
     <script src="/js/wiki-stat-filters.js"></script>
@@ -359,7 +362,7 @@
                                 <% } %>
                                 <%
                                     // #842: Share entries — one per user-keyword on this page, opening
-                                    // /shares with the keyword prefilled. Shares are keyword-scoped;
+                                    // /my/shares with the keyword prefilled. Shares are keyword-scoped;
                                     // gated on the same roles that may create shares (decision 2).
                                     const _shareKws = (typeof shareEnabled !== 'undefined' && shareEnabled
                                         && typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated
@@ -375,14 +378,14 @@
                                         && typeof pageName === 'string' && pageName.indexOf('vaults/' + currentUser.username + '/') === 0;
                                 %>
                                 <% if (_ownVaultPage) { %>
-                                    <li><a class="dropdown-item" href="/my/vaults/links?page=<%= encodeURIComponent(pageName) %>" title="Make a read-only link to this page, and others in its vault">
+                                    <li><a class="dropdown-item" href="/my/shares?share=vault&page=<%= encodeURIComponent(pageName) %>" title="Make a read-only link to this page, and others in its vault">
                                         <i class="fas fa-link"></i> Share this page&hellip;
                                     </a></li>
                                     <li><hr class="dropdown-divider"></li>
                                 <% } %>
                                 <% if (_shareKws.length > 0) { %>
                                     <% _shareKws.forEach(function(kw) { %>
-                                        <li><a class="dropdown-item" href="/shares?keyword=<%= encodeURIComponent(kw) %>" title="Create a share link for everything tagged '<%= kw %>'">
+                                        <li><a class="dropdown-item" href="/my/shares?share=tag&tag=<%= encodeURIComponent(kw) %>" title="Create a share link for everything tagged '<%= kw %>'">
                                             <i class="fas fa-share-nodes"></i> Share &lsquo;<%= kw %>&rsquo;&hellip;
                                         </a></li>
                                     <% }); %>
@@ -425,11 +428,11 @@
                                 <li><hr class="dropdown-divider"></li>
                                 <% if (_isPinned) { %>
                                 <li><a class="dropdown-item" href="#" onclick="removePinnedItem('<%= _escJs(_pinUrl) %>'); return false;">
-                                    <i class="fas fa-bookmark me-2 text-primary"></i> Remove from My Links
+                                    <i class="fas fa-bookmark me-2 text-primary"></i> Remove from pinned pages
                                 </a></li>
                                 <% } else { %>
                                 <li><a class="dropdown-item" href="#" onclick="addPinnedItem('<%= _escJs(_pinUrl) %>', '<%= _escJs(_pinTitle) %>'<%= _hasPageHere ? ", '" + _escJs(pageName) + "'" : '' %>); return false;">
-                                    <i class="fas fa-bookmark me-2"></i> Add to My Links
+                                    <i class="fas fa-bookmark me-2"></i> Add to pinned pages
                                 </a></li>
                                 <% } %>
                                 <% } %>
@@ -512,11 +515,11 @@
                 <% if (_authed && _pinUrl) { %>
                     <% if (_isPinned) { %>
                     <a class="nav-link py-2" href="#" onclick="removePinnedItem('<%= _escJs(_pinUrl) %>'); <%- _hideOC %> return false;">
-                        <i class="fas fa-bookmark me-2 text-primary"></i> Remove from My Links
+                        <i class="fas fa-bookmark me-2 text-primary"></i> Remove from pinned pages
                     </a>
                     <% } else { %>
                     <a class="nav-link py-2" href="#" onclick="addPinnedItem('<%= _escJs(_pinUrl) %>', '<%= _escJs(_pinTitle) %>'<%= _hasPage ? ", '" + _escJs(pageName) + "'" : '' %>); <%- _hideOC %> return false;">
-                        <i class="fas fa-bookmark me-2"></i> Add to My Links
+                        <i class="fas fa-bookmark me-2"></i> Add to pinned pages
                     </a>
                     <% } %>
                 <% } %>
@@ -581,7 +584,7 @@
                          const _tmplEscJs = function(s) { return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); };
                     %>
                     <div class="my-links-sidebar mt-2">
-                      <h6 class="sidebar-heading text-muted fw-semibold mb-1">My Links</h6>
+                      <h6 class="sidebar-heading text-muted fw-semibold mb-1">Pinned pages</h6>
                       <div style="max-height:200px;overflow-y:auto;">
                         <ul class="list-unstyled mb-0">
                           <% _tmplPinned.forEach(function(p) {
@@ -601,7 +604,7 @@
 
                     <%# #796 — extension slot for addon-defined sidebar
                         widgets rendered below the core sidebar content
-                        (leftMenu + My Links). Empty by default; route
+                        (leftMenu + Pinned pages). Empty by default; route
                         handlers set `extraSidebarWidgets` to a
                         pre-rendered HTML string on pages where the
                         addon claims sidebar real estate (e.g. journal
@@ -684,10 +687,7 @@
                 <% } %>
                 <% if (typeof stepUpConfirmed !== 'undefined' && stepUpConfirmed) { %>
                 <%# #2145: back from "Confirm it is you" for a form, a button or a download, which a redirect cannot redo. Once. %>
-                <div class="alert alert-success d-flex align-items-center gap-2 mt-2" role="status" data-step-up-confirmed>
-                    <i class="fas fa-user-check" aria-hidden="true"></i>
-                    <span>Confirmed — you can do it now.</span>
-                </div>
+                <%- include('_step-up-confirmed', { stepUpNote: typeof stepUpNote !== 'undefined' ? stepUpNote : undefined }) %>
                 <% } %>
                 <% if (typeof aalEnrolNag !== 'undefined' && aalEnrolNag && aalEnrolNag.roles.length > 0) { %>
                 <%# #1690: the role is held at AAL1 only because no passkey is enrolled. Shown on every page,

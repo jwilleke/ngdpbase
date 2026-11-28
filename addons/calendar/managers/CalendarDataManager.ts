@@ -8,6 +8,8 @@ import type { ManagerFetchOptions } from '../../../dist/src/utils/managerUtils.j
 import type IdentityManager from '../../../dist/src/managers/IdentityManager.js';
 import type { ManagerStatus } from '../../../dist/src/managers/BaseManager.js';
 import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
+import type { CalendarGate } from './calendarVisibility.js';
+import { isSafeEventUrl } from './eventUrl.js';
 
 /**
  * CalendarEvent — internal storage shape.
@@ -96,6 +98,7 @@ export interface UserContext {
 class CalendarDataManager {
   private dataPath: string;
   private events: Map<string, CalendarEvent>;
+  private readGate: ((viewer: unknown) => CalendarGate) | undefined;
 
   readonly description = 'Event calendar data manager — multi-calendar, RFC 5545 fields';
 
@@ -338,7 +341,7 @@ class CalendarDataManager {
 
     if (safe.end)                    fc.end = safe.end;
     if (safe.allDay !== undefined)   fc.allDay = safe.allDay;
-    if (safe.url)                    fc.url = safe.url;
+    if (safe.url && isSafeEventUrl(safe.url)) fc.url = safe.url; // an address stored before the rule is not handed on
     if (safe.color)                  fc.color = safe.color;
 
     const ext: Record<string, unknown> = { calendarId: safe.calendarId };
@@ -444,6 +447,14 @@ class CalendarDataManager {
     await this.delete(id);
   }
 
+  /**
+   * How `toMarqueeText` asks whether a viewer may see a calendar. Set by the
+   * add-on at start; it reads the configuration and asks policy per call.
+   */
+  setReadGate(gate: (viewer: unknown) => CalendarGate): void {
+    this.readGate = gate;
+  }
+
   // ── MarqueePlugin integration ────────────────────────────────────────────────
 
   /**
@@ -458,10 +469,17 @@ class CalendarDataManager {
    *   separator   — item separator (default: '  •  ')
    *   limit       — max items to include (default: 0 = unlimited)
    *
-   * Events with `class: CONFIDENTIAL` are always excluded.
+   * Events with `class: CONFIDENTIAL` are always excluded. So are the events of
+   * a calendar the viewer may not see under its `visibility` setting, and of a
+   * disabled one; the limit counts only what is left. With no viewer given, only
+   * public calendars are read. Before `setReadGate` has been called it returns
+   * nothing.
+   *
+   * The viewer is the one MarqueePlugin passes (the requester's context). The page
+   * cache keys a render by viewer and roles and re-renders it when configuration
+   * changes, so one viewer's text is not served to another.
    */
-   
-  async toMarqueeText(options: ManagerFetchOptions = {}): Promise<string> {
+  async toMarqueeText(options: ManagerFetchOptions = {}, viewer?: unknown): Promise<string> {
     const raw = options as Record<string, unknown>;
 
     const calendarId = typeof raw['calendarId'] === 'string'
@@ -481,11 +499,12 @@ class CalendarDataManager {
     const now = new Date();
     const until = addDays(now, days);
 
-    let events = this.query({
-      start: now.toISOString(),
-      end: until.toISOString(),
-      calendarId
-    }).filter(e => e.class !== 'CONFIDENTIAL');
+    const may = this.readGate ? this.readGate(viewer) : async () => false;
+
+    let events: CalendarEvent[] = [];
+    for (const e of this.query({ start: now.toISOString(), end: until.toISOString(), calendarId })) {
+      if (e.class !== 'CONFIDENTIAL' && await may(e.calendarId)) events.push(e);
+    }
 
     events.sort((a, b) => a.start.localeCompare(b.start));
     if (limit > 0) events = events.slice(0, limit);

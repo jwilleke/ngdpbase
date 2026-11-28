@@ -55,7 +55,7 @@ describe('BackgroundJobManager', () => {
   describe('enqueue()', () => {
     test('throws for unknown jobId', async () => {
       const mgr = await makeManager();
-      await expect(mgr.enqueue('unknown.job', TEST_REQUESTER)).rejects.toThrow("unknown job 'unknown.job'");
+      await expect(mgr.enqueue('unknown.job', TEST_REQUESTER)).rejects.toMatchObject({ name: 'JobActionError', status: 404, message: "There is no job named 'unknown.job'." });
     });
 
     test('returns a runId string for registered job', async () => {

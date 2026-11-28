@@ -1,0 +1,72 @@
+---
+title: Share Links
+uuid: d428a9ed-aab6-45d1-b89f-3f0460dd7886
+system-category: documentation
+slug: share-links
+lastModified: '2026-10-29T12:00:00.000Z'
+author: system
+---
+# Share Links
+
+Share links let you give __anyone with the link__ - no account needed - read-only access to everything tagged with a chosen keyword: media items (photo/video keywords) and pages (user keywords). The link is an unguessable token; holding it *is* the permission.
+
+Tagging is live: adding or removing the keyword on content immediately changes what the link shows. Nothing is snapshotted.
+
+## Who May Create a Share
+
+Whether you may create, list or revoke shares is decided by policy - the permissions your roles grant - never by the name of a role. In the shipped configuration the __admin__ and __editor__ roles may; an administrator can grant the permission to other roles in the instance configuration.
+
+A share hands anonymous read access to content, so it is treated like any other credential the system issues: creating one and revoking one are both recorded in the audit trail __before__ they take effect, and if the record cannot be written the share is refused rather than created unrecorded.
+
+## Creating a Share
+
+- From a keyword album (`/media/keyword/...`): pick an expiry in the dropdown and press __Share__.
+- From the management page at `/shares`: enter a keyword, pick an expiry, press __Create__.
+
+Either way you land on `/shares` with the new link highlighted - use the copy button and send it to your recipients.
+
+## Expiry Choices
+
+|| Choice || Meaning ||
+| 24 hours | Link stops working one day after creation |
+| 7 days | Default - good for sharing with family after a trip |
+| 30 days | Longer-running projects |
+| Until cancelled | Never expires; works until you revoke it |
+
+Expired and revoked links return the same not-found page as a link that never existed - visitors cannot tell the difference.
+
+## What a Share Actually Grants
+
+A share is a __delegation__: it hands out a slice of what you could do at the moment you created it - read pages and media carrying the keyword - and never more than you hold. Every visit is checked against your __current__ permissions, so if your access is later reduced, every share you issued stops working at the same moment. A visitor with the link is treated as an anonymous reader carrying your delegation, and every page and media item is checked by the same rules that apply to anyone opening it directly; the share link adds nothing a page's own settings withhold. Someone who is signed in and opens a share link sees what the share shows, not what their own account would.
+
+## Revoking
+
+On `/shares`, press __Revoke__ next to any active or expired share. Revocation is immediate - the link stops working on the next request. You can revoke your own shares; a system administrator can revoke anyone's. Revoked shares stay in the list for the audit trail.
+
+## What is NEVER Shared
+
+Some content is excluded from every share, no matter what keyword it carries:
+
+- Anything tagged with the reserved keyword `owner-only` - media and pages alike
+- Pages marked __private__, and media linked to those pages
+- Media marked private
+- Pages with an __audience__ (or per-action access) restriction - a share never widens the audience an author chose
+
+## Known Limitation: Links Inside Shared Pages
+
+A shared page is rendered read-only, but links *inside* its content point at the normal `/view/...` URLs. Anonymous visitors following those links may hit a login or not-found page - only content in the share's scope is reachable through the share link itself.
+
+## What the Audit Trail Records
+
+|| Event || When || Recorded before the action? ||
+| `share-create` | A share is created | Yes - a share that cannot be recorded is not created |
+| `share-revoke` | A share is revoked | Yes - a share that cannot be recorded stays live |
+| `share-access` | A link is used | No - visits are rate-limited and written as aggregated counts per share |
+
+Each record names the share and the account that created or revoked it. A visitor using a link is anonymous; what they saw is attributed to the share, and through it to the account that issued it.
+
+## For Administrators
+
+Your administrator can switch each event above off, or change its failure rule, under `ngdpbase.audit.events`.
+
+A share link uses the site's own address unless your administrator has set a separate address for share links, `ngdpbase.share.public-base-url`. That is for a site that people outside your network cannot reach directly: the link then opens through that address, which shows shared content and nothing else.

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, BrowserContext, CDPSession, Page, Request } from '@playwright/test';
 import { randomUUID } from 'crypto';
-import { signInWithPassword, createPluginPage, deletePage, instanceOrigin, TEST_PAGE_PREFIX, openProfileCards } from './fixtures/helpers';
+import { signInWithPassword, createPluginPage, deletePage, instanceOrigin, TEST_PAGE_PREFIX, openProfileCards, openStatusCards } from './fixtures/helpers';
 
 /**
  * #2145 — after "Confirm it is you" with a passkey the browser goes where the
@@ -188,6 +188,7 @@ test.describe('Coming back from "Confirm it is you" (#2145)', () => {
       const downloads: string[] = [];
       page.on('download', (d) => downloads.push(d.suggestedFilename()));
       await page.goto('/admin/backup');
+      await openStatusCards(page);
       await page.waitForTimeout(STALE_MS);
       await page.locator('#backup-env-download').click();
       await page.waitForURL(/\/auth\/reauth\?/);

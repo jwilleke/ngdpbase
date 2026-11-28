@@ -15,6 +15,8 @@
     then its reason; data-manager carries the id for tests. The internal manager name ("PolicyEvaluator") and the
     configuration key mean nothing to an administrator, so neither is shown. The state word
     ("degraded") is not either: the section's headline already says down or needs attention.
+    #2553: a details line may carry a link (`detailLinks`, by position), such as the page it names; the text stays
+    escaped and a link is drawn only when it starts with a single `/`, as for fixUrl.
     Where the item came from a setting changed in Admin → Configuration, a plain link goes there. %>
 <% function subsystemList(entries) { %>
     <ul class="small mt-1 mb-0">
@@ -27,7 +29,7 @@
                 <% if (startsWithFeature) { %><strong><%= reasonText.slice(0, feature.length) %></strong><%= reasonText.slice(feature.length) %><% } else { %><% if (feature) { %><strong><%= feature %>:</strong> <% } %><%= reasonText %><% } %>
                 <% if (Array.isArray(m.details) && m.details.length > 0) { %>
                     <ul class="mb-0">
-                        <% m.details.forEach(function (line) { %><li><%= line %></li><% }); %>
+                        <% m.details.forEach(function (line, i) { var link = Array.isArray(m.detailLinks) ? m.detailLinks[i] : undefined; %><li><% if (typeof link === 'string' && /^\/(?![\/\\])/.test(link)) { %><a class="alert-link" href="<%= link %>"><%= line %></a><% } else { %><%= line %><% } %></li><% }); %>
                     </ul>
                 <% } %>
                 <%# A caller names its own fix (a record the app writes is not a value to edit); a setting's row in Configuration is shown too, when there is one. %>

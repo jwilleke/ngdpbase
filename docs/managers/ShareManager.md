@@ -19,7 +19,8 @@ Routes consume ONLY this narrow interface, never the storage:
 - `issue(scope, ttl, issuer, { actions?, resources? })` — mint a share as a delegation by `issuer` ([#1221](https://github.com/jwilleke/ngdpbase/issues/1221)); every action is checked against the issuer's live authority and an unheld one refuses the share. `ttl` is `'24h' | '7d' | '30d' | null` (null = until cancelled)
 - `validate(token)` — returns the typed scope for a live share, else `null`; unknown, expired, and revoked tokens are indistinguishable so share existence never leaks (routes render an identical 404)
 - `subjectFor(token)` — resolves a live token into the `PermissionSubject` the ordinary evaluator understands: anonymous, carrying `viaShare` ([#1222](https://github.com/jwilleke/ngdpbase/issues/1222)). Same `null` cases as `validate`. How the evaluator applies it: [sharing.md](../sharing.md#one-path)
-- `revoke(id, revokedBy)` — immediate; record retained with `revokedAt` for audit
+- `revoke(id, subject, { asManager }?)` — immediate; record retained with `revokedAt` for audit. Takes the request's own subject (the audit row is built with `actorOf`). `asManager: true` is the caller's statement that the revoke is made under the permission to revoke everyone's links: the `share-revoke` audit metadata then carries `byManager: true` and the record gets `revokedByManager: true`, which names nobody
+- The Shared links page's rows are built outside the manager, by `sharedLinkRows` and `sharedLinkCounts` in `src/utils/sharedLinkRows.ts`, from `list(owner)`. A row holds the management id, never the token, and reads no page.
 - `list(owner?)` — all shares (admin view) or one owner's
 - `resolveScope(scope, ctx)` — live content set at request time, never snapshotted; a vault scope is listed as the link's subject `ctx`
 - `issueVaultShare(scope, lifetimeHours, issuer)` — a link to chosen pages of a vault, or the whole vault ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)): the vault's owner only, lifetime up to `maxShareDays(vault)`
@@ -43,7 +44,7 @@ Scope is a typed object `{ kind: 'keyword', keyword }` (`src/types/Share.ts`); f
 ## Storage
 
 - Directory: one JSON file per share, `{id}.json`, under `ngdpbase.share.storagedir` (default `${FAST_STORAGE}/shares`); CommentManager pattern.
-- Record: `id` (management handle), `token` (64-char crypto-random hex — never in management URLs), `scope`, `createdBy`, `createdAt`, `expiresAt`, `revokedAt?`.
+- Record: `id` (management handle), `token` (64-char crypto-random hex — never in management URLs), `scope`, `createdBy`, `createdAt`, `expiresAt`, `revokedAt?`, `revokedByManager?`.
 - Enabled flag: `ngdpbase.share.enabled` (default `true`); degrades to disabled on path-preflight failure.
 
 ## Public routes (#853, slice 2)

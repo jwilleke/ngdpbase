@@ -2,7 +2,7 @@
   "ngdpbase.application-name": "ngdp-instance",
   "ngdpbase.favicon-path": "/favicon.svg",
   "ngdpbase.application.category": "Digital Platform",
-  "ngdpbase.version": "5.45.0",
+  "ngdpbase.version": "5.48.0",
   "ngdpbase.github.repo": "jwilleke/ngdpbase",
   "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.encoding": "UTF-8",
@@ -44,6 +44,7 @@
     "ngdpbase.access.subject-attributes": "sensitive",
     "ngdpbase.access.environment-attributes": "sensitive",
     "ngdpbase.backup.directory": "sensitive",
+    "ngdpbase.markup.performance.history.dir": "sensitive",
     "ngdpbase.backup.restore-manifest": "sensitive",
     "ngdpbase.auth.credentials.file": "sensitive",
     "ngdpbase.auth.agent-token.directory": "sensitive",
@@ -225,6 +226,7 @@
   "ngdpbase.comments.storagedir": "${SLOW_STORAGE}/comments",
   "ngdpbase.footnotes.enabled": true,
   "ngdpbase.footnotes.storagedir": "${SLOW_STORAGE}/footnotes",
+  "ngdpbase.footnotes.sources.storagedir": "${SLOW_STORAGE}/footnote-sources",
   "_comment_share": "Share links (#842): anonymous capability-token access to keyword-scoped content. Keys approved by operator 2026-07-16.",
   "ngdpbase.share.enabled": true,
   "ngdpbase.share.storagedir": "${FAST_STORAGE}/shares",
@@ -1018,6 +1020,8 @@
   "ngdpbase.markup.cache.parse-results.ttl": 300,
   "ngdpbase.markup.cache.parse-results.max-size": 1000,
   "ngdpbase.markup.cache.metrics-enabled": true,
+  "_comment_markup_performance_history": "#2468 — where the parser keeps its once-a-minute page building check (the time to build a page, the share served from stored copies, the share that failed), one line per check in a file for each day. Files older than 30 days are removed. Operational data that rebuilds itself: not part of a backup. The limits the check is held to are ngdpbase.markup.performance.alert-thresholds.parse-time (100 ms), cache-hit-ratio (0.2), error-rate (0.05) and min-cache-samples (50). Crossing a limit and coming back are written as one log line each; no notification is sent. Sensitive in ngdpbase.config.sensitive-values.",
+  "ngdpbase.markup.performance.history.dir": "${FAST_STORAGE}/parser-performance",
   "ngdpbase.markup.handler-registry.max-handlers": 100,
   "ngdpbase.markup.handler-registry.allow-duplicate-priorities": true,
   "ngdpbase.markup.handler-registry.enable-dependency-resolution": true,
@@ -1783,7 +1787,7 @@
     "allowedAuthMethods",
     "avatar"
   ],
-  "_comment_permissions": "Canonical permission registry, and the one declaration of each action (#1638: a permission and its action are one thing). Format: {target}-{action}, target-first, hyphen-separated (URL-safe, matches the 'permissions' array in role definitions). The key is the permission name. Each entry: description, icon (Font Awesome name), color (hex), and optionally audit — { on-failure: refuse | continue, enabled, description } — when using the permission is recorded (the event shares the permission's name; see ngdpbase.audit.events for the rules), and step-up: true when using it needs a fresh sign-in within ngdpbase.auth.step-up.max-age-minutes. grantable: false marks an entry that declares a record, not an action anyone may hold (system-start, job-failed, authentication-failed): never offered to an app as a scope, listed as grantable (roles matrix, permission listings), or in the CorePermission type, and no shipped policy grants one (#1638 slice 3). Omitted means true. An add-on declares its permissions, their audit and their step-up the same way in its config/default-config.json.",
+  "_comment_permissions": "Canonical permission registry, and the one declaration of each action (#1638: a permission and its action are one thing). Format: {target}-{action}, target-first, hyphen-separated (URL-safe, matches the 'permissions' array in role definitions). The key is the permission name. Each entry: description, icon (Font Awesome name), color (hex), and optionally audit — { on-failure: refuse | continue, enabled, description } — when using the permission is recorded (the event shares the permission's name; see ngdpbase.audit.events for the rules), and step-up: true when using it needs a fresh sign-in within ngdpbase.auth.step-up.max-age-minutes. read-only: true marks an action that only lets someone see something, so an allow rule giving it to everyone or to every signed-in user is not listed as a rule that lets many people change things (page-read needs no mark; an add-on may mark only the permissions it declares itself, never a core permission or one the site defined in its own file, and * is never read-only). grantable: false marks an entry that declares a record, not an action anyone may hold (system-start, job-failed, authentication-failed): never offered to an app as a scope, listed as grantable (roles matrix, permission listings), or in the CorePermission type, and no shipped policy grants one (#1638 slice 3). Omitted means true. An add-on declares its permissions, their audit and their step-up the same way in its config/default-config.json.",
   "ngdpbase.permissions.definitions": {
     "page-read": {
       "description": "View pages",
@@ -1934,14 +1938,20 @@
       }
     },
     "share-revoke": {
-      "description": "Revoke your own share links; revoking anyone's also needs admin-system (#1638)",
-      "label": "Revoke your own share links",
+      "description": "Revoke share links through a token or proxy acting for the person who made them. A person at their own session needs no permission to revoke their own link. Revoking another user's link needs share-manage-all instead (#1638)",
+      "label": "Revoke share links through a token or proxy",
       "icon": "ban",
       "color": "#20c997",
       "audit": {
         "on-failure": "refuse",
         "description": "Share link revoked; pairs with token-revoke"
       }
+    },
+    "share-manage-all": {
+      "description": "See and revoke every user's share links, whoever made them. Revoking one is recorded as share-revoke; needs no fresh sign-in",
+      "label": "See and revoke everyone's shared links",
+      "icon": "link-slash",
+      "color": "#20c997"
     },
     "profile-manage": {
       "description": "Manage your own account — profile, preferences, display theme, pinned pages and the /my/* pages (#1198). Every signed-in role; never anonymous",
@@ -2192,7 +2202,7 @@
       }
     },
     "footnote-edit": {
-      "description": "A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233)",
+      "description": "A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) — or a shared footnote source was changed: action create (#2454)",
       "grantable": false,
       "audit": {
         "on-failure": "continue"
@@ -2970,6 +2980,27 @@
         "store-create",
         "proxy-grant",
         "vault-proxy"
+      ]
+    },
+    {
+      "id": "admin-share-manage-all",
+      "name": "Administrator: Everyone's Shared Links",
+      "description": "Lets administrators see and revoke every user's share links. A separate policy, so a site holding a stored copy of admin-full-access still receives it",
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "share-manage-all"
       ]
     },
     {

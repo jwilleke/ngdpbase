@@ -1384,4 +1384,121 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Access denied' });
     });
   });
+
+  describe('#2534: the Delete button on a local file row', () => {
+    interface Row { id: string; providerId: string; filename: string; mentions: string[]; [k: string]: unknown }
+    const local = (id: string, mentions: string[] = []): Row => ({ id, providerId: 'local', filename: `${id}.pdf`, mentions });
+
+    function makeDeleteRoutes(rows: Row[], opts: {
+      mayDelete?: (ctx: unknown, id: string) => Promise<boolean>;
+      visible?: (names: readonly string[]) => string[];
+    } = {}) {
+      const service = makeAssetService(makeAssetPage(rows as never));
+      const mayDeleteAttachment = vi.fn(opts.mayDelete ?? (() => Promise.resolve(true)));
+      const filterPagesFor = vi.fn((_ctx: unknown, names: readonly string[]) => Promise.resolve(opts.visible ? opts.visible(names) : [...names]));
+      const engine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'AssetService') return service;
+          if (name === 'AttachmentManager') return { mayDeleteAttachment };
+          if (name === 'PageManager') return { filterPagesFor };
+          return null;
+        })
+      };
+      const routes = new WikiRoutes(engine);
+      routes.createWikiContext = vi.fn((req: Request) => {
+        const userContext = (req as { userContext?: { roles?: string[] } | null }).userContext;
+        return createMockWikiContext({ userContext: userContext as never }, { engine: engine as never, mockPolicyDecisionPoint: policyFor(userContext) });
+      });
+      return { routes, mayDeleteAttachment, filterPagesFor };
+    }
+
+    const run = async (routes: WikiRoutes, query: Record<string, string>, userContext: Record<string, unknown> = { roles: ['editor'], username: 'jim', authenticated: true }) => {
+      const res = makeRes();
+      await routes.assetSearch(makeReq({ userContext, query }), res);
+      return (res.json.mock.calls[0][0] as { success: boolean; results: Row[] });
+    };
+
+    it('marks a local row deletable when the door says the viewer may delete it', async () => {
+      const { routes } = makeDeleteRoutes([local('att-1')]);
+      const body = await run(routes, { types: 'attachment' });
+      expect(body.results[0]).toMatchObject({ id: 'att-1', canDelete: true });
+    });
+
+    it('marks it not deletable when the door says no, and adds no page list', async () => {
+      const { routes } = makeDeleteRoutes([local('att-1', ['Home'])], { mayDelete: () => Promise.resolve(false) });
+      const body = await run(routes, { types: 'attachment' });
+      expect(body.results[0].canDelete).toBe(false);
+      expect(body.results[0].usedBy).toBeUndefined();
+    });
+
+    it('the all-sources search marks them too', async () => {
+      const { routes } = makeDeleteRoutes([local('att-1')]);
+      const body = await run(routes, {});
+      expect(body.results.find((r) => r.id === 'att-1')).toMatchObject({ canDelete: true });
+    });
+
+    it('asks the door with the request\'s own context, row by row', async () => {
+      const { routes, mayDeleteAttachment } = makeDeleteRoutes([local('att-1'), local('att-2')]);
+      const userContext = { roles: ['editor'], username: 'jim', authenticated: true };
+      await run(routes, { types: 'attachment' }, userContext);
+      expect(mayDeleteAttachment.mock.calls.map((c) => [c[0], c[1]])).toEqual([[userContext, 'att-1'], [userContext, 'att-2']]);
+    });
+
+    it('a row from another source is not marked', async () => {
+      const { routes, mayDeleteAttachment } = makeDeleteRoutes([{ id: 'm-1', providerId: 'media-library', filename: 'a.jpg', mentions: [] }]);
+      const body = await run(routes, { types: 'attachment' });
+      expect(body.results[0].canDelete).toBeUndefined();
+      expect(mayDeleteAttachment).not.toHaveBeenCalled();
+    });
+
+    it('a door that fails marks the row not deletable and the search still succeeds', async () => {
+      const { routes } = makeDeleteRoutes([local('att-1')], { mayDelete: () => Promise.reject(new Error('boom')) });
+      const body = await run(routes, { types: 'attachment' });
+      expect(body.success).toBe(true);
+      expect(body.results[0].canDelete).toBe(false);
+    });
+
+    it('names the pages that use the file, to the viewer who may see them', async () => {
+      const { routes, filterPagesFor } = makeDeleteRoutes([local('att-1', ['Home', 'Garden'])]);
+      const body = await run(routes, { types: 'attachment' });
+      expect(body.results[0].usedBy).toEqual({ pages: ['Home', 'Garden'], more: 0, hidden: 0 });
+      expect(filterPagesFor).toHaveBeenCalledWith(expect.objectContaining({ username: 'jim' }), ['Home', 'Garden'], 'view');
+    });
+
+    it('a page the viewer cannot read is counted, never named', async () => {
+      const { routes } = makeDeleteRoutes([local('att-1', ['Home', 'Secret Plans', 'Garden'])], {
+        visible: (names) => names.filter((n) => n !== 'Secret Plans')
+      });
+      const body = await run(routes, { types: 'attachment' });
+      expect(body.results[0].usedBy).toEqual({ pages: ['Home', 'Garden'], more: 0, hidden: 1 });
+      expect(JSON.stringify(body.results[0].usedBy)).not.toContain('Secret');
+    });
+
+    it('names at most 10 pages and counts the rest', async () => {
+      const names = Array.from({ length: 13 }, (_v, i) => `Page ${i + 1}`);
+      const { routes } = makeDeleteRoutes([local('att-1', names)]);
+      const body = await run(routes, { types: 'attachment' });
+      const usedBy = body.results[0].usedBy as { pages: string[]; more: number; hidden: number };
+      expect(usedBy.pages).toEqual(names.slice(0, 10));
+      expect(usedBy.more).toBe(3);
+    });
+
+    it('a file no page uses has an empty list', async () => {
+      const { routes } = makeDeleteRoutes([local('att-1', [])]);
+      const body = await run(routes, { types: 'attachment' });
+      expect(body.results[0].usedBy).toEqual({ pages: [], more: 0, hidden: 0 });
+    });
+
+    it('a page check that fails names nothing and counts every page as hidden', async () => {
+      const { routes } = makeDeleteRoutes([local('att-1', ['Home', 'Garden'])]);
+      (routes as unknown as { engine: { getManager: (n: string) => unknown } }).engine.getManager = vi.fn((name: string) => {
+        if (name === 'AssetService') return makeAssetService(makeAssetPage([local('att-1', ['Home', 'Garden'])] as never));
+        if (name === 'AttachmentManager') return { mayDeleteAttachment: () => Promise.resolve(true) };
+        if (name === 'PageManager') return { filterPagesFor: () => Promise.reject(new Error('down')) };
+        return null;
+      });
+      const body = await run(routes, { types: 'attachment' });
+      expect(body.results[0].usedBy).toEqual({ pages: [], more: 0, hidden: 2 });
+    });
+  });
 });

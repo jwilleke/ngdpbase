@@ -288,6 +288,31 @@ function withoutFinalStop(text: string): string {
   return said.endsWith('.') ? said.slice(0, -1) : said;
 }
 
+/** Why a web address could not be imported (#2494). */
+export type UrlImportRefusal =
+  /** The text is not a web address. */
+  | 'invalid-address'
+  /** A web address, but not http or https. */
+  | 'not-web-address'
+  /** The site answered 404 or 403: the page is not there, or not open to us. */
+  | 'not-found'
+  /** The address answered with something that is not a web page, such as an image. */
+  | 'not-a-page'
+  /** The site answered 5xx, 410 or 429: it is down, gone or too busy; nothing wrong with the address. */
+  | 'site-unavailable';
+
+/**
+ * An import from a web address that failed for a reason the person can act
+ * on (#2494). A route answers each `reason` with its own plain sentence; any
+ * other failure of the import is not this class and gets the general one.
+ */
+export class UrlImportRefused extends Error {
+  constructor(readonly reason: UrlImportRefusal, message: string) {
+    super(message);
+    this.name = 'UrlImportRefused';
+  }
+}
+
 /**
  * An import refused at upload, before anything was queued (#2034): keeping
  * the original of `file` in the receiver's encrypted store was refused or
@@ -2717,7 +2742,7 @@ class ImportManager extends BaseManager {
     try {
       parsedUrl = new URL(url);
     } catch {
-      throw new Error(`Invalid URL: ${url}`);
+      throw new UrlImportRefused('invalid-address', `Invalid URL: ${url}`);
     }
 
     // #1133: an exact allow-list, not startsWith('http') — which accepts
@@ -2725,7 +2750,7 @@ class ImportManager extends BaseManager {
     // schemes. guardedFetch checks this too; keeping it here preserves the
     // specific error an operator sees for a mistyped scheme.
     if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-      throw new Error('Only HTTP and HTTPS URLs are supported');
+      throw new UrlImportRefused('not-web-address', 'Only HTTP and HTTPS URLs are supported');
     }
 
     // Fetch the page
@@ -2748,13 +2773,18 @@ class ImportManager extends BaseManager {
     });
 
     if (response.status < 200 || response.status >= 300) {
-      throw new Error(`Failed to fetch URL: HTTP ${response.status}`);
+      const message = `Failed to fetch URL: HTTP ${response.status}`;
+      // 404 and 403 are the site's answer about this address. A site that is down, gone or too busy (5xx, 410, 429) is
+      // not something to fix in the address either. Any other status is not one of these and gets the general sentence.
+      if (response.status === 404 || response.status === 403) throw new UrlImportRefused('not-found', message);
+      if (response.status >= 500 || response.status === 410 || response.status === 429) throw new UrlImportRefused('site-unavailable', message);
+      throw new Error(message);
     }
 
     const contentTypeHeader = response.headers['content-type'];
     const contentType = (Array.isArray(contentTypeHeader) ? contentTypeHeader[0] : contentTypeHeader) || '';
     if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
-      throw new Error(`URL did not return HTML content (got ${contentType})`);
+      throw new UrlImportRefused('not-a-page', `URL did not return HTML content (got ${contentType})`);
     }
 
     const html = response.body.toString('utf8');

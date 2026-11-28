@@ -9,6 +9,7 @@
  *
  * Usage:
  *   import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
+ *   import { plainRouteError } from '../../../dist/src/utils/plainRouteError.js';
  *
  *   router.post('/reservations', async (req, res) => {
  *     try {
@@ -18,7 +19,8 @@
  *       // ...
  *     } catch (err) {
  *       if (err instanceof ApiError) return sendApiError(res, err);
- *       res.status(500).json({ error: String(err) });
+ *       // A plain sentence for the person; the full error goes to the server log (#2494).
+ *       res.status(500).json({ error: plainRouteError(req, err, 'The reservation could not be made. Try again in a moment.') });
  *     }
  *   });
  */
@@ -31,7 +33,7 @@ import { BaseContext } from './BaseContext.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { AgentTokenGrant, PermissionSubject, ProxyClaim } from '../managers/UserManager.js';
 import type { ShareGrant } from '../types/Share.js';
-import { answeredWithPage, type ReauthMode, type FreshSignInAnswer } from '../managers/AuthManager.js';
+import { answeredWithPage, stepUpModeFor, type ReauthMode, type FreshSignInAnswer } from '../managers/AuthManager.js';
 import { STEP_UP_REASON, type Decision } from '../types/Policy.js';
 import { CONSENT_PATH } from '../types/Consent.js';
 import { actorOf } from './ActorContext.js';
@@ -75,22 +77,27 @@ export class ApiError extends Error {
  * a step-up refusal redirects to the re-authenticate page, a consent refusal
  * to the consent prompt (#2027), a 401 to sign-in (returning here), anything
  * else is the message as text. `download` (a link to a file) is answered as
- * `page`. JSON carries the consent link as `consent`. A route never writes its own refusal:
- * the step-up `reauth` is easy to drop.
+ * `page`, and so is `form` (#2360), which a plain form post gets and a script's request does not. JSON carries the consent link as `consent`. A route never writes its own refusal:
+ * the step-up `reauth` is easy to drop. #2360: a step-up refusal of a browser's plain form
+ * post is a `page` answer even where the route asked for JSON, so the person is sent to the
+ * prompt, never shown the JSON; a script's request still gets it.
  */
 export function sendApiError(res: Response, err: ApiError, mode: ReauthMode = 'json'): void {
   // Only this site's re-authenticate page: an add-on's ApiError cannot send the person elsewhere.
   const reauth = typeof err.reauth === 'string' && err.reauth.startsWith('/auth/reauth?') ? err.reauth : undefined;
   // Likewise only this site's consent prompt.
   const consent = typeof err.consent === 'string' && (err.consent === CONSENT_PATH || err.consent.startsWith(`${CONSENT_PATH}?`)) ? err.consent : undefined;
-  if (answeredWithPage(mode)) {
+  // #2360: a plain form post refused for a stale sign-in is sent to the prompt, as a page is, never shown JSON.
+  // The mode changes only when the error carries a `reauth` link, so a 401 or a plain 403 on a form post keeps its old answer on purpose.
+  const answerMode = reauth && res.req ? stepUpModeFor(res.req, mode) : mode;
+  if (answeredWithPage(answerMode)) {
     if (reauth) { res.redirect(reauth); return; }
     if (consent) { res.redirect(consent); return; }
     if (err.status === 401) { res.redirect('/login?redirect=' + encodeURIComponent(res.req?.originalUrl || '/')); return; }
     res.status(err.status).send(err.message);
     return;
   }
-  if (mode === 'text') {
+  if (answerMode === 'text') {
     res.status(err.status).send(reauth ? `${err.message}: ${reauth}` : consent ? `${err.message} Read and accept them at ${consent}` : err.message);
     return;
   }

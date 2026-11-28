@@ -65,4 +65,25 @@ describe('sendApiError', () => {
     expect(res.status).toBe(403);
     expect(res.headers.location).toBeUndefined();
   });
+
+  // #2360: every plain form post to a step-up route is sent to the prompt by the one shared answer.
+  test('a plain form post (a browser\'s, no script headers) with a step-up refusal redirects to the prompt, in the default json mode too', async () => {
+    const app = express();
+    app.post('/thing', (_req, res) => sendApiError(res, new ApiError(403, 'A fresh sign-in is needed', '/auth/reauth?next=%2Fadmin%2Faddons')));
+    const res = await request(app).post('/thing').type('form').set('Accept', 'text/html,application/xhtml+xml').send({ a: '1' });
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/auth/reauth?next=%2Fadmin%2Faddons');
+  });
+
+  test('a script\'s post keeps the JSON answer; so does a plain form post refused without a way to re-authenticate', async () => {
+    const app = express();
+    app.post('/thing', (_req, res) => sendApiError(res, new ApiError(403, 'A fresh sign-in is needed', '/auth/reauth?next=%2Fthing&prompt=ab')));
+    app.post('/token', (_req, res) => sendApiError(res, new ApiError(403, 'This needs a fresh sign-in by the person; a token cannot give one')));
+    const script = await request(app).post('/thing').type('form').set('Accept', 'application/json').set('X-Requested-With', 'XMLHttpRequest').send({ a: '1' });
+    expect(script.status).toBe(403);
+    expect(script.body.reauth).toBe('/auth/reauth?next=%2Fthing&prompt=ab');
+    const delegated = await request(app).post('/token').type('form').set('Accept', 'text/html').send({ a: '1' });
+    expect(delegated.status).toBe(403);
+    expect(delegated.body).toEqual({ success: false, error: 'This needs a fresh sign-in by the person; a token cannot give one' });
+  });
 });

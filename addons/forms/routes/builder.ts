@@ -44,7 +44,9 @@ export default function builderRoutes(engine: WikiEngine, host: AddonHost): Rout
       notifyRole: typeof body['notifyRole'] === 'string' && body['notifyRole'].trim() ? body['notifyRole'].trim() : 'admin',
       confirmationUrl: typeof body['confirmationUrl'] === 'string' && body['confirmationUrl'].trim() ? body['confirmationUrl'].trim() : undefined,
       store: readBox(body, 'store', current?.store ?? true),
-      notify: readBox(body, 'notify', current?.notify ?? true)
+      notify: readBox(body, 'notify', current?.notify ?? true),
+      // No input for it (#2548): kept as the form has it, so an edit never opens a gated form.
+      submitPermission: current?.submitPermission
     };
   }
 

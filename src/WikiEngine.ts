@@ -537,8 +537,12 @@ class WikiEngine extends Engine {
     // #2269: required pages and add-on pages are seeded by now, so the seeded-pages
     // record is complete and the install stamp on a shipped page is not mistaken
     // for a limit someone set. Outside the add-on branch: it needs no add-ons.
+    await this.getManager<PageManager>('PageManager')?.convertLegacyAccessAtBoot();
     await this.getManager<PageManager>('PageManager')?.reportLegacyAccessLimits()
       .catch((err: unknown) => logger.warn('[WikiEngine] Could not check pages for access limits that no longer apply:', err));
+    // #2454: the footnote reverse index (which pages cite a source) is built from the page list.
+    await this.getManager<FootnoteManager>('FootnoteManager')?.rebuildSourceIndex()
+      .catch((err: unknown) => logger.warn('[WikiEngine] Could not build the footnote source index; it is built when first used:', err));
     // #1876: every manager, add-ons included, has now applied its part of a
     // staged restore; say what the restore did, and what it did not bring back.
     await this.getManager<BackupManager>('BackupManager')?.reportRestoreAtBoot();

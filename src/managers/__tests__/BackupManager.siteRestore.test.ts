@@ -223,8 +223,12 @@ describe('a site restore stages every part together (#1876)', () => {
     const p = paths();
     const doc = await backupDocument(file);
     const stem = '2026-10-19T00-00-00-000Z-ngdpbase-backup';
-    for (const [manager, part] of [['RoleManager', 'roles'], ['PersonManager', 'persons'], ['OrganizationManager', 'organizations'], ['FootnoteManager', 'footnotes'], ['CommentManager', 'comments']]) {
+    for (const [manager, part] of [['RoleManager', 'roles'], ['PersonManager', 'persons'], ['OrganizationManager', 'organizations'], ['CommentManager', 'comments']]) {
       expect(doc.managers[manager].data).toMatchObject({ format: 1, archive: `${stem}.${part}.tar.enc`, keyFingerprint: expect.any(String) });
+    }
+    // FootnoteManager has two parts (#2454): each is recorded under its own name.
+    for (const part of ['footnotes', 'footnote-sources']) {
+      expect(doc.managers.FootnoteManager.data[part]).toMatchObject({ format: 1, archive: `${stem}.${part}.tar.enc`, keyFingerprint: expect.any(String) });
     }
     expect(doc.managers.AttachmentManager.files).toMatchObject({ pool: { archive: `${stem}.attachments.tar.enc`, files: 1 }, vaults: { archive: `${stem}.vault-attachments.tar.enc`, stores: ['molly/default', 'molly/health'] } });
     // No file's bytes in the document: no base64 of any of them.
@@ -247,7 +251,7 @@ describe('a site restore stages every part together (#1876)', () => {
     ]);
     // Listed with the backup, downloaded with it, pruned with it.
     const stored = await site.backup.findStoredBackup(path.basename(file));
-    expect(stored?.parts).toEqual(['attachments', 'comments', 'env', 'footnotes', 'organizations', 'persons', 'roles', 'vault-attachments']);
+    expect(stored?.parts).toEqual(['attachments', 'comments', 'env', 'footnote-sources', 'footnotes', 'organizations', 'persons', 'roles', 'vault-attachments']);
     expect(stored?.databases).toEqual(['application']);
     const tarEntries: string[] = [];
     const { stream } = await site.backup.backupArchive(path.basename(file));

@@ -181,6 +181,25 @@ function validateEmail(email: string): boolean {
 - Provide meaningful error messages
 - Log errors appropriately
 
+### Errors a route sends to the browser
+
+A route you write or change never puts an error's own text in its response: not `getErrorMessage(err)`, not `err.message`, not a stack. `ENOENT: no such file or directory, open '/data/...'` tells a home user nothing and shows them paths. The route chooses one plain sentence that says what failed and what to do, and `plainRouteError(req, err, message)` in `src/utils/plainRouteError.ts` logs the full error against the route and returns that sentence:
+
+```ts
+} catch (err) {
+  return res.status(500).json({ success: false, error: plainRouteError(req, err, 'The page could not be deleted. Try again in a moment.') });
+}
+```
+
+- Keep the route's status code and response shape (JSON, redirect or error page); only the text changes.
+- Write the message for a home user: no error codes, issue numbers, file paths or "see the log".
+- An error you throw on purpose, whose message was written for the person reading it (such as `UserCreateError`, `PageWriteRefusedError` or `PasskeyRefused`), may be shown as it is. Catch it by its class, never by matching its text, and answer it with its own status; it is not a server failure, so it is not logged as one. Where one error class stands for several reasons that need different advice (`UrlImportRefused` has five), give each reason its own sentence. Everything else goes through `plainRouteError`.
+- A check the route can make before it calls the manager (a blank required name) gets its own sentence and a 400, not the failure's "try again".
+- Log a failure once: the route does not call `logger.error` and then `plainRouteError` for the same error.
+- A refusal the route makes on purpose (a 403 the person was meant to get, a name that is taken) is not a failure, but it still leaves one line: `refusedOnPurpose(req, 'page rename (title taken)')` writes an info line against the route and the person.
+- Not every route follows this yet. Slice 1 of #2494 converted the page, API, admin import, organization, passkey, version and deleted-page routes; slice 2 converted the other admin routes in `WikiRoutes.ts` (the raw editor, proxy access, shared folders, users, the backup key and recovery words, vault repair, attachments, the streaming import, add-on update, contact links and job start) and the 404 branches of the four version routes. Still unconverted, and taken by later slices of #2494: the add-ons, the size and count limit messages of the multer upload routes, the per-file messages in an import's results, the installer routes, the sign-in, authenticator, outside-account and vault-link routes, and the other places that still pass `getErrorMessage(err)` or `err.message` to a response. Search for those two before you add a route, and convert the ones you touch.
+- Test it by forcing a failure that carries `ENOENT` text and a stack: the response must hold neither, and the log must hold both. `src/routes/__tests__/WikiRoutes.plainErrors.test.ts` is the pattern.
+
 ## Testing
 
 - Write tests for all public functions

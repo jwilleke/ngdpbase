@@ -88,18 +88,38 @@ class FileLoggingProvider extends BaseLoggingProvider {
   }
 
   /**
-   * A stack keeps one frame per line, but its message portion (`Name: message`, which can span lines and can
-   * hold a caller-sent value) must not start a log line of its own (#2294). Only a line that begins with
-   * optional whitespace and `at ` starts a new output line; every other line is joined to the one before it
-   * with a visible `\n`.
+   * What the record says the Error's own message was: an Error given to winston (it keeps those in its splat
+   * list) or in an `error` key, or the text a call site put in `error`. Used to tell the message portion of a
+   * stack, which can hold a caller-sent value, from its frames (#2359).
    */
-  private static stackLines(stack: string): string {
+  private static knownMessages(info: Record<string, unknown>): string[] {
+    const splat: unknown = (info as Record<symbol, unknown>)[Symbol.for('splat')];
+    const candidates: unknown[] = [...(Array.isArray(splat) ? (splat as unknown[]) : []), info.error];
+    return candidates.flatMap((c) => (c instanceof Error ? [c.message] : typeof c === 'string' ? [c] : [])).filter((m) => m !== '');
+  }
+
+  /**
+   * A stack keeps one frame per line, but its message portion (`Name: message`, which can span lines and can
+   * hold a caller-sent value) must not start a log line of its own (#2294). Only the frames of a real stack
+   * start new output lines (#2359): the message portion ends where the Error's own message ends, so a line
+   * inside the message that is shaped like a frame is message text and is joined to the line before it with
+   * a visible `\n`. When the record does not say what the message was, a line that begins with optional
+   * whitespace and `at ` is taken as a frame, as before.
+   */
+  private static stackLines(stack: string, messages: string[] = []): string {
+    let split = 0;
+    for (const m of messages) {
+      const at = stack.indexOf(`: ${m}`);
+      if (at >= 0 && !stack.slice(0, at).includes('\n')) { split = at + 2 + m.length; break; }
+    }
     const out: string[] = [];
-    stack.split('\n').forEach((raw, i) => {
+    stack.split('\n').reduce((offset, raw, i) => {
       const line = FileLoggingProvider.oneLine(raw);
-      if (i === 0 || /^\s*at /.test(raw)) out.push(line);
+      const inMessage = offset < split;
+      if (i === 0 || (!inMessage && /^\s*at /.test(raw))) out.push(line);
       else out[out.length - 1] += `\\n${line}`;
-    });
+      return offset + raw.length + 1;
+    }, 0);
     return out.join('\n');
   }
 
@@ -129,7 +149,7 @@ class FileLoggingProvider extends BaseLoggingProvider {
       const value = info[key];
       if (value === undefined) continue;
       if (key === 'stack' && typeof value === 'string') {
-        stack = FileLoggingProvider.stackLines(value);
+        stack = FileLoggingProvider.stackLines(value, FileLoggingProvider.knownMessages(info));
         continue;
       }
       parts.push(`${FileLoggingProvider.oneLine(key)}=${typeof value === 'string' ? FileLoggingProvider.oneLine(value) : JSON.stringify(value)}`);

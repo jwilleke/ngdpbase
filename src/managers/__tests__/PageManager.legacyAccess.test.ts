@@ -26,7 +26,7 @@ interface TestManager {
   markNeedsAttention(reason: string): boolean;
   markDegraded(reason: string): boolean;
 }
-type Item = { state: string; kind?: string; reason?: string; details?: string[] };
+type Item = { state: string; kind?: string; reason?: string; details?: string[]; detailLinks?: Array<string | undefined> };
 interface Harness {
   manager: TestManager;
   pages: Info[];
@@ -119,18 +119,18 @@ describe('PageManager lists pages whose access: limit no longer applies (#2269)'
     expect(h.status().state).toBe('ready');
   });
 
-  test('a private page is counted but its title stays off the list; a vault page is not counted', async () => {
+  test('a private page is counted but its title stays off the list; a vault page is counted the same way (#2509)', async () => {
     const h = await harness([
       page('Secret Plans', 'u1', { 'system-category': 'general', private: true, access: { view: ['editor'] } }),
       page(formatPrivatePageName('alice', 'notes', 'Vault Page'), 'u2', { 'system-category': 'general', access: { view: ['editor'] } }),
       page('Open Page', 'u3', { 'system-category': 'general', access: { view: ['editor'] } })
     ]);
-    expect(await h.manager.reportLegacyAccessLimits()).toBe(2);
+    expect(await h.manager.reportLegacyAccessLimits()).toBe(3);
     const text = JSON.stringify(h.status());
     expect(text).not.toContain('Secret Plans');
     expect(text).not.toContain('Vault Page');
     expect(text).toContain('Open Page');
-    expect(h.status().details?.join(' ')).toMatch(/1 private page/);
+    expect(h.status().details?.join(' ')).toMatch(/2 private pages/);
   });
 
   test('names the first 50 pages A to Z and counts the rest, so a long list stays readable', async () => {
@@ -143,6 +143,37 @@ describe('PageManager lists pages whose access: limit no longer applies (#2269)'
     expect(details[0]).toContain('Page 00');
     expect(details[49]).toContain('Page 49');
     expect(details[50]).toMatch(/3 more pages/);
+  });
+
+  test('#2553 each named page is a link to its own page, from the real title; lines that name no page carry none', async () => {
+    const long = `${'Long Title '.repeat(30)}end`;
+    const pages = [
+      page('A & B', 'u1', { 'system-category': 'general', access: { edit: ['admin'] } }),
+      page(long, 'u2', { 'system-category': 'general', access: { view: ['editor'] } }),
+      page('Secret Plans', 'u3', { 'system-category': 'general', private: true, access: { view: ['editor'] } })
+    ];
+    const h = await harness(pages);
+    await h.manager.reportLegacyAccessLimits();
+    const { details = [], detailLinks = [] } = h.status();
+    expect(details).toHaveLength(3);
+    expect(detailLinks[details.findIndex((d) => d.startsWith('A & B:'))]).toBe('/view/A%20%26%20B');
+    const clipped = details.findIndex((d) => d.includes('...:'));
+    expect(clipped).toBeGreaterThan(-1);
+    expect(details[clipped].length).toBeLessThan(long.length);
+    expect(detailLinks[clipped]).toBe(`/view/${encodeURIComponent(long)}`);
+    const privateLine = details.findIndex((d) => /private page/.test(d));
+    expect(detailLinks[privateLine]).toBeUndefined();
+  });
+
+  test('#2553 the "and N more pages" line carries no link', async () => {
+    const pages = Array.from({ length: 53 }, (_, i) => page(`Page ${String(i).padStart(2, '0')}`, `u${i}`, { 'system-category': 'general', access: { view: ['editor'] } }));
+    const h = await harness(pages);
+    await h.manager.reportLegacyAccessLimits();
+    const { details = [], detailLinks = [] } = h.status();
+    expect(detailLinks[0]).toBe('/view/Page%2000');
+    expect(detailLinks[49]).toBe('/view/Page%2049');
+    expect(details[50]).toMatch(/3 more pages/);
+    expect(detailLinks[50]).toBeUndefined();
   });
 
   test('the text is plain: no issue numbers, file paths or log pointers', async () => {

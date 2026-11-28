@@ -30,6 +30,8 @@ import { jobContextFromRequest, jobContextFromRequestWithReason } from '../conte
 import { actorOf, type ActorAttribution, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
+import { carriesCeiling } from '../utils/proxyClaim.js';
+import { sharedLinkRows, sharedLinkCounts } from '../utils/sharedLinkRows.js';
 import { mayEnterVaultAtDoor, type VaultDecider } from '../utils/privateStoreAccess.js';
 import { hideDeclaredPaths, keepHiddenValues, NO_SECRETS, secretKeys, valueLevels } from '../utils/sensitiveValues.js';
 import { createPatch, diffLines } from 'diff';
@@ -48,9 +50,11 @@ import {
   withoutKeptMarks
 } from '../utils/addonPageSync.js';
 import { isSourceCheckout } from '../utils/sourceCheckout.js';
+import { adminMessage } from '../utils/backupFolder.js';
 import { idleRemainingMs, IDLE_STATUS_PATH, STEP_UP_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
+import { plainRouteError, refusedOnPurpose } from '../utils/plainRouteError.js';
 import { asLineLength, resolveLineLength, LINE_LENGTH_PREF_KEY, LINE_LENGTH_SITE_KEY, type LineLength } from '../utils/lineLength.js';
 import { PageTitleConflictError, pageTitleConflictLink, pageTitleConflictText, type ConflictingPage } from '../utils/pageTitleConflict.js';
 import { DENY_OVERRIDES_EXPLANATION, RULE_COMBINING_ALGORITHM_KEY, readDeclaredAsWritten, unenforcedConditionsNotice } from '../utils/policyAttributes.js';
@@ -63,6 +67,7 @@ import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
 import { normalizePinnedItems, deriveCanonicalUrl } from '../utils/pinnedItems.js';
 import type PluginManager from '../managers/PluginManager.js';
+import type MarkupParser from '../parsers/MarkupParser.js';
 import type { PluginFormatters } from '../managers/PluginManager.js';
 import type { DeclaredAddonDatabase } from '../managers/DatabaseManager.js';
 import type { StoreDeletedEntry, StoreRestoreResult } from '../types/Provider.js';
@@ -81,10 +86,10 @@ import { DENY_CHECKED_ACTION, NARROWED_WRITES_KEY } from '../utils/pageWritePoli
 import type UpgradeCheckManager from '../managers/UpgradeCheckManager.js';
 import type { OpenUpgradeItem } from '../managers/UpgradeCheckManager.js';
 import { UPGRADE_INTRO, UPGRADE_LIST_HEADING, UPGRADE_READ_ONLY, upgradeEmpty, upgradeHeading, upgradeListLead, upgradeNotice, upgradeResult, type UpgradeResultKey } from '../upgradeChecks/wording.js';
-import { SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
+import { SharedFolderRefusedError, SharedFoldersUnavailableError, SharedFolderWordsMismatchError } from '../managers/SharedFolderManager.js';
 import { recordRecoveryWordsExport, recoveryWordsFilename, recoveryWordsSheet, recoveryWordsText, type RecoveryWordsExport, type RecoveryWordsSet } from '../utils/recoveryWordsFile.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
-import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, INVITATION_PATH, STEP_UP_CONTINUE_PATH, stepUpPromptId, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
+import { ACCOUNT_SETUP_PATH, ACTING_FOR_PATH, answeredWithPage, PasskeyRefused, ProxyGrantRefused, INVITATION_PATH, STEP_UP_CONTINUE_PATH, stepUpModeFor, stepUpPromptId, type InvitationView, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
 import { VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
@@ -184,7 +189,8 @@ import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
 import { grantablePermissions, permissionLabel } from '../utils/permissionCatalog.js';
 import type PageManagerClass from '../managers/PageManager.js';
-import { PageAudienceRefusedError, PageContentValidationError, PageWriteRefusedError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport, type VaultRepairItem } from '../managers/PageManager.js';
+import { FINISH_LAST_UPDATE } from '../utils/addonInstaller.js';
+import { PageAudienceRefusedError, PageContentValidationError, PageRuleRefusedError, PageWriteRefusedError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport, type VaultRepairItem } from '../managers/PageManager.js';
 import { auditEventTypes } from '../utils/auditVocabulary.js';
 import { ThemeManager, getThemeManager } from '../managers/ThemeManager.js';
 import { registerDawarichCompatRoutes } from './DawarichCompatRoutes.js';
@@ -199,8 +205,9 @@ import type AuthManager from '../managers/AuthManager.js';
 import type { AuthenticateResult, AuthAttempt, ReauthMode } from '../managers/AuthManager.js';
 import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import { JobActionError, type JobLastRun } from '../managers/BackgroundJobManager.js';
+import { automaticReindexLabel, latestReindex, type ReindexLine } from '../utils/reindexLines.js';
 import type BackupManager from '../managers/BackupManager.js';
-import { formatBytes, type BackupHealth } from '../managers/BackupManager.js';
+import { BackupKeyRefused, formatBytes, type BackupHealth } from '../managers/BackupManager.js';
 import type CacheManager from '../managers/CacheManager.js';
 import type CatalogManager from '../managers/CatalogManager.js';
 import type RoleManager from '../managers/RoleManager.js';
@@ -212,7 +219,7 @@ import type { ReviewRequest } from '../types/Review.js';
 
 /** A request id as ReviewManager makes them (a UUID); anything else is never put in a URL (#2072). */
 const REVIEW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-import { ContactDetailsInvalidError } from '../managers/IdentityManager.js';
+import { ContactDetailsInvalidError, ContactLinkRefused } from '../managers/IdentityManager.js';
 import { contactDetailLabel, contactDetailsCard, contactDetailsFromForm, type ContactDetailsCard } from './profileContactDetails.js';
 import { isEmail, isUuid } from '../types/guards.js';
 import { ACCOUNTLESS_PERSON_PREFIX } from '../utils/username.js';
@@ -223,7 +230,7 @@ import type { RecentImport } from '../ice/types.js';
 import { isZip } from '../ice/fileHandling.js';
 import { IceVetRefused } from '../ice/vet.js';
 import type FileManager from '../managers/FileManager.js';
-import { IceExportBusy, IceExportNeedsFreshSignIn, IceExportRefused, ImportUploadRefused } from '../managers/ImportManager.js';
+import { IceExportBusy, IceExportNeedsFreshSignIn, IceExportRefused, ImportUploadRefused, UrlImportRefused, type UrlImportRefusal } from '../managers/ImportManager.js';
 import { IceExportFailed, PAGES_EXPORT_SOURCE } from '../ice/runExport.js';
 import { SEARCH_EXPORT_SOURCE, searchExportParams, searchExportRef } from '../ice/searchExportSource.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
@@ -232,6 +239,7 @@ import type MetricsManager from '../managers/MetricsManager.js';
 import type CommentManager from '../managers/CommentManager.js';
 import type FootnoteManager from '../managers/FootnoteManager.js';
 import { PageNotesTurnedOffError, type PageNotesKind, type PageRef } from '../utils/pageNotes.js';
+import { FootnoteLinkError } from '../utils/footnoteLinks.js';
 import type NotificationManager from '../managers/NotificationManager.js';
 import type PolicyValidator from '../managers/PolicyValidator.js';
 import type RenderingManager from '../managers/RenderingManager.js';
@@ -1274,7 +1282,7 @@ class WikiRoutes {
       userContext: userContext, // used by page-history.ejs and other templates
       shareEnabled,
       csrfToken: req.session?.csrfToken || '', // #663: token for header meta + form _csrf inputs
-      currentUrl: req.originalUrl || req.url || '', // #785: lets header.ejs offer "Add to My Links" for any route, not just wiki pages
+      currentUrl: req.originalUrl || req.url || '', // #785: lets header.ejs offer "Add to pinned pages" for any route, not just wiki pages
       appName: configManager?.getProperty(
         'ngdpbase.application-name',
         'ngdpbase'
@@ -1816,7 +1824,7 @@ class WikiRoutes {
 
       res.json({ currentVersion, latestVersion, updateAvailable, releaseUrl });
     } catch (err: unknown) {
-      res.status(500).json({ error: 'Failed to check for updates', details: getErrorMessage(err) });
+      res.status(500).json({ error: 'Failed to check for updates', details: plainRouteError(req, err, 'The check for updates could not be completed. Check that this computer can reach the internet, then try again.') });
     }
   }
 
@@ -2542,8 +2550,11 @@ class WikiRoutes {
     permission: string,
     req: Request,
     res: Response,
-    mode: ReauthMode
+    asked: ReauthMode
   ): Promise<void> {
+    // #2360: a plain form post is answered as a page, whichever way its route asked, so the person
+    // is sent to the "confirm it is you" step and never shown the JSON a script is given.
+    const mode = stepUpModeFor(req, asked);
     // #1758: step-up is AuthManager's; without it the refusal carries no way to re-authenticate.
     const answer = await this.engine.getManager<AuthManager>('AuthManager')?.askForFreshSignIn(req, wikiContext.userContext, permission, mode)
       ?? { permission, delegated: false, error: 'A fresh sign-in is needed' };
@@ -4573,9 +4584,7 @@ ${panes}
         await this.renderError(req, res, 403, 'Access Denied', err.message);
         return;
       }
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      logger.error('adminEditRaw failed:', err);
-      await this.renderError(req, res, 500, 'Error', `Failed to load raw editor: ${errorMessage}`);
+      await this.renderError(req, res, 500, 'Error', plainRouteError(req, err, 'The raw editor could not be opened. Try again in a moment.'));
     }
   }
 
@@ -4663,8 +4672,18 @@ ${panes}
         await this.renderError(req, res, 403, 'Access Denied', err.message);
         return;
       }
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      logger.warn(`adminSaveRaw('${pageName}') failed: ${errorMessage}`);
+      // The page's own rules, written for the person (#2494); anything else is the server's failure, logged in full.
+      // A front matter the YAML reader refused is the person's to fix, and the reader's own words (line, column, a quoted
+      // snippet) mean nothing to them: one sentence says where to look. It is named by its class name, never by its text.
+      let errorMessage: string;
+      if (err instanceof PageContentValidationError || err instanceof PageRuleRefusedError) {
+        errorMessage = err.message;
+      } else if (err instanceof Error && err.name === 'YAMLException') {
+        refusedOnPurpose(req, 'raw page save (front matter is not valid)');
+        errorMessage = 'The page was not saved: the front matter at the top (between the two --- lines) is not valid. What you typed is still in the box; fix it and save again.';
+      } else {
+        errorMessage = plainRouteError(req, err, 'The page could not be saved. What you typed is still in the box. Try again in a moment.');
+      }
       const templateData = await this.getCommonTemplateData(req);
       res.status(400).render('admin-edit-raw', {
         ...templateData,
@@ -4919,8 +4938,12 @@ ${panes}
       logger.info(`[WikiRoutes] API delete of '${pageName}' (${uuid}) by ${req.userContext.username}`);
       return res.json({ success: true, pageName, uuid, recoverable: true });
     } catch (error: unknown) {
-      logger.error(`API delete failed: ${getErrorMessage(error)}`);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      // #2494: the write door's refusal is written for the person; it is not a server failure.
+      if (error instanceof PageWriteRefusedError) {
+        refusedOnPurpose(req, 'page delete (not allowed)');
+        return res.status(403).json({ error: 'Access denied', message: error.message });
+      }
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be deleted. Try again in a moment.') });
     }
   }
 
@@ -4968,8 +4991,7 @@ ${panes}
 
       return res.json({ success: true, pageName, changed: true, systemKeywords });
     } catch (error) {
-      logger.error('[apiMarkTestArtifact] failed:', error);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be marked as a test page. Try again in a moment.') });
     }
   }
 
@@ -4996,8 +5018,7 @@ ${panes}
       logger.info(`[WikiRoutes] Test-artifact sweep by ${req.userContext?.username}: ${deleted.length} deleted, ${failed.length} failed`);
       return res.json({ success: failed.length === 0, deleted, failed });
     } catch (error) {
-      logger.error('[apiSweepTestArtifacts] failed:', error);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The test pages could not be cleared. Try again in a moment.') });
     }
   }
 
@@ -5060,8 +5081,16 @@ ${panes}
       logger.info(`[WikiRoutes] API rename '${pageName}' → '${newTitle}' by ${req.userContext.username}`);
       return res.json({ success: true, from: pageName, to: newTitle, linksNotRewritten: referrers.notRewritten });
     } catch (error: unknown) {
-      logger.error(`API rename failed: ${getErrorMessage(error)}`);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      // #2494: both are written for the person, and trying again cannot fix either.
+      if (error instanceof PageTitleConflictError) {
+        refusedOnPurpose(req, 'page rename (title taken)');
+        return res.status(409).json({ error: 'Title already in use', message: pageTitleConflictText(error) });
+      }
+      if (error instanceof PageWriteRefusedError) {
+        refusedOnPurpose(req, 'page rename (not allowed)');
+        return res.status(403).json({ error: 'Access denied', message: error.message });
+      }
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be renamed. Try again in a moment.') });
     }
   }
 
@@ -6586,13 +6615,12 @@ ${panes}
         message: 'Attachment deleted successfully'
       });
     } catch (err: unknown) {
-      logger.error('Error deleting attachment:', err);
       if ((getErrorMessage(err) || '').startsWith('Permission denied')) {
         return this.refuse(this.createWikiContext(req), req, res, 'json', 'asset-delete');
       }
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error deleting attachment'
+        error: plainRouteError(req, err, 'The attachment could not be deleted. Try again in a moment.')
       });
     }
   }
@@ -7057,7 +7085,13 @@ ${panes}
       this.keepPasskeyChallenge(req, options.challenge, 'register');
       res.json(options);
     } catch (err) {
-      res.status(400).json({ error: (err as Error).message });
+      // #2494: why a passkey can not be added here is written for the person; trying again would not change it.
+      if (err instanceof PasskeyRefused) {
+        refusedOnPurpose(req, 'adding a passkey');
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      res.status(400).json({ error: plainRouteError(req, err, 'Adding a passkey could not be started. Try again, or sign in another way.') });
     }
   }
 
@@ -7082,7 +7116,7 @@ ${panes}
       }
       res.json({ ok: true, id });
     } catch (err) {
-      res.status(400).json({ error: (err as Error).message });
+      res.status(400).json({ error: plainRouteError(req, err, 'The passkey could not be saved. Try adding it again.') });
     }
   }
 
@@ -7120,6 +7154,7 @@ ${panes}
       title: 'Confirm it is you',
       next,
       prompt,
+      typed: authManager?.stepUpReplayHasFields(req, next) ?? true,
       needsPasskey,
       ways,
       hasPasskey: Boolean(ways?.usePasskey),
@@ -8554,7 +8589,8 @@ ${panes}
       await authManager.grantProxy(user, input);
       res.redirect(`/profile?success=${encodeURIComponent(`${input.proxy} can now act for you.`)}#proxy-access`);
     } catch (err) {
-      res.redirect(`/profile?error=${encodeURIComponent((err as Error).message)}#proxy-access`);
+      const why = err instanceof ProxyGrantRefused ? err.message : plainRouteError(req, err, 'Access could not be given. Try again in a moment.');
+      res.redirect(`/profile?error=${encodeURIComponent(why)}#proxy-access`);
     }
   }
 
@@ -8588,7 +8624,8 @@ ${panes}
       await authManager.grantProxy(wikiContext.userContext, input);
       res.redirect(`${back}?success=${encodeURIComponent(`${input.proxy} can now act for ${username}.`)}#proxy-access`);
     } catch (err) {
-      res.redirect(`${back}?error=${encodeURIComponent((err as Error).message)}#proxy-access`);
+      const why = err instanceof ProxyGrantRefused ? err.message : plainRouteError(req, err, 'Access could not be given. Try again in a moment.');
+      res.redirect(`${back}?error=${encodeURIComponent(why)}#proxy-access`);
     }
   }
 
@@ -8799,8 +8836,7 @@ ${panes}
 
       res.json(info);
     } catch (err: unknown) {
-      logger.error('Error getting user info:', err);
-      res.status(500).json({ error: getErrorMessage(err) });
+      res.status(500).json({ error: plainRouteError(req, err, 'Your account details could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -8836,7 +8872,7 @@ ${panes}
       res.json({ results: payload, total: payload.length });
     } catch (err: unknown) {
       if (err instanceof ApiError) { sendApiError(res, err); return; }
-      res.status(500).json({ error: getErrorMessage(err) });
+      res.status(500).json({ error: plainRouteError(req, err, 'The user search could not be completed. Try again in a moment.') });
     }
   }
 
@@ -9517,17 +9553,18 @@ ${panes}
         ? await (addonsManager as { getProfileSections: (u: unknown, ctx: ActorContext) => Promise<unknown[]> }).getProfileSections(freshUser, currentUser)
         : [];
 
-      // #842: "Share Links" profile section for users who may create shares.
+      // #842: the "Shared links" profile section. Slice 3 of #2247: its numbers
+      // come from the same row function as the page, so the two agree.
       let myShares: { active: number; total: number } | null = null;
       try {
         const shareManager = this.engine.getManager('ShareManager');
-        if (shareManager?.isEnabled() && (await wikiContext.hasPermission('share-create'))) {
-          const own = shareManager.list(currentUser.username ?? '');
-          const now = Date.now();
-          myShares = {
-            total: own.length,
-            active: own.filter(r => !r.revokedAt && !(r.expiresAt && now > Date.parse(r.expiresAt))).length
-          };
+        if (shareManager?.isEnabled() && currentUser.username) {
+          const mayTag = await wikiContext.hasPermission('share-create');
+          const mayVault = (await wikiContext.hasPermission('profile-manage'))
+            && (await this.engine.getManager('PageManager').listOwnStoreIds(currentUser)).length > 0;
+          if (mayTag || mayVault) {
+            myShares = sharedLinkCounts(shareManager.list(currentUser.username), { tag: mayTag, vault: mayVault }, Date.now());
+          }
         }
       } catch {
         // non-fatal — section just won't show
@@ -9806,7 +9843,7 @@ ${panes}
         listKind: 'vaults',
         emptyMessage: 'You don\'t have any private pages yet.',
         // #1388: the links the owner has made to their vaults.
-        listAction: { href: '/my/vaults/links', label: 'Links you\'ve shared', icon: 'fa-link' }
+        listAction: { href: '/my/shares', label: 'Shared links', icon: 'fa-link' }
       });
     } catch (err) {
       logger.error('Error rendering My Private Pages:', err);
@@ -9847,21 +9884,37 @@ ${panes}
   }
 
   /**
+   * A page named in the query (`?page=`) picks its vault; its siblings are
+   * offered too, and the page itself is ticked.
+   */
+  private async pickedVaultPage(
+    req: Request,
+    owner: NonNullable<WikiContext['userContext']> & { username: string },
+    vaults: string[]
+  ): Promise<{ pickVault: string | null; pickPages: { uuid: string; title: string }[]; preselected: string | null }> {
+    const asked = typeof req.query.page === 'string' ? parsePrivatePageName(req.query.page) : null;
+    const pickVault = asked && asked.owner === owner.username && vaults.includes(asked.store) ? asked.store : null;
+    const pickPages = pickVault ? await this.engine.getManager('PageManager').listVaultPages(owner, owner.username, pickVault) : [];
+    const preselected = asked ? pickPages.find((p) => p.title === asked.title)?.uuid ?? null : null;
+    return { pickVault, pickPages, preselected };
+  }
+
+  /**
    * GET /my/vaults/links — the owner's vault links, and the forms that make
    * them: a whole vault, or chosen pages of one (`?page=` preselects a page).
    */
   async myVaultLinksPage(req: Request, res: Response) {
     try {
+      // Slice 3 of #2247: choosing pages to share lives in the Share... chooser.
+      if (typeof req.query.page === 'string' && req.query.page) {
+        return res.redirect(302, `/my/shares?share=vault&page=${encodeURIComponent(req.query.page)}`);
+      }
       const request = await this.vaultLinkRequest(req, res);
       if (!request) return;
       const { owner, vaults, shareManager } = request;
       const pageManager = this.engine.getManager('PageManager');
 
-      // A page named in the query picks its vault; its siblings are offered too.
-      const asked = typeof req.query.page === 'string' ? parsePrivatePageName(req.query.page) : null;
-      const pickVault = asked && asked.owner === owner.username && vaults.includes(asked.store) ? asked.store : null;
-      const pickPages = pickVault ? await pageManager.listVaultPages(owner, owner.username, pickVault) : [];
-      const preselected = asked ? pickPages.find((p) => p.title === asked.title)?.uuid ?? null : null;
+      const { pickVault, pickPages, preselected } = await this.pickedVaultPage(req, owner, vaults);
 
       const now = Date.now();
       const links = shareManager.list(owner.username)
@@ -9908,7 +9961,7 @@ ${panes}
     // sends the public half of the link's key as JSON and builds the link itself;
     // every other link comes from the plain form.
     const asJson = req.is('application/json') === 'application/json';
-    const fail = (error: string, status = 400) => (asJson ? res.status(status).json({ error }) : res.redirect(`/my/vaults/links?error=${error}`));
+    const fail = (error: string, status = 400) => (asJson ? res.status(status).json({ error }) : res.redirect(`/my/shares?error=${error}`));
     try {
       const request = await this.vaultLinkRequest(req, res);
       if (!request) return;
@@ -9953,7 +10006,7 @@ ${panes}
       if (record.lockedFor) await shareManager.prepareLockboxes(record, owner);
       // The token is the path of the link; the key after `#` never came here.
       if (asJson) return res.json({ id: record.id, token: record.token });
-      return res.redirect(`/my/vaults/links?created=${encodeURIComponent(record.id)}`);
+      return res.redirect(`/my/shares?created=${encodeURIComponent(record.id)}`);
     } catch (err: unknown) {
       logger.error('[vault-links] Error creating a vault link:', err);
       return asJson ? res.status(500).json({ error: 'server' }) : res.status(500).send('Internal server error');
@@ -9971,25 +10024,53 @@ ${panes}
         return res.status(404).send('Not Found');
       }
       const extended = await request.shareManager.extend(record.id, hours, request.owner);
-      return res.redirect(`/my/vaults/links?notice=${extended ? 'extended' : 'not-extended'}`);
+      return res.redirect(`/my/shares?notice=${extended ? 'extended' : 'not-extended'}`);
     } catch (err: unknown) {
       logger.error('[vault-links] Error extending a vault link:', err);
-      return res.redirect('/my/vaults/links?error=hours');
+      return res.redirect('/my/shares?error=hours');
     }
   }
 
-  /** POST /my/vaults/links/:id/revoke — the owner ends one of their links, at once. */
+  /** POST /my/vaults/links/:id/revoke — the owner, or a holder of share-manage-all, ends a link at once. */
   async myVaultLinksRevoke(req: Request, res: Response) {
     try {
-      const request = await this.vaultLinkRequest(req, res);
-      if (!request) return;
-      const { shareManager } = request;
+      const wikiContext = this.createWikiContext(req);
+      const subject = wikiContext.userContext;
+      // This step only classifies the refusal; the ownership comparison below
+      // is the gate (slice 3 of #2247).
+      // A signed-out subject carries the name 'Anonymous', so check the sign-in too.
+      if (!subject?.username || !subject.isAuthenticated) {
+        await this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+        return;
+      }
+      const shareManager = this.engine.getManager('ShareManager');
+      if (!shareManager?.isEnabled()) {
+        await this.renderError(req, res, 404, 'Not Found', 'Share links are switched off on this site.');
+        return;
+      }
       const record = shareManager.get(req.params.id);
-      if (!record || record.scope.kind !== 'vault' || record.createdBy !== request.owner.username) {
+      if (!record || record.scope.kind !== 'vault') {
         return res.status(404).send('Not Found');
       }
-      await shareManager.revoke(record.id, request.owner.username);
-      return res.redirect('/my/vaults/links?notice=revoked');
+      if (record.createdBy !== subject.username) {
+        // Slice 4 of #2247 (Q-A, Q-C): another user's link is revoked by a
+        // holder of share-manage-all alone. It reads no page and enters no
+        // area, so neither profile-manage nor the vault setting applies (F).
+        // Anyone else is told the link is not there.
+        if (!(await wikiContext.hasPermission('share-manage-all'))) {
+          return res.status(404).send('Not Found');
+        }
+        await shareManager.revoke(record.id, subject, { asManager: true });
+        return res.redirect('/my/shares?view=all&notice=revoked');
+      }
+      // Q-D: the person who made the link always revokes it at their own
+      // session. Q-G: a token, proxy or share acting for them keeps its
+      // profile-manage check. Revoking reads no page and enters no container,
+      // so no private-area check applies either way.
+      if (carriesCeiling(subject) && !(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+      // The request's own subject, forwarded (#2521): the audit row names who clicked.
+      await shareManager.revoke(record.id, subject);
+      return res.redirect((await this.postedFromAllUsers(wikiContext, req)) ? '/my/shares?view=all&notice=revoked' : '/my/shares?notice=revoked');
     } catch (err: unknown) {
       logger.error('[vault-links] Error revoking a vault link:', err);
       return res.status(500).send('Internal server error');
@@ -10370,6 +10451,7 @@ ${panes}
         }
         if (!hadHandle) req.session.privateStoreHandle = handle;
         await this.adoptSealedPages(state.username, handle);
+        this.startCleanupAfterUnlock(req, state.username, handle);
         await this.auditAuthentication(req, state.username, 'success', 'private store unlocked with recovery words');
         return res.redirect(next);
       }
@@ -10387,12 +10469,35 @@ ${panes}
         pagesDirectory: state.pagesDirectory
       });
       await this.adoptSealedPages(state.username, handle);
+      this.startCleanupAfterUnlock(req, state.username, handle);
       await this.auditAuthentication(req, state.username, 'success', 'private store unlocked');
       return res.redirect(next);
     } catch (err) {
       logger.error('[private-store] unlock failed:', err);
       return this.renderError(req, res, 500, 'Error', 'The private store could not be unlocked. Nothing was changed.');
     }
+  }
+
+  /**
+   * After an unlock (#2514): the upgrade clean-up of the owner's own private
+   * pages runs again, now that their key is open. At sign-in a vault that was
+   * closed held the person back as not done; this is the moment it can be read.
+   * It runs as the person the request already carries (their permissions as this
+   * sign-in holds them), starts on a later turn and is never waited for, so it
+   * cannot slow or stop the unlock; a failure is logged and nothing more.
+   */
+  private startCleanupAfterUnlock(req: Request, username: string, handle: string): void {
+    const pages = this.engine.getManager<{ convertLegacyAccessOnSignIn?(subject: unknown): Promise<unknown> }>('PageManager');
+    const convert = pages?.convertLegacyAccessOnSignIn?.bind(pages);
+    if (!convert) return;
+    const caller = req.userContext;
+    if (!caller || caller.username !== username) return;
+    const subject = { ...caller, privateStoreHandle: handle };
+    setImmediate(() => {
+      void Promise.resolve()
+        .then(() => convert(subject))
+        .catch((err: unknown) => logger.warn(`[private-store] The clean-up of a person's private pages after unlock did not finish; the unlock was not affected: ${err instanceof Error ? err.message : String(err)}`));
+    });
   }
 
   /**
@@ -10607,8 +10712,16 @@ ${panes}
         csrfToken: req.session.csrfToken || ''
       });
     } catch (err: unknown) {
-      return this.renderError(req, res, 500, 'Error', getErrorMessage(err));
+      return this.renderError(req, res, 500, 'Error', this.sharedFolderMessage(req, err, 'The shared folders could not be loaded. Try again in a moment.'));
     }
+  }
+
+  /**
+   * What a shared-folders route tells the person when it failed (#2494): a refusal from the shared folders (written for the
+   * administrator, and not a server failure) as it is, anything else as `plain`, with the full error in the server log.
+   */
+  private sharedFolderMessage(req: Request, err: unknown, plain: string): string {
+    return err instanceof SharedFolderRefusedError || err instanceof SharedFoldersUnavailableError ? err.message : plainRouteError(req, err, plain);
   }
 
   /** POST /admin/shared-folders — make a shared folder from the Shared folders screen (#2126); as Admin → Backup's form. */
@@ -10639,7 +10752,7 @@ ${panes}
       const changed = await folders.setFolderAccess(wikiContext.userContext, name, { read: roles(body.read), file: roles(body.file) });
       return back('success', changed ? `Who may read and file in /shared/${name} is saved.` : `Nothing changed in /shared/${name}.`);
     } catch (err: unknown) {
-      return back('error', getErrorMessage(err));
+      return back('error', this.sharedFolderMessage(req, err, 'Who may use that shared folder could not be saved. Try again in a moment.'));
     }
   }
 
@@ -10656,7 +10769,7 @@ ${panes}
       await folders.createFolder(wikiContext.userContext, name);
       return back('success', `Shared folder '${name}' is made, at /shared/${name}.`);
     } catch (err: unknown) {
-      return back('error', getErrorMessage(err));
+      return back('error', this.sharedFolderMessage(req, err, 'The shared folder could not be made. Try again in a moment.'));
     }
   }
 
@@ -11255,7 +11368,7 @@ ${panes}
       if (err instanceof multer.MulterError && (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE')) {
         return res.status(413).json({ success: false, error: `An upload can hold up to ${maxFiles} files. Put more in a zip.` });
       }
-      return res.status(400).json({ success: false, error: `The upload could not be read: ${getErrorMessage(err)}` });
+      return res.status(400).json({ success: false, error: plainRouteError(req, err, 'The upload could not be read. Check that the file is not damaged, then upload it again.') });
     }
 
     const uploaded = (req as Request & { files?: Express.Multer.File[] }).files ?? [];
@@ -11472,7 +11585,7 @@ ${panes}
   }
 
   /**
-   * GET /my/links — current user's pinned MyLinks pages from preferences (#640).
+   * GET /my/links — current user's pinned pages from preferences (#640).
    */
   async myLinksPage(req: Request, res: Response) {
     try {
@@ -11494,7 +11607,8 @@ ${panes}
       const pagedList = this.pageOfList(items, req, 25, 'List pagination');
       res.render('my-list', {
         ...commonData,
-        title: 'My Links',
+        title: 'Pinned pages',
+        tabTitle: 'Pinned pages',
         icon: 'fa-link',
         items: pagedList.items,
         totalItems: pagedList.totalItems,
@@ -11503,7 +11617,7 @@ ${panes}
         emptyMessage: 'You haven\'t pinned any pages yet. Pin pages from the page menu to add them here.'
       });
     } catch (err) {
-      logger.error('Error rendering My Links list:', err);
+      logger.error('Error rendering Pinned pages list:', err);
       res.status(500).send('Error loading links list');
     }
   }
@@ -12035,10 +12149,10 @@ ${panes}
     }
   }
 
-  // ─── My Links (pinned pages) ───────────────────────────────────────────────
+  // ─── Pinned pages ───────────────────────────────────────────────
 
   /**
-   * POST /api/user/pinned-pages — add an item to My Links.
+   * POST /api/user/pinned-pages — add an item to pinned pages.
    *
    * Accepts either form:
    *   - Legacy wiki-page pin: `{pageName: "Foo", title?: "Foo"}` → URL derived.
@@ -12088,7 +12202,7 @@ ${panes}
   }
 
   /**
-   * DELETE /api/user/pinned-pages/:pageName — remove an item from My Links.
+   * DELETE /api/user/pinned-pages/:pageName — remove an item from pinned pages.
    *
    * For back-compat the path segment is named `:pageName`, but it accepts any
    * URL-decoded identifier: either a legacy pageName OR a URL-encoded canonical
@@ -12124,7 +12238,7 @@ ${panes}
   }
 
   /**
-   * PUT /api/user/pinned-pages/order — reorder My Links.
+   * PUT /api/user/pinned-pages/order — reorder pinned pages.
    *
    * Accepts `order: string[]` where each entry is a URL (preferred) or a
    * legacy pageName. Matching falls back through both fields so old clients
@@ -12792,6 +12906,8 @@ ${panes}
     } catch (err: unknown) {
       // #1951: the manager refused — that kind is turned off for this page.
       if (err instanceof PageNotesTurnedOffError) return res.status(403).json({ success: false, error: err.message });
+      // #2454: the footnote's link is not an http or https address — the editor's to correct.
+      if (err instanceof FootnoteLinkError) return res.status(400).json({ success: false, error: err.message });
       logger.error('Error adding footnote:', err);
       // #709: surface the underlying reason so the client dialog shows
       // something actionable instead of an opaque "Failed to add footnote".
@@ -12828,6 +12944,7 @@ ${panes}
     } catch (err: unknown) {
       // #1951: the manager refused — that kind is turned off for this page.
       if (err instanceof PageNotesTurnedOffError) return res.status(403).json({ success: false, error: err.message });
+      if (err instanceof FootnoteLinkError) return res.status(400).json({ success: false, error: err.message });
       logger.error('Error updating footnote:', err);
       // #709 (same family): surface the underlying reason.
       const reason = err instanceof Error ? err.message : String(err);
@@ -12923,18 +13040,6 @@ ${panes}
         version: configManager.getProperty('ngdpbase.version', '1.0.0')
       };
 
-      // Mock recent activity (in a real implementation, this would come from logs)
-      const recentActivity = [
-        {
-          timestamp: new Date().toLocaleString(),
-          description: 'User logged in: ' + (currentUser?.username ?? 'Anonymous')
-        },
-        {
-          timestamp: new Date(Date.now() - 60000).toLocaleString(),
-          description: 'System started'
-        }
-      ];
-
       // Get system notifications
       let notifications: unknown[] = [];
       let totalNotificationCount = 0;
@@ -13021,6 +13126,13 @@ ${panes}
 
       // #842 — Share Manager summary card (shown under the Add-ons row).
       let shareSummary: { active: number; total: number } | null = null;
+      // The all-users view needs share-manage-all, which admin-system does not imply.
+      let mayManageAllShares = false;
+      try {
+        mayManageAllShares = await wikiContext.hasPermission('share-manage-all');
+      } catch {
+        // non-fatal — the card then shows the line about the permission
+      }
       try {
         const shareManager = this.engine.getManager('ShareManager');
         if (shareManager?.isEnabled()) {
@@ -13089,11 +13201,21 @@ ${panes}
 
       // #2138: when each Reindex and Rebuild last ran, under the Page and Media Management buttons.
       const jobLastRuns: Record<string, JobLastRun | null> = {};
+      let mediaReindexLine: ReindexLine | null = null;
+      let automaticReindex: { label: string; next: string | null } = { label: automaticReindexLabel(3600000), next: null };
       try {
         const jobManager = this.engine.getManager('BackgroundJobManager');
         for (const jobId of ['pages.reindex', 'pages.rebuild', 'media.rescan', 'media.rebuild', 'media.folder-scan']) {
           jobLastRuns[jobId] = await jobManager.lastFinishedRun(jobId);
         }
+        // #2467: a Rebuild also reindexes, so the Media card's "Last reindex" shows the later of the two.
+        mediaReindexLine = latestReindex(jobLastRuns['media.rescan'], jobLastRuns['media.rebuild']);
+        const scanInterval = Number(this.engine.getManager('ConfigurationManager').getProperty('ngdpbase.media.scaninterval', 3600000));
+        const autoView = await jobManager.scheduledJobView('media.folder-scan');
+        automaticReindex = {
+          label: automaticReindexLabel(scanInterval),
+          next: scanInterval > 0 && autoView?.enabled ? autoView.nextSlot : null
+        };
       } catch (jobErr) {
         logger.warn('[adminDashboard] Last job runs could not be read:', jobErr);
       }
@@ -13110,7 +13232,6 @@ ${panes}
         userCount: users.length,
         roleCount: roles.length,
         stats: stats,
-        recentActivity: recentActivity,
         requiredPages: requiredPages,
         requiredPagesSyncNeeded,
         notifications: notifications,
@@ -13126,6 +13247,7 @@ ${panes}
         addonsSummary,
         addonCards,
         shareSummary,
+        mayManageAllShares,
         agentTokenSummary, // #946
         catalogSources,
         // #1109: audit writes are fire-and-forget by design — a failed log must
@@ -13151,6 +13273,8 @@ ${panes}
         backupHealth,
         formatBytes,
         jobLastRuns,
+        mediaReindexLine,
+        automaticReindex,
         // #1842: what the startup checks found outside its vault, each with
         // a "Move into vault" action where this admin may (unsealed vaults).
         vaultRepairs: currentUser ? await this.vaultRepairsFor(currentUser) : [],
@@ -13533,7 +13657,14 @@ ${panes}
 
       if (success && inviting) {
         const created = String((success as { username?: unknown }).username ?? username);
-        const sent = await this.authManagerFor2Step().inviteUser(currentUser, created);
+        let sent: Awaited<ReturnType<AuthManager['inviteUser']>>;
+        try {
+          sent = await this.authManagerFor2Step().inviteUser(currentUser, created);
+        } catch (inviteErr) {
+          // The account exists by now: say so, or a retry meets "Username already exists" (#2494).
+          plainRouteError(req, inviteErr, 'The invitation was not sent.');
+          return res.redirect('/admin/users?error=' + encodeURIComponent(`${created} was created, but the invitation was not sent. You can set a password on the user's edit page instead.`));
+        }
         return res.redirect('/admin/users?' + (sent.outcome === 'sent'
           ? 'success=' + encodeURIComponent(`User created, and an invitation sent to ${created}.`)
           : 'error=' + encodeURIComponent(`User created, but no invitation was sent: ${sent.reason} You can set a password on the user's edit page instead.`)));
@@ -13546,9 +13677,11 @@ ${panes}
         return res.redirect('/admin/users?error=Failed to create user');
       }
     } catch (err: unknown) {
-      logger.error('Error creating user:', err);
-      const errorMessage = encodeURIComponent(getErrorMessage(err) || 'Error creating user');
-      return res.redirect(`/admin/users?error=${errorMessage}`);
+      // #2494: a refusal written for the administrator (a name taken, a role that could not be given) is shown as it is.
+      const shown = err instanceof UserCreateError || err instanceof RoleChangeError
+        ? err.message
+        : plainRouteError(req, err, 'The user could not be created. Try again in a moment.');
+      return res.redirect(`/admin/users?error=${encodeURIComponent(shown)}`);
     }
   }
 
@@ -13763,6 +13896,8 @@ ${panes}
         // the organization's recovery words (never the words) and whether their admin confirmed saving them.
         sharedFoldersKey: backupManager.sharedFoldersKeyInfo(),
         sharedFoldersWords: await sharedFoldersWordsState(this.engine),
+        // #2470: a site with no shared-folders manager shows its card as "Not available", not as broken.
+        sharedFoldersAbsent: !this.engine.getManager<SharedFolderManager>('SharedFolderManager'),
         sharedFoldersUnavailable: ((folders) => (folders ? folders.unavailableReason() : 'Shared folders are not available on this site'))(this.engine.getManager<SharedFolderManager>('SharedFolderManager')),
         // #2125: the folders there are, by name (who may open each is policy's).
         sharedFolderNames: this.engine.getManager<SharedFolderManager>('SharedFolderManager')?.folderNames() ?? [],
@@ -13868,7 +14003,8 @@ ${panes}
         ? 'Thank you: the backup key is recorded as saved off the server.'
         : 'Thank you: .env is recorded as saved off the server.'));
     } catch (err: unknown) {
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
+      const shown = err instanceof BackupKeyRefused ? err.message : plainRouteError(req, err, 'The backup key could not be recorded as saved. Try again in a moment.');
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(shown));
     }
   }
 
@@ -13908,7 +14044,7 @@ ${panes}
         : await folders.prepareRecoveryWords(wikiContext.userContext);
       return await this.renderSharedFoldersWords(req, res, { step: 'words', replacing, words, token });
     } catch (err: unknown) {
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)) + '#shared-folders-key');
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(this.sharedFolderMessage(req, err, 'The recovery words could not be made. Try again in a moment.')) + '#shared-folders-key');
     }
   }
 
@@ -13937,7 +14073,7 @@ ${panes}
       if (!waiting) return res.redirect('/admin/backup?error=' + encodeURIComponent('No recovery words are waiting to be confirmed. Make a new set.') + '#shared-folders-key');
       return await this.renderSharedFoldersWords(req, res, { step: 'confirm', ...waiting });
     } catch (err: unknown) {
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)) + '#shared-folders-key');
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(this.sharedFolderMessage(req, err, 'The recovery words page could not be opened. Try again in a moment.')) + '#shared-folders-key');
     }
   }
 
@@ -13965,7 +14101,7 @@ ${panes}
       const waiting = await folders.pendingRecoveryWords(wikiContext.userContext, token, how);
       return await this.sendRecoveryWords(req, res, how, 'shared-folders', waiting);
     } catch (err: unknown) {
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)) + '#shared-folders-key');
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(this.sharedFolderMessage(req, err, 'The recovery words could not be sent. Try again in a moment.')) + '#shared-folders-key');
     }
   }
 
@@ -14021,7 +14157,7 @@ ${panes}
       const madeNote = made.length > 0 ? ` The shared folder${made.length > 1 ? 's' : ''} ${made.map((n) => `/shared/${n}`).join(' and ')} ${made.length > 1 ? 'are' : 'is'} made.` : '';
       return back('success', `The shared folders' recovery words are saved. Keep them off this server, with the organization's important papers.${madeNote}`);
     } catch (err: unknown) {
-      return back('error', getErrorMessage(err));
+      return back('error', this.sharedFolderMessage(req, err, 'The recovery words could not be saved. Try again in a moment.'));
     }
   }
 
@@ -14043,7 +14179,7 @@ ${panes}
       await folders.discardUnconfirmedWords(wikiContext.userContext);
       return back('success', 'The unconfirmed recovery words are discarded. Make a new set, and confirm you have saved it.');
     } catch (err: unknown) {
-      return back('error', getErrorMessage(err));
+      return back('error', this.sharedFolderMessage(req, err, 'The recovery words could not be discarded. Try again in a moment.'));
     }
   }
 
@@ -14068,7 +14204,17 @@ ${panes}
       const time = body.autoBackupTime ?? '02:00';
       const days = body.autoBackupDays ?? 'daily';
       const maxBackups = parseInt(body.maxBackups ?? '10', 10);
-      const directory = body.directory ?? '';
+      const directory = (body.directory ?? '').trim();
+
+      // #2492: the backup folder is its own form, and saves on its own.
+      if (body.section === 'folder') {
+        if (!directory) return res.redirect('/admin/backup?error=' + encodeURIComponent('Enter the folder to keep backups in.'));
+        const { backupsLive } = await backupManager.updateAutoBackupConfig({ directory }, currentUser);
+        // With backups switched off since start-up nothing uses the folder yet: say so, not that backups go to it.
+        return res.redirect('/admin/backup?success=' + encodeURIComponent(backupsLive
+          ? 'Backup folder saved. Backups now go to it.'
+          : 'Backup folder saved. Backups are switched off until the site is restarted; then they go to it.'));
+      }
 
       await backupManager.updateAutoBackupConfig({
         enabled,
@@ -14081,7 +14227,9 @@ ${panes}
       return res.redirect('/admin/backup?success=Auto-backup+configuration+saved');
     } catch (err: unknown) {
       logger.error('Error saving backup config:', err);
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
+      // #2492: the admin reads a plain message; the full error is in the log above.
+      const message = adminMessage(err, 'The backup settings could not be saved. Check them and try again.');
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(message));
     }
   }
 
@@ -14089,6 +14237,7 @@ ${panes}
    * POST /admin/backup/create — Create backup and download
    */
   async adminBackup(req: Request, res: Response) {
+    let backupMade = false;
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
@@ -14123,6 +14272,7 @@ ${panes}
 
       // Create backup
       const backupPath = await backupManager.createBackup(currentUser);
+      backupMade = true;
       logger.debug(`✅ Backup created: ${backupPath}`);
 
       // #1723 D2: the download is the document and its database files, one streamed .tar.
@@ -14130,7 +14280,13 @@ ${panes}
 
     } catch (err: unknown) {
       logger.error('Error creating backup:', err);
-      res.status(500).send('Error creating backup: ' + getErrorMessage(err));
+      // #2492: the admin reads a plain message on the Backup page, in the red alert; the full error is in the log above.
+      // The message travels in the address and the page escapes it, so a folder path is never read as markup.
+      if (res.headersSent) return res.end();
+      const said = backupMade
+        ? 'The backup was made and kept in the backup folder, but the download could not be started. Download it from the list of backups on this page.'
+        : `${adminMessage(err, 'The backup could not be made. Try again. If it keeps failing, the backup status on this page says what is wrong.')} No backup was made. Your earlier backups and the backup folder are unchanged.`;
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(said));
     }
   }
 
@@ -14202,7 +14358,7 @@ ${panes}
       return res.redirect('/admin/backup?success=' + encodeURIComponent(`Restore started: a fresh backup is being taken, then ${what}. You will be notified when it is ready. Restart the site to apply it.`));
     } catch (err: unknown) {
       logger.error('Error starting restore:', err);
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(adminMessage(err, 'The restore could not be started. Try again.')));
     }
   }
 
@@ -14223,7 +14379,7 @@ ${panes}
       return res.redirect('/admin/backup?success=' + encodeURIComponent(`Staged restore from ${cancelled.source} cancelled; ${unchanged}.`));
     } catch (err: unknown) {
       logger.error('Error cancelling staged restore:', err);
-      return res.redirect('/admin/backup?error=' + encodeURIComponent(getErrorMessage(err)));
+      return res.redirect('/admin/backup?error=' + encodeURIComponent(adminMessage(err, 'The staged restore could not be cancelled. Try again.')));
     }
   }
 
@@ -14716,7 +14872,8 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
-      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'json'))) return; // #1525, #1635: the prompt, not this handler's refusal
+      // #2360: 'form', not 'json': a plain form is not kept to be redone, so confirming never runs the reset; the person presses Reset again.
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'form'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (
         !currentUser ||
         !(await wikiContext.hasPermission('config-manage'))
@@ -15263,10 +15420,9 @@ ${panes}
       const runId = await jobManager.enqueue('pages.reindex', jobContextFromRequest(req.userContext));
       return res.status(202).json({ runId });
     } catch (err: unknown) {
-      logger.error('Error enqueueing reindex job:', err);
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error starting reindex'
+        error: plainRouteError(req, err, 'The reindex could not be started. Try again in a moment.')
       });
     }
   }
@@ -15431,7 +15587,7 @@ ${panes}
       if (all) {
         const total = await pageManager.repairAllVaultPages(currentUser, { ownOnly: back === '/profile' });
         const skipped = total.refused + total.failed > 0
-          ? ` ${total.refused} left for their owner or refused${total.failed ? `, ${total.failed} failed (see the log)` : ''}.`
+          ? ` ${total.refused} left for their owner or refused${total.failed ? `, ${total.failed} failed` : ''}.`
           : '';
         return answer(total.failed > 0 ? 'error' : 'success', `Repaired ${total.repaired} item(s): ${describe(total)}${skipped}`);
       }
@@ -15447,8 +15603,7 @@ ${panes}
       if (!result.ok) return answer('error', result.message);
       return answer('success', describe(result));
     } catch (err: unknown) {
-      logger.error('[vault-repair] The repair did not complete (#1842):', err);
-      return answer('error', `The repair did not complete: ${getErrorMessage(err)}. Anything not moved is still where it was.`);
+      return answer('error', plainRouteError(req, err, 'The repair did not complete. Anything not moved is still where it was. Try again in a moment.'));
     }
   }
 
@@ -16373,10 +16528,9 @@ ${panes}
         removedOrphans
       });
     } catch (err: unknown) {
-      logger.error('Error syncing required pages:', err);
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error syncing required pages'
+        error: plainRouteError(req, err, 'The required pages could not be synced. Try again in a moment.')
       });
     }
   }
@@ -16562,8 +16716,7 @@ ${panes}
         uuidB: resolved.uuidB
       });
     } catch (err: unknown) {
-      logger.error('Error computing diff (API):', err);
-      return res.status(500).json({ error: getErrorMessage(err) || 'Error computing diff' });
+      return res.status(500).json({ error: plainRouteError(req, err, 'The page comparison could not be completed. Try again in a moment.') });
     }
   }
 
@@ -16805,6 +16958,48 @@ ${panes}
   });
 
   /**
+   * What the picker needs to offer Delete on a local file row (#2534).
+   *
+   * `canDelete` is AttachmentManager's own answer, the one the delete door
+   * gives, asked with the request's context; it records nothing and decides
+   * nothing, since the door asks again when the button is pressed. `usedBy`
+   * is only built for a row the viewer may delete, since it feeds the confirm
+   * box: the pages that use the file, named only when the viewer may open
+   * them, at most {@link WikiRoutes.USED_BY_NAMES}; the rest are counted.
+   * A check that fails marks the row not deletable and names no page.
+   */
+  private static readonly USED_BY_NAMES = 10;
+
+  private async annotateFileDeletes(rows: Array<Record<string, unknown>>, wikiContext: WikiContext): Promise<void> {
+    const ctx = wikiContext.userContext;
+    const attachments = this.engine.getManager('AttachmentManager') as { mayDeleteAttachment?: (c: unknown, id: string) => Promise<boolean> } | null;
+    const pages = this.engine.getManager('PageManager') as { filterPagesFor?: (c: unknown, names: readonly string[], action: string) => Promise<string[]> } | null;
+    for (const row of rows) {
+      if (row.providerId !== 'local' || typeof row.id !== 'string') continue;
+      let canDelete = false;
+      try {
+        canDelete = Boolean(ctx && typeof attachments?.mayDeleteAttachment === 'function' && await attachments.mayDeleteAttachment(ctx, row.id));
+      } catch (err) {
+        logger.warn(`[AssetSearch] Delete check failed for a file row: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      row.canDelete = canDelete;
+      if (!canDelete) continue;
+      const mentioned = Array.isArray(row.mentions) ? row.mentions.filter((n): n is string => typeof n === 'string') : [];
+      let visible: string[] = [];
+      try {
+        visible = mentioned.length > 0 && typeof pages?.filterPagesFor === 'function' ? await pages.filterPagesFor(ctx, mentioned, 'view') : [];
+      } catch (err) {
+        logger.warn(`[AssetSearch] Page check failed for a file row: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      row.usedBy = {
+        pages: visible.slice(0, WikiRoutes.USED_BY_NAMES),
+        more: Math.max(0, visible.length - WikiRoutes.USED_BY_NAMES),
+        hidden: mentioned.length - visible.length
+      };
+    }
+  }
+
+  /**
    * GET /api/assets/search
    *
    * Unified search across AttachmentManager and MediaManager with pagination.
@@ -16988,6 +17183,7 @@ ${panes}
 
         const total = deduped.length;
         const results = deduped.slice(offset, offset + pageSize);
+        await this.annotateFileDeletes(results, wikiContext);
         return res.json({ success: true, results, total, hasMore: offset + pageSize < total, capped: anyCapped });
       }
 
@@ -17308,6 +17504,7 @@ ${panes}
         dateFrom, dateTo, dateField, includeHidden, pathPrefix, mime, extension
       }, wikiContext.userContext);
 
+      await this.annotateFileDeletes((page?.results ?? []) as unknown as Array<Record<string, unknown>>, wikiContext);
       return res.json({ success: true, ...page });
     } catch (err: unknown) {
       logger.error('[AssetService] Search error:', err);
@@ -17362,9 +17559,7 @@ ${panes}
 
       return res.json({ success: true, message: 'Attachment deleted successfully' });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      logger.error('Error deleting attachment from browser:', err);
-      return res.status(500).json({ success: false, error: message });
+      return res.status(500).json({ success: false, error: plainRouteError(req, err, 'The attachment could not be deleted. Try again in a moment.') });
     }
   }
 
@@ -17425,10 +17620,9 @@ ${panes}
         ...(errorSummary ? { error: errorSummary } : {})
       });
     } catch (err: unknown) {
-      logger.error('Error previewing import:', err);
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error previewing import'
+        error: plainRouteError(req, err, 'The import preview could not be made. Check the folder and format, then try again.')
       });
     }
   }
@@ -17482,10 +17676,9 @@ ${panes}
         durationMs: result.durationMs
       });
     } catch (err: unknown) {
-      logger.error('Error executing import:', err);
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error executing import'
+        error: plainRouteError(req, err, 'The import could not be completed. Check the folder and format, then try again.')
       });
     }
   }
@@ -17570,15 +17763,33 @@ ${panes}
       res.end();
       return;
     } catch (err: unknown) {
-      logger.error('Error in streaming import:', err);
+      const plain = plainRouteError(req, err, 'The import could not be completed. Check the folder and format, then try again.');
       // Try to send error event if connection still open
       try {
-        res.write(`data: ${JSON.stringify({ type: 'error', error: getErrorMessage(err) })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'error', error: plain })}\n\n`);
         res.end();
       } catch {
         // Connection already closed
       }
     }
+  }
+
+  /**
+   * The sentence and status for an import from a web address that failed for a
+   * reason the person can fix (#2494), or null for any other failure, which
+   * gets the general sentence. One sentence per reason, so "check the address"
+   * is never said of an address that was fine.
+   */
+  private urlImportRefusal(err: unknown): { status: number; message: string } | null {
+    if (!(err instanceof UrlImportRefused)) return null;
+    const answers: Record<UrlImportRefusal, { status: number; message: string }> = {
+      'invalid-address': { status: 400, message: 'That is not a web address. Check that you typed or pasted all of it.' },
+      'not-web-address': { status: 400, message: 'Only web addresses that start with http:// or https:// can be imported.' },
+      'not-found': { status: 422, message: 'That page was not found, or the site does not let us read it. Check the address and try again.' },
+      'not-a-page': { status: 422, message: 'That address is not a web page (it may be an image or a file). Use the address of a page.' },
+      'site-unavailable': { status: 502, message: "That site isn't answering right now; try again later." }
+    };
+    return answers[err.reason];
   }
 
   /**
@@ -17622,10 +17833,14 @@ ${panes}
         content: result.metadata?.['_previewContent'] as string || undefined
       });
     } catch (err: unknown) {
-      logger.error('Error previewing URL import:', err);
+      const refusal = this.urlImportRefusal(err);
+      if (refusal) {
+        refusedOnPurpose(req, `web address import (${err instanceof UrlImportRefused ? err.reason : 'refused'})`);
+        return res.status(refusal.status).json({ success: false, error: refusal.message });
+      }
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error previewing URL import'
+        error: plainRouteError(req, err, 'The preview of that web address could not be made. Check the address and try again.')
       });
     }
   }
@@ -17681,10 +17896,14 @@ ${panes}
           validationErrors: err.validationErrors
         });
       }
-      logger.error('Error executing URL import:', err);
+      const refusal = this.urlImportRefusal(err);
+      if (refusal) {
+        refusedOnPurpose(req, `web address import (${err instanceof UrlImportRefused ? err.reason : 'refused'})`);
+        return res.status(refusal.status).json({ success: false, error: refusal.message });
+      }
       return res.status(500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error executing URL import'
+        error: plainRouteError(req, err, 'The page could not be imported from that web address. Check the address and try again.')
       });
     }
   }
@@ -17734,7 +17953,7 @@ ${panes}
       // page-door-ignore: converting is an edit (#1127) — the page-edit door decides below.
       const page = await pageManager.getPage(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       if (!page) {
-        return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
+        return await this.convertAbsentPage(req, res, pageName);
       }
       // #1127: converting IS an edit — anyone who may edit the page could
       // paste the converted text by hand — so the gate is the page's own
@@ -17766,8 +17985,7 @@ ${panes}
         warnings: [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...fn.warnings]
       });
     } catch (err: unknown) {
-      logger.error('Error previewing page conversion:', err);
-      return res.status(500).json({ success: false, error: getErrorMessage(err) || 'Error previewing conversion' });
+      return res.status(500).json({ success: false, error: plainRouteError(req, err, 'The conversion preview could not be made. Try again in a moment.') });
     }
   }
 
@@ -17794,7 +18012,7 @@ ${panes}
       // page-door-ignore: converting is an edit (#1127) — the page-edit door decides below.
       const page = await pageManager.getPage(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       if (!page) {
-        return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
+        return await this.convertAbsentPage(req, res, pageName);
       }
       // #1127: page-edit ACL, same reasoning as the preview gate.
       const wikiContext = await this.convertEditContext(req, pageName, page);
@@ -17836,9 +18054,25 @@ ${panes}
         warnings
       });
     } catch (err: unknown) {
-      logger.error('Error executing page conversion:', err);
-      return res.status(500).json({ success: false, error: getErrorMessage(err) || 'Error executing conversion' });
+      return res.status(500).json({ success: false, error: plainRouteError(req, err, 'The page could not be converted. Try again in a moment.') });
     }
+  }
+
+  /**
+   * The answer for a convert request naming a page that is not there (#2359). Someone the permission check
+   * refuses gets the same 403 as for a page that exists, so the answer does not say which it is. Only a
+   * check that allows the edit gets the 404; for a page that is not there the policies refuse everyone, so
+   * in practice an editor gets the 403 too.
+   */
+  private async convertAbsentPage(req: Request, res: Response, pageName: string): Promise<Response> {
+    const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.EDIT, pageName });
+    const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
+    const canEdit = wikiContext.userContext
+      ? await policyInformationPoint?.checkPagePermissionWithContext?.(wikiContext, 'edit')
+      : false;
+    return canEdit
+      ? res.status(404).json({ success: false, error: `Page not found: ${pageName}` })
+      : res.status(403).json({ success: false, error: 'You do not have permission to convert this page' });
   }
 
   /**
@@ -17862,6 +18096,46 @@ ${panes}
     const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
     const canEdit = await policyInformationPoint?.checkPagePermissionWithContext?.(wikiContext, 'edit');
     return canEdit ? wikiContext : null;
+  }
+
+  /**
+   * "Page building speed" (#2468): how fast the parser builds pages, summed up over the last
+   * hour, 24 hours, 7 days and 30 days. Read-only; the same permission check as the other
+   * read-only admin screens (`admin-read` or `admin-system`, `hasAdminViewAccess`).
+   */
+  async adminParserPerformance(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+
+      if (
+        !currentUser ||
+        !(await this.hasAdminViewAccess(wikiContext))
+      ) {
+        return await this.renderError(
+          req,
+          res,
+          403,
+          'Access Denied',
+          'You do not have permission to see how fast pages are built'
+        );
+      }
+
+      const commonData = await this.getCommonTemplateData(req);
+      const markupParser = this.engine.getManager<MarkupParser>('MarkupParser');
+      if (!markupParser) throw new Error('MarkupParser is not available');
+      const report = await markupParser.getPerformanceReport();
+
+      return res.render('admin-parser-performance', {
+        ...commonData,
+        title: 'Page building speed',
+        report,
+        csrfToken: req.session.csrfToken
+      });
+    } catch (err: unknown) {
+      logger.error('Error loading page building speed:', err);
+      return res.status(500).send('Error loading page building speed');
+    }
   }
 
   /**
@@ -18109,10 +18383,21 @@ ${panes}
       if (outcome.registryUnreachable) {
         return back('error', `npm couldn't be reached, so ${slug} was not updated and stays on its current version. Try again later.`);
       }
-      return back('error', `${slug} was not updated: ${outcome.reason ?? 'refused'}`);
+      // The one refusal written for the person: an earlier update is waiting for a restart.
+      if (outcome.reason === FINISH_LAST_UPDATE) return back('error', `${slug} was not updated: ${FINISH_LAST_UPDATE}`);
+      // The installer's own words hold a server path, the registry's reply or a setting's name: the log has them, the page does not (#2494).
+      // The kinds of refusal an administrator can act on get one plain sentence each; anything else gets the general one.
+      const reason = outcome.reason ?? '';
+      logger.warn(`[route] add-on update of '${slug}' refused: ${reason || 'no reason given'}`);
+      if (/ is not in ngdpbase\.addons\.install$|is not installed, so there is nothing to update/.test(reason)) {
+        return back('error', `${slug} is not on this site's list of installed add-ons, so it was not updated.`);
+      }
+      if (/ needs ngdpbase \S+ or later; this is /.test(reason)) return back('error', `${slug} was not updated: that version needs a newer ngdpbase than this site runs.`);
+      if (/ is outside the configured range /.test(reason)) return back('error', `${slug} was not updated: that version is outside the range this site allows.`);
+      if (/ is already downloaded; restart the site to use it$/.test(reason)) return back('error', `${slug} was not updated: that version is already downloaded; restart the site to use it.`);
+      return back('error', `${slug} was not updated and stays on its current version.`);
     } catch (err: unknown) {
-      logger.error('Error updating add-on:', err);
-      return back('error', `The add-on was not updated: ${getErrorMessage(err)}`);
+      return back('error', plainRouteError(req, err, 'The add-on was not updated. Try again in a moment.'));
     }
   }
 
@@ -18290,8 +18575,8 @@ ${panes}
       res.redirect('/admin/contacts?success=' + encodeURIComponent(`Linked to the account ${username}.`));
     } catch (err: unknown) {
       if (err instanceof ContactRefusedError) { await this.refuse(wikiContext, req, res, 'page', err.permission); return; }
-      logger.warn(`[contacts] Linking ${personId} to ${username} failed: ${getErrorMessage(err)}`);
-      res.redirect('/admin/contacts?accountless=1&error=' + encodeURIComponent(getErrorMessage(err).replace(/^IdentityManager:\s*/, '')));
+      const shown = err instanceof ContactLinkRefused ? err.message : plainRouteError(req, err, 'The person could not be linked to that account. Try again in a moment.');
+      res.redirect('/admin/contacts?accountless=1&error=' + encodeURIComponent(shown));
     }
   }
 
@@ -18553,9 +18838,18 @@ ${panes}
       const organizationManager = this.engine.getManager('OrganizationManager');
       const organizationData = req.body as Record<string, unknown>;
 
+      // #2494: a name is the one thing an organization needs; say so rather than "try again".
+      if (typeof organizationData.name !== 'string' || !organizationData.name.trim()) {
+        const needsName = 'Give the organization a name.';
+        refusedOnPurpose(req, 'organization without a name');
+        return req.headers.accept?.includes('application/json')
+          ? res.status(400).json({ error: needsName })
+          : res.redirect('/admin/organizations?error=' + encodeURIComponent(needsName));
+      }
+
       // #2041: the manager gives the new organization its `urn:uuid:` id; the
       // form's web address stays the ordinary `url` field.
-      const newOrganization = await organizationManager.create(userContext, { ...organizationData, name: typeof organizationData.name === 'string' ? organizationData.name : '' });
+      const newOrganization = await organizationManager.create(userContext, { ...organizationData, name: organizationData.name });
 
       if (req.headers.accept?.includes('application/json')) {
         return res.json({ success: true, organization: newOrganization });
@@ -18570,12 +18864,12 @@ ${panes}
         await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
         return;
       }
-      logger.error('Error creating organization:', error);
+      const plain = plainRouteError(req, error, 'The organization could not be created. Try again in a moment.');
       if (req.headers.accept?.includes('application/json')) {
-        return res.status(500).json({ error: getErrorMessage(error) });
+        return res.status(500).json({ error: plain });
       } else {
         return res.redirect(
-          '/admin/organizations?error=' + encodeURIComponent(getErrorMessage(error))
+          '/admin/organizations?error=' + encodeURIComponent(plain)
         );
       }
     }
@@ -18628,12 +18922,12 @@ ${panes}
         await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
         return;
       }
-      logger.error('Error updating organization:', error);
+      const plain = plainRouteError(req, error, 'The organization could not be saved. Try again in a moment.');
       if (req.headers.accept?.includes('application/json')) {
-        return res.status(500).json({ error: getErrorMessage(error) });
+        return res.status(500).json({ error: plain });
       } else {
         return res.redirect(
-          '/admin/organizations?error=' + encodeURIComponent(getErrorMessage(error))
+          '/admin/organizations?error=' + encodeURIComponent(plain)
         );
       }
     }
@@ -18681,12 +18975,12 @@ ${panes}
         await this.refuse({ userContext: req.userContext }, req, res, req.headers.accept?.includes('application/json') ? 'json' : 'page', error.permission);
         return;
       }
-      logger.error('Error deleting organization:', error);
+      const plain = plainRouteError(req, error, 'The organization could not be deleted. Try again in a moment.');
       if (req.headers.accept?.includes('application/json')) {
-        return res.status(500).json({ error: getErrorMessage(error) });
+        return res.status(500).json({ error: plain });
       } else {
         return res.redirect(
-          '/admin/organizations?error=' + encodeURIComponent(getErrorMessage(error))
+          '/admin/organizations?error=' + encodeURIComponent(plain)
         );
       }
     }
@@ -18722,8 +19016,7 @@ ${panes}
         await this.refuse({ userContext: req.userContext }, req, res, 'json', error.permission);
         return;
       }
-      logger.error('Error getting organization:', error);
-      return res.status(500).json({ error: getErrorMessage(error) });
+      return res.status(500).json({ error: plainRouteError(req, error, 'The organization could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -18778,8 +19071,7 @@ ${panes}
         await this.refuse({ userContext: req.userContext }, req, res, 'json', error.permission);
         return;
       }
-      logger.error('Error getting organization schema:', error);
-      return res.status(500).json({ error: getErrorMessage(error) });
+      return res.status(500).json({ error: plainRouteError(req, error, 'The organization data could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -18815,8 +19107,7 @@ ${panes}
 
       return res.json(schema);
     } catch (error: unknown) {
-      logger.error('Error getting person schema:', error);
-      return res.status(500).json({ error: getErrorMessage(error) });
+      return res.status(500).json({ error: plainRouteError(req, error, 'The person data could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -19032,8 +19323,11 @@ ${panes}
     app.get('/my/vaults', (req: Request, res: Response) => this.myPrivatePagesPage(req, res));
     // #1388: the owner's links to their vaults.
     app.get('/my/vaults/links', (req: Request, res: Response) => void this.myVaultLinksPage(req, res));
-    app.post('/my/vaults/links', (req: Request, res: Response) => void this.myVaultLinksCreate(req, res));
-    app.post('/my/vaults/links/:id/extend', (req: Request, res: Response) => void this.myVaultLinksExtend(req, res));
+    app.post('/my/shares/vault-links', (req: Request, res: Response) => void this.myVaultLinksCreate(req, res));
+    app.post('/my/shares/:id/extend', (req: Request, res: Response) => void this.myVaultLinksExtend(req, res));
+    // Slice 3 of #2247: the old addresses send the request on, body and all.
+    app.post('/my/vaults/links', (_req: Request, res: Response) => res.redirect(307, '/my/shares/vault-links'));
+    app.post('/my/vaults/links/:id/extend', (req: Request, res: Response) => res.redirect(307, `/my/shares/${encodeURIComponent(req.params.id)}/extend`));
     app.post('/my/vaults/links/:id/revoke', (req: Request, res: Response) => void this.myVaultLinksRevoke(req, res));
     // #1414: the store door — core owns it; an addon links to it.
     // #1448: registered before `/stores/:kind` and under its own prefix, so no
@@ -19177,6 +19471,7 @@ ${panes}
     app.post('/admin/settings/theme', (req: Request, res: Response) => this.adminUpdateTheme(req, res));
     app.post('/admin/settings/general', (req: Request, res: Response) => this.adminUpdateGeneralSettings(req, res));
     app.get('/admin/logs', (req: Request, res: Response) => this.adminLogs(req, res));
+    app.get('/admin/parser-performance', (req: Request, res: Response) => this.adminParserPerformance(req, res));
     // #1113: these four handlers and views/admin-audit.ejs existed with no
     // registration at all, so /admin/audit was a 404 and the audit log had no
     // reader in the application.
@@ -19249,6 +19544,9 @@ ${panes}
     // #2149: the Upload file dialog — FileManager's places, and its one upload door.
     app.get('/files/places', (req: Request, res: Response) => void this.uploadFilePlaces(req, res));
     app.post('/files/upload', (req: Request, res: Response) => {
+      // #2359: sign-in is asked before multer reads the body, so a signed-out caller's file is never buffered.
+      const uploadContext = this.createWikiContext(req);
+      if (this.isSignedOut(uploadContext)) { void this.refuse(uploadContext, req, res, 'json', 'asset-upload'); return; }
       attachmentUpload.single('file')(req, res, (err: unknown) => {
         if (err) {
           const tooLarge = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE';
@@ -19287,7 +19585,7 @@ ${panes}
           }
           return res.status(400).json({
             success: false,
-            error: getErrorMessage(err)
+            error: plainRouteError(req, err, 'The file could not be uploaded. Try again in a moment.')
           });
         }
         return void this.uploadAttachment(req, res);
@@ -19483,6 +19781,8 @@ ${panes}
     app.get('/share/:token/lockbox/files/:key', (req: Request, res: Response) => void this.shareLockbox(req, res, 'files'));
 
     // Share management routes (#854) — admin/editor (epic #842 slice 3)
+    // Slice 3 of #2247: the user's own links, both kinds, in one list.
+    app.get('/my/shares', (req: Request, res: Response) => void this.mySharesPage(req, res));
     app.get('/shares', (req: Request, res: Response) => void this.sharesList(req, res));
     app.post('/shares/create', (req: Request, res: Response) => void this.sharesCreate(req, res));
     app.post('/shares/:id/revoke', (req: Request, res: Response) => void this.sharesRevoke(req, res));
@@ -20383,10 +20683,9 @@ ${panes}
 
       return res.json(formattedMetadata);
     } catch (error: unknown) {
-      logger.error('Error retrieving page metadata:', error);
       return res
         .status(500)
-        .json({ error: 'Internal server error', details: getErrorMessage(error) });
+        .json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page details could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -20568,8 +20867,7 @@ ${panes}
         count: suggestions.length
       });
     } catch (error: unknown) {
-      logger.error('Error getting page suggestions:', error);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The suggestions could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -20615,18 +20913,16 @@ ${panes}
       });
 
     } catch (error: unknown) {
-      logger.error(`Error getting page versions: ${getErrorMessage(error)}`);
-
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page not found',
-          message: getErrorMessage(error)
+          message: 'That page was not found.'
         });
       }
 
       return res.status(500).json({
         error: 'Internal server error',
-        details: getErrorMessage(error)
+        details: plainRouteError(req, error, 'The version list could not be loaded. Try again in a moment.')
       });
     }
   }
@@ -20679,25 +20975,23 @@ ${panes}
       });
 
     } catch (error: unknown) {
-      logger.error(`Error getting page version: ${getErrorMessage(error)}`);
-
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page or version not found',
-          message: getErrorMessage(error)
+          message: 'That page or version was not found.'
         });
       }
 
       if (getErrorMessage(error).includes('does not exist')) {
         return res.status(404).json({
           error: 'Version not found',
-          message: getErrorMessage(error)
+          message: 'That version was not found.'
         });
       }
 
       return res.status(500).json({
         error: 'Internal server error',
-        details: getErrorMessage(error)
+        details: plainRouteError(req, error, 'The version could not be loaded. Try again in a moment.')
       });
     }
   }
@@ -20749,18 +21043,16 @@ ${panes}
       });
 
     } catch (error: unknown) {
-      logger.error(`Error comparing page versions: ${getErrorMessage(error)}`);
-
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page or version not found',
-          message: getErrorMessage(error)
+          message: 'That page or version was not found.'
         });
       }
 
       return res.status(500).json({
         error: 'Internal server error',
-        details: getErrorMessage(error)
+        details: plainRouteError(req, error, 'The versions could not be compared. Try again in a moment.')
       });
     }
   }
@@ -20837,18 +21129,16 @@ ${panes}
       });
 
     } catch (error: unknown) {
-      logger.error(`Error restoring page version: ${getErrorMessage(error)}`);
-
       if (getErrorMessage(error).includes('not found')) {
         return res.status(404).json({
           error: 'Page or version not found',
-          message: getErrorMessage(error)
+          message: 'That page or version was not found.'
         });
       }
 
       return res.status(500).json({
         error: 'Internal server error',
-        details: getErrorMessage(error)
+        details: plainRouteError(req, error, 'The page version could not be restored. Try again in a moment.')
       });
     }
   }
@@ -20989,8 +21279,7 @@ ${panes}
 
       return res.json({ success: true, count: pages.length, pages });
     } catch (error: unknown) {
-      logger.error(`Error listing deleted pages: ${getErrorMessage(error)}`);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The list of deleted pages could not be loaded. Try again in a moment.') });
     }
   }
 
@@ -21031,10 +21320,10 @@ ${panes}
     } catch (error: unknown) {
       // #1815: the write door refused the restore — a create there.
       if (error instanceof PageWriteRefusedError) {
+        refusedOnPurpose(req, 'restore of a deleted page (not allowed)');
         return res.status(403).json({ success: false, error: 'forbidden', detail: error.message });
       }
-      logger.error(`Error restoring deleted page: ${getErrorMessage(error)}`);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be restored. Try again in a moment.') });
     }
   }
 
@@ -21059,8 +21348,7 @@ ${panes}
       logger.warn(`[WikiRoutes] User ${req.userContext.username} PERMANENTLY purged page ${uuid}`);
       return res.json({ success: true, uuid });
     } catch (error: unknown) {
-      logger.error(`Error purging deleted page: ${getErrorMessage(error)}`);
-      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+      return res.status(500).json({ error: 'Internal server error', details: plainRouteError(req, error, 'The page could not be permanently deleted. Try again in a moment.') });
     }
   }
 
@@ -23009,85 +23297,161 @@ ${description}
 
 
   /**
-   * GET /shares
-   * Management list: own shares for editors, all shares for admins.
-   * Shows full share link, status (active/expired/revoked), and expiry.
-   */
-  /**
-   * Shares are a governed capability (#1198, #1224), shipped to admin and
-   * editor — never a role-name test, since a share is an anonymous-access
-   * credential. #1638: one permission per action — `share-create` (which
-   * includes seeing your own), `share-extend`, `share-revoke`. Listing
-   * everyone's and revoking anyone's stay `admin-system`.
+   * GET /shares, the old address (slice 4 of #2247). The list of every user's
+   * tag links is the all-users view of the Shared links page now, so this only
+   * redirects: a holder of share-manage-all to that view, everyone else to
+   * their own. `keyword` only fills in the create form, so it goes to the
+   * Share... choice with the tag chosen. Query notices are kept.
    */
   async sharesList(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!(await wikiContext.hasPermission('share-create'))) {
-        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to manage shares.');
+      if (typeof req.query.keyword === 'string' && req.query.keyword) {
+        return res.redirect(302, `/my/shares?share=tag&tag=${encodeURIComponent(req.query.keyword)}`);
       }
+      const kept = ['created', 'revoked', 'error']
+        .filter((k) => typeof req.query[k] === 'string')
+        .map((k) => `${k}=${encodeURIComponent(req.query[k] as string)}`);
+      const params = [...((await wikiContext.hasPermission('share-manage-all')) ? ['view=all'] : []), ...kept];
+      return res.redirect(302, '/my/shares' + (params.length ? `?${params.join('&')}` : ''));
+    } catch (err: unknown) {
+      logger.error('[share] Error redirecting the shares list:', err);
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  /** What the Shared links page offers this person, and whether it opens for them at all. */
+  private async sharedLinksAccess(
+    wikiContext: WikiContext,
+    subject: NonNullable<WikiContext['userContext']>
+  ): Promise<{ mayTag: boolean; vaults: string[]; mayVault: boolean; mayOpen: boolean }> {
+    const mayTag = await wikiContext.hasPermission('share-create');
+    const vaults = (await wikiContext.hasPermission('profile-manage'))
+      ? await this.engine.getManager('PageManager').listOwnStoreIds(subject)
+      : [];
+    const mayVault = vaults.length > 0;
+    const mayOpen = mayTag || mayVault || (await wikiContext.hasPermission('share-manage-all'));
+    return { mayTag, vaults, mayVault, mayOpen };
+  }
+
+  /**
+   * Where a person lands after revoking their own tag link: the Shared links
+   * page when they may open it, and otherwise the front page, which opens for all.
+   */
+  private async afterTagRevokeUrl(
+    wikiContext: WikiContext,
+    subject: NonNullable<WikiContext['userContext']>,
+    stayInAllUsers = false
+  ): Promise<string> {
+    if (!(await this.sharedLinksAccess(wikiContext, subject)).mayOpen) return '/';
+    return stayInAllUsers ? '/my/shares?view=all&revoked=1' : '/my/shares?revoked=1';
+  }
+
+  /**
+   * True when a revoke form was posted from the all-users view and the person
+   * may use that view. The field is only a hint about where to land: a person
+   * without share-manage-all who posts it is sent to their own list.
+   */
+  private async postedFromAllUsers(wikiContext: WikiContext, req: Request): Promise<boolean> {
+    return (req.body as { view?: unknown } | undefined)?.view === 'all' && (await wikiContext.hasPermission('share-manage-all'));
+  }
+
+  /**
+   * GET /my/shares: the signed-in user's own shared links, both kinds, in one
+   * list (slice 3 of #2247). The page opens for anyone who may make either
+   * kind, or who holds share-manage-all. It lists only the kinds the user may
+   * make now. It reads no page. Only this route reads a record's token, to show
+   * the address; `sharedLinkRows` carries none. The page is never cached.
+   */
+  async mySharesPage(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const subject = wikiContext.userContext;
+      // A signed-out visitor is named Anonymous, so check the sign-in too.
+      if (!subject?.username || !subject.isAuthenticated) {
+        await this.refuse(wikiContext, req, res, 'page', 'share-create');
+        return;
+      }
+      // It shows working addresses, so no cache may keep it.
+      res.setHeader('Cache-Control', 'private, no-store');
       const shareManager = this.engine.getManager('ShareManager');
-      if (!shareManager || !shareManager.isEnabled()) {
-        return await this.renderError(req, res, 404, 'Not Found', 'Share links are disabled on this instance.');
+      if (!shareManager?.isEnabled()) {
+        await this.renderError(req, res, 404, 'Not Found', 'Share links are switched off on this site.');
+        return;
       }
-
-      const isAdmin = await wikiContext.hasPermission('admin-system');
-      const username = wikiContext.userContext?.username ?? '';
-      const now = Date.now();
-      // #1388: vault links are the owner's alone, managed on /my/vaults/links;
-      // an admin's list of everyone's links never shows one.
-      const shares = shareManager.list(isAdmin ? undefined : username).filter(r => r.scope.kind !== 'vault').map(r => ({
-        ...r,
-        status: r.revokedAt
-          ? 'revoked'
-          : (r.expiresAt && now > Date.parse(r.expiresAt)) ? 'expired' : 'active'
-      }));
-
-      // Referer-aware Back link — /shares is reached from keyword albums,
-      // the page More menu, the admin dashboard, and the profile card, so a
-      // hardcoded "Media" back button lies most of the time. Same-host
-      // referers only, and never /shares itself (create/revoke redirects).
-      let backLink: string | null = null;
-      const referer = req.get('referer');
-      if (referer) {
-        try {
-          const refUrl = new URL(referer);
-          if (refUrl.host === req.get('host') && !refUrl.pathname.startsWith('/shares')) {
-            backLink = refUrl.pathname + refUrl.search;
-          }
-        } catch {
-          // unparseable referer — no back link
+      const { mayTag, vaults, mayVault, mayOpen } = await this.sharedLinksAccess(wikiContext, subject);
+      if (!mayOpen) {
+        await this.refuse(wikiContext, req, res, 'page', 'share-create');
+        return;
+      }
+      // Slice 4 of #2247 (R13): the all-users view is for a holder of
+      // share-manage-all alone; anyone else asking for it gets their own. It
+      // is not recorded: only a revoke is (answer C).
+      const mayManageAll = await wikiContext.hasPermission('share-manage-all');
+      const allUsers = mayManageAll && req.query.view === 'all';
+      // Otherwise only the signed-in person's own links, whatever the list returns.
+      const own = allUsers
+        ? shareManager.list()
+        : shareManager.list(subject.username).filter((r) => r.createdBy === subject.username);
+      const rows = sharedLinkRows(own, { tag: mayTag, vault: mayVault }, Date.now(), allUsers ? { viewer: subject.username } : undefined);
+      // The address comes from the record here, never from the row function, so
+      // the rows and the Profile card hold no token. A link to an encrypted
+      // vault has no address to show: its key is in the browser that made it.
+      const baseUrl = this.shareLinkBase(req);
+      const addresses: Record<string, string> = {};
+      // The all-users view shows no address and reads no page: it is a list of who has what.
+      for (const row of allUsers ? [] : rows) {
+        const record = own.find((r) => r.id === row.id);
+        if (record && row.status === 'active' && !record.lockedFor) addresses[row.id] = `${baseUrl}/share/${record.token}`;
+      }
+      // A one-page link with no label is named by its page's title, read as the owner.
+      const pageTitles: Record<string, string> = {};
+      const singles = allUsers ? [] : rows.filter((row) => row.pageUuid);
+      for (const vault of new Set(singles.map((row) => { const sc = own.find((r) => r.id === row.id)?.scope; return sc && sc.kind === 'vault' ? sc.vault : ''; }))) {
+        if (!vault || !vaults.includes(vault)) continue;
+        const known = new Map((await this.engine.getManager('PageManager').listVaultPages(subject, subject.username, vault)).map((p) => [p.uuid, p.title]));
+        for (const row of singles) {
+          const sc = own.find((r) => r.id === row.id)?.scope;
+          const title = row.pageUuid ? known.get(row.pageUuid) : undefined;
+          if (sc && sc.kind === 'vault' && sc.vault === vault && title) pageTitles[row.id] = title;
         }
       }
-
+      const query = (k: string) => (typeof req.query[k] === 'string' ? String(req.query[k]) : '');
+      const picked = mayVault
+        ? await this.pickedVaultPage(req, subject, vaults)
+        : { pickVault: null, pickPages: [], preselected: null };
+      const vaultChoices = mayVault
+        ? await Promise.all(vaults.map(async (v) => ({
+          id: v,
+          maxDays: shareManager.maxShareDays(v),
+          encrypted: await shareManager.isEncryptedVault(subject.username, v)
+        })))
+        : [];
       const commonData = await this.getCommonTemplateData(req);
-      // #1304: shares had no summary at all while every row carried a status
-      // badge. The counts are worth stating, and since every share is on the
-      // page they can filter it too.
-      const shareStatus = (value: string) => shares.filter((sh) => sh.status === value).length;
-      const shareStatsHtml = this.formatters.formatStatFilters([
-        { label: 'Total Shares', value: shares.length, clears: true, tone: 'primary', title: 'Show all shares' },
-        { label: 'Active', value: shareStatus('active'), match: 'status=active', tone: 'success', title: 'Filter: active shares' },
-        { label: 'Expired', value: shareStatus('expired'), match: 'status=expired', tone: 'secondary', title: 'Filter: expired shares' },
-        { label: 'Revoked', value: shareStatus('revoked'), match: 'status=revoked', tone: 'danger', title: 'Filter: revoked shares' }
-      ], { rowSelector: '#sharesTable tbody tr[data-share-id]', ariaLabel: 'Share summary filters' });
-
-      return res.render('shares', {
+      return res.render('my-shares', {
         ...commonData,
-        wikiContext,
-        shares,
-        shareStatsHtml,
-        isAdmin,
-        backLink,
-        baseUrl: this.shareLinkBase(req),
-        createdId: typeof req.query.created === 'string' ? req.query.created : null,
-        revoked: req.query.revoked === '1',
-        error: typeof req.query.error === 'string' ? req.query.error : null,
-        keywordPrefill: typeof req.query.keyword === 'string' ? req.query.keyword : '',
-        title: 'Share Links'
+        title: allUsers ? 'Shared links: all users' : 'Shared links',
+        rows,
+        allUsers,
+        mayManageAll,
+        viewer: subject.username,
+        mayTag,
+        mayVault,
+        vaults: vaultChoices,
+        ...picked,
+        baseUrl,
+        addresses,
+        pageTitles,
+        notice: query('notice') || null,
+        shareChoice: query('share'),
+        tagPrefill: query('tag'),
+        pagePrefill: query('page'),
+        createdId: query('created'),
+        revoked: query('revoked') === '1',
+        error: query('error') || null
       });
     } catch (err: unknown) {
-      logger.error('[share] Error rendering shares list:', err);
+      logger.error('[share] Error rendering the shared links page:', err);
       return res.status(500).send('Internal server error');
     }
   }
@@ -23111,11 +23475,11 @@ ${description}
       const body = req.body as Record<string, unknown>;
       const keyword = typeof body.keyword === 'string' ? body.keyword.trim() : '';
       if (!keyword) {
-        return res.redirect('/shares?error=keyword');
+        return res.redirect('/my/shares?error=keyword');
       }
       const ttlRaw = typeof body.ttl === 'string' ? body.ttl : '';
       if (!['24h', '7d', '30d', 'never'].includes(ttlRaw)) {
-        return res.redirect('/shares?error=ttl');
+        return res.redirect('/my/shares?error=ttl');
       }
       const ttl = ttlRaw === 'never' ? null : (ttlRaw as '24h' | '7d' | '30d');
 
@@ -23128,7 +23492,7 @@ ${description}
         ttl,
         wikiContext.userContext
       );
-      return res.redirect(`/shares?created=${encodeURIComponent(record.id)}`);
+      return res.redirect(`/my/shares?created=${encodeURIComponent(record.id)}`);
     } catch (err: unknown) {
       logger.error('[share] Error creating share:', err);
       return res.status(500).send('Internal server error');
@@ -23142,7 +23506,11 @@ ${description}
   async sharesRevoke(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!(await wikiContext.hasPermission('share-revoke'))) {
+      const subject = wikiContext.userContext;
+      // This step only classifies the refusal; the ownership comparison below
+      // is the gate (slice 3 of #2247).
+      // A signed-out subject carries the name 'Anonymous', so check the sign-in too.
+      if (!subject?.username || !subject.isAuthenticated) {
         return res.status(403).send('Access denied');
       }
       const shareManager = this.engine.getManager('ShareManager');
@@ -23155,13 +23523,23 @@ ${description}
       if (!record || record.scope.kind === 'vault') {
         return res.status(404).send('Not Found');
       }
-      const username = wikiContext.userContext?.username ?? '';
-      if (!(await wikiContext.hasPermission('admin-system')) && record.createdBy !== username) {
+      const isMaker = record.createdBy === subject.username;
+      if (isMaker) {
+        // Q-D: a person who made the link always revokes it at their own session.
+        // Q-G: a token, proxy or share acting for the maker keeps its ceiling.
+        if (carriesCeiling(subject) && !(await wikiContext.hasPermission('share-revoke'))) {
+          return res.status(403).send('Access denied');
+        }
+        await shareManager.revoke(record.id, subject);
+        return res.redirect(await this.afterTagRevokeUrl(wikiContext, subject, await this.postedFromAllUsers(wikiContext, req)));
+      }
+      // Another user's link (Q-B, Q-C): share-manage-all alone, no share-revoke
+      // and no admin-system. Recorded as a manager's revoke (R14).
+      if (!(await wikiContext.hasPermission('share-manage-all'))) {
         return res.status(403).send('Access denied');
       }
-
-      await shareManager.revoke(record.id, username);
-      return res.redirect('/shares?revoked=1');
+      await shareManager.revoke(record.id, subject, { asManager: true });
+      return res.redirect('/my/shares?view=all&revoked=1');
     } catch (err: unknown) {
       logger.error('[share] Error revoking share:', err);
       return res.status(500).send('Internal server error');
@@ -23425,10 +23803,9 @@ ${description}
       const runId = await jobManager.enqueue(jobId, jobContextFromRequest(req.userContext));
       return res.status(202).json({ runId });
     } catch (err: unknown) {
-      const msg = getErrorMessage(err);
-      logger.error('[jobs] Error enqueueing job:', err);
-      const status = msg.includes('unknown job') ? 404 : 500;
-      return res.status(status).json({ error: msg });
+      // #2494: a job this site does not know is the caller's mistake, said as the job manager wrote it; anything else is logged in full.
+      if (err instanceof JobActionError) return res.status(err.status).json({ error: err.message });
+      return res.status(500).json({ error: plainRouteError(req, err, 'The job could not be started. Try again in a moment.') });
     }
   }
 

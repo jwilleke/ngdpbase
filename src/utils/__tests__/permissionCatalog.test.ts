@@ -7,7 +7,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { isGrantable, grantablePermissionNames, grantablePermissions, withRetiredExpanded, RETIRED_PERMISSIONS, permissionLabel, describeScopes } from '../permissionCatalog';
+import { readOnlyPermissionNames, isGrantable, grantablePermissionNames, grantablePermissions, withRetiredExpanded, RETIRED_PERMISSIONS, permissionLabel, describeScopes } from '../permissionCatalog';
 import { delegablePermissions } from '../../managers/OidcManager';
 
 const shipped = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')) as Record<string, unknown>;
@@ -52,6 +52,64 @@ describe('#1638 the shipped catalog keeps the promise', () => {
       const granted = (policy.actions ?? []).filter((a) => records.includes(a));
       expect(granted, policy.id).toEqual([]);
     }
+  });
+});
+
+// #2521 (slice 2 of #2247): `share-manage-all` is what lets an administrator see
+// and revoke other people's shared links. It ships as its own policy id, so a
+// site holding a stored copy of `admin-full-access` still gets it.
+describe('#2521 share-manage-all', () => {
+  const policies = shipped['ngdpbase.access.policies'] as Array<{ id: string; effect?: string; subjects?: Array<{ type: string; value: string }>; actions?: string[] }>;
+  const granting = policies.filter((p) => (p.actions ?? []).includes('share-manage-all'));
+
+  test('is a catalog entry in plain words, with no step-up and no audit event of its own', () => {
+    const entry = catalog['share-manage-all'] as { grantable?: boolean; label?: string; description?: string; audit?: unknown; 'step-up'?: unknown };
+    expect(entry).toBeDefined();
+    expect(isGrantable(entry)).toBe(true);
+    expect(entry.label).toBe('See and revoke everyone\'s shared links');
+    expect(String(entry.description).length).toBeGreaterThan(20);
+    expect(entry['step-up']).toBeUndefined();
+    expect(entry.audit).toBeUndefined();
+  });
+
+  test('exactly one shipped policy grants it, a new id for the administrator role, never an edit to admin-full-access', () => {
+    expect(granting.map((p) => p.id)).toEqual(['admin-share-manage-all']);
+    expect(granting[0].effect).toBe('allow');
+    expect(granting[0].subjects).toEqual([{ type: 'role', value: 'admin' }]);
+    expect(granting[0].actions).toEqual(['share-manage-all']);
+  });
+
+  test('the Roles and Permissions page lists it under the administrator role and under no other', async () => {
+    const { default: PolicyDecisionPoint } = await import('../../security/PolicyDecisionPoint');
+    const engine = {
+      getManager: (name: string) => (name === 'ConfigurationManager'
+        ? { getProperty: (k: string, d: unknown) => (k === 'ngdpbase.access.policies' ? policies : k === 'ngdpbase.access.policies.enabled' ? true : d) }
+        : null)
+    };
+    const held = [...new PolicyDecisionPoint(engine).rolePermissions().entries()]
+      .filter(([, names]) => names.has('share-manage-all'))
+      .map(([role]) => role);
+    expect(held).toEqual(['admin']);
+  });
+
+  test('share-revoke stays grantable and in the policies that grant it today (Q-G: a token or proxy keeps its ceiling)', () => {
+    expect(isGrantable(catalog['share-revoke'])).toBe(true);
+    const grantingRevoke = policies.filter((p) => (p.actions ?? []).includes('share-revoke')).map((p) => p.id);
+    expect(grantingRevoke).toEqual(['admin-full-access', 'editor-permissions', 'vault-owner-permissions']);
+  });
+
+  test('share-revoke says what it now does: a person needs none for their own link, another user\'s link needs share-manage-all (slice 4 of #2247)', () => {
+    const entry = catalog['share-revoke'] as unknown as { description: string; label: string };
+    expect(entry.description).not.toMatch(/admin-system/);
+    expect(entry.description).toContain('share-manage-all');
+    expect(entry.description).toMatch(/token|proxy/);
+    expect(entry.label).not.toMatch(/your own/i);
+    expect(catalog['share-manage-all'] as unknown as { description: string }).toMatchObject({ description: expect.stringContaining('share-revoke') });
+  });
+
+  test('the revoke reuses the share-revoke event: no second share event is declared', () => {
+    const events = Object.entries(catalog).filter(([n, e]) => e.audit && /^share-/.test(n)).map(([n]) => n).sort();
+    expect(events).toEqual(['share-access', 'share-create', 'share-extend', 'share-revoke']);
   });
 });
 
@@ -109,5 +167,19 @@ describe('#1764 every permission has plain words', () => {
       { name: 'toString', description: 'toString' }
     ]);
     expect(describeScopes(['page-read'], null)).toEqual([{ name: 'page-read', description: 'page-read' }]);
+  });
+});
+
+describe('readOnlyPermissionNames', () => {
+  test('names the entries marked read-only: true, and nothing else', () => {
+    expect(readOnlyPermissionNames({ a: { 'read-only': true }, b: { 'read-only': false }, c: {}, d: { 'read-only': 'yes' }, e: null, f: { 'read-only': true, grantable: false } })).toEqual(['a', 'f']);
+  });
+
+  test('anything that is not a catalog reads as empty', () => {
+    for (const value of [undefined, null, 'x', 3, [], [{ 'read-only': true }]]) expect(readOnlyPermissionNames(value)).toEqual([]);
+  });
+
+  test('the wildcard is never read-only, whoever marks it', () => {
+    expect(readOnlyPermissionNames({ '*': { 'read-only': true }, a: { 'read-only': true } })).toEqual(['a']);
   });
 });

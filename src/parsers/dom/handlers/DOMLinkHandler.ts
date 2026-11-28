@@ -74,6 +74,8 @@ export interface InterWikiSite {
 interface PageManager {
   /** Get all page names */
   getAllPages(): Promise<string[]>;
+  /** Former titles a link may still be written with (absent on an older manager) */
+  getFormerTitleLinkNames?(): Promise<string[]>;
   /** Additional manager methods */
   [key: string]: unknown;
 }
@@ -225,6 +227,9 @@ class DOMLinkHandler {
   /** Set of available page names */
   private pageNames: Set<string>;
 
+  /** Former page titles (lower case) that still lead to a renamed page */
+  private formerTitles: Set<string>;
+
   /** Page name matcher for fuzzy matching */
   private pageNameMatcher: PageNameMatcher | null;
 
@@ -238,7 +243,30 @@ class DOMLinkHandler {
     this.linkParser = null;
     this.pageManager = null;
     this.pageNames = new Set<string>();
+    this.formerTitles = new Set<string>();
     this.pageNameMatcher = null;
+  }
+
+  /**
+   * Whether a link target is a former page title that still leads to a page.
+   * Asked only after live page matching has failed, so a live page always wins.
+   */
+  private isFormerTitle(pageName: string): boolean {
+    return this.formerTitles.has(pageName.trim().toLowerCase());
+  }
+
+  /**
+   * Load the former titles that still lead to a renamed page (#2520). A
+   * failure leaves the earlier list, so links to them are red as before.
+   */
+  private async loadFormerTitles(): Promise<void> {
+    try {
+      const names = await this.pageManager?.getFormerTitleLinkNames?.() ?? [];
+      this.formerTitles = new Set(names.map((n) => n.trim().toLowerCase()));
+      this.linkParser?.setFormerTitles(names);
+    } catch (error) {
+      logger.warn('⚠️  Failed to load former page titles:', error instanceof Error ? error.message : String(error));
+    }
   }
 
   /**
@@ -289,6 +317,7 @@ class DOMLinkHandler {
       if (this.linkParser) {
         this.linkParser.setPageNames(pageNames, matchEnglishPlurals, matchCamelCase);
       }
+      await this.loadFormerTitles();
 
       logger.debug(`📄 DOMLinkHandler loaded ${pageNames.length} page names (plural matching: ${matchEnglishPlurals ? 'enabled' : 'disabled'})`);
     } catch (error) {
@@ -509,7 +538,8 @@ class DOMLinkHandler {
       matchedPage = this.pageNames.has(pageName) ? pageName : null;
     }
 
-    const exists = matchedPage !== null;
+    // A live page is matched first; a former title counts only when none matched.
+    const exists = matchedPage !== null || this.isFormerTitle(pageName);
     const targetPage = matchedPage || pageName;
 
     // Set href (append fragment if present)
@@ -771,7 +801,8 @@ class DOMLinkHandler {
         matchedPage = this.pageNames.has(pageName) ? pageName : null;
       }
 
-      const exists = matchedPage !== null;
+      // A live page is matched first; a former title counts only when none matched.
+      const exists = matchedPage !== null || this.isFormerTitle(pageName);
       const targetPage = matchedPage || pageName;
 
       // Set href (append fragment if present)
@@ -969,6 +1000,9 @@ class DOMLinkHandler {
     if (this.linkParser) {
       this.linkParser.addPageName(pageName);
     }
+    // A rename saves the page under its new title and records the old one;
+    // pick that up so links written with the old title stay live.
+    void this.loadFormerTitles();
   }
 
   /**

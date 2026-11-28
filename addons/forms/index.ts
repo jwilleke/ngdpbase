@@ -45,7 +45,9 @@
  * every add-on route (#1749), so refusals, step-up and audit come from core. A
  * handler's own manager still asks its own permission; an ApiError it throws is
  * sent the same way. This add-on's default policy grants `form-submit` to
- * everyone, as before.
+ * everyone, as before. A form that names a `submitPermission` (#2548) asks that
+ * permission instead, in the route and when the form is drawn; a name the site has
+ * not declared refuses everyone.
  */
 
 import path from 'path';
@@ -58,7 +60,7 @@ import type { AddonHost } from '../../dist/src/utils/addonHost.js';
 import type { ActorContext } from '../../dist/src/context/ActorContext.js';
 import FormsDataManager from './managers/FormsDataManager.js';
 import type { FormSubmission } from './managers/FormsDataManager.js';
-import FormsPlugin from './plugins/FormsPlugin.js';
+import FormsPlugin, { setFormsPluginLogger } from './plugins/FormsPlugin.js';
 import { FORMS_REVIEW_HANDLER, formsReviewHandler } from './managers/review.js';
 import apiRoutes from './routes/api.js';
 import adminRoutes from './routes/admin.js';
@@ -147,6 +149,7 @@ const formsAddon = {
     // ── 3. Register markup plugin ────────────────────────────────────────────
     const pluginManager = engine.getManager<PluginManager>('PluginManager');
     if (pluginManager) {
+      setFormsPluginLogger(host.logger);
       await pluginManager.registerPlugin('Form', FormsPlugin);
     }
 
@@ -174,7 +177,7 @@ const formsAddon = {
     host.allowSignedOutWrite({
       method: 'POST',
       path: '/api/forms/submit/:formId',
-      reason: 'the public form submit; the route asks form-submit, which policy may grant to anonymous'
+      reason: 'the public form submit; the route asks form-submit, which policy may grant to anonymous, or, for a form with submitPermission, asks that permission instead'
     });
 
     // ── 7. Mount routes ──────────────────────────────────────────────────────
@@ -211,6 +214,7 @@ const formsAddon = {
   async shutdown(): Promise<void> {
     dataManager = null;
     this._host = null;
+    setFormsPluginLogger(null);
     this._handlers.clear();
   }
 };

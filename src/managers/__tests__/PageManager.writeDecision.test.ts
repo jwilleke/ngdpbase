@@ -27,7 +27,7 @@ vi.unmock('../PageManager');
 
 import fs from 'fs';
 import path from 'path';
-import PageManager, { PageWriteRefusedError, SHARED_CATEGORY_REFUSAL, SYSTEM_CATEGORY_ADMIN_ONLY } from '../PageManager';
+import PageManager, { PageRuleRefusedError, PageWriteRefusedError, SHARED_CATEGORY_REFUSAL, SYSTEM_CATEGORY_ADMIN_ONLY } from '../PageManager';
 import PolicyEvaluator from '../PolicyEvaluator';
 import PolicyDecisionPoint from '../../security/PolicyDecisionPoint';
 import PolicyInformationPoint from '../../security/PolicyInformationPoint';
@@ -455,6 +455,9 @@ describe('PageManager write door by system-category (#2255)', () => {
       .rejects.toThrow(SHARED_CATEGORY_REFUSAL);
     await expect(site.pageManager.savePage('Fresh', 'new', { 'system-category': 'shared' }, request('bob') as never, OPTS))
       .rejects.toThrow(SHARED_CATEGORY_REFUSAL);
+    // Written for the person, so a route may show it as written (#2494).
+    await expect(site.pageManager.savePage('Fresh', 'new', { 'system-category': 'shared' }, request('bob') as never, OPTS))
+      .rejects.toBeInstanceOf(PageRuleRefusedError);
   });
 
   test('setting a system-category needs page-categorize (admin); nobody may ask for shared', async () => {

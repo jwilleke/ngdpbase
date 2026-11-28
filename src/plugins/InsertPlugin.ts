@@ -11,6 +11,10 @@
  *   [{Insert pagesection='Pagename?section=1', caption='none'}]
  *                                                       drop the imported
  *                                                       heading entirely
+ *   [{Insert page='Pagename', denied='none'}]
+ *                                                       show nothing, not even a
+ *                                                       note, when the viewer may
+ *                                                       not read the page
  *
  * `caption` (#741): with no `caption` param the inserted slice keeps the
  * source page's own heading (back-compat). `caption='Text'` replaces that
@@ -18,8 +22,11 @@
  * removes the leading heading so only the body transcludes.
  *
  * Behaviour:
- *   - Viewer's ACL gates the read. Private pages render a "[Insert: page not visible]"
- *     placeholder for viewers who are not the page author or an admin.
+ *   - Viewer's ACL gates the read: private, audience and policy, decided by the
+ *     same door every page read uses. A refused read renders a "[Insert: page not
+ *     visible]" placeholder.
+ *   - `denied='none'` (#2550) shows nothing at all instead of that placeholder, so a
+ *     viewer who may not read the page sees no text, no note and no page name.
  *   - No recursion. Any `[{Insert ...}]` syntax inside an inserted page is stripped
  *     before render, so nested Insert calls do not evaluate. Other plugins (Image,
  *     MediaPlugin, etc.) inside the inserted content DO render.
@@ -173,6 +180,9 @@ function applyCaption(sectionMarkdown: string, caption: string): string {
   return suppress ? sectionMarkdown : `## ${trimmed}\n\n${sectionMarkdown}`;
 }
 
+// #2550: the same tokens `caption` uses to mean "nothing" (#741).
+const SUPPRESS_TOKEN = /^(none|off|false|no)?$/i;
+
 const NO_RECURSION_PATTERN = /\[\{Insert(?:\s+[^}]*)?\}\]/g;
 
 function renderPlaceholder(f: PluginFormatters, pageName: string, reason: string): string {
@@ -215,13 +225,31 @@ const InsertPlugin: SimplePlugin = {
     // legitimately contains `caption=` (only `?section=`/`#Heading`), so
     // this is unambiguously a malformed Insert. Surface it instead of
     // quietly inserting the wrong thing (the #748 reporter hit this).
-    if (/\bcaption\s*=/i.test(target)) {
+    // The same holds for `denied=` (#2550): swallowed into the page value it
+    // would turn a refusal into a note naming the page.
+    // A `denied=` swallowed into the value is reported without the page name,
+    // which would otherwise tell the viewer the page exists.
+    if (/\b(?:caption|denied)\s*=/i.test(target)) {
       return renderPlaceholder(
         context.formatters,
-        target,
+        /\bdenied\s*=/i.test(target) ? '' : target,
         'Insert: malformed parameters — check the quotes (use [{Insert page=\'X\' caption=\'Y\'}], a single quoted value per parameter)'
       );
     }
+
+    // #2550: before the page is read, a note that names it tells a viewer the
+    // page exists, so with `denied` set every refusal up to the read is silent.
+    // The shared parser reads `denied=false` as a boolean, and an empty value
+    // (`denied=''`) reaches here as the two quote characters.
+    // The shared pattern cannot match an empty quoted value, so a `denied` that
+    // is set but holds a quote or `=` was garbled by the next parameter, and a
+    // `denied=` inside another parameter's value was swallowed by it. Either
+    // way the author meant to set `denied`, so show nothing.
+    const deniedText = typeof params.denied === 'string' ? params.denied.trim().replace(/^(['"])\1$/, '') : undefined;
+    const showNothing = params.denied === false
+      || (deniedText !== undefined && (SUPPRESS_TOKEN.test(deniedText) || /['"=]/.test(deniedText)))
+      || Object.values(params).some((value) => typeof value === 'string' && /\bdenied\s*=/i.test(value));
+    const refuse = (reason: string): string => (showNothing ? '' : renderPlaceholder(context.formatters, pageName, reason));
 
     const { pageName, sectionIndex, sectionHeading } = parseTarget(target);
 
@@ -229,7 +257,7 @@ const InsertPlugin: SimplePlugin = {
 
     const pageManager = ctx.engine?.getManager('PageManager') as PageManagerLike | undefined;
     if (!pageManager?.readPage) {
-      return renderPlaceholder(context.formatters, pageName, 'Insert: PageManager unavailable');
+      return refuse('Insert: PageManager unavailable');
     }
 
     // The viewer this parse is running for — forwarded, never rebuilt. No
@@ -240,13 +268,13 @@ const InsertPlugin: SimplePlugin = {
       read = await pageManager.readPage(pageName, viewer);
     } catch (err) {
       ctx.engine?.logger?.error?.('[InsertPlugin] readPage failed:', err);
-      return renderPlaceholder(context.formatters, pageName, 'Insert: page lookup failed');
+      return refuse('Insert: page lookup failed');
     }
 
     // #1198 / rule 10, #1622: the door decides whether the viewer may read the
     // inserted page — private, audience, access lists and policy alike.
     if (!read.ok) {
-      return renderPlaceholder(context.formatters, pageName, read.refusal === 'denied' ? 'Insert: page not visible' : 'Insert: page not found');
+      return refuse(read.refusal === 'denied' ? 'Insert: page not visible' : 'Insert: page not found');
     }
     const page = read.value;
     const metadata = page.metadata ?? {};

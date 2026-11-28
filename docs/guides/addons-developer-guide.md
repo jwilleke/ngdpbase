@@ -332,6 +332,16 @@ __A permission that needs a fresh sign-in__ (step-up: a refund, an adjustment, a
 
 Nothing else is needed in your code: the PDP refuses the stale sign-in, `ctx.enforceDeny` (or `requirePermission`) answers with the `reauth` link, and the sign-in window is the site's. A form the forms add-on shows keeps its page and what was typed across the fresh sign-in and is sent once after its own prompt is confirmed (not another tab's), unless it was changed meanwhile; a page's own form POST is redone by core. What each covers, and what it does not, is in the [authentication guide](authentication-developer-guide.md#standing-rules).
 
+__A permission that only lets someone see something__ (a calendar's events, a list) carries `"read-only": true` on its entry. Admin lists an allow rule that gives `anyone` or `authenticated` more than reading, as a rule that lets many people change things; a rule that grants only `page-read` and your read-only permissions is not listed. Mark only a permission your add-on declares itself: a `read-only` mark on a core permission, on a permission the site defined in its own configuration file, on `*`, or on another add-on's permission refuses your add-on, so it is not loaded, and the start-up log names the permission. The site's own permissions count as owned by the site, so a mark on a name the site defines is refused even when your add-on declares the same name. The site's own configuration file may mark any permission except `*`, and the start-up log lists every permission marked read-only so an unexpected mark is easy to spot. Without the flag, a rule that grants your read permission to every signed-in user is listed as letting them "use" every page it covers.
+
+```json
+"calendar-read": {
+  "description": "See the events of calendars set to signed-in visibility",
+  "label": "See events of calendars shown to signed-in people",
+  "read-only": true
+}
+```
+
 __A permission over a user's own records__ ("your receipts", "your health record", "your residency") is always granted to every user, the same way in every add-on (operator, 2026-10-24): name the role every account is given, never site roles and never a list of every role. Core gives every account the roles in `ngdpbase.user.account-roles` (shipped: `vault-owner`), new accounts when they are created and older ones once at the next start ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)); core's own `signed-in-self-service` policy grants `profile-manage` the same way. Put the grant in your own policy:
 
 ```json
@@ -1299,6 +1309,8 @@ An administrator can clear a form's stored submissions, on any form: built on th
 
 Each submission records `formVersion`: the `providedBy` version of the form it was submitted on. Your handler receives it on the submission, and the stored submission keeps it. A site-built form's submissions have none.
 
+A form that only some people may submit ships with `"submitPermission": "<permission>"` ([#2548](https://github.com/jwilleke/ngdpbase/issues/2548)). The submit route asks that permission through `ApiContext.requirePermission` instead of `form-submit`, before it reads the body, and the form is drawn only for a viewer the policy engine says holds it (`holds`, an affordance; the route applies the step-up rule). The name is read from the stored definition, never from the request. It must be a permission the site declares (your add-on's own `ngdpbase.permissions.definitions` entry, granted by its policies); a name that is not declared, or a site whose declared permissions cannot be read, refuses everyone, and `form-submit` is never the fallback. A value that is not a non-empty string stops the definition loading. The route does not ask `form-submit` for such a form, so a deny policy on `form-submit` does not apply to it; withdraw the named permission instead. The schema route (`GET /api/forms/schema/:formId`) asks the same permission and gives the definition only to a holder: anyone else, a signed-out caller included, gets the 404 an unknown form gets, in the same body, so a gated form cannot be told from a missing one there. A page holding such a form is marked volatile, so it is not cached at all. The parse cache's key already keeps one viewer's page apart from another's (it includes the username and roles); the mark stops a render being reused for the same viewer after a policy change grants or withdraws the permission without their roles changing. The form builder has no box for it and keeps it on a save.
+
 A form whose submissions must wait for a decision ships with `"review": { "decidePermission": "<permission>" }` ([#2072](https://github.com/jwilleke/ngdpbase/issues/2072)): each submission is kept and filed with core's reviews ([Ask for a review](#ask-for-a-review)) for the holders of that permission, and your handler runs only when one of them approves it, with `context.decider` the reviewer's context (`null` on an ordinary submission, and `req` is then `null`). The form then sends no "New form submission" notification: core tells the deciders. Such a form cannot say `"store": false`, and a submission is refused (503, nothing kept) when the site keeps no reviews. The request is in core's encrypted store, but the submission itself is kept as plain JSON in the forms add-on's folder, as every stored submission is ([storage guide, Known gaps](storage-developer-guide.md#known-gaps)). The form builder has no box for it yet: set it in the definition.
 
 A form whose submissions are private (health notes, say) ships with `"store": false` and `"notify": false` ([#1954](https://github.com/jwilleke/ngdpbase/issues/1954)). Both default to `true`, and both may be left out of the definition you register. On a replace, the values you ship are the values stored.
@@ -1591,7 +1603,7 @@ router.get('/', (req, res) => {
 
 Do not read the left menu or `req.session.csrfToken` yourself; a missing key makes the sidebar empty or every POST a CSRF 403.
 
-__Who may act.__ Ask through `ApiContext`, as core's routes do. A refusal comes back as an `ApiError`; send it with `sendApiError`, never with your own `res.status(...)`. It sends the status, the message and, for a step-up, the way to sign in again (only this site's `/auth/reauth?` page), as JSON, as text, or, for a link the user follows in the browser (`'page'`), as a redirect to sign in again or to sign-in:
+__Who may act.__ Ask through `ApiContext`, as core's routes do. A refusal comes back as an `ApiError`; send it with `sendApiError`, never with your own `res.status(...)`. It sends the status, the message and, for a step-up, the way to sign in again (only this site's `/auth/reauth?` page), as JSON, as text, or, for a link the user follows in the browser (`'page'`), as a redirect to sign in again or to sign-in. A browser's plain form post (a POST that asks for `text/html`, not JSON, with no `X-Requested-With`) is sent to sign in again even in the default JSON mode, so a form of yours never shows the JSON; a script's `fetch` should name JSON (`Accept: application/json`) or set `X-Requested-With` to get it ([#2360](https://github.com/jwilleke/ngdpbase/issues/2360)):
 
 ```typescript
 const { ApiContext, ApiError, sendApiError } = host;   // register()'s third argument, handed to the route
@@ -1829,12 +1841,12 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
 | `ctx.actingUsername()` | The signed-in username a per-user feature acts as; throws `ApiError(401)` if nobody is signed in. Ask it after `requirePermission` |
 | `ctx.engine` | Reference to the engine |
 
-`ApiError` carries a `status` number and, for a step-up refusal, a `reauth` link. Catch it and send it with `sendApiError(res, err, mode)` from `ApiContext.js` — `mode` is `'json'` (default: `{ success: false, error, reauth? }`) `'text'` (the message, then the re-authenticate link) or `'page'` (a link the user followed, such as a download: redirects to the re-authenticate page for a step-up, to sign-in for a 401, else the message). Never write the refusal yourself with `res.status(err.status)`: the `reauth` link is easy to drop.
+`ApiError` carries a `status` number and, for a step-up refusal, a `reauth` link. Catch it and send it with `sendApiError(res, err, mode)` from `ApiContext.js` — `mode` is `'json'` (default: `{ success: false, error, reauth? }`; a step-up refusal of a browser's plain form post is a redirect instead, [#2360](https://github.com/jwilleke/ngdpbase/issues/2360)) `'text'` (the message, then the re-authenticate link) or `'page'` (a link the user followed, such as a download: redirects to the re-authenticate page for a step-up, to sign-in for a 401, else the message). Never write the refusal yourself with `res.status(err.status)`: the `reauth` link is easy to drop.
 
 There is no `hasRole` / `requireRole`, and no `requireAuthenticated`: a role name, or being signed in, skips the policy evaluator, deny policies and the agent-token ceiling ([security-developer-guide.md](security-developer-guide.md)). Declare the permission and grant it as in [Permissions](#permissions), then ask for it. The journal and calendar addons are worked examples:
 
 - the journal declares `journal-read`, `journal-write` and `journal-export`, in one `journal-access` policy;
-- calendar declares `calendar-manage` (admin) and `calendar-reserve` (every role that can sign in).
+- calendar declares `calendar-manage` (admin), `calendar-read` (every signed-in account, asked for a calendar whose `visibility` is `authenticated`) and `calendar-reserve` (every role that can sign in).
 
 ---
 

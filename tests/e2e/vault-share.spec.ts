@@ -31,16 +31,18 @@ test.describe('Vault links', () => {
     const siblingName = await createPrivatePage(page, sibling, 'Sibling body text');
     created.push(siblingName);
 
-    // Share this page, from its menu's target.
+    // Share this page, from its menu's target: the old address sends a named
+    // page to the Shared links page, which holds the form.
     await page.goto(`/my/vaults/links?page=${encodeURIComponent(sharedName)}`);
-    const form = page.locator('form[action="/my/vaults/links"]').filter({ has: page.locator('input[name="scope"][value="pages"]') });
+    await expect(page).toHaveURL(/\/my\/shares\?share=vault&page=/);
+    const form = page.locator('form[action="/my/shares/vault-links"]').filter({ has: page.locator('input[name="scope"][value="pages"]') });
     await expect(form.locator('input[name="pages"]:checked')).toHaveCount(1);
     await form.locator('input[name="label"]').fill('For the E2E visitor');
     await Promise.all([
       page.waitForURL(/created=/),
       form.locator('button[type="submit"]').click()
     ]);
-    const url = await page.locator('tr.table-success input[readonly]').inputValue();
+    const url = await page.locator('#sharedLinksTable tr', { hasText: 'For the E2E visitor' }).locator('input[readonly]').inputValue();
     expect(url).toMatch(/\/share\/[0-9a-f]{64}$/);
     const token = url.split('/share/')[1];
 

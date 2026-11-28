@@ -1,7 +1,7 @@
 ---
 name: NotificationManager
 description: "System and per-user notifications — toast popups, persistent inbox, scheduled expiry"
-dateModified: '2026-10-26'
+dateModified: '2026-11-24'
 category: managers
 code: src/managers/NotificationManager.ts
 ---
@@ -60,6 +60,12 @@ At start-up the manager converts the stored file once: each `targetUsers` and `d
 `createNotification({ ..., escalate: false })` never emails the notification, whatever the escalation settings. `updateNotificationMessage(id, message)` replaces an existing notification's message without escalating, so one notice can carry a running count instead of one notice per event. EmailManager uses both for its "Email could not be sent" notice ([#1916](https://github.com/jwilleke/ngdpbase/issues/1916)).
 
 When `ngdpbase.notifications.escalation.enabled` is on, a notification at one of `ngdpbase.notifications.escalation.levels` is emailed to every active holder of `admin-system` with an address, the people `notifyAdmins` targets, asked of `PolicyDecisionPoint.usersHolding('admin-system')`. It never looks at role names; the old `ngdpbase.notifications.escalation.recipient-role` setting is gone and ignored if set ([#2196](https://github.com/jwilleke/ngdpbase/issues/2196)).
+
+MarkupParser no longer sends a notification when a page building limit is crossed ([#2468](https://github.com/jwilleke/ngdpbase/issues/2468)). It writes one log line when a limit is crossed and one when it is back, and keeps every check; see [MarkupParser API](../api/MarkupParser-API.md#page-building-check-and-history-2468). The old "MarkupParser Performance Alert: ..." notifications an earlier version saved are copied to a file of their own at start-up and then removed with `removeByTitles` (see below).
+
+### `removeByTitles(titles)`
+
+Deletes every stored notification, expired or not, whose whole title is one of `titles`, saves the file once when anything was deleted, and returns how many it deleted ([#2468](https://github.com/jwilleke/ngdpbase/issues/2468)). It matches a whole title, never the start of one, so another notification cannot be caught (the parser passes the three titles it used to write), and it throws on an empty list or an empty title, so it can never clear everything. No route or screen calls it; the only caller is the parser's one-time import of its old alerts.
 
 ## Notification Types
 

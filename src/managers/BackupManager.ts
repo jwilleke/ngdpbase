@@ -35,9 +35,11 @@ import { envFileLine, envForBackup, envKeyNames, envKeyNamesFingerprint, INSTANC
 import { readEnvLine } from '../utils/instanceEnvSecret.js';
 import { systemContext } from '../context/bootActions.js';
 import type { JobRunSince } from './BackgroundJobManager.js';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { mkdir, readFile as readFileAsync, writeFile as writeFileAsync } from 'node:fs/promises';
 import type NotificationManager from './NotificationManager.js';
+import { BackupFolderError, ensureBackupFolder, isSystemError, runningAccount } from '../utils/backupFolder.js';
+import { secretDirIsOwnerOnly } from '../utils/secretFileMode.js';
 
 const gzip = promisify(zlib.gzip);
 
@@ -141,6 +143,19 @@ export interface BackupFileInfo {
  * console.log('Backup created:', backupPath);
  */
 /** Auto-backup schedule configuration */
+/** Why the backup folder can't be used: none is set, its drive was not connected at start-up, it is not there, or the path is a file. */
+export type BackupFolderFault = 'unset' | 'unmounted' | 'missing' | 'file';
+
+/** The backup folder as Admin → Backup shows it: `exists` is true only for a folder; `fault` says why not. */
+export interface BackupFolderStatus {
+  ownerOnly: boolean | null;
+  exists: boolean;
+  fault: BackupFolderFault | null;
+  account: string | null;
+  /** For `unmounted`: the folder the setting still names, so the page can say which drive was expected. */
+  named?: string;
+}
+
 export interface AutoBackupConfig {
   enabled: boolean;
   time: string;       // HH:MM (24-hour)
@@ -492,6 +507,18 @@ export function backupHealthPlain(health: Pick<BackupHealth, 'failure' | 'lastGo
 }
 
 /** Whether backups are working, as Admin → Backup and the /admin dashboard show it (#1563). */
+/**
+ * Confirming the backup key is saved was refused, with a reason written for the
+ * administrator who pressed the button (#2494): the page they were on is out of
+ * date. Nothing was recorded.
+ */
+export class BackupKeyRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BackupKeyRefused';
+  }
+}
+
 export interface BackupHealth {
   /** The newest backup in the backup directory that is not a failed one: when, how big (with the files beside it), where. */
   lastGood: { filename: string; at: string; size: number; location: string } | null;
@@ -524,19 +551,22 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`;
 }
 
-/** Why a backup could not be written, in words an admin can act on: the system's error codes named (#1563). */
+/**
+ * Why a backup could not be written, in words an admin can act on: the system's error codes named (#1563).
+ * The Backup page and the admin notice show this, so none of the system's own text is in it (#2492); the
+ * full error is in the log, where the backup failed.
+ */
 export function describeBackupError(err: unknown): string {
   const e = err as NodeJS.ErrnoException;
-  const message = e?.message ?? String(err);
   switch (e?.code) {
-  case 'ENOSPC': return `the backup destination is out of space (${message})`;
-  case 'EDQUOT': return `the backup destination is over its quota (${message})`;
+  case 'ENOSPC': return 'the backup destination is out of space';
+  case 'EDQUOT': return 'the backup destination is over its quota';
   case 'EACCES':
-  case 'EPERM': return `permission denied writing to the backup destination (${message})`;
-  case 'EROFS': return `the backup destination is read-only (${message})`;
-  case 'ENOENT': return `the backup destination is not there (${message})`;
-  case 'EIO': return `the backup destination reported a write error (${message})`;
-  default: return message;
+  case 'EPERM': return 'permission denied writing to the backup destination';
+  case 'EROFS': return 'the backup destination is read-only';
+  case 'ENOENT': return 'the backup destination is not there';
+  case 'EIO': return 'the backup destination reported a write error';
+  default: return isSystemError(err) ? 'the backup could not be written' : (e?.message ?? String(err));
   }
 }
 
@@ -879,8 +909,14 @@ class BackupManager extends BaseManager {
 
     try {
       if (!this.backupDirectory || !this.provider) {
-        throw new Error('Backup directory not initialized');
+        throw new BackupFolderError(
+          'Backups are switched off because the backup folder could not be reached when the site started. '
+          + 'Connect its drive again, or choose another folder under Backup directory, then restart the site.'
+        );
       }
+      // #2492: the folder was checked at start-up and can be gone since (a drive
+      // unplugged, a folder moved). Made again when its volume is there; said in plain words when not.
+      ensureBackupFolder(this.backupDirectory);
 
       // #1563: refused before anything is written, rather than half a backup.
       await this.checkFreeSpace();
@@ -1340,10 +1376,10 @@ class BackupManager extends BaseManager {
     const STALE_KEY = 'That is not the fingerprint of the current backup key; reload Admin → Backup and check the key you saved';
     const info = this.backupKeyInfo();
     const env = envFingerprint === undefined ? null : this.envKeysInfo();
-    if (envFingerprint !== undefined && env?.fingerprint !== envFingerprint) throw new Error('The keys in .env changed since that page was loaded; reload Admin → Backup, download .env again and confirm');
+    if (envFingerprint !== undefined && env?.fingerprint !== envFingerprint) throw new BackupKeyRefused('The keys in .env changed since that page was loaded; reload Admin → Backup, download .env again and confirm');
     // A saved .env is a saved backup key only when the file holds the key this site uses.
     const recordsKey = info.set && (env ? env.holdsBackupKey : true);
-    if (recordsKey ? info.fingerprint !== fingerprint : !env) throw new Error(STALE_KEY);
+    if (recordsKey ? info.fingerprint !== fingerprint : !env) throw new BackupKeyRefused(STALE_KEY);
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) throw new Error('ConfigurationManager not available');
     if (recordsKey) await configManager.setProperty(BACKUP_KEY_SAVED_KEY, fingerprint, ctx);
@@ -2378,8 +2414,9 @@ class BackupManager extends BaseManager {
   /**
    * Return current auto-backup configuration and last backup info for the admin UI.
    */
-  async getAutoBackupStatus(): Promise<{ config: AutoBackupConfig; lastBackup: Date | null }> {
+  async getAutoBackupStatus(): Promise<{ config: AutoBackupConfig; lastBackup: Date | null; folder: BackupFolderStatus }> {
     const backups = await this.listBackups();
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     return {
       config: {
         enabled: this.autoBackupEnabled,
@@ -2388,17 +2425,59 @@ class BackupManager extends BaseManager {
         maxBackups: this.maxBackups,
         directory: this.backupDirectory ?? ''
       },
-      lastBackup: backups.length > 0 ? backups[0].created : null
+      lastBackup: backups.length > 0 ? backups[0].created : null,
+      // #2492: whether the folder could be made closed to every other account (a network share may not allow it).
+      folder: this.folderStatus(configManager)
     };
+  }
+
+  /**
+   * The backup folder as the Backup page shows it (#2470): is it a folder, can it be made private to this
+   * account, and when it can't be used, why. A path that is a file is not a folder, and says so.
+   */
+  private folderStatus(configManager: ConfigurationManager | undefined): BackupFolderStatus {
+    const dir = this.backupDirectory;
+    const account = runningAccount();
+    if (!dir) {
+      // Start-up clears the folder when its drive is not connected, while the setting still names it.
+      const setting: unknown = configManager ? configManager.getProperty('ngdpbase.backup.directory', '') : '';
+      const named = typeof setting === 'string' ? setting : '';
+      return { ownerOnly: null, exists: false, fault: named ? 'unmounted' : 'unset', account, ...(named ? { named } : {}) };
+    }
+    let isFolder: boolean;
+    try {
+      isFolder = statSync(dir).isDirectory();
+    } catch {
+      // Not there, or this account can't reach it.
+      return { ownerOnly: null, exists: false, fault: 'missing', account };
+    }
+    if (!isFolder) return { ownerOnly: null, exists: false, fault: 'file', account };
+    return { ownerOnly: secretDirIsOwnerOnly(dir), exists: true, fault: null, account };
   }
 
   /**
    * Update auto-backup configuration and persist to config store.
    * Restarts the scheduler with the new settings.
    */
-  async updateAutoBackupConfig(config: Partial<AutoBackupConfig>, ctx: ActorContext): Promise<void> {
+  async updateAutoBackupConfig(config: Partial<AutoBackupConfig>, ctx: ActorContext): Promise<{ backupsLive: boolean }> {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) throw new Error('ConfigurationManager not available');
+
+    // #2492: the typed folder means what it means at start-up (`./data/...`, and `${SLOW_STORAGE}/...`
+    // read from the environment), so the one that is checked is the one backups go to after a restart.
+    const folder = config.directory === undefined ? undefined : configManager.resolveTypedPath(config.directory, 'ngdpbase.backup.directory');
+
+    // #2492: a new folder is made and checked before anything is saved. One the site can't
+    // reach refuses the whole save and leaves the setting, and the folder backups go to, as they were.
+    if (folder !== undefined) {
+      try {
+        ensureBackupFolder(folder);
+      } catch (err) {
+        if (!(err instanceof BackupFolderError)) throw err;
+        const kept = this.backupDirectory ? `Backups still go to ${this.backupDirectory}.` : 'Backups stay switched off.';
+        throw new BackupFolderError(`${err.message} Nothing was saved. ${kept}`, { cause: err });
+      }
+    }
 
     if (config.enabled !== undefined) {
       await configManager.setProperty('ngdpbase.backup.auto-backup', config.enabled, ctx);
@@ -2417,16 +2496,19 @@ class BackupManager extends BaseManager {
       this.maxBackups = config.maxBackups;
     }
     if (config.directory !== undefined) {
+      // The setting keeps what was typed, as start-up reads it back; the folder in use is the one it resolves to.
       await configManager.setProperty('ngdpbase.backup.directory', config.directory, ctx);
-      this.backupDirectory = config.directory;
+      this.backupDirectory = folder as string;
       // #170: re-point the storage provider at the new directory.
-      await this.provider?.setBackupDirectory(config.directory);
+      await this.provider?.setBackupDirectory(folder as string);
     }
 
     // The job takes the new settings; a changed rule counts its slots from now (#1720).
     this.scheduleAutoBackup();
 
     logger.info(`✅ Auto-backup config updated: ${this.autoBackupEnabled ? `enabled at ${this.autoBackupTime} (${this.autoBackupDays})` : 'disabled'}`);
+    // #2492: with no provider (backups were switched off at start-up) a saved folder is used after a restart.
+    return { backupsLive: this.provider !== null };
   }
 
   /**

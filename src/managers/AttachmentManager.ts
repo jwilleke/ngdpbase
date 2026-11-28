@@ -2,11 +2,13 @@ import BaseManager, { BackupData, type BackupArchiveTarget, type ManagerBackupOp
 import type { AttachmentFilesBackupData, AttachmentFilesBackupOutcome } from '../providers/attachmentFilesBackup.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
-import { actorOf, type ActorContext } from '../context/ActorContext.js';
+import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import { systemContext } from '../context/bootActions.js';
 import type IdentityManager from './IdentityManager.js';
 import { IdentityStoreUnavailableError, errorClassOf } from '../utils/identityStoreUnavailable.js';
 import { ANONYMOUS_USERNAME } from '../context/JobContext.js';
+import { carriesCeiling } from '../utils/proxyClaim.js';
+import { NO_POLICY_REASON } from '../types/Policy.js';
 import fs from 'fs-extra';
 import path from 'path';
 import logger from '../utils/logger.js';
@@ -2418,6 +2420,66 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * May `context` delete the shared file `attachmentId` (#2534)? The
+   * `asset-delete` permission, or being the person who uploaded it.
+   *
+   * The uploader's right is an exception to a MISSING permission and nothing
+   * more, so it is decided here, in the door, and the button asks the same
+   * question through {@link mayDeleteAttachment}:
+   *   - an explicit deny, a ceiling (token, share link, proxy claim) or an
+   *     engine that cannot answer is a refusal, never an exception;
+   *   - it needs a signed-in person: not anonymous, not a job, not an
+   *     asserted username;
+   *   - the file's own record names them (an identity id, or the plain
+   *     username on a record not yet converted); an unreadable record, an
+   *     orphan and "Unknown" never match.
+   * A file in a vault or shared folder is decided by the vault rule instead.
+   */
+  private async mayDeleteSharedFile(context: ActorContext, attachmentId: string): Promise<boolean> {
+    if (await this.checkPermission('asset-delete', context)) return true;
+    if (!context || isJobContext(context) || carriesCeiling(context)) return false;
+    const username = typeof context.username === 'string' ? context.username.trim() : '';
+    if (!username || username === ANONYMOUS_USERNAME || context.isAuthenticated !== true) return false;
+
+    // Silence only: policy said nothing about asset-delete for this person.
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (typeof pdp?.decide !== 'function') return false;
+    const decision = await pdp.decide(context, { action: 'asset-delete' });
+    if (decision.permit || decision.applicable || decision.reason !== NO_POLICY_REASON) return false;
+
+    // The record of THIS file, read now: ids are content hashes, so owning another file proves nothing here.
+    let uploadedBy: unknown;
+    try {
+      uploadedBy = (await this.getAttachmentMetadata(attachmentId))?.uploadedBy;
+    } catch {
+      return false;
+    }
+    const identities = this.engine.getManager<IdentityManager>('IdentityManager');
+    if (typeof identities?.refersTo !== 'function') {
+      // No identity store at all: only a record that still holds the plain username can match.
+      return typeof uploadedBy === 'string' && uploadedBy === username && uploadedBy !== UNKNOWN_UPLOADER;
+    }
+    try {
+      return await identities.refersTo(context, uploadedBy, username);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Whether the Delete button is offered for the file `attachmentId` (#2534):
+   * the same answer {@link deleteAttachment} gives, so the button is never
+   * offered and then refused. Records nothing and changes nothing.
+   */
+  async mayDeleteAttachment(context: ActorContext, attachmentId: string): Promise<boolean> {
+    if (!this.attachmentProvider) return false;
+    const own = await this.locateOwnStoreFile(context, attachmentId, 'delete');
+    return own
+      ? this.mayInVault(context, 'asset-delete', own.location.owner, own.location.store, attachmentId)
+      : this.mayDeleteSharedFile(context, attachmentId);
+  }
+
+  /**
    * Delete an attachment
    *
    * @param {string} attachmentId - Attachment identifier
@@ -2438,7 +2500,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const own = await this.locateOwnStoreFile(context, attachmentId, 'delete');
     const allowed = own
       ? await this.mayInVault(context, 'asset-delete', own.location.owner, own.location.store, attachmentId)
-      : await this.checkPermission('asset-delete', context);
+      : await this.mayDeleteSharedFile(context, attachmentId);
     if (!allowed) {
       throw new Error('Permission denied: You do not have permission to delete attachments');
     }

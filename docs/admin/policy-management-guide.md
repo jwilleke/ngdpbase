@@ -279,7 +279,7 @@ Policies are combined with the XACML `deny-overrides` rule:
 - Any matching deny wins
 - With no matching deny, any matching allow permits
 - If nothing matches, access is refused
-- Order does not matter, and there is no priority. A leftover `priority` in a site's configuration is ignored and reported once at start-up
+- Order does not matter, and there is no priority. A leftover `priority` in a site's configuration is removed from the site's file at start-up (a copy of the file is kept first) and listed in Admin → needs attention
 
 ### Letting Someone Through a Deny
 

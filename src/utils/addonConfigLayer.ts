@@ -56,6 +56,10 @@
  * policy may name only its own scheduled jobs, `{ "type": "job", "value":
  * "<slug>.<job>" }`. A policy naming core's job or another addon's refuses
  * the addon, since it would grant that job permissions its owner never chose.
+ *
+ * A sixth, `ngdpbase.permissions.definitions` `read-only` marks: an enabled add-on may mark only a permission it
+ * declares itself. A mark on a core permission, on `*` or on another add-on's permission refuses the add-on
+ * ({@link addonReadOnlyLayer}); the operator's file may mark any permission except `*`.
  */
 
 import fs from 'fs';
@@ -65,6 +69,7 @@ import { configFilePaths, deepMergeConfigs, deepMergeObjects, instanceDataFolder
 import { configuredInstallSlugs, installedAddonsDir, resolveAddonSlug, splitAddonsPath } from './addonsPathResolver.js';
 import { lockedAddonDirsSync } from './addonLock.js';
 import { LEGACY_SECRET_KEYS_KEY, SENSITIVE_VALUES_KEY } from './sensitiveValues.js';
+import { clipNames } from './pageWritePolicies.js';
 import { parsePrivatestore } from './privateStorePath.js';
 import { OWNER_DECIDED_FIELDS, SYSTEM_CATEGORY_KEY, systemCategoryValueProblems } from './systemCategoryRules.js';
 import { addonDatabaseKey, addonDatabaseKeySlug, addonDatabaseProblems, type AddonDatabaseDeclaration, type DatabaseEncrypt } from './addonDatabaseRules.js';
@@ -335,6 +340,40 @@ export function addonSensitiveValuesLayer(addons: readonly AddonDefaults[]): Add
   return layer;
 }
 
+const PERMISSIONS_KEY = 'ngdpbase.permissions.definitions';
+
+/** The permission names an add-on's file declares. */
+const permissionsOf = (defaults: Record<string, unknown>): string[] => (isPlainObject(defaults[PERMISSIONS_KEY]) ? Object.keys(defaults[PERMISSIONS_KEY]) : []);
+
+/**
+ * Which permissions an add-on may mark `"read-only": true`: its own, the names it declares that the site's
+ * permissions (shipped, with the site's own file merged in) and no other add-on declare. A mark tells the
+ * open-rules check that granting the permission to everyone is only reading, so a mark on `page-edit`, on `*`, on a
+ * permission the site defined, or on another add-on's permission would hide a rule that lets many people change
+ * things. Such a mark refuses the add-on, as an entry for another add-on's key does. Another add-on is one with a
+ * different slug. Only an enabled add-on's entries reach the merge, so only an enabled add-on is checked. The
+ * site's own file is not checked. The names come from a file an add-on supplies, so they are clipped and counted
+ * before they go into the reason.
+ */
+export function addonReadOnlyLayer(siteDefinitions: unknown, addons: readonly AddonDefaults[]): AddonSensitiveValuesLayer {
+  const layer: AddonSensitiveValuesLayer = { refused: new Map(), problems: [] };
+  const core = new Set(isPlainObject(siteDefinitions) ? Object.keys(siteDefinitions) : []);
+  const enabled = addons.filter((a) => a.enabled);
+  for (const addon of enabled) {
+    const definitions = addon.defaults[PERMISSIONS_KEY];
+    if (!isPlainObject(definitions)) continue;
+    const foreign = Object.entries(definitions)
+      .filter(([, entry]) => isPlainObject(entry) && entry['read-only'] === true)
+      .map(([name]) => name)
+      .filter((name) => name === '*' || core.has(name) || enabled.some((other) => other.slug !== addon.slug && permissionsOf(other.defaults).includes(name)));
+    if (foreign.length === 0) continue;
+    const reason = `it marks ${clipNames(foreign, 20, "'")} as read-only, which ${foreign.length === 1 ? 'is' : 'are'} not its own permission${foreign.length === 1 ? '' : 's'}; an add-on marks as read-only only the permissions it declares itself`;
+    layer.refused.set(addon.slug, reason);
+    layer.problems.push(`${addonProblemSubject(addon.slug, addon.enabled)}: ${reason}; the add-on is not loaded`);
+  }
+  return layer;
+}
+
 export interface AddonJobPolicyLayer {
   /** Addons whose policies name a job that is not their own, by slug, with why: never loaded. */
   refused: Map<string, string>;
@@ -521,9 +560,10 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
   const sensitiveLayer = addonSensitiveValuesLayer(addons);
   const jobPolicyLayer = addonJobPolicyLayer(addons);
   const resourceTypeLayer = addonResourceTypeLayer(addons);
+  const readOnlyLayer = addonReadOnlyLayer(deepMergeObjects(shipped, custom)[PERMISSIONS_KEY], addons);
   const siteCritical = criticalLayer.siteCritical;
   const refused = new Map(layer.refused);
-  for (const [slug, reason] of [...databaseLayer.refused, ...criticalLayer.refused, ...sensitiveLayer.refused, ...jobPolicyLayer.refused, ...resourceTypeLayer.refused]) refused.set(slug, refused.has(slug) ? `${refused.get(slug)}; ${reason}` : reason);
+  for (const [slug, reason] of [...databaseLayer.refused, ...criticalLayer.refused, ...sensitiveLayer.refused, ...jobPolicyLayer.refused, ...resourceTypeLayer.refused, ...readOnlyLayer.refused]) refused.set(slug, refused.has(slug) ? `${refused.get(slug)}; ${reason}` : reason);
   const databases = databaseLayer.declarations.map((d) => ({ ...d, enabled: d.enabled && !refused.has(d.declaredBy) }));
   const withAddons = addons
     .filter((a) => a.enabled && !refused.has(a.slug))
@@ -534,14 +574,14 @@ export function mergeWithAddonLayer<T extends Record<string, unknown>>(
       return deepMergeObjects(acc, rest);
     }, shipped);
   if (Object.keys(layer.entries).length === 0) {
-    return { merged: deepMergeConfigs(withAddons as T, custom), problems: [...layer.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems, ...jobPolicyLayer.problems, ...resourceTypeLayer.problems], refused, databases, siteCritical };
+    return { merged: deepMergeConfigs(withAddons as T, custom), problems: [...layer.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems, ...jobPolicyLayer.problems, ...resourceTypeLayer.problems, ...readOnlyLayer.problems], refused, databases, siteCritical };
   }
   const shippedCategories = isPlainObject(withAddons[SYSTEM_CATEGORY_KEY]) ? withAddons[SYSTEM_CATEGORY_KEY] : {};
   const layered = { ...withAddons, [SYSTEM_CATEGORY_KEY]: deepMergeObjects(shippedCategories, layer.entries) };
   const merged = deepMergeObjects(layered, custom);
   const stood = ownerDeclarationsStand(merged[SYSTEM_CATEGORY_KEY], layer, customCategories);
   merged[SYSTEM_CATEGORY_KEY] = stood.categories;
-  return { merged: merged as T, problems: [...layer.problems, ...stood.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems, ...jobPolicyLayer.problems, ...resourceTypeLayer.problems], refused, databases, siteCritical };
+  return { merged: merged as T, problems: [...layer.problems, ...stood.problems, ...databaseLayer.problems, ...criticalLayer.problems, ...sensitiveLayer.problems, ...jobPolicyLayer.problems, ...resourceTypeLayer.problems, ...readOnlyLayer.problems], refused, databases, siteCritical };
 }
 
 /**

@@ -13,7 +13,7 @@ Authentication uses the ngdpbase session cookie (same as the wiki UI).
 
 Return events as a FullCalendar-compatible JSON array.
 
-__Auth__: none for `public` calendars; session required for `authenticated`/`private`.
+__Auth__: none for `public` calendars. A `url` stored before the address rule (see POST) is left out of each event returned, and the event is kept. Events of an `authenticated` calendar are returned to holders of `calendar-read` (every signed-in account), and events of a `private` calendar to holders of `calendar-manage`. Events of a calendar the caller may not see are left out of the list, whatever `calendarId` asks for.
 
 #### Query parameters
 
@@ -50,32 +50,33 @@ __Response__ `200 OK`
 
 Create a new event on a `managed` calendar.
 
-__Auth__: `admin` or `clubhouse-manager`
+__Auth__: the permission the event's calendar names in its `manage-permission` setting, `calendar-manage` when it names none (an event with no `calendarId` goes to the `default` calendar). A permission the site has not declared is refused for everyone. A body with a `_private` block also needs `calendar-manage`, whatever the calendar names.
 
 #### Request body
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `calendarId` | yes | Target calendar ID |
+| `calendarId` | no | Target calendar ID, text (default: `default`). Anything that is not text is refused with `400` |
 | `title` | yes | Event title |
-| `start` | yes | ISO 8601 datetime |
-| `end` | no | ISO 8601 datetime |
+| `start` | yes | A date or ISO 8601 datetime the calendar can read (`2026-12-01`, `2026-12-01T10:00:00`): any text JavaScript's `Date` reads, in the years 0 to 9999 (read in UTC, as the `.ics` feed writes it). Anything else, a year outside that range included, is refused with `400`. With no `end`, the `.ics` feed ends the event an hour after its start, so a `start` in the last hour of the year 9999 needs an `end` |
+| `end` | no | Same rule as `start` when sent; leave it out for none |
 | `allDay` | no | boolean |
 | `description` | no | Free text |
 | `location` | no | Venue |
 | `color` | no | CSS colour string |
 | `status` | no | `CONFIRMED` `TENTATIVE` `CANCELLED` (default: `CONFIRMED`) |
-| `url` | no | Link opened on event click |
+| `url` | no | Link opened on event click. Must be empty, a relative address (`/wiki/Page`, `#top`), a protocol-relative one (`//host/page`, which takes the page's own http or https), or start with `http:`, `https:` or `mailto:` (any case); anything else, and anything with a control character such as a tab or newline, is refused with `400`. A relative address with a colon before its first slash, such as `Page:Name`, reads as a scheme and is refused: write `./Page:Name`. `null` is refused too; send `""` to clear a url |
+| `organizer` | no | Text: an email address or a display name. A line break, NUL or other control character is refused with `400`, because the value is written into the `.ics` feed, where a display name is written as a quoted string (its double quotes dropped) |
 
-__Response__ `201 Created` — full `FullCalendarEvent` object.
+__Response__ `201 Created` — full `FullCalendarEvent` object. A `url` stored before the rule above existed is left out of every event the API returns (list, single, search and the `.ics` feed); the event itself is kept.
 
 #### Errors
 
 | Code | Reason |
 |------|--------|
 | `401` | Not authenticated |
-| `403` | Missing required role |
-| `400` | Missing `title`, `start`, or `calendarId` |
+| `403` | Missing the permission the calendar names (or `calendar-manage`, for a body with a `_private` block) |
+| `400` | Missing `title` or `start`, a `start` or `end` that is not a date or is outside the years 0 to 9999, an `end` that is `""` or `null`, a `calendarId` that is not text, a `url` that is not allowed, or an `organizer` that is not text or holds a control character |
 
 ---
 
@@ -83,7 +84,7 @@ __Response__ `201 Created` — full `FullCalendarEvent` object.
 
 Keyword search across event titles and descriptions.
 
-__Auth__: none for `public` calendars.
+__Auth__: none for `public` calendars. Results are limited to the calendars the caller may see, as for the list endpoint. A `url` stored before the address rule (see POST) is left out of each result, and the event is kept.
 
 #### Query parameters
 
@@ -102,9 +103,9 @@ Return a single event by UUID.
 
 __Auth__: same visibility rules as the list endpoint.
 
-__Response__ `200 OK` — single `FullCalendarEvent`.
+__Response__ `200 OK` — single `FullCalendarEvent`. A `url` stored before the address rule (see POST) is left out, and the event is kept.
 
-__Errors__: `404` if not found.
+__Errors__: `404` if not found, or if the event's calendar is not visible to the caller (an `authenticated` calendar to a caller without `calendar-read`, a `private` one or one the configuration does not name without `calendar-manage`, and a disabled one to anyone).
 
 ---
 
@@ -113,11 +114,11 @@ __Errors__: `404` if not found.
 Partial update of an existing event. Send only the fields to change.
 `id`, `created`, and `dtstamp` are protected and ignored in the patch.
 
-__Auth__: `admin` or `clubhouse-manager`
+__Auth__: the permission the event's calendar names in its `manage-permission` setting, `calendar-manage` when it names none. A patch that changes `calendarId` needs the permission of both calendars.
 
 __Response__ `200 OK` — updated `FullCalendarEvent`.
 
-__Errors__: `404`, `401`, `403`.
+__Errors__: `400` if `calendarId` is not text, `url` is not allowed, `start` or `end` is not a date or is outside the years 0 to 9999 (an `end` of `""` or `null` is refused too: to change an end, send a date, and the same date rules as create apply), or `organizer` is not text or holds a control character (same rules as create; send `url: ""` to clear a url, `null` is refused), `401`, `403`, `404`, `409` if the event was moved by another request while the check ran.
 
 ---
 
@@ -125,11 +126,11 @@ __Errors__: `404`, `401`, `403`.
 
 Delete an event.
 
-__Auth__: `admin` or `clubhouse-manager`
+__Auth__: the permission the event's calendar names in its `manage-permission` setting, `calendar-manage` when it names none.
 
 __Response__ `204 No Content`
 
-__Errors__: `404`, `401`, `403`.
+__Errors__: `401`, `403`, `404`, `409` if the event was moved by another request while the check ran.
 
 ---
 
@@ -176,7 +177,7 @@ __Auth__: authenticated
 
 __Response__ `204 No Content`
 
-__Errors__: `401`, `403`, `404`.
+__Errors__: `401`, `403` (not allowed to reserve at all), `404`. A caller who is neither the requester nor a manager gets `404` for a reservation that exists and for one that does not, with the same body.
 
 ---
 
@@ -185,9 +186,9 @@ __Errors__: `401`, `403`, `404`.
 ### GET /api/calendar/:calendarId/feed.ics
 
 RFC 5545 iCalendar subscription feed for a single calendar. `CONFIDENTIAL` events
-are excluded. Subscribe from Apple Calendar, Google Calendar, or any CalDAV client.
+are excluded. An event whose start or end cannot be written as a date (not a date, or a year outside 0 to 9999, an end an hour after the start included) is left out, with a line in the server log naming the calendar and the event id but none of its text, and the rest of the feed is still served. An organizer's display name is written as a quoted string, its double quotes dropped, so a name cannot add a parameter. Control characters in an event's text, such as a stored line break in a title or organizer, are dropped, so no event's text can add a line to the feed; a line break in a description is written as an escaped `\n`. A `url` stored before the address rule is left out of its event, and so is one with a line or paragraph separator (U+2028, U+2029) or the next-line character (U+0085), which a `url` is now refused with. Subscribe from Apple Calendar, Google Calendar, or any CalDAV client.
 
-__Auth__: none for `public` calendars; session required for `authenticated`/`private`.
+__Auth__: none for `public` calendars. An `authenticated` calendar's feed needs `calendar-read` (a signed-in account) and a `private` calendar's `calendar-manage`; for anyone else the feed answers `404`. A calendar app that cannot sign in to the site therefore cannot subscribe to a calendar that is not public.
 
 __Response__ `200 OK` with `Content-Type: text/calendar`
 

@@ -97,22 +97,23 @@ describe('#1198 the attachment browser asks for asset-upload', () => {
   });
 });
 
-describe('#1224 share management asks policy — #1638: share-create to list and create', () => {
+describe('#1224 share management asks policy; slice 4 of #2247: /shares only redirects', () => {
   const shareManager = { isEnabled: () => true, list: () => [] };
 
-  test('refused by policy: 403, and the permission asked is share-create', async () => {
-    const { routes, asked } = makeRoutes([], { ShareManager: shareManager });
+  test('a holder of admin-system alone is sent to their own page, and the permission asked is share-manage-all', async () => {
+    const { routes, asked } = makeRoutes(['admin-system'], { ShareManager: shareManager });
     const res = createMockRes();
     await routes.sharesList(createMockReq(editor, { get: vi.fn().mockReturnValue('') }), res);
-    expect(asked).toContain('share-create');
-    expect(res.status).toHaveBeenCalledWith(403);
+    expect(asked).toContain('share-manage-all');
+    expect(asked).not.toContain('share-create');
+    expect(res.redirect).toHaveBeenCalledWith(302, '/my/shares');
   });
 
-  test('granted by policy: the list renders, regardless of role name', async () => {
-    const { routes } = makeRoutes(['share-create'], { ShareManager: shareManager });
+  test('a holder of share-manage-all is sent to the all-users view, regardless of role name', async () => {
+    const { routes } = makeRoutes(['share-manage-all'], { ShareManager: shareManager });
     const res = createMockRes();
     await routes.sharesList(createMockReq(editor, { get: vi.fn().mockReturnValue('') }), res);
-    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(res.redirect).toHaveBeenCalledWith(302, '/my/shares?view=all');
   });
 });
 

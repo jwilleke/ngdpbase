@@ -1,0 +1,11 @@
+    <%# #1388: a link to an encrypted vault is made in this browser and shown once, here. %>
+    <div id="lockedLinkResult" class="alert alert-success d-none">
+        <p class="mb-2"><i class="fas fa-lock"></i> <strong>Link to your encrypted vault made.</strong> Copy it now: this is the only time the full link is shown. Its key, the part after <code>#</code>, never reached this site, so it cannot be shown again.</p>
+        <div class="input-group">
+            <input type="text" class="form-control" id="lockedLinkUrl" readonly>
+            <button type="button" class="btn btn-outline-secondary" id="lockedLinkCopy"><i class="fas fa-copy"></i> Copy</button>
+        </div>
+        <p class="small mb-0 mt-2">The person you send it to opens it in their browser, which unlocks the pages; it needs JavaScript. A page you change while your vault is locked reaches the link the next time you save it.</p>
+    </div>
+    <div id="lockedLinkError" class="alert alert-danger d-none"></div>
+

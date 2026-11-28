@@ -673,14 +673,28 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
             ? '<button type="button" class="btn btn-sm btn-primary" onclick="apAction(' + idx + ')" title="' + _esc(asset.insertSnippet) + '"><i class="fas fa-code"></i> Insert</button>'
             : '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="apAction(' + idx + ')" title="Copy wiki syntax"><i class="fas fa-copy"></i> Copy</button>';
 
+        // #2534: Delete, only on a local file the server says this person may delete.
+        var delBtn = _apDeleteButton(asset, idx, false);
+
         return '<div class="ap-row border rounded shadow-sm p-2">' +
             '<div class="ap-row-thumb">' + thumbInner + '</div>' +
             '<div class="ap-row-body">' +
                 '<div class="d-flex align-items-center gap-2 flex-wrap">' + titleHtml + badge + '</div>' +
                 chips + excerpt + docAuthorLine + meta +
             '</div>' +
-            '<div class="ap-row-act align-self-center">' + actionBtn + '</div>' +
+            '<div class="ap-row-act align-self-center d-flex gap-1">' + actionBtn + delBtn + '</div>' +
         '</div>';
+    }
+
+    // #2534: the Delete button on a local file. `canDelete` is the server's answer
+    // to "may this person delete it", the same one the delete itself gives;
+    // the button only reflects it, and the server decides again on the click.
+    function _apDeleteButton(asset, idx, block) {
+        if (asset.providerId !== 'local' || asset.canDelete !== true) return '';
+        var name = asset.description || asset.filename || asset.id;
+        return '<button type="button" class="btn btn-sm btn-outline-danger' + (block ? ' w-100 mt-1' : '') + '" ' +
+            'onclick="apDelete(' + idx + ')" title="Delete this file" aria-label="Delete ' + _esc(name) + '">' +
+            '<i class="fas fa-trash"></i> Delete</button>';
     }
 
     function _apCard(asset, idx) {
@@ -781,7 +795,7 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
                     docAuthorLine +
                     '<div class="mt-1">' + year + badge + '</div>' +
                 '</div>' +
-                '<div class="card-footer p-1 text-center">' + actionBtn + '</div>' +
+                '<div class="card-footer p-1 text-center">' + actionBtn + _apDeleteButton(asset, idx, true) + '</div>' +
             '</div>' +
         '</div>';
     }
@@ -810,6 +824,23 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
             // Copy wiki syntax to clipboard
             _apCopy(asset.insertSnippet);
         }
+    };
+
+    // #2534: delete a local file. The confirm names the pages that use it (the
+    // server sends only the ones this person may open); the delete is the
+    // existing DELETE /attachments/:id, which decides again.
+    window.apDelete = async function (idx) {
+        var asset = _apItems[idx];
+        if (!asset || asset.providerId !== 'local') return;
+        if (!window.confirm(window.AssetDelete.confirmText(asset))) return;
+        try {
+            var resp = await csrfFetch('/attachments/' + encodeURIComponent(asset.id), { method: 'DELETE', credentials: 'same-origin' });
+            if (!resp.ok) { window.alert(window.AssetDelete.failureText(resp.status)); return; }
+        } catch (err) {
+            window.alert(window.AssetDelete.failureText(0));
+            return;
+        }
+        _apSearch(_apPage);
     };
 
     // ------------------------------------------------------------------ clipboard

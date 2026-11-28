@@ -316,3 +316,36 @@ describe('builder routes refuse a form an add-on provides (#1973)', () => {
     expect(await fsp.readFile(file, 'utf8')).toBe(before);
   });
 });
+
+/**
+ * #2548 — the builder has no input for `submitPermission`, so saving a form in it must keep the
+ * permission the form names. Dropping it would open a gated form to everyone who holds form-submit.
+ */
+describe('POST /forms/builder — a form that names its own submit permission (#2548)', () => {
+  const gated: FormDefinition = {
+    id: 'post-notice', title: 'Post a notice', proxySubmission: false, notifyRole: 'admin', store: true, notify: true,
+    submitPermission: 'association-notice-post',
+    fields: [{ name: 'text', type: 'text', label: 'Notice', required: true }] as FormDefinition['fields']
+  };
+  const posted = { title: 'Post a notice', notifyRole: 'admin', storeShown: '1', store: 'on', notifyShown: '1', notify: 'on', fieldsJson: JSON.stringify(gated.fields) };
+
+  test('an edit keeps submitPermission', async () => {
+    const { app, saved } = makeApp({ 'post-notice': gated });
+    const res = await request(app).post('/forms/builder/post-notice').type('form').send(posted);
+    expect(res.status).toBe(302);
+    expect((saved[0] as FormDefinition).submitPermission).toBe('association-notice-post');
+  });
+
+  test('a posted submitPermission is not taken: the builder has no input for it', async () => {
+    const { app, saved } = makeApp({ 'post-notice': gated });
+    await request(app).post('/forms/builder/post-notice').type('form').send({ ...posted, submitPermission: 'form-submit' });
+    expect((saved[0] as FormDefinition).submitPermission).toBe('association-notice-post');
+  });
+
+  test('a form that names none still names none after an edit', async () => {
+    const { submitPermission: _dropped, ...open } = gated;
+    const { app, saved } = makeApp({ 'post-notice': open });
+    await request(app).post('/forms/builder/post-notice').type('form').send(posted);
+    expect((saved[0] as FormDefinition).submitPermission).toBeUndefined();
+  });
+});

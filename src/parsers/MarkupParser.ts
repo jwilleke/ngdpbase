@@ -10,6 +10,8 @@ import DOMVariableHandler from './dom/handlers/DOMVariableHandler.js';
 import DOMPluginHandler from './dom/handlers/DOMPluginHandler.js';
 import DOMLinkHandler from './dom/handlers/DOMLinkHandler.js';
 import logger from '../utils/logger.js';
+import { ParserPerformanceHistory, rollupSamples, countChecks, ROLLUP_WINDOWS, type PerformanceReport } from './ParserPerformanceHistory.js';
+import { importLegacyAlerts, legacyStats, readLegacyAlerts, type LegacyAlertSource } from './ParserPerformanceLegacyAlerts.js';
 import JSPWikiPreprocessor from './handlers/JSPWikiPreprocessor.js';
 import PluginSyntaxHandler from './handlers/PluginSyntaxHandler.js';
 import WikiTagHandler from './handlers/WikiTagHandler.js';
@@ -211,11 +213,6 @@ interface PrivateTitleReader {
   readablePrivateTitles?(owner: string, ctx: ActorContext): Promise<Map<string, Set<string>>>;
 }
 
-/** Notification manager interface for type safety */
-interface NotificationManagerInterface {
-  addNotification(notification: Record<string, unknown>): void;
-}
-
 /** Result of extraction */
 export interface ExtractionResult {
   /** Sanitized content with placeholders */
@@ -266,7 +263,19 @@ export interface PerformanceMonitor {
   recentErrorRates: number[];
   /** Maximum recent entries to keep */
   maxRecentEntries: number;
+  /** The kept checks (#2468); null when no folder is configured */
+  history: ParserPerformanceHistory | null;
+  /** The counters as they stood at the last check, so each check sees only its own minute (#2468) */
+  lastCounts: { parse: number; hits: number; misses: number; errors: number };
+  /** For each limit, when it was crossed; null while it is kept (#2468) */
+  overSince: Record<PerformanceLimit, number | null>;
 }
+
+/** How long a page building report is reused, in milliseconds (#2468). */
+const REPORT_CACHE_MS = 60_000;
+
+/** The three limits the once-a-minute check holds the parser to. */
+export type PerformanceLimit = 'SLOW_PARSING' | 'LOW_CACHE_HIT_RATIO' | 'HIGH_ERROR_RATE';
 
 /** Performance alert */
 export interface PerformanceAlert {
@@ -367,6 +376,8 @@ class MarkupParser extends BaseManager {
 
   /** Performance monitoring state */
   performanceMonitor: PerformanceMonitor | null;
+  /** The last page building report and when it was made (#2468), reused for a minute. */
+  private performanceReportCache: { at: number; report: Promise<PerformanceReport> } | null = null;
 
   /** Parser performance metrics */
   metrics: ParserMetrics;
@@ -442,6 +453,7 @@ class MarkupParser extends BaseManager {
 
     // Initialize performance monitoring
     this.initializePerformanceMonitoring();
+    await this.openPerformanceHistory();
 
     // #1117: FilterManager owns the chain — registration, built-ins, and the
     // contributed path all live there. The parser only consumes it. Absent
@@ -732,10 +744,74 @@ class MarkupParser extends BaseManager {
       // Performance tracking
       recentParseTimes: [],
       recentErrorRates: [],
-      maxRecentEntries: 100
+      maxRecentEntries: 100,
+      history: null,
+      lastCounts: { parse: 0, hits: 0, misses: 0, errors: 0 },
+      overSince: { SLOW_PARSING: null, LOW_CACHE_HIT_RATIO: null, HIGH_ERROR_RATE: null }
     };
 
     logger.debug('📊 Performance monitoring initialized with alert thresholds:', this.config.performance.alertThresholds);
+  }
+
+  /**
+   * Open the page building history (#2468): `ngdpbase.markup.performance.history.dir`.
+   * Without a ConfigurationManager that resolves data paths there is no folder to
+   * keep it in, and the checks run as before, unrecorded.
+   */
+  private async openPerformanceHistory(): Promise<void> {
+    if (!this.performanceMonitor) {
+      return;
+    }
+    const configManager = this.engine.getManager<{ getResolvedDataPath?(key: string, fallback: string): string }>('ConfigurationManager');
+    const dir = configManager?.getResolvedDataPath?.('ngdpbase.markup.performance.history.dir', './data/parser-performance');
+    if (!dir) {
+      return;
+    }
+    const history = new ParserPerformanceHistory(dir);
+    if (!(await history.open())) {
+      return; // no folder to keep checks in: not recording, and the old notifications stay where they are
+    }
+    this.performanceMonitor.history = history;
+
+    // #2468: the old "MarkupParser Performance Alert" notifications: keep their numbers, then delete them.
+    const notifications = this.engine.getManager<Partial<LegacyAlertSource>>('NotificationManager');
+    if (typeof notifications?.getAllNotifications === 'function' && typeof notifications.removeByTitles === 'function') {
+      await importLegacyAlerts(dir, notifications as LegacyAlertSource, Date.now());
+    }
+  }
+
+  /**
+   * What the "Page building speed" admin page shows (#2468): the kept checks summed up for the last
+   * hour, 24 hours, 7 days and 30 days, the numbers of the old over-limit alerts, and the limits the
+   * checks are held to. With no folder to keep the checks in (none set, or it could not be made),
+   * `recording` is false and there is nothing to sum up. Reading 30 days of files is the costly part,
+   * so a report is reused for a minute, which is as often as a check is made.
+   */
+  async getPerformanceReport(now: number = Date.now()): Promise<PerformanceReport> {
+    const cached = this.performanceReportCache;
+    if (cached && now >= cached.at && now - cached.at < REPORT_CACHE_MS) {
+      return cached.report;
+    }
+    const report = this.buildPerformanceReport(now);
+    this.performanceReportCache = { at: now, report };
+    report.catch(() => {
+      if (this.performanceReportCache?.report === report) this.performanceReportCache = null;
+    });
+    return report;
+  }
+
+  private async buildPerformanceReport(now: number): Promise<PerformanceReport> {
+    const history = this.performanceMonitor?.history ?? null;
+    const limits = this.config.performance.alertThresholds;
+    const samples = history ? await history.read(now - ROLLUP_WINDOWS.month) : [];
+    const legacy = history ? await readLegacyAlerts(history.dir) : null;
+    return {
+      rollup: rollupSamples(samples, now),
+      checks: countChecks(samples, now),
+      legacy: legacyStats(legacy?.samples ?? [], now),
+      limits: { parseTime: limits.parseTime, cacheHitRatio: limits.cacheHitRatio, errorRate: limits.errorRate },
+      recording: history !== null
+    };
   }
 
   /** The configured `ngdpbase.markup.html-policy`, read when it is needed (#1623). */
@@ -1195,7 +1271,7 @@ class MarkupParser extends BaseManager {
         userTimezone: (prefs?.['timezone'] ?? userCtx?.['timezone']),
         userDateFormat: prefs?.['dateFormat'],
         userTimeFormat: prefs?.['timeFormat'],
-        // My Links pinned pages affect LeftMenu rendering (#537)
+        // Pinned pages affect LeftMenu rendering (#537)
         navPinnedPages: prefs?.['nav.pinnedPages'],
         timestamp: Math.floor(Date.now() / 300000) // 5-minute buckets
       }))
@@ -3145,47 +3221,91 @@ class MarkupParser extends BaseManager {
 
     this.performanceMonitor.lastCheck = now;
 
-    // Check average parse time threshold
+    // #2468: the cache ratio and the error rate are the minute's own, from the counters
+    // since the last check. A counter that went backwards (resetMetrics) starts again from zero.
+    const limits = this.config.performance.alertThresholds;
+    const last = this.performanceMonitor.lastCounts;
+    const delta = (current: number, before: number): number => (current >= before ? current - before : current);
+    const pages = delta(this.metrics.parseCount, last.parse);
+    const hits = delta(this.metrics.cacheHits, last.hits);
+    const lookups = hits + delta(this.metrics.cacheMisses, last.misses);
+    const failures = delta(this.metrics.errorCount, last.errors);
+    this.performanceMonitor.lastCounts = {
+      parse: this.metrics.parseCount,
+      hits: this.metrics.cacheHits,
+      misses: this.metrics.cacheMisses,
+      errors: this.metrics.errorCount
+    };
+
+    // Average parse time over the last 20 pages that were not served from a stored copy
     const recentTimes = this.performanceMonitor.recentParseTimes
-      .filter(entry => !entry.cacheHit) // Only non-cached times
-      .slice(-20); // Last 20 entries
+      .filter(entry => !entry.cacheHit)
+      .slice(-20);
+    const avgTime = recentTimes.length > 0
+      ? recentTimes.reduce((sum, entry) => sum + entry.time, 0) / recentTimes.length
+      : null;
+    const hitRatio = lookups > 0 ? hits / lookups : null;
+    const errorRate = pages > 0 ? failures / pages : null;
 
-    if (recentTimes.length > 0) {
-      const avgTime = recentTimes.reduce((sum, entry) => sum + entry.time, 0) / recentTimes.length;
-      
-      if (avgTime > this.config.performance.alertThresholds.parseTime) {
-        this.generatePerformanceAlert('SLOW_PARSING', `Average parse time ${avgTime.toFixed(2)}ms exceeds threshold ${this.config.performance.alertThresholds.parseTime}ms`);
-      }
+    // Every check is kept, over its limits or under them.
+    void this.performanceMonitor.history?.record({ t: new Date(now).toISOString(), parse: avgTime, hit: hitRatio, err: errorRate, n: pages });
+
+    if (avgTime !== null) {
+      const ms = avgTime.toFixed(1);
+      this.trackLimit('SLOW_PARSING', avgTime > limits.parseTime, now,
+        `Average parse time ${avgTime.toFixed(2)}ms exceeds threshold ${limits.parseTime}ms`,
+        `Page building is over its limit: average ${ms} ms for the last ${recentTimes.length} pages, limit ${limits.parseTime} ms.`,
+        `Page building is back under its limit: average ${ms} ms, limit ${limits.parseTime} ms.`, 'over');
     }
 
-    // Check cache hit ratio (only if we have enough samples)
-    const totalCacheOps = this.metrics.cacheHits + this.metrics.cacheMisses;
-    const minSamples = this.config.performance.alertThresholds.minCacheSamples || 50;
-
-    if (totalCacheOps >= minSamples) {
-      const hitRatio = this.metrics.cacheHits / totalCacheOps;
-
-      if (hitRatio < this.config.performance.alertThresholds.cacheHitRatio) {
-        this.generatePerformanceAlert('LOW_CACHE_HIT_RATIO', `Cache hit ratio ${(hitRatio * 100).toFixed(1)}% below threshold ${(this.config.performance.alertThresholds.cacheHitRatio * 100).toFixed(1)}%`);
-      }
+    // The cache ratio is compared only when the minute had enough lookups to mean something
+    if (hitRatio !== null && lookups >= (limits.minCacheSamples || 50)) {
+      const pct = (hitRatio * 100).toFixed(1);
+      const floor = (limits.cacheHitRatio * 100).toFixed(1);
+      this.trackLimit('LOW_CACHE_HIT_RATIO', hitRatio < limits.cacheHitRatio, now,
+        `Cache hit ratio ${pct}% below threshold ${floor}%`,
+        `Stored copies are used too little: ${pct}% of pages in the last minute, lowest allowed ${floor}%.`,
+        `Stored copies are back above their limit: ${pct}% of pages in the last minute, lowest allowed ${floor}%.`, 'below the lowest allowed');
     }
 
-    // Check error rate
-    if (this.metrics.parseCount > 0) {
-      const errorRate = this.metrics.errorCount / this.metrics.parseCount;
-      
-      if (errorRate > this.config.performance.alertThresholds.errorRate) {
-        this.generatePerformanceAlert('HIGH_ERROR_RATE', `Error rate ${(errorRate * 100).toFixed(1)}% exceeds threshold ${(this.config.performance.alertThresholds.errorRate * 100).toFixed(1)}%`);
-      }
+    if (errorRate !== null) {
+      const pct = (errorRate * 100).toFixed(1);
+      const ceiling = (limits.errorRate * 100).toFixed(1);
+      this.trackLimit('HIGH_ERROR_RATE', errorRate > limits.errorRate, now,
+        `Error rate ${pct}% exceeds threshold ${ceiling}%`,
+        `Page failures are over their limit: ${pct}% of pages in the last minute, limit ${ceiling}%.`,
+        `Page failures are back under their limit: ${pct}% of pages in the last minute, limit ${ceiling}%.`, 'over');
     }
   }
 
   /**
-   * Generate performance alert
-   * @param type - Alert type
-   * @param message - Alert message
+   * Write a line only when a limit changes state (#2468): a crossing is a
+   * warning, the return an info line saying how long it lasted. Staying over
+   * writes nothing.
    */
-  generatePerformanceAlert(type: string, message: string): void {
+  private trackLimit(type: PerformanceLimit, isOver: boolean, now: number, alertMessage: string, crossingLine: string, recoveryLine: string, was: string): void {
+    if (!this.performanceMonitor) {
+      return;
+    }
+    const since = this.performanceMonitor.overSince[type];
+    if (isOver && since === null) {
+      this.performanceMonitor.overSince[type] = now;
+      this.generatePerformanceAlert(type, alertMessage, crossingLine);
+    } else if (!isOver && since !== null) {
+      this.performanceMonitor.overSince[type] = null;
+      const minutes = Math.max(1, Math.round((now - since) / 60000));
+      logger.info(`${recoveryLine} It was ${was} for ${minutes} minute${minutes === 1 ? '' : 's'}.`);
+    }
+  }
+
+  /**
+   * Record a limit crossing: one entry in the alerts list and one warning line.
+   * It no longer sends a notification (#2468).
+   * @param type - Alert type
+   * @param message - Alert message kept in the list
+   * @param logLine - The warning line
+   */
+  generatePerformanceAlert(type: string, message: string, logLine: string = message): void {
     if (!this.performanceMonitor) {
       return;
     }
@@ -3204,19 +3324,7 @@ class MarkupParser extends BaseManager {
       this.performanceMonitor.alerts.shift();
     }
 
-    logger.warn(`⚠️  MarkupParser Performance Alert [${type}]: ${message}`);
-    
-    // Optionally send to notification system
-    const notificationManager = this.engine.getManager<NotificationManagerInterface>('NotificationManager');
-    if (notificationManager) {
-      notificationManager.addNotification({
-        type: 'performance',
-        title: `MarkupParser Performance Alert: ${type}`,
-        message,
-        priority: 'medium',
-        source: 'MarkupParser'
-      });
-    }
+    logger.warn(logLine);
   }
 
   /**

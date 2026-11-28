@@ -2,6 +2,10 @@
 import UpgradeCheckManager from '../../managers/UpgradeCheckManager';
 import { shippedLiveChecks } from '../index';
 import { ruleSentence, RULES_URL } from '../openWriteRules';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { mergeConfigWithAddons, mergeWithAddonLayer } from '../../utils/addonConfigLayer';
 import { admin, cleanup, makeFixture, type Fixture } from '../../test-support/upgradeChecks';
 
 describe('open write rules (#2313)', () => {
@@ -67,6 +71,57 @@ describe('open write rules (#2313)', () => {
     expect(say(['vault-proxy'], 'vault', 'Mine')).toBe("The rule 'x' lets every signed-in user act for the owner of vaults named 'Mine'.");
     expect(say(['made-up-action'], 'vault')).not.toMatch(/made-up|use '/);
     for (const text of [say(['asset-upload', 'search-page'], 'shared-folder'), say(['vault-proxy'], 'vault')]) expect(text.replace('signed-in', '')).not.toMatch(/[a-z]+-[a-z]+|items/);
+  });
+
+  test('the shipped calendar rules, add-on included, are not listed: calendar-read is a read', async () => {
+    const repoRoot = path.resolve(__dirname, '../../..');
+    const shipped = JSON.parse(fs.readFileSync(path.join(repoRoot, 'config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'open-write-calendar-'));
+    try {
+      const { merged } = mergeConfigWithAddons({ ...shipped, 'ngdpbase.addons.calendar.enabled': true }, {}, repoRoot, dir);
+      const policies = merged['ngdpbase.access.policies'] as Array<{ id: string }>;
+      expect(policies.some((p) => p.id === 'calendar-read-access')).toBe(true);
+      f.props['ngdpbase.permissions.definitions'] = merged['ngdpbase.permissions.definitions'];
+      f.props['ngdpbase.access.policies'] = policies;
+      expect((await texts()).filter((t) => t.includes('calendar-read-access'))).toEqual([]);
+      // The same rule with a page write is still listed.
+      policies.push({ id: 'members-edit', effect: 'allow', subjects: [{ type: 'authenticated' }], actions: ['page-edit'], resources: [{ type: 'page', pattern: '*' }] } as never);
+      expect(await texts()).toEqual(["The rule 'members-edit' lets every signed-in user edit every page."]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('an add-on that marks a core permission read-only does not hide a rule that grants it', async () => {
+    const repoRoot = path.resolve(__dirname, '../../..');
+    const shipped = JSON.parse(fs.readFileSync(path.join(repoRoot, 'config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
+    const evil = { slug: 'evil', dir: '', enabled: true, defaults: { 'ngdpbase.permissions.definitions': { 'page-edit': { 'read-only': true }, '*': { 'read-only': true } } } };
+    const { merged } = mergeWithAddonLayer(shipped, [evil], {});
+    f.props['ngdpbase.permissions.definitions'] = merged['ngdpbase.permissions.definitions'];
+    f.props['ngdpbase.access.policies'] = [
+      { id: 'members-edit', effect: 'allow', subjects: [{ type: 'authenticated' }], actions: ['page-edit'], resources: [{ type: 'page', pattern: '*' }] },
+      { id: 'members-all', effect: 'allow', subjects: [{ type: 'authenticated' }], resources: [{ type: 'page', pattern: '*' }] }
+    ];
+    expect(await texts()).toEqual([
+      "The rule 'members-edit' lets every signed-in user edit every page.",
+      "The rule 'members-all' lets every signed-in user do anything with every page."
+    ]);
+  });
+
+  test('an add-on that marks a permission the site defined in its own file does not hide a rule that grants it', async () => {
+    const custom = { 'ngdpbase.permissions.definitions': { 'wiki-publish': { description: 'Publish' } } };
+    const evil = { slug: 'evil', dir: '', enabled: true, defaults: { 'ngdpbase.permissions.definitions': { 'wiki-publish': { 'read-only': true } } } };
+    const { merged, refused } = mergeWithAddonLayer({ 'ngdpbase.permissions.definitions': {} }, [evil], custom);
+    expect(refused.has('evil')).toBe(true);
+    f.props['ngdpbase.permissions.definitions'] = merged['ngdpbase.permissions.definitions'];
+    f.props['ngdpbase.access.policies'] = [{ id: 'members-publish', effect: 'allow', subjects: [{ type: 'authenticated' }], actions: ['wiki-publish'], resources: [{ type: 'page', pattern: '*' }] }];
+    expect(await texts()).toHaveLength(1);
+  });
+
+  test("the wildcard marked read-only in a site's own file still lists a rule with no actions", async () => {
+    f.props['ngdpbase.permissions.definitions'] = { '*': { 'read-only': true } };
+    f.props['ngdpbase.access.policies'] = [{ id: 'wide', effect: 'allow', subjects: [{ type: 'anyone' }], resources: [{ type: 'page', pattern: '*' }] }];
+    expect(await texts()).toEqual(["The rule 'wide' lets signed-out visitors do anything with every page."]);
   });
 
   test('the sentence names no issue number, file or setting', () => {

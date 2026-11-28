@@ -909,13 +909,48 @@ export interface SignInRecord extends Assurance {
  * How a refused request wants its answer: a page to redirect, JSON, or plain
  * text (#1745). `download` is a GET that answers with a file: refused like a
  * page, but returned to the page that linked it, since going back to the file
- * itself saves it and leaves the browser on the prompt (#2145).
+ * itself saves it and leaves the browser on the prompt (#2145). `form` (#2360)
+ * is for a route that answers a script in JSON and whose action must not run
+ * until the person presses it again: a plain form post is answered as a page
+ * but is not kept to be redone (#2154), so confirming returns to the page
+ * with the note and the person presses the button once more; a script gets
+ * JSON, as for `json`.
  */
-export type ReauthMode = 'json' | 'page' | 'text' | 'download';
+export type ReauthMode = 'json' | 'page' | 'text' | 'download' | 'form';
+
+/**
+ * Whether `req` is a browser's plain form post (#2360): a POST that asks for a
+ * page (`Accept` names `text/html`, not JSON) and carries no script marker
+ * (`X-Requested-With`). A script's `fetch` is none of these: it names JSON, or
+ * sets the marker, or asks for no particular type. Reads `headers` alone, so a
+ * request without any is not one.
+ */
+export function isPlainFormPost(req: Request): boolean {
+  if (req.method !== 'POST') return false;
+  const header = (name: string): string => {
+    const value = req.headers?.[name];
+    return (Array.isArray(value) ? value.join(',') : value ?? '').toLowerCase();
+  };
+  const accept = header('accept');
+  return accept.includes('text/html') && !accept.includes('json') && !header('x-requested-with');
+}
+
+/**
+ * The mode a step-up answer takes for `req` (#2360): a route that answers a
+ * script in JSON answers a plain form post as a page, so the person is sent to
+ * the "confirm it is you" step rather than shown raw JSON. A route that asked
+ * for `form` gets the same for a plain form post (a page whose form is not
+ * kept to be redone) and JSON for any other request. Any other mode, and any
+ * other request, is as asked for.
+ */
+export function stepUpModeFor(req: Request, mode: ReauthMode): ReauthMode {
+  if (mode === 'form') return isPlainFormPost(req) ? 'form' : 'json';
+  return mode === 'json' && isPlainFormPost(req) ? 'page' : mode;
+}
 
 /** Whether a refusal in `mode` is answered by sending the browser to a page: a page, or a file a page links to (#2145). */
 export function answeredWithPage(mode: ReauthMode): boolean {
-  return mode === 'page' || mode === 'download';
+  return mode === 'page' || mode === 'download' || mode === 'form';
 }
 
 /**
@@ -930,7 +965,12 @@ export interface PendingStepUp {
   replays: boolean;
   /** The kept form POST the confirmation releases (#2154). */
   replay?: string;
+  /** Which note the page says once it is back (#2360): a fixed key the header looks up, never text. */
+  note?: StepUpNote;
 }
+
+/** The notes a confirmation can carry besides the generic one (#2360). `press-again`: "Confirmed, press Reset again". */
+export type StepUpNote = 'press-again';
 
 /**
  * Where a script's own prompt is (#2193): a page that sent a request by
@@ -1123,6 +1163,29 @@ export interface AuthenticateResult {
    * is remembered. Not a factor: `factors` holds only what was entered.
    */
   knownDevice?: boolean;
+}
+
+/**
+ * A passkey can not be added, for a reason the person can act on (#2494):
+ * passkeys are off on this site, or the account may not sign in with one.
+ * `message` is written for the person, so a route may show it as it is.
+ */
+export class PasskeyRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PasskeyRefused';
+  }
+}
+
+/**
+ * A proxy grant that was refused, with a reason written for the person who asked (#2494):
+ * nothing was changed, and trying again would not change the answer.
+ */
+export class ProxyGrantRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProxyGrantRefused';
+  }
 }
 
 class AuthManager extends BaseManager {
@@ -1979,9 +2042,9 @@ class AuthManager extends BaseManager {
 
   async passkeyRegistrationOptions(ctx: PermissionSubject, username: string, displayName: string): Promise<unknown> {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
-    if (!(await this.userMayUseProvider(username, 'passkey'))) throw new Error('This account cannot sign in with a passkey');
+    if (!(await this.userMayUseProvider(username, 'passkey'))) throw new PasskeyRefused('This account cannot sign in with a passkey');
     const provider = this.passkeyProvider();
-    if (!provider) throw new Error('Passkeys are not available on this site');
+    if (!provider) throw new PasskeyRefused('Passkeys are not available on this site');
     const existing = this.requireCredentialsStore().list(username).filter(c => c.kind === 'passkey');
     return provider.registrationOptions(username, displayName, existing);
   }
@@ -2186,14 +2249,13 @@ class AuthManager extends BaseManager {
     await step('sessions', async () => this.engine.getManager<UserManager>('UserManager')?.deleteUserSessions(username, reason, { ipAddress: ctx.ipAddress }));
     if (mode !== 'delete') return;
 
-    const by = ctx.username ?? 'system';
     // #1764: the same path a person's own Revoke takes, one kind per step so one failing store does not stop the other.
     for (const [what, kind] of [['agent tokens', 'token'], ['app grants', 'app']] as const) {
       await step(what, async () => this.endDelegationsWhere(ctx, username, kind, () => true));
     }
     await step('shares', async () => {
-      const shares = this.engine.getManager<{ list(owner?: string): Array<{ id: string; revokedAt?: string | null }>; revoke(id: string, by: string): Promise<boolean> }>('ShareManager');
-      for (const sh of shares?.list(username) ?? []) if (!sh.revokedAt) await shares?.revoke(sh.id, by);
+      const shares = this.engine.getManager<{ list(owner?: string): Array<{ id: string; revokedAt?: string | null }>; revoke(id: string, by: PermissionSubject): Promise<boolean> }>('ShareManager');
+      for (const sh of shares?.list(username) ?? []) if (!sh.revokedAt) await shares?.revoke(sh.id, ctx);
     });
     await step('proxy grants', async () => {
       if (!this.credentials) return;
@@ -2309,7 +2371,7 @@ class AuthManager extends BaseManager {
   }
 
   private requireProxyAccess(): BaseCredentialsProvider {
-    if (!this.proxyAccessEnabled()) throw new Error('Proxy access is turned off on this site');
+    if (!this.proxyAccessEnabled()) throw new ProxyGrantRefused('Proxy access is turned off on this site');
     return this.requireCredentialsStore();
   }
 
@@ -2350,33 +2412,33 @@ class AuthManager extends BaseManager {
     const store = this.requireProxyAccess();
     const owner = typeof input?.owner === 'string' ? input.owner.trim() : '';
     const proxy = typeof input?.proxy === 'string' ? input.proxy.trim() : '';
-    if (!owner || !proxy) throw new Error('Name the person represented and the person acting for them');
-    if (!(await this.mayManageProxyGrants(ctx, owner))) throw new Error('Permission denied');
-    if (owner === proxy) throw new Error('A person cannot act for themselves');
+    if (!owner || !proxy) throw new ProxyGrantRefused('Name the person represented and the person acting for them');
+    if (!(await this.mayManageProxyGrants(ctx, owner))) throw new ProxyGrantRefused('Permission denied');
+    if (owner === proxy) throw new ProxyGrantRefused('A person cannot act for themselves');
 
     const { pdp, pip, ownerSubject } = await this.proxyOwnerSubject(ctx, owner);
-    if (!(await pip.subjectFor(proxy))) throw new Error(`There is no active account ${proxy}`);
+    if (!(await pip.subjectFor(proxy))) throw new ProxyGrantRefused(`There is no active account ${proxy}`);
 
     const permissions = requireScopeList(input.permissions);
     // Vault access is added only by the person themselves (operator, 2026-10-12): an administrator's grant never carries it.
     if (ctx.username !== owner && permissions.includes(VAULT_PROXY_PERMISSION)) {
-      throw new Error('A grant made for someone else can never include access to their vaults');
+      throw new ProxyGrantRefused('A grant made for someone else can never include access to their vaults');
     }
     // Nor does a proxy's, re-delegating: it would hand on the owner's vault key (#1762 slice 5).
     if (ctx.viaProxy && permissions.includes(VAULT_PROXY_PERMISSION)) {
-      throw new Error(`Only ${owner} can give access to their vaults`);
+      throw new ProxyGrantRefused(`Only ${owner} can give access to their vaults`);
     }
     // Held, not fresh: the owner's own step-up is not the question when an administrator makes it.
     const lacking = await lackingScopes(permissions, p => pdp.holds(ownerSubject, p));
     if (lacking.length > 0) {
-      throw new Error(`${owner} does not hold ${lacking.join(', ')}. A grant can only carry permissions the person represented has.`);
+      throw new ProxyGrantRefused(`${owner} does not hold ${lacking.join(', ')}. A grant can only carry permissions the person represented has.`);
     }
 
     const now = Date.now();
     let expiresAt: string | null = null;
     if (input.expiresAt !== undefined && input.expiresAt !== null) {
       const end = typeof input.expiresAt === 'string' ? Date.parse(input.expiresAt) : NaN;
-      if (!Number.isFinite(end) || end <= now) throw new Error('The end date must be a date in the future');
+      if (!Number.isFinite(end) || end <= now) throw new ProxyGrantRefused('The end date must be a date in the future');
       expiresAt = new Date(end).toISOString();
     }
 
@@ -2426,15 +2488,15 @@ class AuthManager extends BaseManager {
    */
   private async sealVaultCopy(ctx: PermissionSubject, owner: string, proxy: string): Promise<Lockbox | null> {
     const blocked = await this.vaultGrantBlocked(ctx, owner);
-    if (blocked) throw new Error(blocked);
+    if (blocked) throw new ProxyGrantRefused(blocked);
     const pagesDirectory = this.pagesDirectory();
     if (!pagesDirectory || !(await hasUserKeys(pagesDirectory, owner))) return null;
     const proxyKey = await personKeyOf(pagesDirectory, proxy);
     if (!proxyKey) {
-      throw new Error(`${proxy} cannot be given access to your encrypted vaults yet: they need a private store of their own, unlocked at least once. Give access without vaults, or ask them to set one up first.`);
+      throw new ProxyGrantRefused(`${proxy} cannot be given access to your encrypted vaults yet: they need a private store of their own, unlocked at least once. Give access without vaults, or ask them to set one up first.`);
     }
     const copy = await sealKekCopyFor(ctx, proxyKey);
-    if (!copy) throw new Error('Unlock your private store first: access to your encrypted vaults can only be given while it is open.');
+    if (!copy) throw new ProxyGrantRefused('Unlock your private store first: access to your encrypted vaults can only be given while it is open.');
     return copy;
   }
 
@@ -3225,13 +3287,16 @@ class AuthManager extends BaseManager {
    * fresh enough, with the `reauth-prompt` recorded. A delegated credential is
    * refused outright: it can never give a fresh factor.
    */
-  async askForFreshSignIn(req: Request, userContext: unknown, permission: string, mode: ReauthMode): Promise<FreshSignInAnswer> {
+  async askForFreshSignIn(req: Request, userContext: unknown, permission: string, asked: ReauthMode): Promise<FreshSignInAnswer> {
+    // #2360: a plain form post is answered like a page, whichever way its route asked.
+    const mode = stepUpModeFor(req, asked);
     const user = (userContext ?? {}) as { viaToken?: unknown; viaShare?: unknown };
     const delegated = Boolean(user.viaToken || user.viaShare);
     await this.recordReauth(req, AUDIT_EVENT.REAUTH_PROMPT, 'failure', permission, delegated ? 'delegated credential cannot re-authenticate' : 'fresh sign-in asked for');
     if (delegated) return { permission, delegated, error: 'This needs a fresh sign-in by the person; a token cannot give one' };
     const back = reauthReturnTo(req, mode);
-    // #2154: a form POST is kept, and the confirmation returns to redo it.
+    // #2154: a form POST is kept, and the confirmation returns to redo it. Not in `form` mode (#2360):
+    // that route's action is pressed again by the person, so the confirmation returns to its page.
     const replay = req.session ? this.keepStepUpReplay(req, permission, mode, back) : null;
     const next = replay ? `${STEP_UP_CONTINUE_PATH}?replay=${replay}` : back;
     // #2193: a script's request names its own prompt, so the page that sent it
@@ -3243,7 +3308,7 @@ class AuthManager extends BaseManager {
     if (req.session) {
       req.session.pendingStepUp = replay
         ? { permission, next, replays: true, replay }
-        : { permission, next, replays: req.method === 'GET' && mode === 'page' };
+        : { permission, next, replays: req.method === 'GET' && mode === 'page', ...(mode === 'form' ? { note: 'press-again' as const } : {}) };
       // Saved before the answer goes out: the browser follows a redirect on its
       // headers, before express-session's own save at the end lands, and the
       // prompt's request would read (and write back) the session without it.
@@ -3308,7 +3373,10 @@ class AuthManager extends BaseManager {
     const pending = req.session.pendingStepUp;
     delete req.session.pendingStepUp;
     const answered = pending && pending.next === next ? pending : undefined;
-    if (answered && !answered.replays) req.session.stepUpConfirmed = new URL(next, 'http://site.invalid').pathname;
+    if (answered && !answered.replays) {
+      req.session.stepUpConfirmed = new URL(next, 'http://site.invalid').pathname;
+      if (answered.note) req.session.stepUpNote = answered.note;
+    }
     // #2154: the confirmation releases the form POST it was asked for, named by
     // `next` itself (the session's pending prompt may be another tab's), and
     // its time to be redone starts now, however long the prompt was open.
@@ -3339,6 +3407,7 @@ class AuthManager extends BaseManager {
     if (typeof path !== 'string') return false;
     if (req.method !== 'GET' || !(req.get('accept') ?? '').includes('text/html')) return false;
     delete req.session.stepUpConfirmed;
+    delete req.session.stepUpNote;
     return req.path === path;
   }
 
@@ -3373,6 +3442,12 @@ class AuthManager extends BaseManager {
     const id = randomBytes(16).toString('hex');
     this.stepUpReplays.set(id, { sessionId: req.sessionID, username, permission, action, fields, back, expires: now + STEP_UP_REPLAY_WAIT_MS, ready: false });
     return id;
+  }
+
+  /** Whether the kept form POST `next` names holds anything typed (#2485): Revoke's holds only its CSRF token. */
+  stepUpReplayHasFields(req: Request, next: string): boolean {
+    const kept = this.stepUpReplays.get(stepUpReplayId(next) ?? '');
+    return Boolean(kept && kept.sessionId === req.sessionID && kept.username === req.session?.username && kept.fields.length > 0);
   }
 
   /** A session ended (#2176): the form POSTs it kept go with it (`endSession`). */
@@ -3469,6 +3544,7 @@ class AuthManager extends BaseManager {
     } catch (err) {
       logger.warn(`[AuthManager] could not count the sign-in for ${username}:`, err);
     }
+    this.startPrivatePageCleanup(req, username);
     let next: string | undefined;
     if (pending && pending.expiresAt > Date.now()) {
       req.session.pendingConnection = { ...pending, ...(how.returnTo !== undefined ? { returnTo: safeRedirect(how.returnTo) } : {}) };
@@ -3487,6 +3563,40 @@ class AuthManager extends BaseManager {
       return { next: `${CONSENT_PATH}?returnTo=${encodeURIComponent(next ?? safeRedirect(how.returnTo))}`, ...(auditId ? { auditId } : {}) };
     }
     return { ...(next ? { next } : {}), ...(auditId ? { auditId } : {}) };
+  }
+
+  /**
+   * After a sign-in (#2466): the upgrade clean-up of the person's own private
+   * pages, run as them. It starts on a later turn and is never waited for, so
+   * it cannot slow or stop the sign-in: its failure, in building the person's
+   * permissions or in the clean-up itself, is logged and nothing more. The
+   * subject is the one the person's next request would carry (their roles as
+   * this sign-in holds them, how they signed in, the key handle of their
+   * private stores), so every read and save in it is decided by their own
+   * permissions, never the system's.
+   */
+  private startPrivatePageCleanup(req: Request, username: string): void {
+    const pages = this.engine.getManager<{ convertLegacyAccessOnSignIn?(subject: PermissionSubject): Promise<unknown> }>('PageManager');
+    if (typeof pages?.convertLegacyAccessOnSignIn !== 'function') return;
+    // Read now: the session is the request's, and the route goes on to save and answer.
+    const { signIn, privateStoreHandle } = req.session;
+    const ipAddress = req.ip;
+    setImmediate(() => {
+      void (async () => {
+        const pip = this.engine.getManager<{ subjectFor(u: string): Promise<PermissionSubject | null> }>('PolicyInformationPoint');
+        const subject = await pip?.subjectFor(username);
+        if (!subject) return;
+        const reach = await this.aalReachFor(username);
+        const roles = this.rolesAtSignIn(subject.roles, signIn?.aal ?? 1, reach.now).kept;
+        await pages.convertLegacyAccessOnSignIn?.({
+          ...subject,
+          roles,
+          ...(ipAddress ? { ipAddress } : {}),
+          ...(typeof privateStoreHandle === 'string' && privateStoreHandle ? { privateStoreHandle } : {}),
+          ...(signIn ? { signIn } : {})
+        });
+      })().catch((err: unknown) => logger.warn(`[AuthManager] The clean-up of a person's private pages after sign-in did not finish; the sign-in was not affected: ${err instanceof Error ? err.message : String(err)}`));
+    });
   }
 
   /**

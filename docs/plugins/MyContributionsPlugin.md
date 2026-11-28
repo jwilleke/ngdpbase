@@ -31,7 +31,7 @@ Embeds the __My Contributions__ card (familiar from `/profile`) into any wiki pa
 
 The card adapts to the viewer/target relationship:
 
-- __Self-view__ (target == viewer) → full six-count card: __Private · Authored · Journal · My Links · Edited · Shared__. Matches `/profile`.
+- __Self-view__ (target == viewer) → full six-count card: __Private · Authored · Journal · Pinned pages · Edited · Shared__. Matches `/profile`.
 - __Cross-view__ (target ≠ viewer) → reduced three-count card: __Authored · Journal · Edited__. Private / Shared / Links are viewer-specific or potentially sensitive and require viewer roles or that user's preferences.
 - __Anonymous visitor with no explicit `username`__ → empty output (no leak).
 

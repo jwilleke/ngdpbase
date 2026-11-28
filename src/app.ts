@@ -960,7 +960,12 @@ void (async (): Promise<void> => {
           // enrolled — the person keeps it, and every page says to add one.
           const awaiting = reach ? authManagerForRoles?.rolesAwaitingEnrolment?.(sessionContext.roles ?? [], reach) ?? [] : [];
           // #2145: back from a fresh sign-in that could not redo the action; say it can be done now.
-          if (authManagerForRoles?.takeStepUpNotice?.(req)) res.locals.stepUpConfirmed = true;
+          // #2360: read before the take clears it; only the fixed key the header knows is passed on.
+          const stepUpNote = req.session?.stepUpNote;
+          if (authManagerForRoles?.takeStepUpNotice?.(req)) {
+            res.locals.stepUpConfirmed = true;
+            if (stepUpNote === 'press-again') res.locals.stepUpNote = stepUpNote;
+          }
           const stepDown = authManagerForRoles?.rolesAtSignIn?.(sessionContext.roles ?? [], req.session.signIn?.aal ?? 1, aalCap);
           // #2356: the banners name only what this account can add or use here,
           // read for this request and this account, and only when one shows.

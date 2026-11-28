@@ -148,6 +148,56 @@ describe('lastFinishedRun (#2138)', () => {
     expect((await again.lastFinishedRun('test.folder-scan'))!.lastRun).toBeNull();
   });
 
+  // #2467: the automatic folder scan's last run is kept, its schedule is not.
+  test('a maintenance tick with keepLastRun: its last run is still there after a restart', async () => {
+    const m = manager();
+    m.registerMaintenance({ id: 'test.folder-scan', displayName: 'Folder scan', everyMs: 60 * 60_000, keepLastRun: true, run: () => Promise.resolve('0 new') });
+    await m.tick();
+    clock = Date.parse('2026-10-30T10:00:05Z');
+    await m.tick();
+    await m.whenIdle();
+    expect((await m.lastFinishedRun('test.folder-scan'))!.sinceStart).toBe(false);
+
+    clock = Date.parse('2026-10-30T10:20:00Z');
+    const again = manager();
+    again.registerMaintenance({ id: 'test.folder-scan', displayName: 'Folder scan', everyMs: 60 * 60_000, keepLastRun: true, run: () => Promise.resolve() });
+    expect(await again.lastFinishedRun('test.folder-scan')).toMatchObject({
+      sinceStart: false,
+      lastRun: { status: 'completed', ranBy: null, startedAt: '2026-10-30T10:00:05.000Z' }
+    });
+  });
+
+  test('a failed run of a keepLastRun tick is kept too', async () => {
+    const m = manager();
+    m.registerMaintenance({ id: 'test.folder-scan', displayName: 'Folder scan', everyMs: 60 * 60_000, keepLastRun: true, run: () => Promise.reject(new Error('folder gone')) });
+    await m.tick();
+    clock = Date.parse('2026-10-30T10:00:05Z');
+    await m.tick();
+    await m.whenIdle();
+    const again = manager();
+    again.registerMaintenance({ id: 'test.folder-scan', displayName: 'Folder scan', everyMs: 60 * 60_000, keepLastRun: true, run: () => Promise.resolve() });
+    expect((await again.lastFinishedRun('test.folder-scan'))!.lastRun).toMatchObject({ status: 'failed' });
+  });
+
+  test('keeping the last run does not bring a run forward: after a restart the next run is one interval away', async () => {
+    const ran = vi.fn(() => Promise.resolve('0 new'));
+    const first = manager();
+    first.registerMaintenance({ id: 'test.folder-scan', displayName: 'Folder scan', everyMs: 60 * 60_000, keepLastRun: true, run: ran });
+    await first.tick();
+    clock = Date.parse('2026-10-30T10:00:05Z');
+    await first.tick();
+    await first.whenIdle();
+    expect(ran).toHaveBeenCalledTimes(1);
+
+    clock = Date.parse('2026-10-30T10:20:00Z');
+    const again = manager();
+    again.registerMaintenance({ id: 'test.folder-scan', displayName: 'Folder scan', everyMs: 60 * 60_000, keepLastRun: true, run: ran });
+    await again.tick();
+    await again.whenIdle();
+    expect(ran).toHaveBeenCalledTimes(1);
+    expect((await again.scheduledJobView('test.folder-scan'))!.nextSlot).toBe('2026-10-30T11:00:00.000Z');
+  });
+
   test('with no job state open, a run by hand is still found in memory, "since start"', async () => {
     const m = manager({ noState: true });
     m.registerJob(handJob({ next: 'ok' }));

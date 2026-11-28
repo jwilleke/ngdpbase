@@ -20,7 +20,7 @@ interface FakeSession extends Record<string, unknown> {
   csrfToken?: string;
 }
 
-function buildApp(initialSession: FakeSession): {
+function buildApp(initialSession: FakeSession, signedIn = false): {
   app: express.Application;
   session: FakeSession;
 } {
@@ -30,6 +30,9 @@ function buildApp(initialSession: FakeSession): {
   app.use(express.urlencoded({ extended: true }));
   app.use((req: Request, _res: Response, next: NextFunction) => {
     (req as unknown as { session: FakeSession }).session = session;
+    (req as unknown as { userContext: unknown }).userContext = signedIn
+      ? { username: 'ed', isAuthenticated: true }
+      : { username: 'Anonymous', isAuthenticated: false };
     next();
   });
   app.use(csrfMiddleware);
@@ -161,6 +164,68 @@ describe('csrfMiddleware', () => {
       const { app } = buildApp({ cookie: { secure: false } });
       const res = await request(app).post('/save').set(csrfTestHeaders()).expect(403);
       expect(res.text).toBe('Forbidden — invalid CSRF token');
+    });
+  });
+
+  // A lost session (cookie cleared, or the session pruned from the store) has no token and no sign-in.
+  // A page form from a browser goes to sign-in and back; anything else keeps the plain 403.
+  describe('a page form with no signed-in session goes to sign-in', () => {
+    const form = (app: express.Application, referer = 'http://localhost/view/Main') =>
+      request(app)
+        .post('/save')
+        .set('Accept', 'text/html')
+        .set('Content-Type', 'application/x-www-form-urlencoded')
+        .set('Host', 'localhost')
+        .set('Referer', referer)
+        .send('content=x');
+
+    it('a form POST with no session token is sent to sign-in and back to the page', async () => {
+      const { app } = buildApp({});
+      const res = await form(app).expect(302);
+      expect(res.headers.location).toBe('/login?redirect=' + encodeURIComponent('/view/Main'));
+    });
+
+    it('a form POST with a token the store no longer holds is sent to sign-in', async () => {
+      const { app } = buildApp(csrfTestSessionFields());
+      const res = await form(app).send('_csrf=stale-token').expect(302);
+      expect(res.headers.location).toMatch(/^\/login\?redirect=/);
+    });
+
+    it('a Referer on another site goes back to the home page, not off site', async () => {
+      const { app } = buildApp({});
+      const res = await form(app, 'https://evil.example/view/Main').expect(302);
+      expect(res.headers.location).toBe('/login?redirect=' + encodeURIComponent('/'));
+    });
+
+    // The gate answers an unlisted route before CSRF runs, so a lost session reaches this check only on a
+    // route the signed-out write list names (sign-in, password reset): that is where the redirect applies.
+    it('a form POST to a signed-out write route with a lost session is sent to sign-in', async () => {
+      const { app } = buildApp({});
+      const res = await request(app)
+        .post('/recover-password')
+        .set('Accept', 'text/html')
+        .set('Content-Type', 'application/x-www-form-urlencoded')
+        .set('Host', 'localhost')
+        .set('Referer', 'http://localhost/recover-password')
+        .send('_csrf=stale-token')
+        .expect(302);
+      expect(res.headers.location).toBe('/login?redirect=' + encodeURIComponent('/recover-password'));
+    });
+
+    it('a JSON caller keeps the plain 403', async () => {
+      const { app } = buildApp({});
+      await request(app).post('/save').set('Accept', 'application/json').send({ foo: 'bar' }).expect(403);
+    });
+
+    it('a signed-in caller with a bad token keeps the plain 403', async () => {
+      const { app } = buildApp(csrfTestSessionFields(), true);
+      await form(app).send('_csrf=wrong').expect(403);
+    });
+
+    it('a withheld secure cookie keeps the 403 that explains it', async () => {
+      const { app } = buildApp({ cookie: { secure: true } });
+      const res = await form(app).expect(403);
+      expect(res.text).toContain('session cookie only over https');
     });
   });
 

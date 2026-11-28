@@ -1,7 +1,7 @@
 ---
 name: Private stores
 description: Developer and operator reference for private stores — layout, kinds, keys, access, pages, links, search, trash and files
-dateModified: 2026-10-25
+dateModified: 2026-11-22
 category: architecture
 relatedModules: [PageManager, AttachmentManager, SearchManager, PolicyInformationPoint, FileSystemProvider, VersioningFileProvider]
 ---
@@ -185,7 +185,7 @@ At startup `findPlaintextInSealedVaults` checks every sealed vault (sealed `stor
 
 ### Footnotes and comments
 
-A vault page's footnotes and comments are kept in its vault ([#1839](https://github.com/jwilleke/ngdpbase/issues/1839), operator 2026-10-16): `{store}/footnotes/{uuid}.json` and `{store}/comments/{uuid}/{id}.json`, read and written through the vault's store I/O. They are sealed exactly when its pages are, a locked vault refuses them for reads as well as writes, and a sealed kind's vault that hasn't been opened refuses them with `SealedVaultRefusedError`, as it refuses a save. A public page's stay where they were, in `ngdpbase.footnotes.storagedir` and `ngdpbase.comments.storagedir`.
+A vault page's footnotes and comments are kept in its vault ([#1839](https://github.com/jwilleke/ngdpbase/issues/1839), operator 2026-10-16): `{store}/footnotes/{uuid}.json` and `{store}/comments/{uuid}/{id}.json`, read and written through the vault's store I/O. They are sealed exactly when its pages are, a locked vault refuses them for reads as well as writes, and a sealed kind's vault that hasn't been opened refuses them with `SealedVaultRefusedError`, as it refuses a save. A public page's stay where they were, in `ngdpbase.footnotes.storagedir` and `ngdpbase.comments.storagedir`. A vault page's footnote never points at a shared source ([#2454](https://github.com/jwilleke/ngdpbase/issues/2454)): sources are shared across the site, so adding one to a vault page is refused, and a page that moves into a vault has its footnotes rewritten as page notes carrying the source's title and link, so nothing of the vault's footnotes names a source.
 
 `src/utils/pageNotes.ts` holds the rule. Where a page's notes are is decided by the page's __name__ (`pageNotesPath`): a vault page is in no shared index, so its uuid alone says nothing about where it is. `FootnoteManager` and `CommentManager` take the page as `{ name, uuid }` and the caller's context on every call.
 

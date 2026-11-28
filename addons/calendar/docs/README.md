@@ -54,7 +54,7 @@ addons/calendar/
 
 Add one entry to `ngdpbase.addons.calendar.calendars` in `app-custom-config.json`.
 No code changes required. Storage file `data/calendar/<id>.json` is created
-automatically on first write.
+automatically on first write. Every calendar needs a `visibility` (`public`, `authenticated` or `private`): a calendar with none is visible only to holders of `calendar-manage`, and the calendar admin page names it.
 
 ```json
 "ngdpbase.addons.calendar.calendars": {
@@ -73,13 +73,14 @@ All routes use `ApiContext.from(req, engine)`. Guards:
 | Action | Requirement |
 |--------|-------------|
 | Read public events | none |
-| Read authenticated-visibility events | authenticated |
-| Read private-visibility events | `admin` or `clubhouse-manager` |
-| Create / update / delete managed events | `admin` or `clubhouse-manager` |
+| Read authenticated-visibility events (calendar view, API, `.ics` feed, marquee text) | the `calendar-read` permission, granted to every signed-in account |
+| Read private-visibility events (calendar view, API, `.ics` feed, marquee text) | the `calendar-manage` permission |
+| Read the events of a calendar the configuration does not name | the `calendar-manage` permission (read as private) |
+| Create / update / delete a calendar's events | the permission that calendar names in `manage-permission`, else `calendar-manage`; moving an event needs both calendars' permissions |
 | Submit a reservation | authenticated |
 | Cancel own reservation | authenticated (owner) |
-| Cancel any reservation | `admin` or `clubhouse-manager` |
-| Admin dashboard | `admin` or `clubhouse-manager` |
+| Cancel any reservation | the `calendar-manage` permission |
+| Admin dashboard | the `calendar-manage` permission |
 
 ## Extending
 

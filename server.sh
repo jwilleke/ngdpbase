@@ -14,7 +14,8 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$SCRIPT_DIR/.ngdpbase.pid"
 
-# Source .env if present (shell exports and CLI args still override)
+# Source .env if present. Sourcing overwrites: a value in the file beats one
+# already exported in the shell or given on the command line.
 if [ -f "$SCRIPT_DIR/.env" ]; then
   set -a
   source "$SCRIPT_DIR/.env"
@@ -47,6 +48,13 @@ unset _FAST_RESOLVED
 _DEFAULT_CFG="$SCRIPT_DIR/config/app-default-config.json"
 # Strip ANSI colour codes; pm2 colours its banners and status tables.
 _strip_ansi() { perl -pe 's/\e\[[0-9;]*m//g'; }
+
+# Status of the pm2 app named $1. pm2 7 draws `pm2 show` as a box table whose
+# rows begin with the box character (`│ status │ online │`), so the border is
+# blanked before the row is matched. Older pm2 prints the row plain.
+_pm2_status() {
+  npx --no pm2 show "$1" 2>/dev/null | _strip_ansi | sed 's/│/ /g' | grep -E "^\s*status" | awk '{print $NF}' || true
+}
 
 # PID of whatever is listening on this instance's port, or nothing.
 _port_pid() { lsof -ti tcp:"${PORT:-3000}" -sTCP:LISTEN 2>/dev/null | head -1; }
@@ -289,7 +297,7 @@ case "${1:-}" in
       WAIT_COUNT=$((WAIT_COUNT + 1))
 
       # Check if PM2 shows the app as online
-      PM2_STATUS=$(npx --no pm2 show "$APP_NAME" 2>/dev/null | _strip_ansi | grep -E "^\s*status" | awk '{print $NF}' || true)
+      PM2_STATUS=$(_pm2_status "$APP_NAME")
       if [ "$PM2_STATUS" = "online" ]; then
         break
       fi
@@ -452,6 +460,17 @@ case "${1:-}" in
     OLD_VERSION=$(_version)
     echo "🔄 Updating $APP_NAME from $OLD_VERSION (${OLD_SHA:0:7})..."
 
+    # npm install rewrites package-lock.json whenever it disagrees with
+    # package.json (#2519), which leaves the tree dirty and makes the next
+    # update refuse. The tree was clean when we started, so put the committed
+    # lockfile back after every install.
+    _npm_install() {
+      npm install
+      local rc=$?
+      git checkout -q -- package-lock.json 2>/dev/null || true
+      return $rc
+    }
+
     # Back to the commit we started from: the branch at that commit, or a
     # detached HEAD if we were not on a branch. -f drops the lockfile edits
     # npm install may have made; the tree was clean when we started.
@@ -461,6 +480,30 @@ case "${1:-}" in
       else
         git checkout -q -f "$OLD_SHA"
       fi
+    }
+
+    # dist/.built-from holds the commit the current dist/ was built from. It is
+    # written only after a build succeeds and cleared before one starts, so a
+    # failed build, a missing dist/ or a build of another commit never matches
+    # (#2532). Without a match, update always installs and builds.
+    BUILD_STAMP="$SCRIPT_DIR/dist/.built-from"
+    _build() {
+      rm -f "$BUILD_STAMP"
+      npm run build || return 1
+      mkdir -p "$SCRIPT_DIR/dist" && git rev-parse HEAD > "$BUILD_STAMP"
+    }
+    # Online means PM2 lists this app as online. When the pm2 CLI and daemon
+    # disagree on version, `pm2 show` prints only a banner, so a process
+    # listening on the port counts as online too.
+    _site_online() {
+      local st
+      st=$(_pm2_status "$APP_NAME")
+      [ "$st" = "online" ] && return 0
+      [ -z "$st" ] && [ -n "$(_port_pid)" ] && return 0
+      return 1
+    }
+    _build_is_current() {
+      [ -f "$BUILD_STAMP" ] && [ "$(cat "$BUILD_STAMP" 2>/dev/null)" = "$(git rev-parse HEAD)" ]
     }
 
     _restart() {
@@ -515,33 +558,59 @@ case "${1:-}" in
     NEW_SHA=$(git rev-parse HEAD)
     NEW_VERSION=$(_version)
 
-    FAILED=""
-    echo "📦 Installing dependencies..."
-    if ! npm install; then
-      FAILED="npm install"
-    else
-      echo "🔨 Building..."
-      if ! npm run build; then
-        FAILED="npm run build"
-      else
-        echo "🚀 Restarting..."
-        if ! _restart; then
-          FAILED="server start"
-        elif ! _wait_ready; then
-          FAILED="readiness check"
+    # Nothing was pulled and the built files are from this commit: there is
+    # nothing to install or build (#2532). A site that is online has nothing
+    # to restart either, so stop here. A site that is stopped (or left down by
+    # an earlier failure) is still started, as before.
+    BUILD_CURRENT=0
+    if [ "$NEW_SHA" = "$OLD_SHA" ] && _build_is_current; then
+      if _site_online; then
+        echo "✅ $APP_NAME is already at $NEW_VERSION (${NEW_SHA:0:7}), nothing to do"
+        # Internal to `update all`, which sets it to learn that this site was
+        # unchanged. Not a setting for people to use.
+        if [ -n "${NGDP_UPDATE_RESULT_FILE:-}" ]; then
+          echo unchanged > "$NGDP_UPDATE_RESULT_FILE" 2>/dev/null || true
         fi
+        exit 0
+      fi
+      echo "ℹ️  $APP_NAME is already at $NEW_VERSION (${NEW_SHA:0:7}) but is not running. Starting it, no build needed."
+      BUILD_CURRENT=1
+    fi
+
+    FAILED=""
+    if [ "$BUILD_CURRENT" -eq 0 ]; then
+      echo "📦 Installing dependencies..."
+      if ! _npm_install; then
+        FAILED="npm install"
+      else
+        echo "🔨 Building..."
+        if ! _build; then
+          FAILED="npm run build"
+        fi
+      fi
+    fi
+    if [ -z "$FAILED" ]; then
+      echo "🚀 Restarting..."
+      if ! _restart; then
+        FAILED="server start"
+      elif ! _wait_ready; then
+        FAILED="readiness check"
       fi
     fi
 
     if [ -z "$FAILED" ]; then
-      echo "✅ Updated: $OLD_VERSION (${OLD_SHA:0:7}) → $NEW_VERSION (${NEW_SHA:0:7})"
+      if [ "$BUILD_CURRENT" -eq 1 ]; then
+        echo "✅ Started: $NEW_VERSION (${NEW_SHA:0:7})"
+      else
+        echo "✅ Updated: $OLD_VERSION (${OLD_SHA:0:7}) → $NEW_VERSION (${NEW_SHA:0:7})"
+      fi
       exit 0
     fi
 
     echo ""
     echo "❌ Update to $NEW_VERSION (${NEW_SHA:0:7}) failed at: $FAILED"
     echo "⏪ Rolling back to $OLD_VERSION (${OLD_SHA:0:7})..."
-    if _checkout_old && npm install && npm run build && _restart && _wait_ready; then
+    if _checkout_old && _npm_install && _build && _restart && _wait_ready; then
       echo "⏪ Rolled back: running $OLD_VERSION (${OLD_SHA:0:7}) again. The update did NOT happen."
       exit 1
     fi

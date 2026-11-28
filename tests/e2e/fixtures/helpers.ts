@@ -378,6 +378,7 @@ async function createPrivatePage(page: import('@playwright/test').Page, title: s
 
 export {
   openProfileCards,
+  openStatusCards,
   TEST_PAGE_PREFIX,
   acceptTermsIfAsked,
   signInWithPassword,
@@ -405,4 +406,14 @@ export {
  */
 async function openProfileCards(page) {
   await page.locator('details[id^="profile-"]').evaluateAll((els) => els.forEach((d) => { d.open = true; }));
+}
+
+/**
+ * #2470: a status card on a page such as /admin/backup starts collapsed when it is done or on,
+ * and a closed `<details>` neither shows nor lets Playwright fill or click what is inside it.
+ * @param {import('@playwright/test').Page} page. Call this after `page.goto('/admin/backup')` in a spec that
+ * works with a card's content.
+ */
+async function openStatusCards(page) {
+  await page.locator('.status-card details').evaluateAll((els) => els.forEach((d) => { d.open = true; }));
 }

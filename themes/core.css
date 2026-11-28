@@ -476,6 +476,77 @@ main[role="main"] {
     width: 40%;
 }
 
+/* The Shared links tables (/my/shares and the admin list) are not system-info tables: the first
+   column is the link's name. `.table.shared-links` outranks `.table-sm td:first-child` above. */
+.table.shared-links td:first-child {
+    font-weight: normal;
+    color: inherit;
+    width: auto;
+}
+
+/* The Link column holds the address box, so it keeps some room; the box shrinks inside it. The
+   column does not claim the whole row: that left the other columns at their narrowest. */
+.table.shared-links td.shared-link-cell {
+    min-width: 180px;
+}
+
+/* On /my/shares the first column is the link's name, so it keeps room to read. */
+.table.shared-links td.shared-link-what {
+    min-width: 10rem;
+}
+
+/* A link's buttons sit side by side and wrap, as on a phone card. The group carries no Bootstrap
+   utility classes: they are !important and would beat the table rule below. */
+.shared-link-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+}
+
+/* In the table the Extend link sits above Revoke, so the Actions column is one button wide. */
+.table.shared-links .shared-link-actions {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 0;
+}
+
+.table.shared-links .input-group {
+    display: flex;
+    flex-wrap: nowrap;
+}
+
+.table.shared-links .input-group > input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* /my/shares shows cards, and shows the table only when the space beside the left menu holds all
+   six columns (about 856px). The box is measured, not the screen, because the left menu takes a
+   different share of it on each screen. */
+.shared-links-wrap {
+    container-type: inline-size;
+}
+
+.shared-links-wrap .shared-links-table {
+    display: none;
+}
+
+.shared-links-wrap .shared-links-cards {
+    display: block;
+}
+
+@container (min-width: 856px) {
+    .shared-links-wrap .shared-links-table {
+        display: block;
+    }
+
+    .shared-links-wrap .shared-links-cards {
+        display: none;
+    }
+}
+
 /* Mobile responsive rules moved to @media (max-width: 767.98px) block below */
 
 .sidebar .nav-link {
@@ -1666,6 +1737,36 @@ summary {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+/* #2470: a status card (views/_status-card.ejs) shows amber or red as a 4px coloured left edge on the
+   theme's ordinary card border, so a card that needs the admin stands out against plain ones. The
+   chevron after the badge turns when the card is open; the summary shows a 2px focus ring for a
+   keyboard. Below 576px the grey note drops to its own full-width line under the title, badge and
+   chevron; the title wraps inside its own column, and the badge and chevron never leave the first
+   line. */
+/* Three states only: plain (all is well: no colour, no coloured edge, the badge is plain text),
+   amber (degraded) and red (failed). Badge text on amber is #000 on #ffc107 (13:1) and white on red
+   #b02a37 (6.9:1), in both themes. */
+.status-card-amber, .status-card-red { border-left-width: 4px; }
+.status-card-plain > .card-body { padding-left: calc(var(--bs-card-spacer-x, 1rem) + 3px); }
+.status-card-amber { border-left-color: #ffc107; }
+.status-card-red { border-left-color: #b02a37; }
+.status-badge-plain { background: transparent; color: var(--bs-body-color); font-weight: 400; }
+.status-badge-amber { background: #ffc107; color: #000; }
+.status-badge-red { background: #b02a37; color: #fff; }
+.status-card .text-danger { color: #b02a37 !important; } /* the red of the badge and edge: 6.5:1 on white, where Bootstrap's #dc3545 is 4.5:1 */
+[data-bs-theme="dark"] .status-card .text-danger { color: var(--bs-danger-text-emphasis) !important; }
+.status-card details > div.mt-3 p { max-width: 70ch; }
+.card-summary-chevron { font-size: 0.75rem; color: var(--bs-secondary-color); transition: transform 0.15s; }
+details[open] > .card-summary .card-summary-chevron { transform: rotate(180deg); }
+.card-summary:focus-visible { outline: 2px solid var(--bs-primary); outline-offset: 2px; border-radius: 0.25rem; }
+@media (max-width: 575.98px) {
+  .status-card .card-summary { flex-wrap: wrap; }
+  .status-card .card-summary > span.text-muted { order: 1; flex-basis: 100%; }
+  .status-card .card-summary > h6 { flex: 1 1 0; min-width: 0; }
+  .status-card .card-summary > .badge,
+  .status-card .card-summary > .card-summary-chevron { flex: 0 0 auto; }
 }
 
 

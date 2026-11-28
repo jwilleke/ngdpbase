@@ -266,11 +266,13 @@
                             </a>
                         </span>
                     </div>
-                    <%# #2138: when Reindex and Rebuild last ran, and the automatic folder scan %>
+                    <%# #2138, #2467: when the media was last reindexed (a Rebuild counts), last rebuilt, and when the automatic reindex last ran and runs next %>
+                    <% const reindexNotRun = 'Not run since the server started'; %>
+                    <% const autoReindex = typeof automaticReindex !== 'undefined' && automaticReindex ? automaticReindex : { label: 'Automatic reindex', next: null }; %>
                     <div class="mt-2" data-testid="media-last-runs">
-                        <%- include('_job-last-run', { jobId: 'media.rescan', label: 'Last reindex', entry: lastRuns['media.rescan'] || null }) %>
+                        <%- include('_job-last-run', { jobId: 'media.reindex', label: 'Last reindex', emptyText: reindexNotRun, entry: (typeof mediaReindexLine !== 'undefined' && mediaReindexLine) || null }) %>
                         <%- include('_job-last-run', { jobId: 'media.rebuild', label: 'Last rebuild', entry: lastRuns['media.rebuild'] || null }) %>
-                        <%- include('_job-last-run', { jobId: 'media.folder-scan', label: 'Last automatic folder scan', entry: lastRuns['media.folder-scan'] || null }) %>
+                        <%- include('_job-last-run', { jobId: 'media.folder-scan', label: autoReindex.label, emptyText: reindexNotRun, next: autoReindex.next, entry: lastRuns['media.folder-scan'] || null }) %>
                     </div>
                     <div id="dashboard-media-status" class="mt-2" style="display:none;"></div>
                     <% } else { %>
@@ -337,6 +339,7 @@
                     </h5>
                 </div>
                 <div class="card-body">
+                    <%# #2468 — how fast pages are built. The page opens for admin-read as well as admin-system, so the button does too. %>
                     <% if ((typeof can === 'function' && can('admin-system'))) { %>
                     <div class="d-flex flex-wrap gap-2">
                         <span class="d-inline-flex align-items-center gap-1">
@@ -365,6 +368,8 @@
                             </a>
                             <a href="/view/logs" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
                         </span>
+
+                        <%- include('_admin-performance-button') %>
 
                         <%# #1113 — the audit page existed with no route and no link, so the
                             audit log had no reader in the application at all. %>
@@ -425,6 +430,10 @@
                             </ul>
                         </div>
                     <% } %>
+                    <% } else if ((typeof can === 'function' && can('admin-read'))) { %>
+                    <div class="d-flex flex-wrap gap-2">
+                        <%- include('_admin-performance-button') %>
+                    </div>
                     <% } else { %>
                         <p class="text-muted">Admin role required for these tools.</p>
                     <% } %>
@@ -578,9 +587,13 @@
                                 Every share link on this instance. A share link is a capability: holding the URL
                                 is the permission, so revoking one is the only way to take that access back.
                             </p>
-                            <a href="/shares" class="btn btn-sm btn-outline-primary">
-                                <i class="fas fa-cog me-1"></i>Manage Share Links
+                            <% if (typeof mayManageAllShares !== 'undefined' && mayManageAllShares) { %>
+                            <a href="/my/shares?view=all" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-cog me-1"></i>Manage shared links
                             </a>
+                            <% } else { %>
+                            <p class="text-muted small mb-0">Seeing everyone's links needs the permission "See and revoke everyone's shared links".</p>
+                            <% } %>
                         </div>
                     </details>
                 </div>
@@ -701,35 +714,6 @@
         </div>
         <% } %>
 
-    </div>
-
-    <!-- Row 4: Recent Activity -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card mb-4">
-                <div class="card-body py-2">
-                    <details>
-                        <summary class="card-summary">
-                            <i class="fas fa-history"></i>
-                            <strong>Recent Activity</strong>
-                            <span class="badge bg-secondary ms-auto"><%= recentActivity ? recentActivity.length : 0 %></span>
-                        </summary>
-                        <div class="mt-3">
-                            <% if (recentActivity && recentActivity.length > 0) { %>
-                                <% recentActivity.slice(0, 5).forEach(activity => { %>
-                                    <div class="mb-2">
-                                        <small class="text-muted"><%= activity.timestamp %></small><br>
-                                        <%= activity.description %>
-                                    </div>
-                                <% }); %>
-                            <% } else { %>
-                                <p class="text-muted">No recent activity to display.</p>
-                            <% } %>
-                        </div>
-                    </details>
-                </div>
-            </div>
-        </div>
     </div>
 
     <%# #1034: withheld from read-only accounts. Session records carry usernames, IP addresses and last-access times — the same privacy reason /admin/users is withheld from the demo role (#1029). The API behind it enforces the same `user-read` permission, so this is presentation, not the control. %>
@@ -1260,7 +1244,7 @@ async function rebuildPages() {
  * #2138: a run this page started has ended — show it on its card's last-run
  * line (views/_job-last-run.ejs) without a reload, in the viewer's local time.
  */
-function updateLastRun(jobId, run) {
+function updateLastRun(jobId, run, via) {
     const line = document.querySelector(`[data-job-last-run="${jobId}"]`);
     if (!line || !run || !run.completedAt) return;
     const time = line.querySelector('time');
@@ -1272,6 +1256,9 @@ function updateLastRun(jobId, run) {
     const status = line.querySelector('[data-part="status"]');
     status.textContent = run.status;
     status.className = run.status === 'failed' ? 'text-danger' : 'text-success';
+    // #2467: the Media card's "Last reindex" says when the run was a Rebuild.
+    const viaPart = line.querySelector('[data-part="via"]');
+    if (viaPart) viaPart.textContent = via === 'rebuild' ? ' (by rebuild)' : '';
     line.querySelector('[data-part="never"]').hidden = true;
     line.querySelector('[data-part="run"]').hidden = false;
     if (window.localizeTimes) window.localizeTimes(line);
@@ -1343,7 +1330,7 @@ async function dashboardMediaRescan() {
         const { runId } = await enqueueRes.json();
         if (!runId) throw new Error('Failed to start rescan job');
         const run = await pollJobStatus(runId);
-        updateLastRun('media.rescan', run);
+        updateLastRun('media.reindex', run);
         status.className = run.status === 'completed' ? 'alert alert-success' : 'alert alert-danger';
         if (run.status === 'completed') setIconText(status, 'fa-check-circle', run.result?.summary || 'Reindex complete');
         else setIconText(status, 'fa-exclamation-triangle', run.result?.error || 'Scan failed');
@@ -1376,6 +1363,7 @@ async function dashboardMediaRebuild() {
         if (!runId) throw new Error('Failed to start rebuild job');
         const run = await pollJobStatus(runId, 1500, 3600000);
         updateLastRun('media.rebuild', run);
+        updateLastRun('media.reindex', run, 'rebuild');
         status.className = run.status === 'completed' ? 'alert alert-success' : 'alert alert-danger';
         if (run.status === 'completed') setIconText(status, 'fa-check-circle', run.result?.summary || 'Rebuild complete');
         else setIconText(status, 'fa-exclamation-triangle', run.result?.error || 'Rebuild failed');

@@ -709,6 +709,61 @@ describe('NotificationManager', () => {
     });
   });
 
+  describe('removeByTitles (#2468)', () => {
+    const SLOW = 'MarkupParser Performance Alert: SLOW_PARSING';
+    const LOW = 'MarkupParser Performance Alert: LOW_CACHE_HIT_RATIO';
+    const past = () => new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    test('removes only notifications whose whole title is one of those given, expired ones included', async () => {
+      await notificationManager.createNotification({ type: 'system', title: SLOW, message: 'a' });
+      await notificationManager.createNotification({ type: 'system', title: LOW, message: 'b', expiresAt: past() });
+      await notificationManager.createNotification({ type: 'maintenance', title: 'Maintenance tonight', message: 'c' });
+      await notificationManager.createNotification({ type: 'user', title: 'For you', message: 'd', targetUsers: ['testuser'] });
+      await notificationManager.createNotification({ type: 'system', title: `About ${SLOW}`, message: 'e' });
+      await notificationManager.createNotification({ type: 'system', title: `${SLOW} (copy)`, message: 'f' });
+      await notificationManager.createNotification({ type: 'system', title: 'MarkupParser Performance Alert: ', message: 'g' });
+      await notificationManager.createNotification({ type: 'system', title: 'MarkupParser Performance Alert: SOMETHING_ELSE', message: 'h' });
+
+      const removed = await notificationManager.removeByTitles([SLOW, LOW]);
+
+      expect(removed).toBe(2);
+      expect(notificationManager.getAllNotifications(true).map((n) => n.title).sort()).toEqual([
+        'About MarkupParser Performance Alert: SLOW_PARSING',
+        'For you',
+        'Maintenance tonight',
+        'MarkupParser Performance Alert: ',
+        'MarkupParser Performance Alert: SOMETHING_ELSE',
+        'MarkupParser Performance Alert: SLOW_PARSING (copy)'
+      ].sort());
+    });
+
+    test('an empty list, or an empty title in the list, throws and removes nothing', async () => {
+      await notificationManager.createNotification({ type: 'system', title: 'Keep me', message: 'x' });
+
+      await expect(notificationManager.removeByTitles([])).rejects.toThrow();
+      await expect(notificationManager.removeByTitles([''])).rejects.toThrow();
+
+      expect(notificationManager.getAllNotifications(true)).toHaveLength(1);
+    });
+
+    test('returns 0 and changes nothing when no title matches', async () => {
+      await notificationManager.createNotification({ type: 'system', title: 'Keep me', message: 'x' });
+
+      expect(await notificationManager.removeByTitles([SLOW])).toBe(0);
+      expect(notificationManager.getAllNotifications(true)).toHaveLength(1);
+    });
+
+    test('the saved file no longer holds the removed notifications', async () => {
+      await notificationManager.createNotification({ type: 'system', title: SLOW, message: 'a' });
+      await notificationManager.createNotification({ type: 'system', title: 'Keep me', message: 'x' });
+
+      await notificationManager.removeByTitles([SLOW]);
+
+      const saved = JSON.parse(await fs.readFile(path.join(tempDir, 'notifications.json'), 'utf8')) as { notifications: Record<string, { title: string }> };
+      expect(Object.values(saved.notifications).map((n) => n.title)).toEqual(['Keep me']);
+    });
+  });
+
   describe('statistics', () => {
     test('should return correct statistics', async () => {
       const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000);

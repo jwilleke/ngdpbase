@@ -1,0 +1,14 @@
+<%# One link's address box with its Copy button, or why there is none. %>
+<% if (addresses[row.id]) { %>
+    <div class="input-group">
+        <input type="text" class="form-control form-control-sm" value="<%= addresses[row.id] %>" readonly onclick="this.select()" aria-label="Link address">
+        <button type="button" class="btn btn-outline-secondary" title="Copy link" aria-label="Copy link" data-copy-link style="min-width: 44px; min-height: 44px;">
+            <i class="fas fa-copy"></i>
+        </button>
+    </div>
+    <div class="small text-muted mt-1" data-copy-help role="status" hidden>Press Ctrl+C (or hold and copy) to copy the address.</div>
+<% } else if (row.status === 'active') { %>
+    <span class="text-muted small">Address was shown once, when you made it</span>
+<% } else { %>
+    <span class="text-muted">-</span>
+<% } %>
