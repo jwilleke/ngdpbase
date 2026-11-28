@@ -307,12 +307,14 @@ export interface ManagerStatus {
   fixLabel?: string;
   /** One line per problem, drawn as a list under `reason` (#2348). `reason` stays the headline and the audit text. */
   details?: string[];
+  /** A link for each `details` line, by position (#2553): a path on this site that the line's text opens, or none. The page draws only one that starts with a single `/`. */
+  detailLinks?: Array<string | undefined>;
   /** Buttons under the item (#2355): each posts a form to `action` with `fields`; the page adds the CSRF token. Labels and values are text. */
   buttons?: Array<{ label: string; action: string; fields: Record<string, string> }>;
 }
 
 /** What a caller may add to a needs-attention status (#2348). */
-export type AttentionOptions = Pick<ManagerStatus, 'fixUrl' | 'fixLabel' | 'details' | 'buttons'>;
+export type AttentionOptions = Pick<ManagerStatus, 'fixUrl' | 'fixLabel' | 'details' | 'detailLinks' | 'buttons'>;
 
 abstract class BaseManager {
   /** Reference to the wiki engine */

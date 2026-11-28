@@ -4412,12 +4412,14 @@ class PageManager extends BaseManager implements CatalogSource {
       : 'Ask whoever runs the server to add an access rule.';
     const reason = `${total} ${one ? 'page has' : 'pages have'} a limit on who can use ${one ? 'it' : 'them'} that the site no longer applies, so ${one ? 'it follows' : 'they follow'} the site's access rules instead. ${open}`;
     const words = (limits: AccessLimits): string => (limits.length > 1 ? `${limits.slice(0, -1).join(', ')} and ${limits[limits.length - 1]}` : limits[0]);
-    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title, limits }) => `${clipText(title)}: limited who could ${words(limits)} it`);
+    const listed = named.slice(0, LEGACY_ACCESS_LIST_MAX);
+    const details = listed.map(({ title, limits }) => `${clipText(title)}: limited who could ${words(limits)} it`);
+    const detailLinks: Array<string | undefined> = listed.map(({ title }) => `/view/${encodeURIComponent(title)}`);
     const more = named.length - details.length;
     if (more > 0) details.push(`and ${more} more ${more === 1 ? 'page' : 'pages'}`);
     const hidden = total - named.length;
     if (hidden > 0) details.push(`${hidden} private ${hidden === 1 ? 'page' : 'pages'} (not named here), each limited who could use ${hidden === 1 ? 'it' : 'them'}. When its owner signs in, the update moves the limit to an Author Lock where that limits the same people; for any other, ask the page's owner to open it and set its Audience or Author Lock to limit it again.`);
-    return [{ state: 'degraded', kind: 'attention', reason, details }];
+    return [{ state: 'degraded', kind: 'attention', reason, details, detailLinks }];
   }
 
   /** Pages whose `access:` the start-up conversion replaced (#2466), for the needs-attention entry. */
@@ -4447,14 +4449,17 @@ class PageManager extends BaseManager implements CatalogSource {
     if (all.length === 0) return [];
     const one = all.length === 1;
     const named = [...all].sort((a, b) => a.title.localeCompare(b.title));
-    const details = named.slice(0, LEGACY_ACCESS_LIST_MAX).map(({ title }) => `${clipText(title)}: now has an Author Lock, so only its author and administrators can change it`);
+    const listed = named.slice(0, LEGACY_ACCESS_LIST_MAX);
+    const details = listed.map(({ title }) => `${clipText(title)}: now has an Author Lock, so only its author and administrators can change it`);
+    const detailLinks: Array<string | undefined> = listed.map(({ title }) => `/view/${encodeURIComponent(title)}`);
     const more = named.length - details.length;
     if (more > 0) details.push(`and ${more} more ${more === 1 ? 'page' : 'pages'}`);
     return [{
       state: 'degraded',
       kind: 'attention',
       reason: `The update moved the old access limit on ${all.length} ${one ? 'page to its' : 'pages to their'} Author Lock. The old ${one ? 'limit' : 'limits'} had stopped applying, so this is a change: only ${one ? 'its author' : 'their authors'} and administrators can change ${one ? 'it' : 'them'} now. Nothing else on ${one ? 'it' : 'them'} changed.`,
-      details
+      details,
+      detailLinks
     }];
   }
 
