@@ -49,6 +49,13 @@ _DEFAULT_CFG="$SCRIPT_DIR/config/app-default-config.json"
 # Strip ANSI colour codes; pm2 colours its banners and status tables.
 _strip_ansi() { perl -pe 's/\e\[[0-9;]*m//g'; }
 
+# Status of the pm2 app named $1. pm2 7 draws `pm2 show` as a box table whose
+# rows begin with the box character (`│ status │ online │`), so the border is
+# blanked before the row is matched. Older pm2 prints the row plain.
+_pm2_status() {
+  npx --no pm2 show "$1" 2>/dev/null | _strip_ansi | sed 's/│/ /g' | grep -E "^\s*status" | awk '{print $NF}' || true
+}
+
 # PID of whatever is listening on this instance's port, or nothing.
 _port_pid() { lsof -ti tcp:"${PORT:-3000}" -sTCP:LISTEN 2>/dev/null | head -1; }
 
@@ -290,7 +297,7 @@ case "${1:-}" in
       WAIT_COUNT=$((WAIT_COUNT + 1))
 
       # Check if PM2 shows the app as online
-      PM2_STATUS=$(npx --no pm2 show "$APP_NAME" 2>/dev/null | _strip_ansi | grep -E "^\s*status" | awk '{print $NF}' || true)
+      PM2_STATUS=$(_pm2_status "$APP_NAME")
       if [ "$PM2_STATUS" = "online" ]; then
         break
       fi
@@ -490,7 +497,7 @@ case "${1:-}" in
     # listening on the port counts as online too.
     _site_online() {
       local st
-      st=$(npx --no pm2 show "$APP_NAME" 2>/dev/null | _strip_ansi | grep -E "^\s*status" | awk '{print $NF}' || true)
+      st=$(_pm2_status "$APP_NAME")
       [ "$st" = "online" ] && return 0
       [ -z "$st" ] && [ -n "$(_port_pid)" ] && return 0
       return 1
